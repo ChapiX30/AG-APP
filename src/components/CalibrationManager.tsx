@@ -151,7 +151,7 @@ const CalibrationManager = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [viewMode, setViewMode] = useState('advanced-cards');
+  const [viewMode, setViewMode] = useState<'advanced-cards' | 'table'>('advanced-cards'); // Especificar tipo
   const [sortBy, setSortBy] = useState('priority');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -176,23 +176,23 @@ const CalibrationManager = () => {
 
   // Magnitudes expandidas con mejores visuales
   const magnitudes = [
-    { value: 'Todas', label: 'Todas las Magnitudes', color: 'from-gray-400 to-gray-600', icon: 'fa-chart-bar', bgGradient: 'bg-gradient-to-r from-gray-100 to-gray-200' },
-    { value: 'Masa', label: 'Masa y Densidad', color: 'from-blue-500 to-blue-700', icon: 'fa-weight-scale', bgGradient: 'bg-gradient-to-r from-blue-100 to-blue-200' },
-    { value: 'Dimensional', label: 'Dimensional', color: 'from-green-500 to-green-700', icon: 'fa-ruler-combined', bgGradient: 'bg-gradient-to-r from-green-100 to-green-200' },
-    { value: 'Eléctrica', label: 'Eléctrica', color: 'from-yellow-500 to-orange-600', icon: 'fa-bolt', bgGradient: 'bg-gradient-to-r from-yellow-100 to-orange-200' },
-    { value: 'Temperatura', label: 'Temperatura', color: 'from-red-500 to-pink-600', icon: 'fa-thermometer-half', bgGradient: 'bg-gradient-to-r from-red-100 to-pink-200' },
-    { value: 'Presión', label: 'Presión y Vacío', color: 'from-purple-500 to-indigo-600', icon: 'fa-gauge-high', bgGradient: 'bg-gradient-to-r from-purple-100 to-indigo-200' },
-    { value: 'Flujo', label: 'Flujo y Volumen', color: 'from-cyan-500 to-blue-600', icon: 'fa-water', bgGradient: 'bg-gradient-to-r from-cyan-100 to-blue-200' },
-    { value: 'Óptica', label: 'Óptica y Fotometría', color: 'from-amber-500 to-yellow-600', icon: 'fa-eye', bgGradient: 'bg-gradient-to-r from-amber-100 to-yellow-200' },
-    { value: 'Química', label: 'Química Analítica', color: 'from-teal-500 to-emerald-600', icon: 'fa-flask', bgGradient: 'bg-gradient-to-r from-teal-100 to-emerald-200' }
+    { value: 'Todas', label: 'Todas las Magnitudes', color: 'from-gray-400 to-gray-600', icon: 'fas fa-chart-bar', bgGradient: 'bg-gradient-to-r from-gray-100 to-gray-200' },
+    { value: 'Masa', label: 'Masa y Densidad', color: 'from-blue-500 to-blue-700', icon: 'fas fa-weight-scale', bgGradient: 'bg-gradient-to-r from-blue-100 to-blue-200' },
+    { value: 'Dimensional', label: 'Dimensional', color: 'from-green-500 to-green-700', icon: 'fas fa-ruler-combined', bgGradient: 'bg-gradient-to-r from-green-100 to-green-200' },
+    { value: 'Eléctrica', label: 'Eléctrica', color: 'from-yellow-500 to-orange-600', icon: 'fas fa-bolt', bgGradient: 'bg-gradient-to-r from-yellow-100 to-orange-200' },
+    { value: 'Temperatura', label: 'Temperatura', color: 'from-red-500 to-pink-600', icon: 'fas fa-thermometer-half', bgGradient: 'bg-gradient-to-r from-red-100 to-pink-200' },
+    { value: 'Presión', label: 'Presión y Vacío', color: 'from-purple-500 to-indigo-600', icon: 'fas fa-gauge-high', bgGradient: 'bg-gradient-to-r from-purple-100 to-indigo-200' },
+    { value: 'Flujo', label: 'Flujo y Volumen', color: 'from-cyan-500 to-blue-600', icon: 'fas fa-water', bgGradient: 'bg-gradient-to-r from-cyan-100 to-blue-200' },
+    { value: 'Óptica', label: 'Óptica y Fotometría', color: 'from-amber-500 to-yellow-600', icon: 'fas fa-eye', bgGradient: 'bg-gradient-to-r from-amber-100 to-yellow-200' },
+    { value: 'Química', label: 'Química Analítica', color: 'from-teal-500 to-emerald-600', icon: 'fas fa-flask', bgGradient: 'bg-gradient-to-r from-teal-100 to-emerald-200' }
   ];
 
   // Estados de archivos con mejores colores
   const statusConfig = {
-    active: { label: 'Activo', color: 'bg-green-100 text-green-800', icon: 'fa-check-circle' },
-    archived: { label: 'Archivado', color: 'bg-gray-100 text-gray-800', icon: 'fa-archive' },
-    pending: { label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800', icon: 'fa-clock' },
-    review: { label: 'En Revisión', color: 'bg-blue-100 text-blue-800', icon: 'fa-search' }
+    active: { label: 'Activo', color: 'bg-green-100 text-green-800', icon: 'fas fa-check-circle' },
+    archived: { label: 'Archivado', color: 'bg-gray-100 text-gray-800', icon: 'fas fa-archive' },
+    pending: { label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800', icon: 'fas fa-clock' },
+    review: { label: 'En Revisión', color: 'bg-blue-100 text-blue-800', icon: 'fas fa-search' }
   };
 
   const priorityConfig = {
@@ -311,19 +311,19 @@ const CalibrationManager = () => {
   const filteredFiles = files.filter(file => {
     const matchesMagnitude = selectedMagnitude === 'Todas' || file.magnitude === selectedMagnitude;
     const matchesStatus = selectedStatusFilter === 'all' || file.status === selectedStatusFilter;
-    const matchesSearch = 
+    const matchesSearch =
       file.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       file.uploadedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
       file.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       file.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+
     return matchesMagnitude && matchesStatus && matchesSearch;
   });
 
   // Ordenación mejorada
   const sortedFiles = [...filteredFiles].sort((a, b) => {
     let comparison = 0;
-    
+
     switch (sortBy) {
       case 'name':
         comparison = a.name.localeCompare(b.name);
@@ -347,15 +347,15 @@ const CalibrationManager = () => {
       default:
         comparison = 0;
     }
-    
+
     return sortOrder === 'asc' ? comparison : -comparison;
   });
 
   // Funciones de acción mejoradas
   const handleDownload = (file: CalibrationFile) => {
     if (file.fileContent) {
-      const blob = new Blob([file.fileContent], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      const blob = new Blob([file.fileContent], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -401,14 +401,14 @@ const CalibrationManager = () => {
   };
 
   const handleStatusChange = (fileId: number, newStatus: CalibrationFile['status']) => {
-    setFiles(prev => prev.map(f => 
-      f.id === fileId 
-        ? { 
-            ...f, 
-            status: newStatus, 
+    setFiles(prev => prev.map(f =>
+      f.id === fileId
+        ? {
+            ...f,
+            status: newStatus,
             lastModifiedDate: new Date().toISOString().split('T')[0],
             uploadedBy: `${currentUser.name} (Modificado)`
-          } 
+          }
         : f
     ));
     toast.success(`Estado actualizado por ${currentUser.name}`, { icon: '✅' });
@@ -430,8 +430,8 @@ const CalibrationManager = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-      <Toaster 
-        position="top-right" 
+      <Toaster
+        position="top-right"
         toastOptions={{
           duration: 3000,
           style: {
@@ -440,9 +440,9 @@ const CalibrationManager = () => {
             borderRadius: '12px',
             padding: '16px'
           }
-        }} 
+        }}
       />
-      
+
       <div className="max-w-7xl mx-auto p-6">
         {/* Header Rediseñado */}
         <div className="relative mb-8">
@@ -466,9 +466,9 @@ const CalibrationManager = () => {
                 </div>
                 <div className="flex items-center space-x-4 text-white/80">
                   <div className="flex items-center space-x-2">
-                    <img 
-                      src={currentUser.avatar} 
-                      alt={`Avatar de ${currentUser.name}`} 
+                    <img
+                      src={currentUser.avatar}
+                      alt={`Avatar de ${currentUser.name}`}
                       className="w-8 h-8 rounded-full border-2 border-white/30"
                     />
                     <span className="font-medium">{currentUser.name}</span>
@@ -654,8 +654,8 @@ const CalibrationManager = () => {
                   <button
                     onClick={() => setViewMode('advanced-cards')}
                     className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
-                      viewMode === 'advanced-cards' 
-                        ? 'bg-blue-600 text-white shadow-lg' 
+                      viewMode === 'advanced-cards'
+                        ? 'bg-blue-600 text-white shadow-lg'
                         : 'text-gray-600 hover:text-gray-800 hover:bg-gray-200'
                     }`}
                   >
@@ -665,8 +665,8 @@ const CalibrationManager = () => {
                   <button
                     onClick={() => setViewMode('table')}
                     className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
-                      viewMode === 'table' 
-                        ? 'bg-blue-600 text-white shadow-lg' 
+                      viewMode === 'table'
+                        ? 'bg-blue-600 text-white shadow-lg'
                         : 'text-gray-600 hover:text-gray-800 hover:bg-gray-200'
                     }`}
                   >
@@ -709,15 +709,15 @@ const CalibrationManager = () => {
                   const magnitudeInfo = getMagnitudeInfo(file.magnitude);
                   const statusInfo = statusConfig[file.status];
                   const priorityInfo = priorityConfig[file.priority];
-                  
+
                   return (
-                    <div 
-                      key={file.id} 
+                    <div
+                      key={file.id}
                       className={`group bg-gradient-to-br from-white to-gray-50 rounded-2xl p-6 border-2 border-gray-100 hover:border-blue-300 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 hover:scale-105 relative overflow-hidden`}
                     >
                       {/* Indicator de prioridad */}
                       <div className={`absolute top-0 left-0 w-full h-1 ${priorityInfo.color}`}></div>
-                      
+
                       {/* Header de la tarjeta */}
                       <div className="flex items-start justify-between mb-6">
                         <div className={`w-16 h-16 ${magnitudeInfo.bgGradient} rounded-xl flex items-center justify-center shadow-md`}>
@@ -740,13 +740,13 @@ const CalibrationManager = () => {
                         <p className="text-gray-600 text-sm line-clamp-3 mb-4 leading-relaxed" title={file.description}>
                           {file.description || 'Sin descripción disponible.'}
                         </p>
-                        
+
                         {/* Tags */}
                         {file.tags && file.tags.length > 0 && (
                           <div className="flex flex-wrap gap-2 mb-4">
                             {file.tags.slice(0, 3).map((tag, index) => (
-                              <span 
-                                key={index} 
+                              <span
+                                key={index}
                                 className="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium"
                               >
                                 #{tag}
@@ -774,7 +774,7 @@ const CalibrationManager = () => {
                             <span>Subido: {new Date(file.uploadDate).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2">
                             <User className="w-4 h-4 text-gray-400" />
@@ -870,7 +870,7 @@ const CalibrationManager = () => {
                     const magnitudeInfo = getMagnitudeInfo(file.magnitude);
                     const statusInfo = statusConfig[file.status];
                     const priorityInfo = priorityConfig[file.priority];
-                    
+
                     return (
                       <tr key={file.id} className={`hover:bg-gray-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                         <td className="py-6 px-6">
@@ -915,16 +915,16 @@ const CalibrationManager = () => {
                         </td>
                         <td className="py-6 px-6">
                           <div className="text-sm text-gray-900">
-                            {new Date(file.uploadDate).toLocaleDateString('es-MX', { 
-                              day: '2-digit', 
-                              month: 'short', 
-                              year: 'numeric' 
+                            {new Date(file.uploadDate).toLocaleDateString('es-MX', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
                             })}
                           </div>
                           <div className="text-xs text-gray-500">
-                            Mod: {new Date(file.lastModifiedDate).toLocaleDateString('es-MX', { 
-                              day: '2-digit', 
-                              month: 'short' 
+                            Mod: {new Date(file.lastModifiedDate).toLocaleDateString('es-MX', {
+                              day: '2-digit',
+                              month: 'short'
                             })}
                           </div>
                         </td>
@@ -1063,9 +1063,9 @@ const CalibrationManager = () => {
                                       <p className="font-bold text-green-600 text-lg">{selectedFile.name}</p>
                                       <p className="text-sm text-gray-500">{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</p>
                                     </div>
-                                    <button 
-                                      type="button" 
-                                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setUploadForm(prev => ({ ...prev, fileName: '' })); }} 
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setUploadForm(prev => ({ ...prev, fileName: '' })); }}
                                       className="text-red-500 hover:text-red-700 font-medium"
                                     >
                                       Cambiar archivo
@@ -1092,10 +1092,10 @@ const CalibrationManager = () => {
                             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                               <div className="flex items-center space-x-3">
                                 <div className="flex items-center space-x-2">
-                                  <img 
-                                    src={currentUser.avatar} 
-                                    alt="Avatar" 
-                                    className="w-8 h-8 rounded-full border-2 border-white shadow-sm"                                   />
+                                  <img
+                                    src={currentUser.avatar}
+                                    alt="Avatar"
+                                    className="w-8 h-8 rounded-full border-2 border-white shadow-sm" />
                                     <p className="text-sm font-semibold text-blue-900">{currentUser.name}</p>
                                     <p className="text-xs text-blue-600">{currentUser.role} • {currentUser.department}</p>
                                   </div>
@@ -1224,6 +1224,8 @@ const CalibrationManager = () => {
                             <span>Subir Formato</span>
                           </button>
                         </div>
+                      </>
+                    )}
                   </Dialog.Panel>
                 </Transition.Child>
               </div>
@@ -1274,7 +1276,7 @@ const CalibrationManager = () => {
                         </button>
                       </div>
                     </div>
-                    
+
                     <div className="p-6 max-h-[70vh] overflow-auto">
                       {previewFileData && previewFileData.length > 0 ? (
                         <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
@@ -1317,7 +1319,7 @@ const CalibrationManager = () => {
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="bg-gray-50 px-6 py-4 flex justify-end">
                       <button
                         type="button"
@@ -1339,4 +1341,3 @@ const CalibrationManager = () => {
 };
 
 export default CalibrationManager;
-
