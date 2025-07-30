@@ -23,12 +23,10 @@ const COLUMN_TYPE_CATEGORIES = [
     types: [
       { key: "file", icon: <File size={18} className="text-red-400" />, label: "Archivo" },
       { key: "checkbox", icon: <CheckCircle size={18} className="text-yellow-500" />, label: "Casilla de verificación" },
-      // Puedes agregar más tipos aquí...
     ]
   }
 ];
 
-// --- Paletas y opciones visuales
 const LOCAL_KEY = "friday_tablero_v5";
 const GROUP_COLORS = [
   "border-l-4 border-cyan-400 text-cyan-400 bg-cyan-900/40",
@@ -54,7 +52,6 @@ const PEOPLE = [
   { id: "juan", name: "Juan Pérez", color: "bg-gradient-to-br from-emerald-500 to-cyan-400", initials: "JP" },
 ];
 
-// --- Render de celda según tipo
 function renderCell(type, value) {
   if (type === "status") {
     const opt = STATUS_OPTIONS.find(x => x.value === value);
@@ -85,7 +82,6 @@ function renderCell(type, value) {
     return <input type="checkbox" checked={!!value} disabled className="w-5 h-5 accent-emerald-500" />;
   }
   if (type === "file") {
-    // Placeholder visual
     return <span className="inline-flex gap-1 items-center text-cyan-300"><File size={16} /> Archivo</span>;
   }
   if (type === "date") {
@@ -102,7 +98,7 @@ function GlassModal({ open, onClose, children }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="relative bg-white/90 dark:bg-[#232d32]/95 rounded-2xl shadow-2xl px-8 py-6 min-w-[330px] w-full max-w-sm border border-cyan-400/40 animate-fadein">
+      <div className="relative bg-white/90 dark:bg-[#232d32]/95 rounded-2xl shadow-2xl px-4 py-4 min-w-[90vw] max-w-sm w-full border border-cyan-400/40 animate-fadein md:px-8 md:min-w-[330px]">
         <button onClick={onClose}
           className="absolute top-2 right-2 rounded-full p-1 hover:bg-cyan-100/40 text-gray-600 dark:text-gray-200"><X size={20} /></button>
         {children}
@@ -114,7 +110,7 @@ function GlassModal({ open, onClose, children }) {
 
 // --- Componente principal
 export default function FridayScreen() {
-  // Estado principal
+  // --- ESTADOS PRINCIPALES ---
   const [columns, setColumns] = useState(() => {
     const d = localStorage.getItem(LOCAL_KEY);
     if (d) try { return JSON.parse(d).columns || []; } catch { }
@@ -150,13 +146,14 @@ export default function FridayScreen() {
   const [showAddColModal, setShowAddColModal] = useState(false);
   const [showAddGroupModal, setShowAddGroupModal] = useState(false);
   const [showColType, setShowColType] = useState("text");
-  const [colNameInput, setColNameInput] = useState(""); // solo para el input
+  const [colNameInput, setColNameInput] = useState("");
   const [search, setSearch] = useState("");
-  const [editCell, setEditCell] = useState(null); // {gidx, ridx, colKey}
+  const [editCell, setEditCell] = useState(null);
   const [editValue, setEditValue] = useState("");
   const { currentScreen, navigateTo } = useNavigation();
   const [openColMenuKey, setOpenColMenuKey] = useState(null);
-  const [selectedRows, setSelectedRows] = useState([]); // [{gidx, ridx}]
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false); // NUEVO: sidebar drawer móvil
 
   useEffect(() => {
     localStorage.setItem(LOCAL_KEY, JSON.stringify({ columns, groups }));
@@ -664,61 +661,113 @@ export default function FridayScreen() {
     );
   }
 
-  // ---- Render main ----
+  // ---- RENDER MAIN ----
   return (
-     <div className="flex bg-neutral-950 min-h-screen font-sans">
-      <SidebarFriday active={currentScreen} onNavigate={navigateTo} />
-      <div className="flex-1 ml-[235px] min-h-screen relative">
-    <div className="bg-neutral-950 min-h-screen text-neutral-100 font-sans animate-fadein">
-      {/* Header */}
-      <div className="w-full sticky top-0 z-30 border-b border-neutral-900">
-        <div className="flex items-center gap-2 px-4 py-2 bg-neutral-950">
-          <button className="rounded hover:bg-neutral-900 p-2 mr-2" onClick={() => window.history.back()}>
-            <ArrowLeft size={20} />
-          </button>
-        </div>
-        <div className="flex gap-1 px-2 py-1 border-b border-neutral-800 bg-neutral-900 sticky top-[44px] z-20">
-          <button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-1 rounded flex items-center gap-1 transition shadow"
-            onClick={() => setShowAddColModal(true)}>
-            <Plus size={16} /> Columna
-          </button>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1 rounded flex items-center gap-1 transition shadow"
-            onClick={() => setShowAddGroupModal(true)}>
-            <Plus size={16} /> Grupo
-          </button>
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="relative">
-              <input
-                className="pl-8 pr-2 py-1 rounded bg-neutral-800 text-white border border-neutral-700 focus:ring-2 ring-cyan-400 w-44"
-                placeholder="Buscar..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              <Search size={16} className="absolute top-2 left-2 text-cyan-400" />
-            </div>
-            <button className="flex items-center gap-1 px-2 py-1 rounded text-neutral-200 hover:bg-neutral-800"><Filter size={16} />Filtrar</button>
+    <div className="flex bg-neutral-950 min-h-screen font-sans">
+      {/* Sidebar fijo en desktop */}
+      <div className="hidden md:block">
+        <SidebarFriday active={currentScreen} onNavigate={navigateTo} />
+      </div>
+      {/* Sidebar tipo drawer en móvil */}
+      {showMobileSidebar && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex">
+          <div className="bg-neutral-900 w-64 h-full shadow-2xl">
+            <SidebarFriday active={currentScreen} onNavigate={(scr) => { setShowMobileSidebar(false); navigateTo(scr); }} />
           </div>
+          <div className="flex-1" onClick={() => setShowMobileSidebar(false)} />
+        </div>
+      )}
+      {/* Área principal */}
+      <div className="flex-1 md:ml-[235px] min-h-screen relative">
+        <div className="bg-neutral-950 min-h-screen text-neutral-100 font-sans animate-fadein">
+          {/* Header */}
+          <div className="w-full sticky top-0 z-30 border-b border-neutral-900">
+            <div className="flex items-center gap-2 px-4 py-2 bg-neutral-950">
+              {/* Menú hamburguesa solo en móvil */}
+              <button
+                className="rounded hover:bg-neutral-900 p-2 mr-2 md:hidden"
+                onClick={() => setShowMobileSidebar(true)}
+              >
+                <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <button
+                className="rounded hover:bg-neutral-900 p-2 mr-2 hidden md:block"
+                onClick={() => window.history.back()}
+              >
+                <ArrowLeft size={20} />
+              </button>
+            </div>
+            <div className="flex gap-1 px-2 py-1 border-b border-neutral-800 bg-neutral-900 sticky top-[44px] z-20 flex-wrap">
+              <button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-1 rounded flex items-center gap-1 transition shadow"
+                onClick={() => setShowAddColModal(true)}>
+                <Plus size={16} /> Columna
+              </button>
+              <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1 rounded flex items-center gap-1 transition shadow"
+                onClick={() => setShowAddGroupModal(true)}>
+                <Plus size={16} /> Grupo
+              </button>
+              <div className="flex items-center gap-2 ml-auto">
+                <div className="relative">
+                  <input
+                    className="pl-8 pr-2 py-1 rounded bg-neutral-800 text-white border border-neutral-700 focus:ring-2 ring-cyan-400 w-44"
+                    placeholder="Buscar..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  <Search size={16} className="absolute top-2 left-2 text-cyan-400" />
+                </div>
+                <button className="flex items-center gap-1 px-2 py-1 rounded text-neutral-200 hover:bg-neutral-800"><Filter size={16} />Filtrar</button>
+              </div>
+            </div>
+          </div>
+          {/* Vista principal */}
+          <div className="max-w-[1500px] mx-auto mt-5">
+            {/* Desktop: muestra tabla */}
+            <div className="hidden md:block">{renderTable()}</div>
+            {/* Mobile: muestra como cards */}
+            <div className="md:hidden space-y-3 px-2">
+              {groups.map((group, gidx) => (
+                <div key={group.id} className="rounded-xl overflow-hidden shadow-lg border-l-4 mb-3" style={{ borderColor: "#06b6d4" }}>
+                  {/* Header grupo */}
+                  <div className="flex items-center px-3 py-2 font-bold text-base bg-cyan-900/40">
+                    <span>{group.name}</span>
+                    <span className="ml-2 text-xs opacity-70">{group.rows.length} Folio(s)</span>
+                  </div>
+                  {/* Cards */}
+                  {group.rows.map((row, ridx) => (
+                    <div key={row.id} className="bg-neutral-900 border-b border-cyan-900/40 p-3 flex flex-col gap-2">
+                      {columns.map((col) => (
+                        <div key={col.key} className="flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase text-cyan-400 w-24">{col.label}:</span>
+                          <span className="flex-1">{renderCell(col.type, row[col.key])}</span>
+                        </div>
+                      ))}
+                      {/* Acciones */}
+                      <div className="flex gap-3 mt-2">
+                        <button className="p-2 rounded bg-cyan-800 text-white flex-1">Editar</button>
+                        <button className="p-2 rounded bg-red-700 text-white flex-1">Eliminar</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Modales */}
+          {ModalAddColumn()}
+          {ModalAddGroup()}
+
+          <style>{`
+            .animate-fadein{animation:fadein .32s cubic-bezier(.2,1,.22,1)}
+            @keyframes fadein{from{opacity:0;transform:translateY(40px);}to{opacity:1;transform:translateY(0);}}
+            ::-webkit-scrollbar{height:6px;background:#131313;}
+            ::-webkit-scrollbar-thumb{background:#333;border-radius:6px;}
+            input, select { outline: none !important; }
+          `}</style>
         </div>
       </div>
-
-      {/* Vista */}
-      <div className="max-w-[1500px] mx-auto mt-5">
-        {renderTable()}
-      </div>
-
-      {/* Modales PRO */}
-      {ModalAddColumn()}
-      {ModalAddGroup()}
-
-      <style>{`
-        .animate-fadein{animation:fadein .32s cubic-bezier(.2,1,.22,1)}
-        @keyframes fadein{from{opacity:0;transform:translateY(40px);}to{opacity:1;transform:translateY(0);}}
-        ::-webkit-scrollbar{height:6px;background:#131313;}
-        ::-webkit-scrollbar-thumb{background:#333;border-radius:6px;}
-        input, select { outline: none !important; }
-      `}</style>
     </div>
-   </div>
- </div>
   );
 }
