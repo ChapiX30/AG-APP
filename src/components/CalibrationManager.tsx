@@ -73,7 +73,7 @@ const CalibrationManager = () => {
     name: 'Ing. Carlos Medina Ruiz',
     role: 'supervisor',
     department: 'Metrología Avanzada',
-    avatar: 'https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/6caf820a-5476-45e2-aa97-e1922cb98847.png',
+    avatar: 'https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/37669b65-2185-4fc8-a3fd-cdda708cb82c.png',
     permissions: ['upload', 'download', 'edit', 'delete', 'approve']
   });
 
@@ -151,7 +151,7 @@ const CalibrationManager = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [viewMode, setViewMode] = useState<'advanced-cards' | 'table'>('advanced-cards'); // Especificar tipo
+  const [viewMode, setViewMode] = useState<'advanced-cards' | 'table'>('advanced-cards');
   const [sortBy, setSortBy] = useState('priority');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -260,7 +260,7 @@ const CalibrationManager = () => {
             name: uploadForm.fileName + '.xlsx',
             magnitude: uploadForm.magnitude,
             uploadDate: new Date().toISOString().split('T')[0],
-            uploadedBy: currentUser.name, // ¡USUARIO LOGUEADO REAL!
+            uploadedBy: currentUser.name,
             size: `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`,
             version: uploadForm.version,
             status: 'pending',
@@ -720,12 +720,12 @@ const CalibrationManager = () => {
 
                       {/* Header de la tarjeta */}
                       <div className="flex items-start justify-between mb-6">
-                        <div className={`w-16 h-16 ${magnitudeInfo.bgGradient} rounded-xl flex items-center justify-center shadow-md`}>
-                          <i className={`${magnitudeInfo.icon} text-2xl bg-gradient-to-r ${magnitudeInfo.color} bg-clip-text text-transparent`}></i>
+                        <div className={`w-16 h-16 bg-gradient-to-r from-blue-100 to-blue-200 rounded-xl flex items-center justify-center shadow-md`}>
+                          <Database className="w-8 h-8 text-blue-600" />
                         </div>
                         <div className="flex items-center space-x-2">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.color}`}>
-                            <i className={`${statusInfo.icon} mr-1`}></i>
+                            <Check className="w-3 h-3 mr-1" />
                             {statusInfo.label}
                           </span>
                           <div className={`w-3 h-3 rounded-full ${priorityInfo.color}`}></div>
@@ -760,8 +760,8 @@ const CalibrationManager = () => {
                           </div>
                         )}
 
-                        <div className={`inline-block px-4 py-2 rounded-lg text-sm font-semibold ${magnitudeInfo.bgGradient} text-gray-700 mb-4`}>
-                          <i className={`${magnitudeInfo.icon} mr-2`}></i>
+                        <div className={`inline-block px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-blue-100 to-blue-200 text-gray-700 mb-4`}>
+                          <FileSpreadsheet className="w-4 h-4 inline mr-2" />
                           {magnitudeInfo.label}
                         </div>
                       </div>
@@ -875,8 +875,8 @@ const CalibrationManager = () => {
                       <tr key={file.id} className={`hover:bg-gray-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                         <td className="py-6 px-6">
                           <div className="flex items-center space-x-4">
-                            <div className={`w-12 h-12 ${magnitudeInfo.bgGradient} rounded-xl flex items-center justify-center shadow-sm flex-shrink-0`}>
-                              <i className={`${magnitudeInfo.icon} text-lg bg-gradient-to-r ${magnitudeInfo.color} bg-clip-text text-transparent`}></i>
+                            <div className={`w-12 h-12 bg-gradient-to-r from-blue-100 to-blue-200 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0`}>
+                              <FileSpreadsheet className="text-lg text-blue-600" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center space-x-2 mb-1">
@@ -898,14 +898,14 @@ const CalibrationManager = () => {
                           </div>
                         </td>
                         <td className="py-6 px-6">
-                          <span className={`inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold ${magnitudeInfo.bgGradient} text-gray-700`}>
-                            <i className={`${magnitudeInfo.icon} mr-2`}></i>
+                          <span className={`inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-blue-100 to-blue-200 text-gray-700`}>
+                            <FileSpreadsheet className="w-4 h-4 mr-2" />
                             {magnitudeInfo.label}
                           </span>
                         </td>
                         <td className="py-6 px-6">
                           <span className={`inline-flex items-center px-3 py-2 rounded-full text-sm font-semibold ${statusInfo.color}`}>
-                            <i className={`${statusInfo.icon} mr-2`}></i>
+                            <Check className="w-3 h-3 mr-2" />
                             {statusInfo.label}
                           </span>
                         </td>
@@ -1095,7 +1095,9 @@ const CalibrationManager = () => {
                                   <img
                                     src={currentUser.avatar}
                                     alt="Avatar"
-                                    className="w-8 h-8 rounded-full border-2 border-white shadow-sm" />
+                                    className="w-8 h-8 rounded-full border-2 border-white shadow-sm"
+                                  />
+                                  <div>
                                     <p className="text-sm font-semibold text-blue-900">{currentUser.name}</p>
                                     <p className="text-xs text-blue-600">{currentUser.role} • {currentUser.department}</p>
                                   </div>
