@@ -12,6 +12,7 @@ import { DriveScreen } from './DriveScreen';
 import SplashScreen from "./SplashScreen";
 import ProgramaCalibracionScreen from './ProgramaCalibracionScreen';
 import HojaDeServicioScreen from './HojaDeServicioScreen';
+import  CalibrationManager  from './CalibrationManager';
 import { EmpresasScreen } from './EmpresasScreen';
 import { CalendarScreen }   from './CalendarScreen';
 import { RegisterScreen } from './RegisterScreen'; // 👈 AGREGA ESTA LÍNEA
@@ -83,6 +84,8 @@ export const MainApp: React.FC = () => {
       return <CalendarScreen />; 
     case 'hoja-servicio':
       return <HojaDeServicioScreen />;
+    case 'calibration-manager':
+      return <CalibrationManager />;
     case 'drive':
       return <DriveScreen />;
     case 'programa-calibracion':

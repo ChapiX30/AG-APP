@@ -26,7 +26,7 @@ const menuItems = [
   { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'bg-yellow-500', available: true },
   { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'bg-cyan-500', available: false },
   { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: true },
-  { id: 'Formatos-calibracion', title: 'FORMATOS DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: false },
+  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'bg-cyan-500', available: true }, // Agregar el icono adecuado para el Calibración Managern', title: 'FORMATOS DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: false },
 ];
 
 export const MainMenu: React.FC = () => {
@@ -48,8 +48,8 @@ export const MainMenu: React.FC = () => {
       navigateTo('calendario');
     } else if (item.id === 'programa-calibracion') {
       navigateTo('programa-calibracion'); 
-    } else if (item.id === 'Formatos-calibracion') {
-      navigateTo('Formatos-calibracion');
+    } else if (item.id === 'calibration-manager') {
+      navigateTo('calibration-manager');
     } else if (item.id === 'hoja-servicio') {
       navigateTo('hoja-servicio');
     } else if (item.id === 'drive') {
