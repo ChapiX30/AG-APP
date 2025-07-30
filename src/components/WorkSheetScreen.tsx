@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
-  ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash, Loader2, NotebookPen,
-} from "lucide-react";
+  ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash, Loader2, NotebookPen, Edit3,
+} from "lucide-react"; // Importar Edit3
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -303,6 +303,7 @@ export const WorkSheetScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+  const [showPreview, setShowPreview] = useState(false); // Nuevo estado para controlar la visibilidad de la vista previa
 
   // Estado de todos los campos
   const [formData, setFormData] = useState({
@@ -452,109 +453,42 @@ export const WorkSheetScreen: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {/* Header */}
       <div className="bg-gradient-to-r from-indigo-600 to-blue-700 text-white shadow-lg">
-        <div className="px-6 py-4 flex items-center space-x-4">
-          <button
-            onClick={goBack}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+        <div className="px-6 py-4 flex items-center justify-between"> {/* Añadir justify-between */}
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={goBack}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <Tag className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">Hoja de Trabajo</h1>
+                <p className="text-blue-100 text-sm">
+                  Consecutivo: {currentConsecutive || "SIN CONSECUTIVO"}
+                </p>
+              </div>
+            </div>
+          </div>
+          {/* Botón de Mostrar/Ocultar Vista Previa */}
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-              <Tag className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">Hoja de Trabajo</h1>
-              <p className="text-blue-100 text-sm">
-                Consecutivo: {currentConsecutive || "SIN CONSECUTIVO"}
-              </p>
-            </div>
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="px-4 py-2 text-white hover:text-blue-100 hover:bg-white/10 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>{showPreview ? 'Ocultar Vista Previa' : 'Mostrar Vista Previa'}</span>
+            </button>
           </div>
         </div>
       </div>
-      {/* Preview de la plantilla */}
+      {/* Contenido principal */}
       <div className="p-6">
-        <div className="max-w-4xl mx-auto">
-          {/* Vista previa del PDF */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden mb-6">
-            <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF</h2>
-              <p className="text-gray-600 text-sm">
-                El PDF se generará siguiendo exactamente este formato
-              </p>
-            </div>
-            
-            <div className="p-8 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
-              {/* Header simulado */}
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-blue-600">LOGO</span>
-                  </div>
-                  <div>
-                    <div className="font-bold text-blue-600">Equipos y Servicios</div>
-                    <div className="text-sm text-blue-600">Especializados AG, S.A. de C.V.</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div><strong>Fecha:</strong> {formData.fecha}</div>
-                  <div><strong>Nombre:</strong> {formData.nombre}</div>
-                </div>
-              </div>
-
-              <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
-              
-              <div className="text-center mb-4 text-gray-600">
-                &lt;&lt;{formData.lugarCalibracion}&gt;&gt;
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div><strong>N.Certificado:</strong> {formData.certificado}</div>
-                <div><strong>Fecha de Recepción:</strong> {formData.fecha}</div>
-                <div className="flex space-x-8">
-                  <div><strong>Cliente:</strong> {formData.cliente}</div>
-                  <div><strong>Equipo:</strong> {formData.equipo}</div>
-                </div>
-                <div className="flex space-x-8">
-                  <div><strong>ID:</strong> {formData.id}</div>
-                  <div><strong>Marca:</strong> {formData.marca}</div>
-                </div>
-                <div><strong>Modelo:</strong> {formData.modelo}</div>
-                <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
-                <div className="flex space-x-8">
-                  <div><strong>Unidad:</strong> {formData.unidad}</div>
-                  <div><strong>Alcance:</strong> {formData.alcance}</div>
-                </div>
-                <div><strong>Resolución:</strong> {formData.resolucion}</div>
-                <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
-                <div className="flex space-x-8">
-                  <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>
-                  <div><strong>HR:</strong> {formData.humedadRelativa}%</div>
-                </div>
-              </div>
-
-              {/* Tabla de mediciones */}
-              <div className="mt-6 border border-gray-400">
-                <div className="grid grid-cols-2 border-b border-gray-400">
-                  <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Medición Patrón:</div>
-                  <div className="p-2 bg-gray-50 font-bold">Medición Instrumento:</div>
-                </div>
-                <div className="grid grid-cols-2 min-h-[100px]">
-                  <div className="p-2 border-r border-gray-400 text-xs">
-                    <div>&lt;&lt;IF: [Magnitud] &lt;&gt; "Masa"&gt;&gt; &lt;&lt;{formData.medicionPatron}&gt;&gt; &lt;&lt;ENDIF&gt;&gt;</div>
-                    <div>&lt;&lt;IF: [Magnitud] = "Masa"&gt;&gt; Excentricidad: &lt;&lt;[Excentricidad]&gt;&gt;</div>
-                    <div>Linealidad: &lt;&lt;[Linealidad]&gt;&gt; Repetibilidad: &lt;&lt;[Repetibilidad]&gt;&gt; &lt;&lt;ENDIF&gt;&gt;</div>
-                  </div>
-                  <div className="p-2">{formData.medicionInstrumento}</div>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <strong>Notas:</strong> {formData.notas}
-              </div>
-            </div>
-          </div>
-
+        <div className={`grid gap-8 ${showPreview ? 'lg:grid-cols-2' : 'lg:grid-cols-1 max-w-4xl mx-auto'}`}> {/* Aplicar grid condicional */}
+          
           {/* Formulario de entrada */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
             <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
@@ -902,31 +836,113 @@ export const WorkSheetScreen: React.FC = () => {
               </div>
             </div>
           </div>
-          {/* Botones */}
-          <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={handleCancel}
-                className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2"
-                disabled={isSaving}
-              >
-                <X className="w-4 h-4" />
-                <span>Cancelar</span>
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg"
-              >
-                {isSaving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
-                <span>{isSaving ? "Guardando..." : "Guardar"}</span>
-              </button>
+
+          {/* Vista previa del PDF */}
+          {showPreview && (
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF</h2>
+                <p className="text-gray-600 text-sm">
+                  El PDF se generará siguiendo exactamente este formato
+                </p>
+              </div>
+              
+              <div className="p-8 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
+                {/* Header simulado */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-blue-600">LOGO</span>
+                    </div>
+                    <div>
+                      <div className="font-bold text-blue-600">Equipos y Servicios</div>
+                      <div className="text-sm text-blue-600">Especializados AG, S.A. de C.V.</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div><strong>Fecha:</strong> {formData.fecha}</div>
+                    <div><strong>Nombre:</strong> {formData.nombre}</div>
+                  </div>
+                </div>
+
+                <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
+                
+                <div className="text-center mb-4 text-gray-600">
+                  &lt;&lt;{formData.lugarCalibracion}&gt;&gt;
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div><strong>N.Certificado:</strong> {formData.certificado}</div>
+                  <div><strong>Fecha de Recepción:</strong> {formData.fecha}</div>
+                  <div className="flex space-x-8">
+                    <div><strong>Cliente:</strong> {formData.cliente}</div>
+                    <div><strong>Equipo:</strong> {formData.equipo}</div>
+                  </div>
+                  <div className="flex space-x-8">
+                    <div><strong>ID:</strong> {formData.id}</div>
+                    <div><strong>Marca:</strong> {formData.marca}</div>
+                  </div>
+                  <div><strong>Modelo:</strong> {formData.modelo}</div>
+                  <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
+                  <div className="flex space-x-8">
+                    <div><strong>Unidad:</strong> {formData.unidad}</div>
+                    <div><strong>Alcance:</strong> {formData.alcance}</div>
+                  </div>
+                  <div><strong>Resolución:</strong> {formData.resolucion}</div>
+                  <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
+                  <div className="flex space-x-8">
+                    <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>
+                    <div><strong>HR:</strong> {formData.humedadRelativa}%</div>
+                  </div>
+                </div>
+
+                {/* Tabla de mediciones */}
+                <div className="mt-6 border border-gray-400">
+                  <div className="grid grid-cols-2 border-b border-gray-400">
+                    <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Medición Patrón:</div>
+                    <div className="p-2 bg-gray-50 font-bold">Medición Instrumento:</div>
+                  </div>
+                  <div className="grid grid-cols-2 min-h-[100px]">
+                    <div className="p-2 border-r border-gray-400 text-xs">
+                      <div>&lt;&lt;IF: [Magnitud] &lt;&gt; "Masa"&gt;&gt; &lt;&lt;{formData.medicionPatron}&gt;&gt; &lt;&lt;ENDIF&gt;&gt;</div>
+                      <div>&lt;&lt;IF: [Magnitud] = "Masa"&gt;&gt; Excentricidad: &lt;&lt;[Excentricidad]&gt;&gt;</div>
+                      <div>Linealidad: &lt;&lt;[Linealidad]&gt;&gt; Repetibilidad: &lt;&lt;[Repetibilidad]&gt;&gt; &lt;&lt;ENDIF&gt;&gt;</div>
+                    </div>
+                    <div className="p-2">{formData.medicionInstrumento}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <strong>Notas:</strong> {formData.notas}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+      </div>
+      {/* Botones */}
+      <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={handleCancel}
+            className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2"
+            disabled={isSaving}
+          >
+            <X className="w-4 h-4" />
+            <span>Cancelar</span>
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg"
+          >
+            {isSaving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>{isSaving ? "Guardando..." : "Guardar"}</span>
+          </button>
         </div>
       </div>
     </div>
