@@ -8,7 +8,7 @@ import html2canvas from "html2canvas";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from '../hooks/useAuth';
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs } from "firebase/firestore";
 
 // Helper para sacar el nombre automáticamente del usuario logueado
 const getUserName = (user: any) => {
@@ -372,6 +372,10 @@ export const WorkSheetScreen: React.FC = () => {
     }));
   };
 
+  useEffect(() => {
+  cargarEmpresas();
+}, []);
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -442,12 +446,27 @@ export const WorkSheetScreen: React.FC = () => {
     goBack();
   };
 
-  // Clientes de ejemplo (ajusta con tus datos)
-  const listaClientes = [
-    { id: "cliente1", nombre: "Celestica Standard" },
-    { id: "cliente2", nombre: "Celestica Medico" },
-    { id: "cliente3", nombre: "Celestica Edificio E" },
-  ];
+  const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
+
+// Función para cargar empresas desde Firebase
+const cargarEmpresas = async () => {
+  try {
+    const querySnapshot = await getDocs(collection(db, "clientes"));
+    const empresas = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      nombre: doc.data().nombre || "Sin nombre"
+    }));
+    setListaClientes(empresas);
+  } catch (error) {
+    console.error("Error al cargar empresas:", error);
+    // Mantener lista por defecto en caso de error
+    setListaClientes([
+      { id: "cliente1", nombre: "Celestica Standard" },
+      { id: "cliente2", nombre: "Celestica Medico" },
+      { id: "cliente3", nombre: "Celestica Edificio E" },
+    ]);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -581,6 +600,7 @@ export const WorkSheetScreen: React.FC = () => {
                     type="text"
                     value={formData.nombre}
                     onChange={(e) => handleInputChange("nombre", e.target.value)}
+                    readOnly
                     className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                     placeholder="Nombre del técnico"
                   />
