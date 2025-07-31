@@ -3,7 +3,7 @@ import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { ArrowLeft, Plus, Minus, Calendar, User, Hash } from 'lucide-react';
 import { generarConsecutivo } from '../utils/firebaseConsecutivos';
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { getPrefijo } from '../utils/prefijos';
 
@@ -15,6 +15,13 @@ export const MagnitudeDetailScreen: React.FC = () => {
   // Estado para consecutivos
   const [consecutivos, setConsecutivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // ------------ NUEVO: Estados para Deshacer --------------
+  const [deshacerModalOpen, setDeshacerModalOpen] = useState(false);
+  const [consecutivoAEliminar, setConsecutivoAEliminar] = useState<any | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // --------------------------------------------------------
 
   // ----------- ESCUCHA EN TIEMPO REAL (onSnapshot) -----------------
   useEffect(() => {
@@ -56,6 +63,56 @@ export const MagnitudeDetailScreen: React.FC = () => {
     } finally {
       setGenerando(false);
       setLoading(false);
+    }
+  };
+
+  // NUEVO: Abrir modal de deshacer
+  const handleOpenDeshacerModal = () => {
+    setDeshacerModalOpen(true);
+    setError(null);
+    setConsecutivoAEliminar(null);
+  };
+
+  // NUEVO: Seleccionar consecutivo a eliminar
+  const handleSeleccionarAEliminar = (consecutivo: any) => {
+    setConsecutivoAEliminar(consecutivo);
+  };
+
+  // NUEVO: Eliminar consecutivo y hoja de trabajo
+  const handleEliminarConsecutivo = async () => {
+    if (!consecutivoAEliminar) return;
+    setEliminando(true);
+    setError(null);
+
+    try {
+      // Elimina consecutivo de Firestore
+      const q = query(
+        collection(db, "consecutivos"),
+        where("consecutivo", "==", consecutivoAEliminar.consecutivo),
+        where("magnitud", "==", selectedMagnitude)
+      );
+      const snapshot = await getDocs(q);
+      for (const docu of snapshot.docs) {
+        await deleteDoc(doc(db, "consecutivos", docu.id));
+      }
+
+      // Elimina hoja de trabajo relacionada
+      const q2 = query(
+        collection(db, "worksheets"),
+        where("consecutivo", "==", consecutivoAEliminar.consecutivo),
+        where("magnitud", "==", selectedMagnitude)
+      );
+      const wsSnapshot = await getDocs(q2);
+      for (const docu of wsSnapshot.docs) {
+        await deleteDoc(doc(db, "worksheets", docu.id));
+      }
+
+      setDeshacerModalOpen(false);
+      setConsecutivoAEliminar(null);
+    } catch (err: any) {
+      setError("Error al eliminar. Intenta de nuevo.");
+    } finally {
+      setEliminando(false);
     }
   };
 
@@ -175,9 +232,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
               </span>
             </button>
             
-            {/* Botón Deshacer: Solo si tienes lógica para revertir */}
+            {/* Botón Deshacer: Ahora sí funcional */}
             <button
-              onClick={() => alert("Funcionalidad pendiente")}
+              onClick={handleOpenDeshacerModal}
               className="bg-gradient-to-r from-red-500 to-rose-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-red-600 hover:to-rose-700 transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
             >
               <Minus className="w-5 h-5" />
@@ -186,6 +243,47 @@ export const MagnitudeDetailScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal para Deshacer Consecutivo */}
+      {deshacerModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full">
+            <h3 className="text-lg font-bold mb-4">Selecciona el consecutivo a deshacer</h3>
+            <div className="space-y-2">
+              {consecutivos.map((cons) => (
+                <button
+                  key={cons.consecutivo}
+                  onClick={() => handleSeleccionarAEliminar(cons)}
+                  className={`block w-full text-left px-4 py-2 rounded-lg border ${
+                    consecutivoAEliminar && consecutivoAEliminar.consecutivo === cons.consecutivo
+                      ? "bg-red-100 border-red-400 font-bold"
+                      : "hover:bg-gray-100 border-gray-200"
+                  }`}
+                >
+                  {cons.consecutivo} — {cons.usuario}
+                </button>
+              ))}
+            </div>
+            {error && <div className="text-red-600 mt-2">{error}</div>}
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => setDeshacerModalOpen(false)}
+                className="px-4 py-2 rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800"
+                disabled={eliminando}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleEliminarConsecutivo}
+                disabled={!consecutivoAEliminar || eliminando}
+                className="px-4 py-2 rounded-md bg-red-500 hover:bg-red-700 text-white font-semibold"
+              >
+                {eliminando ? "Eliminando..." : "Deshacer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -251,7 +251,7 @@ const generateTemplatePDF = (formData: any) => {
   
   // Tabla de mediciones
   const tableTop = yPosition;
-  const tableHeight = 60;
+  const tableHeight = 60; // Ajusta si necesitas más espacio para los campos de Masa
   const tableWidth = pageWidth - marginLeft - marginRight;
   const col1Width = tableWidth / 2;
   
@@ -263,28 +263,27 @@ const generateTemplatePDF = (formData: any) => {
   // Headers de tabla
   doc.setFont("helvetica", "bold");
   doc.setFontSize(normalSize);
-  doc.text("Medición Patrón:", marginLeft + 5, tableTop + 10);
-  doc.text("Medición Instrumento:", marginLeft + col1Width + 5, tableTop + 10);
+
+  if (formData.magnitud === "Masa") {
+    doc.text("Excentricidad:", marginLeft + 5, tableTop + 10);
+    doc.text("Linealidad:", marginLeft + col1Width + 5, tableTop + 10);
+  } else {
+    doc.text("Medición Patrón:", marginLeft + 5, tableTop + 10);
+    doc.text("Medición Instrumento:", marginLeft + col1Width + 5, tableTop + 10);
+  }
   
   // Contenido de la tabla
   doc.setFont("helvetica", "normal");
   doc.setFontSize(smallSize);
   
-  // Contenido complejo para medición patrón
-  const patronContent = [
-    `<<IF: [Magnitud] <> "Masa">> <<[Medición Patrón]>> <<ENDIF>>`,
-    `<<IF: [Magnitud] = "Masa">> Excentricidad: <<[Excentricidad]>>`,
-    `Linealidad: <<[Linealidad]>> Repetibilidad: <<[Repetibilidad]>> <<ENDIF>>`
-  ];
-  
-  let textY = tableTop + 25;
-  patronContent.forEach(line => {
-    doc.text(line, marginLeft + 5, textY);
-    textY += 8;
-  });
-  
-  // Medición instrumento
-  doc.text(`${formData.medicionInstrumento}`, marginLeft + col1Width + 5, tableTop + 25);
+  if (formData.magnitud === "Masa") {
+    doc.text(`${formData.excentricidad}`, marginLeft + 5, tableTop + 25);
+    doc.text(`${formData.linealidad}`, marginLeft + col1Width + 5, tableTop + 25);
+    doc.text(`Repetibilidad: ${formData.repetibilidad}`, marginLeft + 5, tableTop + 35); // Puedes ajustar la posición
+  } else {
+    doc.text(`${formData.medicionPatron}`, marginLeft + 5, tableTop + 25);
+    doc.text(`${formData.medicionInstrumento}`, marginLeft + col1Width + 5, tableTop + 25);
+  }
   
   yPosition = tableTop + tableHeight + 15;
   
@@ -324,10 +323,17 @@ export const WorkSheetScreen: React.FC = () => {
     resolucion: "",
     medicionPatron: "",
     medicionInstrumento: "",
+    excentricidad: "", // Nuevo campo
+    linealidad: "",    // Nuevo campo
+    repetibilidad: "", // Nuevo campo
     notas: "",
     tempAmbiente: "",
     humedadRelativa: "",
   });
+
+  const esMagnitudMasa = (magnitud: string): boolean => {
+  return magnitud === "Masa";
+};
 
   // Efecto para actualizar el nombre cuando cambie el usuario
   useEffect(() => {
@@ -782,33 +788,79 @@ const cargarEmpresas = async () => {
                   />
                 </div>
               </div>
-              {/* 8. Medición Patrón/Instrumento */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <NotebookPen className="w-4 h-4 text-teal-400" />
-                    <span>Medición Patrón</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.medicionPatron}
-                    onChange={(e) => handleInputChange("medicionPatron", e.target.value)}
-                    className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  />
+              {/* 8. Medición Patrón/Instrumento o Excentricidad/Linealidad/Repetibilidad */}
+              {esMagnitudMasa(formData.magnitud) ? (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                      <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                        <NotebookPen className="w-4 h-4 text-purple-400" />
+                        <span>Excentricidad</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.excentricidad}
+                        onChange={(e) => handleInputChange("excentricidad", e.target.value)}
+                        className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="Excentricidad"
+                      />
+                    </div>
+                    <div>
+                      <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                        <NotebookPen className="w-4 h-4 text-pink-400" />
+                        <span>Linealidad</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.linealidad}
+                        onChange={(e) => handleInputChange("linealidad", e.target.value)}
+                        className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="Linealidad"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <NotebookPen className="w-4 h-4 text-orange-400" />
+                      <span>Repetibilidad</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.repetibilidad}
+                      onChange={(e) => handleInputChange("repetibilidad", e.target.value)}
+                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      placeholder="Repetibilidad"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <NotebookPen className="w-4 h-4 text-teal-400" />
+                      <span>Medición Patrón</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.medicionPatron}
+                      onChange={(e) => handleInputChange("medicionPatron", e.target.value)}
+                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <NotebookPen className="w-4 h-4 text-blue-400" />
+                      <span>Medición Instrumento</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.medicionInstrumento}
+                      onChange={(e) => handleInputChange("medicionInstrumento", e.target.value)}
+                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <NotebookPen className="w-4 h-4 text-blue-400" />
-                    <span>Medición Instrumento</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.medicionInstrumento}
-                    onChange={(e) => handleInputChange("medicionInstrumento", e.target.value)}
-                    className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  />
-                </div>
-              </div>
+              )}
               {/* 9. Notas */}
               <div>
                 <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
@@ -872,7 +924,7 @@ const cargarEmpresas = async () => {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center space-x-4">
                     <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
-                      <span className="text-xs font-bold text-blue-600">LOGO</span>
+                      <span className="text-xs font-bold text-blue-600"></span>
                     </div>
                     <div>
                       <div className="font-bold text-blue-600">Equipos y Servicios</div>
@@ -888,7 +940,7 @@ const cargarEmpresas = async () => {
                 <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
                 
                 <div className="text-center mb-4 text-gray-600">
-                  &lt;&lt;{formData.lugarCalibracion}&gt;&gt;
+                  {formData.lugarCalibracion}
                 </div>
 
                 <div className="space-y-2 text-sm">
@@ -919,16 +971,42 @@ const cargarEmpresas = async () => {
                 {/* Tabla de mediciones */}
                 <div className="mt-6 border border-gray-400">
                   <div className="grid grid-cols-2 border-b border-gray-400">
-                    <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Medición Patrón:</div>
-                    <div className="p-2 bg-gray-50 font-bold">Medición Instrumento:</div>
+                    {esMagnitudMasa(formData.magnitud) ? (
+                      <>
+                        <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Excentricidad:</div>
+                        <div className="p-2 bg-gray-50 font-bold">Linealidad:</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Medición Patrón:</div>
+                        <div className="p-2 bg-gray-50 font-bold">Medición Instrumento:</div>
+                      </>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 min-h-[100px]">
-                    <div className="p-2 border-r border-gray-400 text-xs">
-                      <div>&lt;&lt;IF: [Magnitud] &lt;&gt; "Masa"&gt;&gt; &lt;&lt;{formData.medicionPatron}&gt;&gt; &lt;&lt;ENDIF&gt;&gt;</div>
-                      <div>&lt;&lt;IF: [Magnitud] = "Masa"&gt;&gt; Excentricidad: &lt;&lt;[Excentricidad]&gt;&gt;</div>
-                      <div>Linealidad: &lt;&lt;[Linealidad]&gt;&gt; Repetibilidad: &lt;&lt;[Repetibilidad]&gt;&gt; &lt;&lt;ENDIF&gt;&gt;</div>
-                    </div>
-                    <div className="p-2">{formData.medicionInstrumento}</div>
+                    {esMagnitudMasa(formData.magnitud) ? (
+                      <>
+                        <div className="p-2 border-r border-gray-400 text-xs">
+                          {formData.excentricidad}
+                        </div>
+                        <div className="p-2 text-xs">
+                          {formData.linealidad}
+                        </div>
+                        {/* Puedes añadir una tercera fila o ajustar el diseño para repetibilidad */}
+                        <div className="col-span-2 p-2 text-xs border-t border-gray-400">
+                          <strong>Repetibilidad:</strong> {formData.repetibilidad}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2 border-r border-gray-400 text-xs">
+                          {formData.medicionPatron}
+                        </div>
+                        <div className="p-2 text-xs">
+                          {formData.medicionInstrumento}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
