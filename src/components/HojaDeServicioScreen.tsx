@@ -1,513 +1,612 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, FileText, Building2, User, Calendar, Star, Clipboard, Save, Trash2, Edit3, Download } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Download, FileText, User, Calendar, Phone, Mail, MapPin, Settings, MessageSquare, Star, Edit3, Save, X } from 'lucide-react';
 
-// Simulación de jsPDF y html2canvas para el demo
-const jsPDF = {
-  constructor: function(orientation, unit, format) {
-    this.internal = { pageSize: { getWidth: () => 210 } };
-    return this;
-  },
-  addImage: function() {},
-  save: function(filename) {
-    console.log(`PDF guardado como ${filename}`);
-  }
+const camposIniciales = {
+  folio: '',
+  fecha: '',
+  empresa: '',
+  direccion: '',
+  contacto: '',
+  telefono: '',
+  correo: '',
+  equipos: '',
+  comentarios: '',
+  calidadServicio: 'Excelente',
+  tecnicoResponsable: '',
 };
 
-const html2canvas = (element) => {
-  return Promise.resolve({
-    toDataURL: () => 'data:image/png;base64,mock',
-    height: 800,
-    width: 600
-  });
-};
-
-interface Cliente {
-  id: string;
-  nombre: string;
-  direccion: string;
-  contacto: string;
-  correo: string;
-  telefono: string;
-}
-
-const clientes: Cliente[] = [
-  {
-    id: 'techops',
-    nombre: 'Techops',
-    direccion: 'CARRETERA ESTATAL 200 QUERÉTARO-TEQUISQUIAPAN 22500 INT. A. COLÓN, QUERÉTARO, C.P. 76270',
-    contacto: 'ING. JOSE WILFRIDO NUÑEZ DEL BOSQUE',
-    correo: 'josew.nunez@techops.mx',
-    telefono: '(442)-480-7334'
-  },
-  {
-    id: 'industrial-mx',
-    nombre: 'Industrial México',
-    direccion: 'Av. Industria 450, Zona Industrial, Monterrey, N.L. C.P. 64000',
-    contacto: 'ING. MARÍA GONZÁLEZ LÓPEZ',
-    correo: 'maria.gonzalez@industrial.mx',
-    telefono: '(81)-8356-7890'
-  }
-];
-
-export default function HojaDeServicioScreen() {
-  const [folio, setFolio] = useState('');
-  const [clienteId, setClienteId] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
-  const [comentarios, setComentarios] = useState('');
-  const [tecnico, setTecnico] = useState('');
-  const [calidad, setCalidad] = useState(3);
-  const [equipos, setEquipos] = useState('');
+export default function HojaDeServicioPro() {
+  const [campos, setCampos] = useState(camposIniciales);
+  const [firmaCliente, setFirmaCliente] = useState('');
   const [firmaTecnico, setFirmaTecnico] = useState('');
-  const [firmaUsuario, setFirmaUsuario] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  
-  const canvasTecnicoRef = useRef<HTMLCanvasElement | null>(null);
-  const canvasUsuarioRef = useRef<HTMLCanvasElement | null>(null);
-  const pdfRef = useRef(null);
+  const [firmando, setFirmando] = useState<'cliente' | 'tecnico' | null>(null);
+  const [vistaPrevia, setVistaPrevia] = useState(false);
+  const pdfRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const cliente = clientes.find(c => c.id === clienteId);
-
-  const clearCanvas = (ref: React.RefObject<HTMLCanvasElement>, setFirma: (val: string) => void) => {
-    if (ref.current) {
-      const ctx = ref.current.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, ref.current.width, ref.current.height);
-        // Redraw border
-        ctx.strokeStyle = '#e5e7eb';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(0, 0, ref.current.width, ref.current.height);
+  // -------- Funciones de firma ---------
+  const comenzarFirma = (tipo: 'cliente' | 'tecnico') => {
+    setFirmando(tipo);
+    setTimeout(() => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
       }
-      setFirma('');
-    }
+    }, 10);
   };
 
-  const setupCanvas = (canvas: HTMLCanvasElement) => {
+  const guardarFirma = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const dataURL = canvas.toDataURL('image/png');
+      if (firmando === 'cliente') setFirmaCliente(dataURL);
+      if (firmando === 'tecnico') setFirmaTecnico(dataURL);
+    }
+    setFirmando(null);
+  };
+
+  const limpiarFirma = (tipo: 'cliente' | 'tecnico') => {
+    if (tipo === 'cliente') setFirmaCliente('');
+    if (tipo === 'tecnico') setFirmaTecnico('');
+  };
+
+  // Funciones de dibujo
+  let isDrawing = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  const handlePointerDown = (e: any) => {
+    isDrawing = true;
+    const rect = e.target.getBoundingClientRect();
+    const scaleX = e.target.width / rect.width;
+    const scaleY = e.target.height / rect.height;
+    lastX = (e.touches ? e.touches[0].clientX - rect.left : e.nativeEvent.offsetX) * scaleX;
+    lastY = (e.touches ? e.touches[0].clientY - rect.top : e.nativeEvent.offsetY) * scaleY;
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Set up canvas properties
-      ctx.strokeStyle = '#1f2937';
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      
-      // Draw border
-      ctx.strokeStyle = '#e5e7eb';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = '#1f2937';
-      ctx.lineWidth = 2;
-    }
+    if (!ctx) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.touches ? e.touches[0].clientX - rect.left : e.nativeEvent.offsetX) * scaleX;
+    const y = (e.touches ? e.touches[0].clientY - rect.top : e.nativeEvent.offsetY) * scaleY;
+    
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    lastX = x;
+    lastY = y;
   };
 
-  const handleDraw = (ref: React.RefObject<HTMLCanvasElement>, setFirma: (val: string) => void) => {
-    if (ref.current) {
-      const canvas = ref.current;
-      const ctx = canvas.getContext('2d');
-      let drawing = false;
-
-      setupCanvas(canvas);
-
-      const startDraw = (e: MouseEvent) => {
-        drawing = true;
-        ctx?.beginPath();
-        ctx?.moveTo(e.offsetX, e.offsetY);
-      };
-
-      const draw = (e: MouseEvent) => {
-        if (!drawing || !ctx) return;
-        ctx.lineTo(e.offsetX, e.offsetY);
-        ctx.stroke();
-      };
-
-      const endDraw = () => {
-        drawing = false;
-        const dataUrl = canvas.toDataURL();
-        setFirma(dataUrl);
-      };
-
-      canvas.addEventListener('mousedown', startDraw);
-      canvas.addEventListener('mousemove', draw);
-      canvas.addEventListener('mouseup', endDraw);
-      canvas.addEventListener('mouseleave', endDraw);
-    }
+  const handlePointerUp = () => {
+    isDrawing = false;
   };
 
-  useEffect(() => {
-    handleDraw(canvasTecnicoRef, setFirmaTecnico);
-    handleDraw(canvasUsuarioRef, setFirmaUsuario);
-  }, []);
-
+  // -------- Generar PDF ---------
   const generarPDF = async () => {
     if (!pdfRef.current) return;
     
-    setIsGenerating(true);
-    
-    // Simulate PDF generation
-    setTimeout(() => {
-      console.log(`PDF generado: HojaServicio_${folio || 'sin_folio'}.pdf`);
-      setIsGenerating(false);
-      alert('¡PDF generado exitosamente!');
-    }, 2000);
+    try {
+      // Importar dinámicamente html2canvas y jsPDF
+      const html2canvas = (await import('html2canvas')).default;
+      const jsPDF = (await import('jspdf')).default;
+      
+      const input = pdfRef.current;
+      const canvas = await html2canvas(input, { 
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`HojaServicio_${campos.folio || new Date().getTime()}.pdf`);
+      
+      // Notificación de éxito
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-pulse';
+      notification.textContent = '¡PDF generado exitosamente!';
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 3000);
+    } catch (error) {
+      console.error('Error al generar PDF:', error);
+      alert('Error al generar el PDF. Por favor intente nuevamente.');
+    }
   };
 
-  const handleBack = () => {
-    console.log('Regresando al menú principal...');
-    // Aquí iría la navegación real
+  const toggleVistaPrevia = () => {
+    setVistaPrevia(!vistaPrevia);
   };
 
-  const generateFolio = () => {
-    const timestamp = Date.now().toString().slice(-6);
-    setFolio(`HS-${timestamp}`);
-  };
+  if (vistaPrevia) {
+    return (
+      <div className="min-h-screen bg-gray-100 py-8 px-4">
+        <div className="max-w-full mx-auto px-2 sm:px-4">
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4">
+              <div className="flex flex-col sm:flex-row justify-between items-center">
+                <h1 className="text-2xl font-bold">Vista Previa - Hoja de Servicio</h1>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={generarPDF}
+                    className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Download size={18} />
+                    Descargar PDF
+                  </button>
+                  <button
+                    onClick={toggleVistaPrevia}
+                    className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Edit3 size={18} />
+                    Editar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Plantilla para PDF */}
+            <div ref={pdfRef} className="w-full bg-white text-black">
+              <div className="p-4 sm:p-8 max-w-[800px] mx-auto">
+                {/* Header */}
+                <div className="text-center mb-6">
+                  <div className="border-2 border-black p-4 mb-4">
+                    <h1 className="text-2xl font-bold mb-2">HOJA DE SERVICIO</h1>
+                    <div className="flex flex-col sm:flex-row justify-between text-sm">
+                      <span><strong>Folio:</strong> {campos.folio || '[Sin folio]'}</span>
+                      <span><strong>Fecha:</strong> {campos.fecha || '[Sin fecha]'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Información de la empresa */}
+                <div className="border-2 border-black mb-6">
+                  <div className="bg-gray-200 p-3 text-center">
+                    <div className="w-16 h-12 bg-blue-600 mx-auto mb-2 rounded flex items-center justify-center">
+                      <span className="text-white font-bold text-xs">LOGO</span>
+                    </div>
+                    <h2 className="font-bold text-lg">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h2>
+                    <p className="text-sm italic">Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, Nuevo León, México, C.P. 66422</p>
+                    <p className="text-sm italic">Teléfonos: 8127116538/8127116357</p>
+                  </div>
+                </div>
+
+                {/* Información del cliente */}
+                <div className="border-2 border-black mb-6 p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p><strong>Planta:</strong> {campos.empresa || '[Sin especificar]'}</p>
+                      <p><strong>Domicilio:</strong> {campos.direccion || '[Sin especificar]'}</p>
+                      <p><strong>Contacto:</strong> {campos.contacto || '[Sin especificar]'}</p>
+                    </div>
+                    <div>
+                      <p><strong>Teléfono:</strong> {campos.telefono || '[Sin especificar]'}</p>
+                      <p><strong>Correo:</strong> {campos.correo || '[Sin especificar]'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Equipos calibrados */}
+                <div className="border-2 border-black mb-6 p-4">
+                  <h3 className="font-bold underline mb-3">Se calibraron los siguientes equipos:</h3>
+                  <div className="min-h-[100px] border border-gray-300 p-3 bg-gray-50">
+                    <strong>ID:</strong>
+                    <div className="mt-2 whitespace-pre-wrap">
+                      {campos.equipos || '[No se especificaron equipos]'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comentarios */}
+                <div className="border-2 border-black mb-8 p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <strong>Comentarios:</strong>
+                      <div className="mt-2 min-h-[60px] whitespace-pre-wrap">
+                        {campos.comentarios || '[Sin comentarios]'}
+                      </div>
+                    </div>
+                    <div>
+                      <strong>Calidad del Servicio:</strong>
+                      <div className="mt-2 text-lg font-semibold text-blue-600">
+                        {campos.calidadServicio}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mensaje de firma */}
+                <div className="text-center mb-6 p-3 bg-gray-100 border-2 border-black">
+                  <strong>SE REQUIERE LA FIRMA DEL USUARIO Y EL PERSONAL PARA CONFIRMAR LA CONFORMIDAD DEL SERVICIO</strong>
+                </div>
+
+                {/* Firmas */}
+                <div className="border-2 border-black p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                    <div className="text-center">
+                      <div className="border-b-2 border-black pb-4 mb-2 h-24 flex items-end justify-center">
+                        {firmaTecnico ? (
+                          <img src={firmaTecnico} alt="Firma técnico" className="max-h-20 max-w-full" />
+                        ) : (
+                          <span className="text-gray-400 text-sm">[Firma del técnico]</span>
+                        )}
+                      </div>
+                      <div className="text-sm">
+                        <div className="border-b border-black mb-1 pb-1">
+                          <strong>{campos.tecnicoResponsable || '[Nombre del técnico]'}</strong>
+                        </div>
+                        <strong>TÉCNICO RESPONSABLE</strong>
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="border-b-2 border-black pb-4 mb-2 h-24 flex items-end justify-center">
+                        {firmaCliente ? (
+                          <img src={firmaCliente} alt="Firma cliente" className="max-h-20 max-w-full" />
+                        ) : (
+                          <span className="text-gray-400 text-sm">[Firma del usuario]</span>
+                        )}
+                      </div>
+                      <div className="text-sm">
+                        <div className="border-b border-black mb-1 pb-1">
+                          {campos.contacto || '[Nombre del usuario]'}
+                        </div>
+                        <strong>NOMBRE Y FIRMA DEL USUARIO</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={handleBack}
-                className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span className="font-medium">Regresar</span>
-              </button>
-              <div className="h-6 w-px bg-gray-300"></div>
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">Hoja de Servicio</h1>
-                  <p className="text-sm text-gray-500">Generar reporte de calibración</p>
-                </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 py-8 px-4">
+      <div className="max-w-full mx-auto">
+        <div className="bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-800 p-6">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <FileText className="text-white" size={32} />
+                <h1 className="text-3xl font-bold text-white">Hoja de Servicio Profesional</h1>
               </div>
-            </div>
-            <div className="flex items-center space-x-3">
               <button
-                onClick={() => setShowPreview(!showPreview)}
-                className="px-4 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                onClick={toggleVistaPrevia}
+                className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all duration-200 hover:scale-105"
               >
-                <Edit3 className="w-4 h-4" />
-                <span>{showPreview ? 'Ocultar Vista Previa' : 'Mostrar Vista Previa'}</span>
+                <FileText size={18} />
+                Vista Previa
               </button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className={`grid gap-8 ${showPreview ? 'lg:grid-cols-2' : 'lg:grid-cols-1 max-w-4xl mx-auto'}`}>
-          
-          {/* Formulario */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
-            <div className="p-6 border-b border-gray-100">
-              <h2 className="text-2xl font-bold text-gray-900 flex items-center space-x-3">
-                <Clipboard className="w-7 h-7 text-blue-600" />
-                <span>Información del Servicio</span>
-              </h2>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* Folio y Fecha */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-                    <FileText className="w-4 h-4 text-gray-500" />
-                    <span>Folio del Servicio</span>
-                  </label>
-                  <div className="flex space-x-2">
-                    <input
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                      placeholder="Ej: HS-001234"
-                      value={folio}
-                      onChange={(e) => setFolio(e.target.value)}
-                    />
-                    <button
-                      onClick={generateFolio}
-                      className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors duration-200 flex items-center"
-                      title="Generar folio automático"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
+          <div className="p-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Formulario */}
+              <div className="space-y-6">
+                <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
+                  <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <Settings className="text-blue-400" size={20} />
+                    Información General
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block">Folio</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.folio}
+                        onChange={e => setCampos({ ...campos, folio: e.target.value })}
+                        placeholder="Ej: 0001-2024"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
+                        <Calendar size={14} />
+                        Fecha
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.fecha}
+                        onChange={e => setCampos({ ...campos, fecha: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block">Técnico Responsable</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.tecnicoResponsable}
+                        onChange={e => setCampos({ ...campos, tecnicoResponsable: e.target.value })}
+                        placeholder="Nombre del técnico"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
+                        <Star size={14} />
+                        Calidad del Servicio
+                      </label>
+                      <select
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.calidadServicio}
+                        onChange={e => setCampos({ ...campos, calidadServicio: e.target.value })}
+                      >
+                        <option value="Excelente">Excelente</option>
+                        <option value="Muy Bueno">Muy Bueno</option>
+                        <option value="Bueno">Bueno</option>
+                        <option value="Regular">Regular</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-                    <Calendar className="w-4 h-4 text-gray-500" />
-                    <span>Fecha de Servicio</span>
-                  </label>
-                  <input
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    type="date"
-                    value={fecha}
-                    onChange={(e) => setFecha(e.target.value)}
-                  />
+                <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
+                  <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <User  className="text-green-400" size={20} />
+                    Información del Cliente
+                  </h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block">Empresa/Planta</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.empresa}
+                        onChange={e => setCampos({ ...campos, empresa: e.target.value })}
+                        placeholder="Nombre de la empresa"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
+                        <MapPin size={14} />
+                        Dirección
+                      </label>
+                      <input
+                        type="text"
+                                                className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.direccion}
+                        onChange={e => setCampos({ ...campos, direccion: e.target.value })}
+                        placeholder="Dirección completa"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-blue-300 mb-2 block">Contacto</label>
+                        <input
+                          type="text"
+                          className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          value={campos.contacto}
+                          onChange={e => setCampos({ ...campos, contacto: e.target.value })}
+                          placeholder="Nombre del contacto"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
+                          <Phone size={14} />
+                          Teléfono
+                        </label>
+                        <input
+                          type="tel"
+                          className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          value={campos.telefono}
+                          onChange={e => setCampos({ ...campos, telefono: e.target.value })}
+                          placeholder="Número de teléfono"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
+                        <Mail size={14} />
+                        Correo Electrónico
+                      </label>
+                      <input
+                        type="email"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        value={campos.correo}
+                        onChange={e => setCampos({ ...campos, correo: e.target.value })}
+                        placeholder="correo@ejemplo.com"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
+                  <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <Settings className="text-purple-400" size={20} />
+                    Detalles del Servicio
+                  </h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block">Equipos Calibrados (ID)</label>
+                      <textarea
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                        value={campos.equipos}
+                        onChange={e => setCampos({ ...campos, equipos: e.target.value })}
+                        rows={3}
+                        placeholder="Ej: BAL-001, MUL-002, MAN-003..."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
+                        <MessageSquare size={14} />
+                        Comentarios
+                      </label>
+                      <textarea
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                        value={campos.comentarios}
+                        onChange={e => setCampos({ ...campos, comentarios: e.target.value })}
+                        rows={3}
+                        placeholder="Observaciones, comentarios adicionales, incidencias..."
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Cliente y Técnico */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-                    <Building2 className="w-4 h-4 text-gray-500" />
-                    <span>Empresa Cliente</span>
-                  </label>
-                  <select
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
-                    value={clienteId}
-                    onChange={(e) => setClienteId(e.target.value)}
+              {/* Sección de Firmas */}
+              <div className="space-y-6">
+                <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-6 border border-white/20">
+                  <h2 className="text-xl font-semibold text-white mb-6 text-center">Firmas de Conformidad</h2>
+                  
+                  <div className="space-y-8">
+                    {/* Firma del Cliente */}
+                    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+                      <h3 className="text-lg font-medium text-blue-300 mb-4 text-center">Firma del Cliente</h3>
+                      <div className="flex flex-col items-center space-y-4">
+                        {firmaCliente ? (
+                          <div className="relative">
+                            <div className="bg-white rounded-lg p-4 border-2 border-blue-300">
+                              <img src={firmaCliente} alt="Firma cliente" className="max-h-24 max-w-full" />
+                            </div>
+                            <button
+                              onClick={() => limpiarFirma('cliente')}
+                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-full h-24 border-2 border-dashed border-blue-300 rounded-lg flex items-center justify-center">
+                            <span className="text-blue-300 text-sm">No hay firma</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => comenzarFirma('cliente')}
+                          className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 flex items-center gap-2"
+                        >
+                          <Edit3 size={18} />
+                          {firmaCliente ? 'Cambiar Firma' : 'Firmar'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Firma del Técnico */}
+                    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+                      <h3 className="text-lg font-medium text-green-300 mb-4 text-center">Firma del Técnico</h3>
+                      <div className="flex flex-col items-center space-y-4">
+                        {firmaTecnico ? (
+                          <div className="relative">
+                            <div className="bg-white rounded-lg p-4 border-2 border-green-300">
+                              <img src={firmaTecnico} alt="Firma técnico" className="max-h-24 max-w-full" />
+                            </div>
+                            <button
+                              onClick={() => limpiarFirma('tecnico')}
+                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-full h-24 border-2 border-dashed border-green-300 rounded-lg flex items-center justify-center">
+                            <span className="text-green-300 text-sm">No hay firma</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => comenzarFirma('tecnico')}
+                          className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 flex items-center gap-2"
+                        >
+                          <Edit3 size={18} />
+                          {firmaTecnico ? 'Cambiar Firma' : 'Firmar'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botones de acción */}
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button
+                    onClick={toggleVistaPrevia}
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-6 py-4 rounded-xl font-bold shadow-lg transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
                   >
-                    <option value="">Seleccione una empresa...</option>
-                    {clientes.map(c => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
-                    ))}
-                  </select>
+                    <FileText size={20} />
+                    Ver Vista Previa
+                  </button>
+                  <button
+                    onClick={generarPDF}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white px-6 py-4 rounded-xl font-bold shadow-lg transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  >
+                    <Download size={20} />
+                    Generar PDF
+                  </button>
                 </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-                    <User className="w-4 h-4 text-gray-500" />
-                    <span>Técnico Responsable</span>
-                  </label>
-                  <input
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    placeholder="Nombre del técnico"
-                    value={tecnico}
-                    onChange={(e) => setTecnico(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Equipos */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">Equipos Calibrados</label>
-                <textarea
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  placeholder="Ingrese los IDs de los equipos separados por coma (Ej: EQ-001, EQ-002, EQ-003)"
-                  rows={3}
-                  value={equipos}
-                  onChange={(e) => setEquipos(e.target.value)}
-                />
-              </div>
-
-              {/* Comentarios */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">Comentarios y Observaciones</label>
-                <textarea
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  placeholder="Describa detalles del servicio, observaciones o notas importantes..."
-                  rows={4}
-                  value={comentarios}
-                  onChange={(e) => setComentarios(e.target.value)}
-                />
-              </div>
-
-              {/* Calidad del Servicio */}
-              <div className="space-y-3">
-                <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-                  <Star className="w-4 h-4 text-gray-500" />
-                  <span>Calidad del Servicio</span>
-                </label>
-                <div className="flex items-center space-x-3">
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <button
-                      key={n}
-                      onClick={() => setCalidad(n)}
-                      className={`flex items-center justify-center w-12 h-12 rounded-xl border-2 transition-all duration-200 ${
-                        calidad >= n 
-                          ? 'bg-yellow-400 border-yellow-400 text-white shadow-lg transform scale-110' 
-                          : 'bg-white border-gray-300 text-gray-400 hover:border-yellow-300 hover:text-yellow-400'
-                      }`}
-                    >
-                      <Star className={`w-5 h-5 ${calidad >= n ? 'fill-current' : ''}`} />
-                    </button>
-                  ))}
-                  <span className="ml-3 text-sm text-gray-600 font-medium">
-                    {calidad === 1 && 'Deficiente'}
-                    {calidad === 2 && 'Regular'}
-                    {calidad === 3 && 'Bueno'}
-                    {calidad === 4 && 'Muy Bueno'}
-                    {calidad === 5 && 'Excelente'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Firmas */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-gray-100">
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-gray-700">Firma del Técnico</label>
-                  <div className="relative">
-                    <canvas 
-                      ref={canvasTecnicoRef} 
-                      width={300} 
-                      height={120} 
-                      className="w-full border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-white hover:border-blue-300 transition-all duration-200 cursor-crosshair" 
-                    />
-                    <button 
-                      onClick={() => clearCanvas(canvasTecnicoRef, setFirmaTecnico)} 
-                      className="absolute top-2 right-2 p-1 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200"
-                      title="Limpiar firma"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500">Haga clic y arrastre para firmar</p>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-gray-700">Firma del Usuario</label>
-                  <div className="relative">
-                    <canvas 
-                      ref={canvasUsuarioRef} 
-                      width={300} 
-                      height={120} 
-                      className="w-full border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-white hover:border-blue-300 transition-all duration-200 cursor-crosshair" 
-                    />
-                    <button 
-                      onClick={() => clearCanvas(canvasUsuarioRef, setFirmaUsuario)} 
-                      className="absolute top-2 right-2 p-1 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200"
-                      title="Limpiar firma"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500">Solicite al cliente que firme aquí</p>
-                </div>
-              </div>
-
-              {/* Botón Generar PDF */}
-              <div className="pt-6 border-t border-gray-100">
-                <button 
-                  onClick={generarPDF}
-                  disabled={isGenerating || !folio || !clienteId || !tecnico}
-                  className={`w-full py-4 px-6 rounded-xl font-bold text-white text-lg transition-all duration-200 flex items-center justify-center space-x-3 ${
-                    isGenerating || !folio || !clienteId || !tecnico
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg hover:shadow-xl transform hover:scale-105'
-                  }`}
-                >
-                  {isGenerating ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Generando PDF...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-5 h-5" />
-                      <span>Generar y Descargar PDF</span>
-                    </>
-                  )}
-                </button>
-                {(!folio || !clienteId || !tecnico) && (
-                  <p className="text-sm text-red-500 mt-2 text-center">
-                    Complete los campos requeridos: Folio, Cliente y Técnico
-                  </p>
-                )}
               </div>
             </div>
           </div>
-
-          {/* Vista Previa */}
-          {showPreview && (
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
-              <div className="p-6 border-b border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900">Vista Previa del PDF</h3>
-              </div>
-              
-              <div className="p-6">
-                <div ref={pdfRef} className="bg-white border border-gray-200 rounded-lg p-8 text-sm space-y-4 shadow-inner">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold">Folio: {folio || '[Sin Folio]'}</span>
-                    <span className="font-bold">Fecha: {fecha}</span>
-                  </div>
-
-                  <div className="text-center space-y-2">
-                    <h3 className="text-2xl font-bold text-gray-900">HOJA DE SERVICIO</h3>
-                    <h4 className="text-lg font-semibold text-blue-600">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h4>
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <p>Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac</p>
-                      <p>San Nicolás de los Garza, N.L.</p>
-                      <p className="font-semibold">Tel: 8127116533 / 8127116537</p>
-                    </div>
-                  </div>
-
-                  {cliente && (
-                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                      <h5 className="font-bold text-gray-900 mb-3">DATOS DEL CLIENTE</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        <div className="space-y-2">
-                          <p><span className="font-semibold">Planta:</span> {cliente.nombre}</p>
-                          <p><span className="font-semibold">Domicilio:</span> {cliente.direccion}</p>
-                          <p><span className="font-semibold">Contacto:</span> {cliente.contacto}</p>
-                        </div>
-                        <div className="space-y-2">
-                          <p><span className="font-semibold">Teléfono:</span> {cliente.telefono}</p>
-                          <p><span className="font-semibold">Correo:</span> {cliente.correo}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <h5 className="font-bold text-gray-900">EQUIPOS CALIBRADOS</h5>
-                    <div className="bg-gray-50 p-3 rounded border min-h-[60px]">
-                      <p className="text-sm">{equipos || 'No se han especificado equipos'}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <h5 className="font-bold text-gray-900 mb-2">COMENTARIOS</h5>
-                      <div className="bg-gray-50 p-3 rounded border min-h-[80px]">
-                        <p className="text-sm">{comentarios || 'Sin comentarios'}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <h5 className="font-bold text-gray-900 mb-2">CALIDAD DEL SERVICIO</h5>
-                      <div className="flex items-center space-x-2">
-                        {[1, 2, 3, 4, 5].map(n => (
-                          <Star key={n} className={`w-6 h-6 ${calidad >= n ? 'text-yellow-400 fill-current' : 'text-gray-300'}`} />
-                        ))}
-                        <span className="ml-2 font-semibold">({calidad}/5)</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-gray-300">
-                    <div className="text-center">
-                      <div className="border-b border-gray-400 pb-1 mb-2">
-                        <p className="font-bold">{tecnico || '[Técnico]'}</p>
-                      </div>
-                      <p className="text-xs font-semibold">TÉCNICO RESPONSABLE</p>
-                      {firmaTecnico && (
-                        <div className="mt-2 border border-gray-300 rounded h-16 flex items-center justify-center bg-gray-50">
-                          <img src={firmaTecnico} alt="Firma Técnico" className="max-h-14 max-w-full" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <div className="border-b border-gray-400 pb-1 mb-2 min-h-[24px]">
-                        <p className="font-bold">&nbsp;</p>
-                      </div>
-                      <p className="text-xs font-semibold">NOMBRE Y FIRMA DEL USUARIO</p>
-                      {firmaUsuario && (
-                        <div className="mt-2 border border-gray-300 rounded h-16 flex items-center justify-center bg-gray-50">
-                          <img src={firmaUsuario} alt="Firma Usuario" className="max-h-14 max-w-full" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Modal de firma */}
+      {firmando && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">
+                Firma {firmando === 'cliente' ? 'del Cliente' : 'del Técnico'}
+              </h2>
+              <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                <canvas
+                  ref={canvasRef}
+                  width={400}
+                  height={200}
+                  className="w-full border-2 border-gray-300 rounded-lg bg-white cursor-crosshair touch-none"
+                  style={{ touchAction: 'none' }}
+                  onMouseDown={handlePointerDown}
+                  onMouseMove={handlePointerMove}
+                  onMouseUp={handlePointerUp}
+                  onMouseLeave={handlePointerUp}
+                  onTouchStart={handlePointerDown}
+                  onTouchMove={handlePointerMove}
+                  onTouchEnd={handlePointerUp}
+                />
+                <p className="text-sm text-gray-500 text-center mt-2">
+                  Dibuje su firma en el área blanca
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={guardarFirma}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-6 py-3 rounded-xl font-bold transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <Save size={18} />
+                  Guardar Firma
+                </button>
+                <button
+                  onClick={() => setFirmando(null)}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl font-bold transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <X size={18} />
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
