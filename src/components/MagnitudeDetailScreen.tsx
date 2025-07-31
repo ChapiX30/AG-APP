@@ -2,10 +2,47 @@ import React, { useState, useEffect } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { ArrowLeft, Plus, Minus, Calendar, User, Hash } from 'lucide-react';
-import { generarConsecutivo } from '../utils/firebaseConsecutivos';
 import { collection, query, where, orderBy, limit, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { getPrefijo } from '../utils/prefijos';
+
+// NUEVA FUNCIÓN: Genera el primer consecutivo libre
+async function generarConsecutivo(magnitud: string, anio: string, usuario: string) {
+  const prefijo = getPrefijo(magnitud);
+  // 1. Trae TODOS los consecutivos de esa magnitud y año
+  const col = collection(db, "consecutivos");
+  const q = query(col, where("magnitud", "==", magnitud), where("anio", "==", anio));
+  const snap = await getDocs(q);
+
+  // 2. Extrae los números
+  const usados = new Set<number>();
+  snap.forEach(docu => {
+    const match = /-(\d+)-/.exec(docu.data().consecutivo);
+    if (match) usados.add(Number(match[1]));
+  });
+
+  // 3. Busca el primer hueco (por ejemplo, el 11 si borraste ese)
+  let siguiente = 1;
+  while (usados.has(siguiente)) {
+    siguiente++;
+  }
+
+  // 4. Arma el consecutivo: ejemplo AGPT-0011-24
+  const consecutivoStr = `${prefijo}-${siguiente.toString().padStart(4, "0")}-${anio}`;
+
+  // 5. Guarda el nuevo consecutivo en Firestore
+  const fecha = new Date();
+  const consecutivoDoc = {
+    consecutivo: consecutivoStr,
+    magnitud,
+    anio,
+    usuario,
+    fecha,
+  };
+  await db.collection("consecutivos").add(consecutivoDoc);
+
+  return consecutivoStr;
+}
 
 export const MagnitudeDetailScreen: React.FC = () => {
   const { selectedMagnitude, goBack, navigateTo } = useNavigation();
@@ -250,19 +287,24 @@ export const MagnitudeDetailScreen: React.FC = () => {
           <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full">
             <h3 className="text-lg font-bold mb-4">Selecciona el consecutivo a deshacer</h3>
             <div className="space-y-2">
-              {consecutivos.map((cons) => (
-                <button
-                  key={cons.consecutivo}
-                  onClick={() => handleSeleccionarAEliminar(cons)}
-                  className={`block w-full text-left px-4 py-2 rounded-lg border ${
-                    consecutivoAEliminar && consecutivoAEliminar.consecutivo === cons.consecutivo
-                      ? "bg-red-100 border-red-400 font-bold"
-                      : "hover:bg-gray-100 border-gray-200"
-                  }`}
-                >
-                  {cons.consecutivo} — {cons.usuario}
-                </button>
+              {consecutivos
+                .filter(cons => cons.usuario === user.name)
+                .map((cons) => (
+                  <button
+                    key={cons.consecutivo}
+                    onClick={() => handleSeleccionarAEliminar(cons)}
+                    className={`block w-full text-left px-4 py-2 rounded-lg border ${
+                      consecutivoAEliminar && consecutivoAEliminar.consecutivo === cons.consecutivo
+                        ? "bg-red-100 border-red-400 font-bold"
+                        : "hover:bg-gray-100 border-gray-200"
+                    }`}
+                  >
+                    {cons.consecutivo} — {cons.usuario}
+                  </button>
               ))}
+              {consecutivos.filter(cons => cons.usuario === user.name).length === 0 && (
+                <div className="text-gray-500 text-sm mt-2">No tienes consecutivos para deshacer.</div>
+              )}
             </div>
             {error && <div className="text-red-600 mt-2">{error}</div>}
             <div className="flex justify-end space-x-2 mt-6">
