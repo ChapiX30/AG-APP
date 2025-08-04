@@ -2,47 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { ArrowLeft, Plus, Minus, Calendar, User, Hash } from 'lucide-react';
+import { generarConsecutivo } from '../utils/firebaseConsecutivos';
 import { collection, query, where, orderBy, limit, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { getPrefijo } from '../utils/prefijos';
-
-// NUEVA FUNCIÓN: Genera el primer consecutivo libre
-async function generarConsecutivo(magnitud: string, anio: string, usuario: string) {
-  const prefijo = getPrefijo(magnitud);
-  // 1. Trae TODOS los consecutivos de esa magnitud y año
-  const col = collection(db, "consecutivos");
-  const q = query(col, where("magnitud", "==", magnitud), where("anio", "==", anio));
-  const snap = await getDocs(q);
-
-  // 2. Extrae los números
-  const usados = new Set<number>();
-  snap.forEach(docu => {
-    const match = /-(\d+)-/.exec(docu.data().consecutivo);
-    if (match) usados.add(Number(match[1]));
-  });
-
-  // 3. Busca el primer hueco (por ejemplo, el 11 si borraste ese)
-  let siguiente = 1;
-  while (usados.has(siguiente)) {
-    siguiente++;
-  }
-
-  // 4. Arma el consecutivo: ejemplo AGPT-0011-24
-  const consecutivoStr = `${prefijo}-${siguiente.toString().padStart(4, "0")}-${anio}`;
-
-  // 5. Guarda el nuevo consecutivo en Firestore
-  const fecha = new Date();
-  const consecutivoDoc = {
-    consecutivo: consecutivoStr,
-    magnitud,
-    anio,
-    usuario,
-    fecha,
-  };
-  await db.collection("consecutivos").add(consecutivoDoc);
-
-  return consecutivoStr;
-}
 
 export const MagnitudeDetailScreen: React.FC = () => {
   const { selectedMagnitude, goBack, navigateTo } = useNavigation();
@@ -53,7 +16,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const [consecutivos, setConsecutivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // ------------ NUEVO: Estados para Deshacer --------------
+  // ------------ Estados para Deshacer --------------
   const [deshacerModalOpen, setDeshacerModalOpen] = useState(false);
   const [consecutivoAEliminar, setConsecutivoAEliminar] = useState<any | null>(null);
   const [eliminando, setEliminando] = useState(false);
@@ -103,19 +66,19 @@ export const MagnitudeDetailScreen: React.FC = () => {
     }
   };
 
-  // NUEVO: Abrir modal de deshacer
+  // Abrir modal de deshacer
   const handleOpenDeshacerModal = () => {
     setDeshacerModalOpen(true);
     setError(null);
     setConsecutivoAEliminar(null);
   };
 
-  // NUEVO: Seleccionar consecutivo a eliminar
+  // Seleccionar consecutivo a eliminar
   const handleSeleccionarAEliminar = (consecutivo: any) => {
     setConsecutivoAEliminar(consecutivo);
   };
 
-  // NUEVO: Eliminar consecutivo y hoja de trabajo
+  // Eliminar consecutivo y hoja de trabajo
   const handleEliminarConsecutivo = async () => {
     if (!consecutivoAEliminar) return;
     setEliminando(true);
@@ -269,7 +232,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
               </span>
             </button>
             
-            {/* Botón Deshacer: Ahora sí funcional */}
+            {/* Botón Deshacer: Solo los del usuario logueado */}
             <button
               onClick={handleOpenDeshacerModal}
               className="bg-gradient-to-r from-red-500 to-rose-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-red-600 hover:to-rose-700 transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
