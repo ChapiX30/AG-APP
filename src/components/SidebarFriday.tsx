@@ -69,7 +69,7 @@ export default function SidebarFriday({ active, onNavigate }) {
             <Cpu size={25} className="text-white" />
           </div>
           <span className="font-extrabold text-[1.38rem] text-cyan-300 tracking-tight drop-shadow" style={{ letterSpacing: "1.5px" }}>
-            Calibra<span className="text-white font-light">Tech</span>
+            EQUIPOS<span className="text-white font-light">AG</span>
           </span>
         </div>
         {/* Menu */}
@@ -107,10 +107,10 @@ export default function SidebarFriday({ active, onNavigate }) {
         {/* Footer */}
         <div className="mt-auto px-8 pt-8 pb-4 flex flex-col gap-2">
           <span className="text-xs text-cyan-900/70 font-medium tracking-wide">
-            Powered by <span className="text-cyan-500">Claude+Tesla</span> UI
+            Powered by <span className="text-cyan-500">AG</span> UI
           </span>
           <div className="h-[2px] w-8 rounded bg-cyan-900/60 mb-2" />
-          <span className="text-xs text-neutral-700/70">v1.0 - Abraham Ginez</span>
+          <span className="text-xs text-neutral-700/70">v1.0 - A. Ginez</span>
         </div>
       </div>
       <style>{`

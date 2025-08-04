@@ -61,44 +61,506 @@ const FilePreview = ({ file, onRemove, onView }: { file: File | string; onRemove
 };
 
 // ---------- FileViewerModal ----------
-const FileViewerModal = ({ file, onClose, type }: { file: string; onClose: () => void; type: string }) => {
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
+const FileViewerModal = ({ file, onClose, type, fileName }: { 
+  file: string; 
+  onClose: () => void; 
+  type: string;
+  fileName?: string;
+}) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => setNumPages(numPages);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+
+  const handleLoad = () => {
+    setLoading(false);
+    setError(null);
+  };
+
+  const handleError = () => {
+    setLoading(false);
+    setError('Error al cargar el archivo');
+  };
+
+  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3));
+  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
+  const handleRotate = () => setRotation(prev => (prev + 90) % 360);
+  const handleReset = () => {
+    setZoom(1);
+    setRotation(0);
+  };
+
+  const getFileIcon = () => {
+    switch (type) {
+      case 'pdf': return <FileText className="text-red-500" size={48} />;
+      case 'doc': case 'docx': return <FileText className="text-blue-500" size={48} />;
+      case 'xls': case 'xlsx': return <FileText className="text-green-500" size={48} />;
+      default: return <FileText className="text-gray-500" size={48} />;
+    }
+  };
+
   const renderFileContent = () => {
-    if (type === 'pdf') {
+    if (loading) {
       return (
-        <Document file={file} onLoadSuccess={onDocumentLoadSuccess} loading={<div className="text-white">Cargando PDF...</div>} error={<div className="text-white">Error al cargar el PDF</div>}>
-          <Page pageNumber={pageNumber} width={isFullscreen ? window.innerWidth * 0.8 : 600} renderTextLayer={false} renderAnnotationLayer={false} />
-        </Document>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
+            <p className="text-white text-lg">Cargando archivo...</p>
+            <p className="text-gray-400 text-sm mt-2">Por favor espera un momento</p>
+          </div>
+        </div>
       );
     }
+
+    if (error) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            {getFileIcon()}
+            <p className="text-red-400 text-lg mt-4 font-semibold">Error al cargar el archivo</p>
+            <p className="text-gray-400 text-sm mt-2">El archivo no se pudo visualizar correctamente</p>
+            <div className="flex gap-3 mt-6 justify-center">
+              <button
+                onClick={() => window.open(file, '_blank')}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+              >
+                <ExternalLink size={16} />
+                Abrir en nueva pestaña
+              </button>
+              <button
+                onClick={() => {
+                  const a = document.createElement('a');
+                  a.href = file;
+                  a.download = fileName || 'archivo';
+                  a.click();
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+              >
+                <Download size={16} />
+                Descargar
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (type === 'pdf') {
+      return (
+        <div className="flex items-center justify-center h-full overflow-auto">
+          <div 
+            className="transition-transform duration-200"
+            style={{ 
+              transform: `scale(${zoom}) rotate(${rotation}deg)`,
+              transformOrigin: 'center'
+            }}
+          >
+            <iframe
+              src={`${file}#toolbar=1&navpanes=1&scrollbar=1`}
+              className="border-0 bg-white rounded-lg shadow-lg"
+              style={{
+                width: isFullscreen ? '90vw' : '800px',
+                height: isFullscreen ? '80vh' : '600px',
+              }}
+              onLoad={handleLoad}
+              onError={handleError}
+              title="PDF Viewer"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    // Para otros tipos de archivo, usar Google Docs Viewer como fallback
     const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(file)}&embedded=true`;
     return (
-      <div className="w-full h-full flex items-center justify-center p-4">
-        <iframe src={viewerUrl} className="w-full h-full border-0" allowFullScreen title="File Viewer" />
+      <div className="flex items-center justify-center h-full overflow-auto">
+        <div 
+          className="transition-transform duration-200"
+          style={{ 
+            transform: `scale(${zoom}) rotate(${rotation}deg)`,
+            transformOrigin: 'center'
+          }}
+        >
+          <iframe
+            src={viewerUrl}
+            className="border-0 bg-white rounded-lg shadow-lg"
+            style={{
+              width: isFullscreen ? '90vw' : '800px',
+              height: isFullscreen ? '80vh' : '600px',
+            }}
+            onLoad={handleLoad}
+            onError={handleError}
+            allowFullScreen
+            title="Document Viewer"
+          />
+        </div>
       </div>
     );
   };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className={`bg-slate-800 rounded-xl ${isFullscreen ? 'w-full h-full' : 'w-full max-w-4xl max-h-[90vh]'}`}>
-        <div className="sticky top-0 bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700 z-10">
-          <h3 className="text-lg font-bold">Visualizador de archivos</h3>
-          <div className="flex gap-4">
-            <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-gray-400 hover:text-white">{isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
-            <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={24} /></button>
+        {/* Header mejorado */}
+        <div className="sticky top-0 bg-slate-800 p-4 border-b border-slate-700 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {getFileIcon()}
+              <div>
+                <h3 className="text-lg font-bold text-white">Visualizador de Archivos</h3>
+                <p className="text-sm text-gray-400 truncate max-w-md">
+                  {fileName || file.split('/').pop() || 'Archivo'}
+                </p>
+              </div>
+            </div>
+            
+            {/* Controles de visualización */}
+            <div className="flex items-center gap-2">
+              {!loading && !error && (
+                <>
+                  <div className="flex items-center gap-1 bg-slate-700 rounded-lg p-1">
+                    <button
+                      onClick={handleZoomOut}
+                      className="p-2 hover:bg-slate-600 rounded-lg text-gray-400 hover:text-white transition-colors"
+                      title="Alejar"
+                    >
+                      <ZoomOut size={16} />
+                    </button>
+                    <span className="px-2 text-sm text-white font-medium min-w-[60px] text-center">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    <button
+                      onClick={handleZoomIn}
+                      className="p-2 hover:bg-slate-600 rounded-lg text-gray-400 hover:text-white transition-colors"
+                      title="Acercar"
+                    >
+                      <ZoomIn size={16} />
+                    </button>
+                  </div>
+                  
+                  <button
+                    onClick={handleRotate}
+                    className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-400 hover:text-white transition-colors"
+                    title="Rotar"
+                  >
+                    <RotateCw size={16} />
+                  </button>
+                  
+                  <button
+                    onClick={handleReset}
+                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-400 hover:text-white transition-colors text-sm font-medium"
+                    title="Restablecer vista"
+                  >
+                    Reset
+                  </button>
+                </>
+              )}
+              
+              <div className="w-px h-6 bg-slate-600 mx-1"></div>
+              
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-gray-400 hover:text-white transition-colors"
+                title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              >
+                {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+              </button>
+              
+              <button
+                onClick={onClose}
+                className="p-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors"
+                title="Cerrar"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
         </div>
-        <div className="p-4 overflow-auto h-full">{renderFileContent()}</div>
-        {type === 'pdf' && numPages && (
-          <div className="sticky bottom-0 bg-slate-800 p-3 border-t border-slate-700 flex justify-center items-center gap-4">
-            <button onClick={() => setPageNumber(Math.max(1, pageNumber - 1))} disabled={pageNumber <= 1} className="px-3 py-1 bg-slate-700 rounded disabled:opacity-50">Anterior</button>
-            <span className="text-sm">Página {pageNumber} de {numPages}</span>
-            <button onClick={() => setPageNumber(Math.min(pageNumber + 1, numPages))} disabled={pageNumber >= numPages} className="px-3 py-1 bg-slate-700 rounded disabled:opacity-50">Siguiente</button>
+        
+        {/* Contenido del archivo */}
+        <div className="overflow-auto" style={{ height: 'calc(100% - 80px)' }}>
+          {renderFileContent()}
+        </div>
+        
+        {/* Footer con acciones adicionales */}
+        {!loading && !error && (
+          <div className="sticky bottom-0 bg-slate-800 p-3 border-t border-slate-700">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3 text-sm text-gray-400">
+                <span>Tipo: {type.toUpperCase()}</span>
+                <span>•</span>
+                <span>Zoom: {Math.round(zoom * 100)}%</span>
+                {rotation > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>Rotación: {rotation}°</span>
+                  </>
+                )}
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={() => window.open(file, '_blank')}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                >
+                  <ExternalLink size={14} />
+                  Abrir en nueva pestaña
+                </button>
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = file;
+                    a.download = fileName || 'archivo';
+                    a.click();
+                  }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                >
+                  <Download size={14} />
+                  Descargar
+                </button>
+              </div>
+            </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// ---------- ServicioDetailModal ----------
+const ServicioDetailModal = ({ servicio, usuarios, onClose, handleUpdateField, handleDelete, setFileToView }: any) => {
+  if (!servicio) return null;
+
+  const isAsignado = Array.isArray(servicio.personas) && servicio.personas.includes(CURRENT_USER_ID);
+  const estadoActual = estados.find(e => e.value === (servicio.estado || 'programado'));
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="sticky top-0 bg-slate-800 p-6 border-b border-slate-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-xl ${estadoActual?.bgColor} flex items-center justify-center`}>
+                <estadoActual.icon className={`w-6 h-6 ${estadoActual?.color}`} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-white">{servicio.elemento || 'Elemento sin nombre'}</h2>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className={`text-sm font-medium ${estadoActual?.color}`}>{estadoActual?.label}</span>
+                  {isAsignado && (
+                    <div className="flex items-center gap-1 bg-emerald-500/20 px-2 py-1 rounded-full">
+                      <Bell className="text-emerald-400 w-3 h-3" />
+                      <span className="text-emerald-400 text-xs font-medium">Asignado a ti</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-2 hover:bg-slate-700 rounded-lg transition-colors">
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Información básica */}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-400" />
+                  Información del Servicio
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Estado</label>
+                    <select
+                      value={servicio.estado || 'programado'}
+                      className={`w-full px-4 py-3 rounded-lg border ${estadoActual?.border} ${estadoActual?.bgColor} ${estadoActual?.color} font-medium transition-colors`}
+                      onChange={e => handleUpdateField(servicio.id, 'estado', e.target.value)}
+                    >
+                      {estados.map(est => <option key={est.value} value={est.value}>{est.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Fecha programada</label>
+                    <input
+                      type="date"
+                      value={servicio.fecha || ''}
+                      onChange={(e) => handleUpdateField(servicio.id, 'fecha', e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-700 border border-slate-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {servicio.descripcion && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-400 mb-2">Descripción</label>
+                      <div className="bg-slate-700/50 p-4 rounded-lg">
+                        <p className="text-gray-300">{servicio.descripcion}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Personas asignadas */}
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <User className="w-5 h-5 text-emerald-400" />
+                  Personas Asignadas ({servicio.personas?.length || 0})
+                </h3>
+                <div className="space-y-3">
+                  {(servicio.personas?.length ? servicio.personas : []).map((pid: string) => {
+                    const user = usuarios.find((u: any) => u.id === pid);
+                    if (!user) return null;
+                    const isCurrentUser = pid === CURRENT_USER_ID;
+                    return (
+                      <div key={pid} className={`flex items-center gap-3 p-3 rounded-lg ${isCurrentUser ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-slate-700/30'}`}>
+                        <Bubble nombre={user.nombre} short={user.short || user.nombre.split(' ').map((x: string) => x[0]).join('')} />
+                        <div className="flex-1">
+                          <p className="font-medium text-white">{user.nombre}</p>
+                          <p className="text-sm text-gray-400">{user.email || 'Sin email'}</p>
+                        </div>
+                        {isCurrentUser && (
+                          <div className="flex items-center gap-1 text-emerald-400 text-sm font-medium">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Tú
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(!servicio.personas || servicio.personas.length === 0) && (
+                    <div className="text-center py-8 text-gray-500">
+                      <User className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                      <p>No hay personas asignadas</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Documentos */}
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-purple-400" />
+                Documentos Adjuntos ({servicio.documentos?.length || 0})
+              </h3>
+              <div className="space-y-3">
+                {servicio.documentos?.length > 0 ? (
+                  servicio.documentos.map((docUrl: string, index: number) => {
+                    const fileName = docUrl.split('/').pop() || `Documento ${index + 1}`;
+                    const fileExt = docUrl.split('.').pop()?.toLowerCase() || '';
+                    const getFileIcon = () => {
+                      switch (fileExt) {
+                        case 'pdf': return <FileText className="text-red-500" size={20} />;
+                        case 'doc': case 'docx': return <FileText className="text-blue-500" size={20} />;
+                        case 'xls': case 'xlsx': return <FileText className="text-green-500" size={20} />;
+                        default: return <FileText className="text-gray-500" size={20} />;
+                      }
+                    };
+                    return (
+                      <div key={index} className="flex items-center justify-between bg-slate-700/30 p-4 rounded-lg hover:bg-slate-700/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          {getFileIcon()}
+                          <div>
+                            <p className="font-medium text-white truncate max-w-xs">{fileName}</p>
+                            <p className="text-sm text-gray-400 uppercase">{fileExt} • Documento</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setFileToView({ url: docUrl, type: fileExt, fileName })}
+                            className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                            title="Vista previa"
+                          >
+                            <Eye size={16} />
+                            <span className="hidden sm:inline text-sm">Ver</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              const a = document.createElement('a');
+                              a.href = docUrl;
+                              a.download = fileName;
+                              a.click();
+                            }}
+                            className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                            title="Descargar"
+                          >
+                            <Download size={16} />
+                            <span className="hidden sm:inline text-sm">Descargar</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg font-medium">No hay documentos adjuntos</p>
+                    <p className="text-sm">Los archivos aparecerán aquí cuando se agreguen</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Información adicional */}
+          <div className="mt-8 pt-6 border-t border-slate-700">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-400">
+              <div>
+                <span className="font-medium">Creado por:</span>
+                <p className="text-white mt-1">{servicio.creadoPorNombre || 'Usuario desconocido'}</p>
+              </div>
+              <div>
+                <span className="font-medium">Fecha de creación:</span>
+                <p className="text-white mt-1">
+                  {servicio.timestamp ? new Date(servicio.timestamp).toLocaleDateString('es-ES', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  }) : 'No disponible'}
+                </p>
+              </div>
+              <div>
+                <span className="font-medium">ID del servicio:</span>
+                <p className="text-white mt-1 font-mono text-xs">{servicio.id}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer con acciones */}
+        <div className="sticky bottom-0 bg-slate-800 p-6 border-t border-slate-700">
+          <div className="flex justify-between items-center">
+            <div className="flex gap-3">
+              <button 
+                onClick={() => handleDelete([servicio.id])}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+              >
+                <Trash2 size={16} />
+                Eliminar Servicio
+              </button>
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={onClose}
+                className="px-6 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Cerrar
+              </button>
+              <button className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
+                <Edit3 size={16} />
+                Editar Servicio
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -286,91 +748,63 @@ const ServicioModal = ({
 // --------- ServicioCard (Mobile y Desktop) ----------
 const ServicioCard = ({ s, group, usuarios, handleUpdateField, handleDelete, setFileToView }: any) => {
   const isAsignado = Array.isArray(s.personas) && s.personas.includes(CURRENT_USER_ID);
-  const IconComponent = group.icon;
+  
   return (
-    <div className={`rounded-2xl p-5 mb-4 shadow-xl border backdrop-blur-sm transition-all duration-300 hover:shadow-2xl hover:scale-[1.02]
-      ${isAsignado ? 'border-emerald-400/50 bg-gradient-to-br from-emerald-500/10 via-slate-800/90 to-slate-900/90 ring-1 ring-emerald-400/30'
-        : `border-slate-700/50 bg-gradient-to-br ${group.gradient} via-slate-800/90 to-slate-900/90`}`}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 rounded-xl ${group.bgColor} flex items-center justify-center`}><IconComponent className={`w-6 h-6 ${group.color}`} /></div>
-          <div>
-            <h3 className="font-bold text-lg text-white">{s.elemento || 'Elemento sin nombre'}</h3>
-            <p className={`text-sm ${group.color} font-medium`}>{group.label}</p>
+    <div className={`rounded-lg p-3 mb-2 border backdrop-blur-sm transition-all duration-200 hover:shadow-lg cursor-pointer
+      ${isAsignado ? 'border-emerald-400/30 bg-emerald-500/5 hover:bg-emerald-500/10'
+        : 'border-slate-700/30 bg-slate-800/20 hover:bg-slate-800/40'}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className={`w-8 h-8 rounded-lg ${group.bgColor} flex items-center justify-center flex-shrink-0`}>
+            <group.icon className={`w-4 h-4 ${group.color}`} />
           </div>
-        </div>
-        {isAsignado && (
-          <div className="flex items-center gap-2 bg-emerald-500/20 px-3 py-1 rounded-full">
-            <Bell className="text-emerald-400 w-4 h-4 animate-pulse" />
-            <span className="text-emerald-400 text-xs font-bold">Asignado</span>
-          </div>
-        )}
-      </div>
-      {s.descripcion && (<div className="mb-4"><p className="text-sm text-gray-300">{s.descripcion}</p></div>)}
-      <div className="mb-4">
-        <div className="flex items-center gap-2 mb-2">
-          <User className="w-4 h-4 text-gray-400" />
-          <span className="text-sm text-gray-400 font-medium">Personas asignadas</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {(s.personas?.length ? s.personas : []).map((pid: string) => {
-            const user = usuarios.find((u: any) => u.id === pid);
-            return user ? (<Bubble key={pid} nombre={user.nombre} short={user.short || user.nombre.split(' ').map((x: string) => x[0]).join('')} />) : null;
-          })}
-        </div>
-      </div>
-      {s.documentos?.length > 0 && (
-        <div className="mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-400 font-medium">Documentos adjuntos</span>
-          </div>
-          <div className="space-y-2">
-            {s.documentos.map((docUrl: string, index: number) => (
-              <div key={index} className="flex items-center justify-between bg-slate-800/50 p-2 rounded-lg">
-                <div className="flex items-center gap-2">
-                  {docUrl.endsWith('.pdf') ? (<FileText className="text-red-500" size={16} />) : (<FileText className="text-blue-500" size={16} />)}
-                  <span className="text-sm truncate max-w-xs">{docUrl.split('/').pop()}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-white truncate">{s.elemento || 'Elemento sin nombre'}</h3>
+              {isAsignado && (
+                <div className="flex items-center gap-1 bg-emerald-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
+                  <Bell className="text-emerald-400 w-3 h-3" />
+                  <span className="text-emerald-400 text-xs font-medium">Asignado</span>
                 </div>
-                <button
-                  onClick={() => {
-                    const ext = docUrl.split('.').pop()?.toLowerCase() || '';
-                    setFileToView({ url: docUrl, type: ext });
-                  }}
-                  className="text-gray-400 hover:text-blue-500"
-                ><Eye size={16} /></button>
-              </div>
-            ))}
+              )}
+            </div>
+            <div className="flex items-center gap-4 mt-1">
+              <span className="text-xs text-gray-400">{s.fecha || 'Sin fecha'}</span>
+              {s.personas?.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <User className="w-3 h-3 text-gray-400" />
+                  <span className="text-xs text-gray-400">{s.personas.length} persona{s.personas.length !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+              {s.documentos?.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <FileText className="w-3 h-3 text-gray-400" />
+                  <span className="text-xs text-gray-400">{s.documentos.length} archivo{s.documentos.length !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div>
-          <label className="text-sm text-gray-400 font-medium mb-1 block">Estado</label>
+        <div className="flex items-center gap-2 flex-shrink-0">
           <select
             value={s.estado || 'programado'}
-            className={`w-full ${group.bgColor} border ${group.border} rounded-xl px-3 py-2 text-sm font-bold ${group.color} transition-colors`}
+            className={`text-xs px-2 py-1 rounded-lg border ${group.border} ${group.bgColor} ${group.color} font-medium`}
             onChange={e => handleUpdateField(s.id, 'estado', e.target.value)}
+            onClick={e => e.stopPropagation()}
           >
             {estados.map(est => <option key={est.value} value={est.value}>{est.label}</option>)}
           </select>
+          <button 
+            className="p-1.5 hover:bg-slate-700 rounded-lg text-gray-400 hover:text-white transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFileToView({ servicio: s, type: 'detail' });
+            }}
+            title="Ver detalles"
+          >
+            <Eye size={16} />
+          </button>
         </div>
-        <div>
-          <label className="text-sm text-gray-400 font-medium mb-1 block">Fecha</label>
-          <div className="relative">
-            <input
-              type="date"
-              value={s.fecha || ''}
-              onChange={(e) => handleUpdateField(s.id, 'fecha', e.target.value)}
-              className="w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <button className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl py-3 text-sm font-bold transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"><Eye size={16} />Ver más</button>
-        <button className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white rounded-xl py-3 text-sm font-bold transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"><Edit3 size={16} />Editar</button>
-        <button className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-xl py-3 text-sm font-bold transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2" onClick={() => handleDelete([s.id])}><Trash2 size={16} />Eliminar</button>
       </div>
     </div>
   );
@@ -389,7 +823,7 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
   const [isMobile, setIsMobile] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [fileToView, setFileToView] = useState<{ url: string, type: string } | null>(null);
+  const [fileToView, setFileToView] = useState<{ url?: string, type: string, servicio?: any, fileName?: string } | null>(null);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -739,11 +1173,23 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
           )}
 
           {/* Visor de archivos */}
-          {fileToView && (
+          {fileToView && fileToView.type === 'detail' && (
+            <ServicioDetailModal
+              servicio={fileToView.servicio}
+              usuarios={usuarios}
+              onClose={() => setFileToView(null)}
+              handleUpdateField={handleUpdateField}
+              handleDelete={handleDelete}
+              setFileToView={setFileToView}
+            />
+          )}
+
+          {fileToView && fileToView.url && fileToView.type !== 'detail' && (
             <FileViewerModal
               file={fileToView.url}
               onClose={() => setFileToView(null)}
               type={fileToView.type}
+              fileName={fileToView.fileName}
             />
           )}
 
