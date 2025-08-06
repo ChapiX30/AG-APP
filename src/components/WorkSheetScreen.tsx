@@ -9,6 +9,15 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from '../hooks/useAuth';
 import { storage, db } from "../utils/firebase";
 import { collection, addDoc, getDocs } from "firebase/firestore";
+import masterCelestica from "../data/masterCelestica.json";
+
+type CelesticaRecord = {
+  id: string;
+  equipo: string;
+  marca: string;
+  modelo: string;
+  numeroSerie: string;
+};
 
 // Helper para sacar el nombre automáticamente del usuario logueado
 const getUserName = (user: any) => {
@@ -303,6 +312,8 @@ export const WorkSheetScreen: React.FC = () => {
   const formRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
   const [showPreview, setShowPreview] = useState(false); // Nuevo estado para controlar la visibilidad de la vista previa
+  const [isCelestica, setIsCelestica] = useState(false);
+  const [fieldsLocked, setFieldsLocked] = useState(false);
 
   // Estado de todos los campos
   const [formData, setFormData] = useState({

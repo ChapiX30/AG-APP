@@ -5,6 +5,7 @@ import { ArrowLeft, Plus, Minus, Calendar, User, Hash } from 'lucide-react';
 import { generarConsecutivo } from '../utils/firebaseConsecutivos';
 import { collection, query, where, orderBy, limit, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import masterCelestica from "../data/masterCelestica.json";
 import { getPrefijo } from '../utils/prefijos';
 
 export const MagnitudeDetailScreen: React.FC = () => {
