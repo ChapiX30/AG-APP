@@ -1,6 +1,5 @@
-// src/components/DriveScreen.tsx
-
 import React, { useEffect, useState } from 'react';
+import { useNavigate, useNavigationType } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../utils/firebase';
@@ -48,6 +47,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isSmall = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -124,8 +124,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onBack }) => {
     if (onBack) {
       onBack();
     } else {
-      // Fallback: usar window.history para regresar
-      window.history.back();
+    navigate('/');
     }
   };
 

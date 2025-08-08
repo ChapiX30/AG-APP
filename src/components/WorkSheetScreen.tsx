@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
   ArrowLeft,
@@ -53,29 +53,26 @@ const getUserName = (user: any) => {
 // Mapea el código del consecutivo a la magnitud
 const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   if (!consecutivo) return "";
-  const mapping: Record<string, string> = {
+  const m: Record<string, string> = {
     AGAC: "Acustica",
     AGD: "Dimensional",
     AGF: "Fuerza",
     AGP: "Presión",
     AGEL: "Electrica",
-    TE: "Temperatura",
-    MA: "Masa",
-    TI: "Tiempo",
+    AGT: "Temperatura",
+    AGM: "Masa",
+    AGTI: "Tiempo",
     VE: "Velocidad",
-    TO: "Torque",
+    AGPT: "Par Torsional",
   };
   const parts = consecutivo.split("-");
-  if (parts.length >= 2) {
-    const code = parts[1];
-    return mapping[code] || "";
+  if (parts.length >= 2 && m[parts[1]]) {
+    return m[parts[1]];
   }
   // fallback: buscar substring
-  for (const [code, mag] of Object.entries(mapping)) {
-    if (consecutivo.includes(code)) {
-      return mag;
+  for (const [code, mag] of Object.entries(m)) {
+    if (consecutivo.includes(code)) return mag;
     }
-  }
   return "";
 };
 
@@ -89,26 +86,27 @@ const magnitudesDisponibles = [
   "Masa",
   "Tiempo",
   "Velocidad",
-  "Torque",
+  "Par Torsional",
 ];
 
 const unidadesPorMagnitud: Record<string, string[]> = {
   Acustica: ["dB", "Hz", "Pa"],
-  Dimensional: ["m", "cm", "mm", "in"],
+  Dimensional: ["m", "cm", "mm", "in", "min", "°", "µm"],
   Fuerza: ["N", "kgf", "lbf"],
-  Presión: ["kPa", "bar", "psi", "scfh"],
+  Presión: ["kPa", "bar", "psi"],
   Electrica: ["V", "mV", "kV", "A", "mA", "µA", "Ω"],
-  Temperatura: ["°C", "°F", "K"],
+  Temperatura: ["°C", "°F", "°K"],
   Masa: ["g", "kg", "lb"],
   Tiempo: ["s", "min", "h"],
   Velocidad: ["m/s", "km/h"],
-  Torque: ["N·m", "lbf·ft"],
+  "Par Torsional": ["N·m", "lbf·ft"],
 };
 
 // Generación de PDF (sin cambios)
-const generateTemplatePDF = (formData: any) => {
-  const doc = new jsPDF();
-  // ... implementación completa como antes ...
+const generateTemplatePDF = (formData: any, JsPDF: any) => {
+  const doc = new jsPDF({ orientation:"p", unit: "pt", format: "a4" }); 
+   doc.text("Hoja de trabajo", 40, 40);
+  doc.text(`N.Certificado: ${formData.certificado}`, 40, 60);
   return doc;
 };
 
@@ -122,6 +120,7 @@ export const WorkSheetScreen: React.FC = () => {
   const [isCelestica, setIsCelestica] = useState(false);
   const [fieldsLocked, setFieldsLocked] = useState(false);
   const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
+
 
   const [formData, setFormData] = useState({
     lugarCalibracion: "",
@@ -190,16 +189,16 @@ export const WorkSheetScreen: React.FC = () => {
     }
 
     // Busca en el JSON (omite encabezado)
-    const records = (masterCelestica as CelesticaRecord[]).filter((r) => r.A !== "ID");
-    const record = records.find((r) => r.A === value);
+    const recs = (masterCelestica as CelesticaRecord[]).filter((r) => r.A !== "ID");
+    const rec = recs.find((r) => r.A === value);
 
-    if (record) {
+    if (rec) {
       setFormData((prev) => ({
         ...prev,
-        equipo: record.B,
-        marca: record.C,
-        modelo: record.D,
-        numeroSerie: record.E,
+        equipo: rec.B,
+        marca: rec.C,
+        modelo: rec.D,
+        numeroSerie: rec.E,
       }));
       setFieldsLocked(true);
     } else {
@@ -280,15 +279,16 @@ export const WorkSheetScreen: React.FC = () => {
   const magnitudReadOnly = !!currentMagnitude;
   const unidadesDisponibles = formData.magnitud ? unidadesPorMagnitud[formData.magnitud] || [] : [];
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!valid) {
       alert("⚠️ Completa todos los campos obligatorios");
       return;
     }
     setIsSaving(true);
     try {
-      const pdf = generateTemplatePDF(formData);
-      const blob = pdf.output("blob");
+      const { jsPDF } = await import("jspdf");
+      const pdfDoc = generateTemplatePDF(formData, jsPDF);
+      const blob = (pdfDoc as any).output("blob");
       const fecha = new Date().toISOString().split("T")[0];
       const carpeta = getUserName(currentUser || user);
       const nombreArchivo = `worksheets/${carpeta}/${formData.certificado}_${fecha}.pdf`;
@@ -305,10 +305,9 @@ export const WorkSheetScreen: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [valid, formData, currentUser, user, goBack]);
 
   const handleCancel = () => goBack();
-
   const esMagnitudMasa = (m: string) => m === "Masa";
 
   return (
@@ -728,25 +727,123 @@ export const WorkSheetScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Preview */}
-          {showPreview && (
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-auto max-h-[80vh] p-6">
-              <h2 className="text-xl font-semibold mb-4">Vista Previa</h2>
-              <pre className="text-sm bg-gray-50 p-4 rounded-lg overflow-auto">
-                {JSON.stringify(formData, null, 2)}
-              </pre>
+          {/* Vista Previa */}
+       {showPreview && (
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF</h2>
+                <p className="text-gray-600 text-sm">
+                  El PDF se generará siguiendo exactamente este formato
+                </p>
+              </div>
+              
+              <div className="p-8 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
+                {/* Header simulado */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-blue-600"></span>
+                    </div>
+                    <div>
+                      <div className="font-bold text-blue-600">Equipos y Servicios</div>
+                      <div className="text-sm text-blue-600">Especializados AG, S.A. de C.V.</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div><strong>Fecha:</strong> {formData.fecha}</div>
+                    <div><strong>Nombre:</strong> {formData.nombre}</div>
+                  </div>
+                </div>
+
+                <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
+                
+                <div className="text-center mb-4 text-gray-600">
+                  {formData.lugarCalibracion}
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div><strong>N.Certificado:</strong> {formData.certificado}</div>
+                  <div><strong>Fecha de Recepción:</strong> {formData.fecha}</div>
+                  <div className="flex space-x-8">
+                    <div><strong>Cliente:</strong> {formData.cliente}</div>
+                    <div><strong>Equipo:</strong> {formData.equipo}</div>
+                  </div>
+                  <div className="flex space-x-8">
+                    <div><strong>ID:</strong> {formData.id}</div>
+                    <div><strong>Marca:</strong> {formData.marca}</div>
+                  </div>
+                  <div><strong>Modelo:</strong> {formData.modelo}</div>
+                  <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
+                  <div className="flex space-x-8">
+                    <div><strong>Unidad:</strong> {formData.unidad}</div>
+                    <div><strong>Alcance:</strong> {formData.alcance}</div>
+                  </div>
+                  <div><strong>Resolución:</strong> {formData.resolucion}</div>
+                  <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
+                  <div className="flex space-x-8">
+                    <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>
+                    <div><strong>HR:</strong> {formData.humedadRelativa}%</div>
+                  </div>
+                </div>
+
+                {/* Tabla de mediciones */}
+                <div className="mt-6 border border-gray-400">
+                  <div className="grid grid-cols-2 border-b border-gray-400">
+                    {esMagnitudMasa(formData.magnitud) ? (
+                      <>
+                        <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Excentricidad:</div>
+                        <div className="p-2 bg-gray-50 font-bold">Linealidad:</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold">Medición Patrón:</div>
+                        <div className="p-2 bg-gray-50 font-bold">Medición Instrumento:</div>
+                      </>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 min-h-[100px]">
+                    {esMagnitudMasa(formData.magnitud) ? (
+                      <>
+                        <div className="p-2 border-r border-gray-400 text-xs">
+                          {formData.excentricidad}
+                        </div>
+                        <div className="p-2 text-xs">
+                          {formData.linealidad}
+                        </div>
+                        {/* Puedes añadir una tercera fila o ajustar el diseño para repetibilidad */}
+                        <div className="col-span-2 p-2 text-xs border-t border-gray-400">
+                          <strong>Repetibilidad:</strong> {formData.repetibilidad}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2 border-r border-gray-400 text-xs">
+                          {formData.medicionPatron}
+                        </div>
+                        <div className="p-2 text-xs">
+                          {formData.medicionInstrumento}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <strong>Notas:</strong> {formData.notas}
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
 
       {/* Botones */}
-      <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
+       <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
         <div className="flex justify-end space-x-4">
           <button
             onClick={handleCancel}
+            className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2"
             disabled={isSaving}
-            className="px-6 py-3 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center space-x-2"
           >
             <X className="w-4 h-4" />
             <span>Cancelar</span>
@@ -754,9 +851,13 @@ export const WorkSheetScreen: React.FC = () => {
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-lg hover:from-blue-700 hover:to-indigo-800 flex items-center space-x-2"
+            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg"
           >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {isSaving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
             <span>{isSaving ? "Guardando..." : "Guardar"}</span>
           </button>
         </div>

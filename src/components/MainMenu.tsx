@@ -21,7 +21,7 @@ const menuItems = [
   { id: 'empresas', title: 'EMPRESAS', icon: Building2, color: 'bg-indigo-500', available: true },
   { id: 'hojas-trabajo', title: 'HOJAS DE TRABAJO', icon: FileText, color: 'bg-orange-500', available: false },
   { id: 'hoja-servicio', title: 'HOJA DE SERVICIO', icon: ClipboardList, color: 'bg-purple-500', available: true },
-  { id: 'normas', title: 'NORMAS', icon: BookOpen, color: 'bg-teal-500', available: false },
+  { id: 'normas', title: 'NORMAS', icon: BookOpen, color: 'bg-teal-500', available: true },
   { id: 'friday', title: 'FRIDAY', icon: Database, color: 'bg-emerald-500', available: true },
   { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'bg-yellow-500', available: true },
   { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'bg-cyan-500', available: false },
@@ -52,6 +52,8 @@ export const MainMenu: React.FC = () => {
       navigateTo('calibration-manager');
     } else if (item.id === 'hoja-servicio') {
       navigateTo('hoja-servicio');
+    } else if (item.id === 'normas') {
+      navigateTo('normas');  
     } else if (item.id === 'drive') {
       navigateTo('drive');  
     }

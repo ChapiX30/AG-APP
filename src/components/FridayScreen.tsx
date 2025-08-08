@@ -7,6 +7,8 @@ import {
 import clsx from "clsx";
 import { useNavigation } from "../hooks/useNavigation";
 import SidebarFriday from "./SidebarFriday";
+import { collection, onSnapshot } from "firebase/firestore"
+import { db } from "../utils/firebase";   // ajusta la ruta si tu inicialización está en otro archivo
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 
 // --- Helpers y constantes visuales ---
@@ -35,43 +37,38 @@ const COLUMN_TYPE_CATEGORIES = [
 
 const LOCAL_KEY = "friday_tablero_v8";
 const GROUP_COLORS = [
-  { bg: "bg-gradient-to-r from-blue-500/20 to-cyan-500/20", border: "border-l-4 border-blue-500", text: "text-blue-400" },
-  { bg: "bg-gradient-to-r from-purple-500/20 to-pink-500/20", border: "border-l-4 border-purple-500", text: "text-purple-400" },
-  { bg: "bg-gradient-to-r from-emerald-500/20 to-green-500/20", border: "border-l-4 border-emerald-500", text: "text-emerald-400" },
-  { bg: "bg-gradient-to-r from-orange-500/20 to-red-500/20", border: "border-l-4 border-orange-500", text: "text-orange-400" },
-  { bg: "bg-gradient-to-r from-yellow-500/20 to-amber-500/20", border: "border-l-4 border-yellow-500", text: "text-yellow-400" },
+  { bg: "bg-[#0073ea]", border: "border-l-4 border-[#0073ea]", text: "text-white", hover: "hover:bg-[#005bb5]" },
+  { bg: "bg-[#a25ddc]", border: "border-l-4 border-[#a25ddc]", text: "text-white", hover: "hover:bg-[#8b4bc4]" },
+  { bg: "bg-[#00c875]", border: "border-l-4 border-[#00c875]", text: "text-white", hover: "hover:bg-[#00a661]" },
+  { bg: "bg-[#ff3d57]", border: "border-l-4 border-[#ff3d57]", text: "text-white", hover: "hover:bg-[#e6354a]" },
+  { bg: "bg-[#ffcb00]", border: "border-l-4 border-[#ffcb00]", text: "text-gray-900", hover: "hover:bg-[#e6b600]" },
 ];
 
 const STATUS_OPTIONS = [
-  { value: "No iniciado", color: "bg-slate-500 text-white", icon: "⏸️" },
-  { value: "En proceso", color: "bg-blue-600 text-white", icon: "🔄" },
-  { value: "Finalizado", color: "bg-emerald-500 text-white", icon: "✅" },
-  { value: "En revisión", color: "bg-yellow-500 text-gray-900", icon: "👁️" },
-  { value: "Bloqueado", color: "bg-red-500 text-white", icon: "🚫" },
+  { value: "No iniciado", color: "bg-[#c4c4c4] text-gray-800", icon: "" },
+  { value: "En proceso", color: "bg-[#fdab3d] text-white", icon: "" },
+  { value: "Finalizado", color: "bg-[#00c875] text-white", icon: "" },
+  { value: "En revisión", color: "bg-[#0073ea] text-white", icon: "" },
+  { value: "Bloqueado", color: "bg-[#e2445c] text-white", icon: "" },
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: "Baja", color: "bg-green-500 text-white", icon: "⬇️" },
-  { value: "Media", color: "bg-yellow-500 text-gray-900", icon: "➡️" },
-  { value: "Alta", color: "bg-orange-500 text-white", icon: "⬆️" },
-  { value: "Crítica", color: "bg-red-500 text-white", icon: "🔥" },
+  { value: "Baja", color: "bg-[#579bfc] text-white", icon: "" },
+  { value: "Media", color: "bg-[#fdab3d] text-white", icon: "" },
+  { value: "Alta", color: "bg-[#ff642e] text-white", icon: "" },
+  { value: "Crítica", color: "bg-[#e2445c] text-white", icon: "" },
 ];
 
 const DROPDOWN_OPTIONS = [
-  { value: "Mecánica", color: "bg-pink-500 text-white" },
-  { value: "Eléctrica", color: "bg-green-500 text-white" },
-  { value: "Dimensional", color: "bg-orange-400 text-white" },
-  { value: "Calidad", color: "bg-cyan-600 text-white" },
-  { value: "Software", color: "bg-purple-500 text-white" },
-  { value: "Otro", color: "bg-gray-600 text-gray-200" },
+  { value: "Mecánica", color: "bg-[#a25ddc] text-white" },
+  { value: "Eléctrica", color: "bg-[#00c875] text-white" },
+  { value: "Dimensional", color: "bg-[#ff642e] text-white" },
+  { value: "Calidad", color: "bg-[#0073ea] text-white" },
+  { value: "Software", color: "bg-[#bb3354] text-white" },
+  { value: "Otro", color: "bg-[#c4c4c4] text-gray-800" },
 ];
 
-const PEOPLE = [
-  { id: "ana", name: "Ana Salas", color: "bg-gradient-to-br from-cyan-500 to-sky-400", initials: "AS", role: "Ingeniera" },
-  { id: "juan", name: "Juan Pérez", color: "bg-gradient-to-br from-emerald-500 to-cyan-400", initials: "JP", role: "Técnico" },
-  { id: "maria", name: "María González", color: "bg-gradient-to-br from-purple-500 to-pink-400", initials: "MG", role: "Supervisora" },
-  { id: "carlos", name: "Carlos Ruiz", color: "bg-gradient-to-br from-orange-500 to-red-400", initials: "CR", role: "Analista" },
-];
+const PEOPLE: { id: string; name: string; role: string; initials: string; color: string }[] =[];
 
 // ------ Temas (modo claro/oscuro) ------
 function setTheme(dark: boolean) {
@@ -112,8 +109,7 @@ function renderCell(type, value, row = {}, setFile = null) {
   if (type === "status") {
     const opt = STATUS_OPTIONS.find(x => x.value === value) || STATUS_OPTIONS[0];
     return (
-      <div className={clsx("inline-flex items-center gap-2 px-3 py-1.5 rounded-full font-semibold text-xs shadow-sm", opt.color)}>
-        <span>{opt.icon}</span>
+      <div className={clsx("inline-flex items-center justify-center px-3 py-1.5 rounded-md font-medium text-sm min-w-[100px]", opt.color)}>
         <span>{value || "No iniciado"}</span>
       </div>
     );
@@ -121,33 +117,29 @@ function renderCell(type, value, row = {}, setFile = null) {
   if (type === "priority") {
     const opt = PRIORITY_OPTIONS.find(x => x.value === value) || PRIORITY_OPTIONS[0];
     return (
-      <div className={clsx("inline-flex items-center gap-2 px-3 py-1.5 rounded-full font-semibold text-xs shadow-sm", opt.color)}>
-        <span>{opt.icon}</span>
+      <div className={clsx("inline-flex items-center justify-center px-3 py-1.5 rounded-md font-medium text-sm min-w-[80px]", opt.color)}>
         <span>{value || "Baja"}</span>
       </div>
     );
   }
   if (type === "dropdown") {
     const opt = DROPDOWN_OPTIONS.find(x => x.value === value);
-    if (!opt) return <span className="text-slate-400">Sin asignar</span>;
+    if (!opt) return <span className="text-[#676879] text-sm">-</span>;
     return (
-      <div className={clsx("inline-flex items-center px-3 py-1.5 rounded-full font-semibold text-xs shadow-sm", opt.color)}>
+      <div className={clsx("inline-flex items-center justify-center px-3 py-1.5 rounded-md font-medium text-sm min-w-[90px]", opt.color)}>
         {value}
       </div>
     );
   }
   if (type === "person") {
     const user = PEOPLE.find(u => u.id === value);
-    if (!user) return <span className="text-slate-400">Sin asignar</span>;
+    if (!user) return <span className="text-[#676879] text-sm">-</span>;
     return (
       <div className="inline-flex items-center gap-2">
-        <div className={clsx("w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center ring-2 ring-white/20", user.color)}>
+        <div className={clsx("w-8 h-8 rounded-full text-xs font-semibold flex items-center justify-center text-white", user.color)}>
           {user.initials}
         </div>
-        <div className="flex flex-col">
-          <span className="font-semibold text-sm">{user.name}</span>
-          <span className="text-xs text-slate-400">{user.role}</span>
-        </div>
+        <span className="font-medium text-sm text-[#323338]">{user.name}</span>
       </div>
     );
   }
@@ -158,7 +150,7 @@ function renderCell(type, value, row = {}, setFile = null) {
           type="checkbox"
           checked={!!value}
           disabled
-          className="w-5 h-5 accent-emerald-500 rounded"
+          className="w-4 h-4 accent-[#0073ea] rounded border-2 border-[#d0d4e4]"
         />
       </div>
     );
@@ -167,19 +159,19 @@ function renderCell(type, value, row = {}, setFile = null) {
     const progress = Math.min(100, Math.max(0, parseInt(value) || 0));
     return (
       <div className="flex items-center gap-2 min-w-[120px]">
-        <div className="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
+        <div className="flex-1 bg-[#e6e9ef] rounded-full h-2 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-300"
+            className="h-full bg-[#0073ea] transition-all duration-300 rounded-full"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-xs font-semibold text-slate-300 min-w-[35px]">{progress}%</span>
+        <span className="text-xs font-medium text-[#676879] min-w-[35px]">{progress}%</span>
       </div>
     );
   }
   if (type === "file") {
     return (
-      <div className="inline-flex items-center gap-2 text-cyan-400 hover:text-cyan-300 cursor-pointer">
+      <div className="inline-flex items-center gap-2 text-[#0073ea] hover:text-[#005bb5] cursor-pointer">
         <File size={16} />
         <span className="text-sm">{value ? "Descargar" : "Subir archivo"}</span>
         {setFile &&
@@ -196,19 +188,19 @@ function renderCell(type, value, row = {}, setFile = null) {
     );
   }
   if (type === "date") {
-    if (!value) return <span className="text-slate-400">Sin fecha</span>;
+    if (!value) return <span className="text-[#676879] text-sm">-</span>;
     const d = new Date(value);
-    if (isNaN(+d)) return <span className="text-slate-400">Fecha inválida</span>;
+    if (isNaN(+d)) return <span className="text-[#676879] text-sm">Fecha inválida</span>;
     const today = new Date();
     today.setHours(0,0,0,0);
     const isOverdue = d < today;
     const isToday = d.toDateString() === today.toDateString();
     return (
       <div className={clsx(
-        "inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium",
-        isOverdue ? "bg-red-500/20 text-red-400" :
-          isToday ? "bg-yellow-500/20 text-yellow-400" :
-            "bg-slate-600/50 text-slate-300"
+        "inline-flex items-center gap-1 px-2 py-1 rounded text-sm font-medium",
+        isOverdue ? "bg-[#ffe6e9] text-[#e2445c]" :
+          isToday ? "bg-[#fff4e6] text-[#fdab3d]" :
+            "text-[#323338]"
       )}>
         <Calendar size={14} />
         <span>{d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
@@ -217,13 +209,13 @@ function renderCell(type, value, row = {}, setFile = null) {
   }
   if (type === "number") {
     return (
-      <span className="font-mono text-sm font-semibold text-slate-200">
+      <span className="font-mono text-sm font-medium text-[#323338]">
         {value || "0"}
       </span>
     );
   }
   return (
-    <span className="text-sm text-slate-200">
+    <span className="text-sm text-[#323338]">
       {value || ""}
     </span>
   );
@@ -288,6 +280,7 @@ export default function FridayScreen() {
   const [massPrioridad, setMassPrioridad] = useState("");
   const [notif, setNotif] = useState("");
   const [dark, setDark] = useTheme();
+  const [, setPeopleTick] = useState(0);
 
   // Notificación visual automática si hay bloqueados o por vencer
   useEffect(() => {
@@ -313,6 +306,30 @@ export default function FridayScreen() {
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
+
+  // --- Usuarios (responsables) en tiempo real ---
+useEffect(() => {
+  const unsub = onSnapshot(collection(db, "usuarios"), (snapshot) => {
+    const usuarios = snapshot.docs.map((doc) => {
+        const data = doc.data() as { nombre?: string; role?: string };
+        const name = data.nombre || "Sin nombre";
+        return {
+          id: doc.id,
+          name,
+          role: data.role || "",
+          initials: name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0,2),
+          // 🎨 aquí podrías generar un color aleatorio o guardarlo en la BD
+          color: "bg-gradient-to-br from-emerald-500 to-cyan-400",
+        };
+      });
+      // Actualiza el arreglo global (se mantiene la referencia)
+      PEOPLE.splice(0, PEOPLE.length, ...usuarios);
+      // Fuerza un re-render para que React pinte la nueva gente
+      setPeopleTick(t => t + 1);
+    });
+  return () => unsub();   // limpia el listener al desmontar
+}, []);
+
 
   const filterRow = row =>
     (!search || columns.some(col => (row[col.key] + "").toLowerCase().includes(search.toLowerCase()))) &&
@@ -481,13 +498,12 @@ export default function FridayScreen() {
                     <div ref={prov.innerRef} {...prov.draggableProps} className="group-container">
                       {/* Header del grupo */}
                       <div className={clsx(
-                        "flex items-center px-6 py-4 font-bold text-lg rounded-t-2xl backdrop-blur-sm border-b border-white/10",
+                        "flex items-center px-6 py-3 font-bold text-base rounded-t-lg",
                         GROUP_COLORS[group.colorIdx % GROUP_COLORS.length].bg,
-                        GROUP_COLORS[group.colorIdx % GROUP_COLORS.length].border,
                         GROUP_COLORS[group.colorIdx % GROUP_COLORS.length].text
                       )}>
                         <span {...prov.dragHandleProps} className="cursor-grab pr-3 hover:scale-110 transition-transform">
-                          {group.collapsed ? <ChevronRight size={24} /> : <ChevronDown size={24} />}
+                          {group.collapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
                         </span>
                         <button
                           className="flex-1 text-left flex items-center gap-3"
@@ -495,13 +511,13 @@ export default function FridayScreen() {
                             setGroups(gs => gs.map((g, i) => i === gidx ? { ...g, collapsed: !g.collapsed } : g));
                           }}
                         >
-                          <span className="text-xl">{group.name}</span>
+                          <span className="text-base font-semibold">{group.name}</span>
                           <div className="flex items-center gap-2">
-                            <span className="px-3 py-1 bg-white/20 rounded-full text-sm font-semibold">
+                            <span className="px-2 py-1 bg-white/20 rounded-full text-xs font-medium">
                               {group.rows.length} elemento{group.rows.length !== 1 ? 's' : ''}
                             </span>
                             {group.rows.some(row => row.estado === "Bloqueado") && (
-                              <span className="px-2 py-1 bg-red-500/30 rounded-full text-xs">
+                              <span className="px-2 py-1 bg-red-500/30 rounded-full text-xs font-medium">
                                 ⚠️ Bloqueados
                               </span>
                             )}
@@ -509,7 +525,7 @@ export default function FridayScreen() {
                         </button>
                         <div className="flex items-center gap-2">
                           <button
-                            className="p-2 rounded-lg hover:bg-white/10 transition-all"
+                            className="p-1.5 rounded-md hover:bg-white/10 transition-all"
                             onClick={() => {
                               const name = prompt("Nuevo nombre del grupo:", group.name);
                               if (name) setGroups(gs => gs.map((g, i) => i === gidx ? { ...g, name } : g));
@@ -518,7 +534,7 @@ export default function FridayScreen() {
                             <Pencil size={16} />
                           </button>
                           <button
-                            className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-all"
+                            className="p-1.5 rounded-md hover:bg-red-500/20 text-red-400 transition-all"
                             onClick={() => {
                               if (window.confirm("¿Eliminar este grupo y todo su contenido?")) {
                                 setGroups(gs => gs.filter((_, i) => i !== gidx));
@@ -528,7 +544,7 @@ export default function FridayScreen() {
                             <Trash2 size={16} />
                           </button>
                           <button
-                            className="ml-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg flex items-center gap-2 transition-all shadow-lg"
+                            className="ml-3 px-3 py-1.5 bg-[#0073ea] hover:bg-[#005bb5] text-white font-medium rounded-md flex items-center gap-2 transition-all text-sm"
                             onClick={() => {
                               setGroups(gs => gs.map((g, i) => i === gidx
                                 ? {
@@ -552,8 +568,8 @@ export default function FridayScreen() {
                         <Droppable droppableId={"group-" + gidx} type="row">
                           {(provRow) => (
                             <div ref={provRow.innerRef} {...provRow.droppableProps}
-                              className="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-b-2xl overflow-hidden shadow-2xl">
-                              <div className="overflow-x-auto">
+                              className="bg-white border border-[#e6e9ef] rounded-b-lg overflow-hidden shadow-sm">
+                              <div className="overflow-x-auto border-collapse">
                                 <table className="w-full min-w-[1200px]">
                                   <thead>
                                     <Droppable droppableId="columns-droppable" direction="horizontal" type="column">
@@ -561,12 +577,12 @@ export default function FridayScreen() {
                                         <tr
                                           ref={providedDroppable.innerRef}
                                           {...providedDroppable.droppableProps}
-                                          className="bg-slate-900/80 border-b border-slate-600/50"
+                                          className="bg-[#f8f9fd] border-b border-[#e6e9ef]"
                                         >
-                                          <th className="w-12 px-4 py-4">
+                                          <th className="w-12 px-4 py-3">
                                             <input
                                               type="checkbox"
-                                              className="w-4 h-4 accent-blue-500 rounded"
+                                              className="w-4 h-4 accent-[#0073ea] rounded border-2 border-[#d0d4e4]"
                                               onChange={(e) => {
                                                 if (e.target.checked) {
                                                   const newSelections = group.rows.map((_, ridx) => ({ gidx, ridx }));
@@ -585,16 +601,16 @@ export default function FridayScreen() {
                                                   {...provCol.draggableProps}
                                                   {...provCol.dragHandleProps}
                                                   className={clsx(
-                                                    "text-left px-4 py-4 text-sm font-bold text-slate-200 uppercase tracking-wider relative group",
-                                                    col.key === "folio" ? "sticky left-0 bg-slate-900 z-10" : ""
+                                                    "text-left px-4 py-3 text-sm font-semibold text-[#323338] relative group border-r border-[#e6e9ef] last:border-r-0",
+                                                    col.key === "folio" ? "sticky left-0 bg-[#f8f9fd] z-10" : ""
                                                   )}
                                                   style={{ minWidth: col.width }}
                                                 >
                                                   <div className="flex items-center gap-2">
                                                     {COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.icon}
-                                                    <span>{col.label}</span>
+                                                    <span className="text-sm font-medium">{col.label}</span>
                                                     <button
-                                                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-700/50 transition-all"
+                                                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e6e9ef] transition-all"
                                                       onClick={(e) => {
                                                         e.stopPropagation();
                                                         setOpenColMenuKey(openColMenuKey === col.key ? null : col.key);
@@ -604,20 +620,20 @@ export default function FridayScreen() {
                                                     </button>
                                                   </div>
                                                   {openColMenuKey === col.key && (
-                                                    <div className="absolute top-full left-0 z-50 w-48 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-2 mt-1 animate-slideDown">
+                                                    <div className="absolute top-full left-0 z-50 w-48 bg-white border border-[#e6e9ef] rounded-lg shadow-lg p-2 mt-1 animate-slideDown">
                                                       <button
-                                                        className="flex items-center gap-3 px-3 py-2 w-full rounded-lg hover:bg-slate-700/50 text-sm transition-all"
+                                                        className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
                                                         onClick={() => {
                                                           const name = prompt("Nuevo nombre:", col.label);
                                                           if (name) setColumns(cols => cols.map((c, i) => i === cidx ? { ...c, label: name.toUpperCase() } : c));
                                                           setOpenColMenuKey(null);
                                                         }}
                                                       >
-                                                        <Pencil size={16} className="text-blue-400" />
+                                                        <Pencil size={16} className="text-[#676879]" />
                                                         <span>Renombrar</span>
                                                       </button>
                                                       <button
-                                                        className="flex items-center gap-3 px-3 py-2 w-full rounded-lg hover:bg-slate-700/50 text-sm transition-all"
+                                                        className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
                                                         onClick={() => {
                                                           setColumns(cols => [
                                                             ...cols.slice(0, cidx + 1),
@@ -627,12 +643,12 @@ export default function FridayScreen() {
                                                           setOpenColMenuKey(null);
                                                         }}
                                                       >
-                                                        <Copy size={16} className="text-green-400" />
+                                                        <Copy size={16} className="text-[#676879]" />
                                                         <span>Duplicar</span>
                                                       </button>
-                                                      <div className="h-px bg-slate-600 my-1" />
+                                                      <div className="h-px bg-[#e6e9ef] my-1" />
                                                       <button
-                                                        className="flex items-center gap-3 px-3 py-2 w-full rounded-lg hover:bg-red-500/20 text-red-400 text-sm transition-all"
+                                                        className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-red-500/10 text-[#e2445c] text-sm transition-all"
                                                         onClick={() => {
                                                           if (window.confirm("¿Eliminar esta columna?")) {
                                                             setColumns(cols => cols.filter((_, i) => i !== cidx));
@@ -649,7 +665,7 @@ export default function FridayScreen() {
                                               )}
                                             </Draggable>
                                           ))}
-                                          <th className="w-12"></th>
+                                          <th className="w-12 px-4 py-3"></th>
                                           {providedDroppable.placeholder}
                                         </tr>
                                       )}
@@ -661,22 +677,25 @@ export default function FridayScreen() {
                                         {(provR) => (
                                           <tr ref={provR.innerRef} {...provR.draggableProps}
                                             className={clsx(
-                                              "hover:bg-slate-700/30 transition-all border-b border-slate-700/30 group",
-                                              isSelected(gidx, ridx) && "bg-blue-600/20 ring-2 ring-blue-500/30"
+                                              "hover:bg-[#f8f9fd] transition-all border-b border-[#e6e9ef] group",
+                                              isSelected(gidx, ridx) && "bg-[#e6f3ff] ring-2 ring-[#0073ea]/30"
                                             )}>
-                                            <td className="px-4 py-4 sticky left-0 bg-slate-900 z-10">
+                                            <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r border-[#e6e9ef]">
                                               <input
                                                 type="checkbox"
                                                 checked={isSelected(gidx, ridx)}
                                                 onChange={() => toggleRow(gidx, ridx)}
-                                                className="w-4 h-4 accent-blue-500 rounded"
+                                                className="w-4 h-4 accent-[#0073ea] rounded border-2 border-[#d0d4e4]"
                                               />
                                             </td>
                                             {columns.map((col) => {
                                               const isEditing = editCell && editCell.gidx === gidx && editCell.ridx === ridx && editCell.colKey === col.key;
                                               if (isEditing) {
                                                 return (
-                                                  <td key={col.key} className={col.key === "folio" ? "sticky left-0 bg-slate-900 z-10" : ""}>
+                                                  <td key={col.key} className={clsx(
+                                                    "px-4 py-3 border-r border-[#e6e9ef] last:border-r-0",
+                                                    col.key === "folio" ? "sticky left-0 bg-white z-10" : ""
+                                                  )}>
                                                     {renderEditCell(col, editValue, setEditValue, () => {
                                                       setGroups(gs => {
                                                         const ngs = [...gs];
@@ -692,8 +711,8 @@ export default function FridayScreen() {
                                                 <td
                                                   key={col.key}
                                                   className={clsx(
-                                                    "px-4 py-4 cursor-pointer hover:bg-slate-600/20 transition-all rounded-lg",
-                                                    col.key === "folio" ? "sticky left-0 bg-slate-900 z-10" : ""
+                                                    "px-4 py-3 cursor-pointer hover:bg-[#f0f3ff] transition-all border-r border-[#e6e9ef] last:border-r-0",
+                                                    col.key === "folio" ? "sticky left-0 bg-white z-10" : ""
                                                   )}
                                                   onClick={() => {
                                                     setEditCell({ gidx, ridx, colKey: col.key });
@@ -704,10 +723,10 @@ export default function FridayScreen() {
                                                 </td>
                                               );
                                             })}
-                                            <td className="px-4 py-4">
+                                            <td className="px-4 py-3">
                                               <div {...provR.dragHandleProps}
-                                                className="cursor-grab opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-slate-600/50 transition-all">
-                                                <ListChecks size={16} className="text-slate-400" />
+                                                className="cursor-grab opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-[#e6e9ef] transition-all">
+                                                <ListChecks size={16} className="text-[#676879]" />
                                               </div>
                                             </td>
                                           </tr>
@@ -732,18 +751,18 @@ export default function FridayScreen() {
         </Droppable>
         {/* Barra de acciones flotante mejorada */}
         {selectedRows.length > 0 && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-600/50 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-6 z-50 animate-slideUp">
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white border border-[#e6e9ef] rounded-xl shadow-lg px-6 py-4 flex items-center gap-6 z-50 animate-slideUp">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+              <div className="w-8 h-8 bg-[#0073ea] rounded-full flex items-center justify-center text-white font-bold text-sm">
                 {selectedRows.length}
               </div>
-              <span className="text-white font-semibold">
+              <span className="text-[#323338] font-medium">
                 elemento{selectedRows.length > 1 ? 's' : ''} seleccionado{selectedRows.length > 1 ? 's' : ''}
               </span>
             </div>
-            <div className="h-6 w-px bg-slate-600" />
+            <div className="h-6 w-px bg-[#e6e9ef]" />
             <div className="flex items-center gap-4">
-              <button className="flex flex-col items-center gap-1 text-blue-400 hover:text-blue-300 transition-all"
+              <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all"
                 title="Duplicar"
                 onClick={() => {
                   setGroups(gs => gs.map((g, gidx) => ({
@@ -762,30 +781,30 @@ export default function FridayScreen() {
                 <Copy size={20} />
                 <span className="text-xs font-medium">Duplicar</span>
               </button>
-              <button className="flex flex-col items-center gap-1 text-green-400 hover:text-green-300 transition-all"
+              <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all"
                 title="Exportar"
                 onClick={() => alert("Exportar a Excel: próximamente (integrar SheetJS)")}>
                 <Download size={20} />
                 <span className="text-xs font-medium">Exportar</span>
               </button>
-              <button className="flex flex-col items-center gap-1 text-yellow-400 hover:text-yellow-300 transition-all"
+              <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all"
                 title="Archivar">
                 <Archive size={20} />
                 <span className="text-xs font-medium">Archivar</span>
               </button>
-              <button className="flex flex-col items-center gap-1 text-purple-400 hover:text-purple-300 transition-all"
+              <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all"
                 title="Mover">
                 <Move size={20} />
                 <span className="text-xs font-medium">Mover</span>
               </button>
-              <button className="flex flex-col items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-all"
+              <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all"
                 title="Edición masiva"
                 onClick={() => setMassEditModal(true)}>
                 <Settings size={20} />
                 <span className="text-xs font-medium">Edición masiva</span>
               </button>
               <button
-                className="flex flex-col items-center gap-1 text-red-400 hover:text-red-300 transition-all"
+                className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#e2445c] transition-all"
                 title="Eliminar"
                 onClick={() => {
                   if (window.confirm(`¿Eliminar ${selectedRows.length} elemento${selectedRows.length > 1 ? 's' : ''}?`)) {
@@ -802,7 +821,7 @@ export default function FridayScreen() {
               </button>
             </div>
             <button
-              className="ml-4 p-2 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all"
+              className="ml-4 p-2 rounded-md hover:bg-[#f8f9fd] text-[#676879] hover:text-[#323338] transition-all"
               onClick={() => setSelectedRows([])}
             >
               <X size={20} />
@@ -1107,75 +1126,75 @@ export default function FridayScreen() {
       {/* Main content */}
       <div className={clsx(
         "flex-1 min-h-screen flex flex-col transition-all duration-300",
-        "md:ml-[235px]"
+        "md:ml-[235px] bg-[#f6f7fb]"
       )}>
         {/* Header */}
-        <div className="sticky top-0 z-30 bg-slate-900/95 dark:bg-[#17213c]/95 backdrop-blur-xl border-b border-slate-700/50">
+        <div className="sticky top-0 z-30 bg-white border-b border-[#e6e9ef]">
           <div className="flex items-center gap-4 px-6 py-4">
             <button
-              className="rounded-lg hover:bg-slate-800 p-2 md:hidden transition-all"
+              className="rounded-lg hover:bg-[#f8f9fd] p-2 md:hidden transition-all"
               onClick={() => setShowMobileSidebar(true)}
             >
-              <Menu size={20} />
+              <Menu size={20} className="text-[#323338]" />
             </button>
             <button
-              className="rounded-lg hover:bg-slate-800 p-2 hidden md:block transition-all"
+              className="rounded-lg hover:bg-[#f8f9fd] p-2 hidden md:block transition-all"
               onClick={() => navigateTo('dashboard')}
               title="Volver al menú principal"
             >
-              <ArrowLeft size={20} />
+              <ArrowLeft size={20} className="text-[#323338]" />
             </button>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold text-[#323338]">
                 Tablero Principal
               </h1>
-              <Star size={20} className="text-yellow-400" />
+              <Star size={20} className="text-[#fdab3d]" />
             </div>
             <div className="ml-auto flex items-center gap-3">
               <div className="relative">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#676879]" />
                 <input
-                  className="pl-10 pr-4 py-2 rounded-xl bg-slate-800/50 border border-slate-600/50 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 w-64 transition-all"
+                  className="pl-10 pr-4 py-2 rounded-lg bg-white border border-[#d0d4e4] text-[#323338] placeholder-[#676879] focus:outline-none focus:ring-2 focus:ring-[#0073ea]/50 focus:border-[#0073ea] w-64 transition-all"
                   placeholder="Buscar en el tablero..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
               </div>
-              <button className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/50 transition-all"
+              <button className="flex items-center gap-2 px-3 py-2 rounded-lg text-[#676879] hover:bg-[#f8f9fd] transition-all"
                 onClick={() => setShowFilterModal(true)}>
                 <Filter size={18} />
                 <span className="hidden sm:inline">Filtros</span>
               </button>
-              <button className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/50 transition-all">
+              <button className="flex items-center gap-2 px-3 py-2 rounded-lg text-[#676879] hover:bg-[#f8f9fd] transition-all">
                 <Eye size={18} />
                 <span className="hidden sm:inline">Vista</span>
               </button>
-              <button className="p-2 rounded-full hover:bg-slate-700/50 text-yellow-400"
+              <button className="p-2 rounded-full hover:bg-[#f8f9fd] text-[#fdab3d]"
                 title={dark ? "Modo claro" : "Modo oscuro"}
                 onClick={() => setDark(d => !d)}>
                 {dark ? <Sun size={20} /> : <Moon size={20} />}
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-3 px-6 py-3 border-t border-slate-700/30">
+          <div className="flex items-center gap-3 px-6 py-3 border-t border-[#e6e9ef]">
             <button
-              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-4 py-2 rounded-xl flex items-center gap-2 transition-all shadow-lg"
+              className="bg-[#0073ea] hover:bg-[#005bb5] text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-all"
               onClick={() => setShowAddColModal(true)}
             >
               <Plus size={18} />
               Nueva columna
             </button>
             <button
-              className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-semibold px-4 py-2 rounded-xl flex items-center gap-2 transition-all shadow-lg"
+              className="bg-[#00c875] hover:bg-[#00a661] text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-all"
               onClick={() => setShowAddGroupModal(true)}
             >
               <Plus size={18} />
               Nuevo grupo
             </button>
-            <div className="h-6 w-px bg-slate-600 mx-2" />
+            <div className="h-6 w-px bg-[#e6e9ef] mx-2" />
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-400">Vista:</span>
-              <div className="flex bg-slate-800 rounded-lg p-1">
+              <span className="text-sm text-[#676879]">Vista:</span>
+              <div className="flex bg-[#f8f9fd] rounded-lg p-1 border border-[#e6e9ef]">
                 {[
                   { key: "table", icon: ListChecks, label: "Tabla" },
                   { key: "kanban", icon: Target, label: "Kanban" },
@@ -1186,8 +1205,8 @@ export default function FridayScreen() {
                     className={clsx(
                       "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
                       viewMode === key
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-slate-400 hover:text-white hover:bg-slate-700"
+                        ? "bg-[#0073ea] text-white shadow-sm"
+                        : "text-[#676879] hover:text-[#323338] hover:bg-white"
                     )}
                     onClick={() => setViewMode(key)}
                   >
@@ -1199,22 +1218,22 @@ export default function FridayScreen() {
             </div>
           </div>
           {notif && (
-            <div className="flex items-center gap-2 p-2 bg-gradient-to-r from-red-500/30 via-yellow-500/20 to-transparent text-yellow-300 text-sm font-bold px-8 animate-fadeIn">
-              <AlertCircle size={18} className="text-red-300" />
+            <div className="flex items-center gap-2 p-2 bg-gradient-to-r from-[#ffe6e9] via-[#fff4e6] to-transparent text-[#e2445c] text-sm font-medium px-8 animate-fadeIn">
+              <AlertCircle size={18} className="text-[#e2445c]" />
               {notif}
             </div>
           )}
         </div>
         {/* FAB mobile */}
         <button
-          className="md:hidden fixed bottom-8 right-8 z-40 bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg text-white rounded-full p-4 flex items-center justify-center hover:scale-105 transition-all"
+          className="md:hidden fixed bottom-8 right-8 z-40 bg-[#0073ea] shadow-lg text-white rounded-full p-4 flex items-center justify-center hover:scale-105 transition-all"
           title="Nuevo elemento"
           onClick={() => setShowAddGroupModal(true)}
         >
           <Plus size={28} />
         </button>
         {/* Contenido */}
-        <div className="p-6">
+        <div className="p-6 bg-[#f6f7fb]">
           <div className="max-w-[1600px] mx-auto">
             {viewMode === "table" && renderTable()}
             {viewMode === "kanban" && renderKanban()}
@@ -1245,14 +1264,12 @@ export default function FridayScreen() {
           to { opacity: 1; transform: translateY(0); }
         }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        ::-webkit-scrollbar-track { background: #f6f7fb; }
+        ::-webkit-scrollbar-thumb { background: #d0d4e4; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a5a5a5; }
         .group-container:hover { transform: translateY(-1px); transition: transform 0.2s ease; }
-        .dark .bg-slate-900, .dark .bg-slate-800 { background-color: #1a2234 !important; }
-        .dark .bg-slate-950 { background-color: #11182a !important; }
         .sticky { position: sticky; }
-        body, html { background: #0e1726 !important; }
+        body, html { background: #f6f7fb !important; }
       `}</style>
     </div>
   );

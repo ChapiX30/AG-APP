@@ -14,6 +14,7 @@ import ProgramaCalibracionScreen from './ProgramaCalibracionScreen';
 import HojaDeServicioScreen from './HojaDeServicioScreen';
 import  CalibrationManager  from './CalibrationManager';
 import { EmpresasScreen } from './EmpresasScreen';
+import NormasScreen from './NormasScreen';
 import { CalendarScreen }   from './CalendarScreen';
 import { RegisterScreen } from './RegisterScreen'; // 👈 AGREGA ESTA LÍNEA
 
@@ -92,6 +93,8 @@ export const MainApp: React.FC = () => {
       return <ProgramaCalibracionScreen />;  
     case 'friday-servicios':
       return <FridayServiciosScreen />;  
+    case 'normas':
+      return <NormasScreen />;  
     case 'friday':
       return <FridayScreen />;
     default:
