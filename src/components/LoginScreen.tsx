@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
-import { Eye, EyeOff, Lock, User, Microscope } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Microscope, ArrowRight, CheckCircle, Shield } from 'lucide-react';
+import { motion } from "framer-motion";
 
 export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ onNavigateToRegister }) => {
   const [email, setEmail] = useState('');
@@ -30,197 +31,446 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-tr from-blue-50 to-blue-200">
-      {/* Desktop Layout */}
-      <div className="hidden md:flex min-h-screen">
-        {/* Panel izquierdo */}
-        <div className="flex-1 flex flex-col justify-center items-center bg-gradient-to-b from-blue-100/90 to-blue-50 px-12">
-          <Microscope className="text-blue-700 w-32 h-32 mb-9 drop-shadow-md" />
-          <h2 className="text-5xl font-bold text-blue-900 mb-3 drop-shadow-xl text-center">¡Bienvenido!</h2>
-          <p className="text-blue-800 text-xl text-center max-w-md">
-            Gestiona, consulta y administra todos tus equipos y servicios del laboratorio en un solo lugar.
-          </p>
-        </div>
+    <div 
+      className="w-screen h-screen relative flex flex-col"
+      style={{
+        background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)",
+        overflow: "hidden"
+      }}
+    >
+      {/* Efectos de fondo animados */}
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0.3 }}
+        animate={{ scale: 1.2, opacity: 0.6 }}
+        transition={{
+          repeat: Infinity,
+          repeatType: "mirror",
+          duration: 4,
+          ease: "easeInOut",
+        }}
+        className="absolute top-1/4 left-1/4 pointer-events-none"
+        style={{
+          width: 450,
+          height: 450,
+          borderRadius: "50%",
+          background: "radial-gradient(circle at 50% 45%, #8b5cf6cc 10%, #6366f166 70%, transparent 100%)",
+          filter: "blur(8px)",
+          zIndex: 1,
+        }}
+      />
 
-        {/* Panel derecho - Login */}
-        <div className="flex-1 flex flex-col justify-center items-center bg-white px-12">
-          <div className="w-full max-w-md">
-            <h1 className="text-4xl font-extrabold text-blue-900 mb-2 text-center drop-shadow-sm">Iniciar sesión</h1>
-            <p className="text-gray-500 text-lg text-center mb-8">Sistema Equipos y Servicios AG</p>
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0.2 }}
+        animate={{ scale: 1.1, opacity: 0.4 }}
+        transition={{
+          repeat: Infinity,
+          repeatType: "mirror",
+          duration: 5,
+          ease: "easeInOut",
+          delay: 1.5,
+        }}
+        className="absolute bottom-1/4 right-1/4 pointer-events-none"
+        style={{
+          width: 380,
+          height: 380,
+          borderRadius: "50%",
+          background: "radial-gradient(circle at 50% 45%, #3b82f6aa 15%, #1e40af55 60%, transparent 100%)",
+          filter: "blur(10px)",
+          zIndex: 1,
+        }}
+      />
 
-            <form onSubmit={handleSubmit} className="space-y-7 animate-slide-up">
-              <div>
-                <label className="block text-base font-medium text-blue-900 mb-1">Correo electrónico</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 text-blue-400" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 bg-blue-50 border border-blue-200 rounded-xl text-lg text-blue-900 placeholder-blue-400 focus:ring-2 focus:ring-blue-500 focus:outline-none transition shadow"
-                    placeholder="ejemplo@ese-ag.com"
-                    autoFocus
-                    required
-                  />
+      {/* Brillo inferior */}
+      <div
+        className="absolute left-0 bottom-0 w-full h-60 pointer-events-none"
+        style={{
+          background: "radial-gradient(ellipse at 50% 140%, #fff8 6%, #8b5cf622 20%, transparent 60%)",
+          zIndex: 1,
+        }}
+      />
+
+      {/* Contenido principal - Desktop */}
+      <div className="hidden lg:flex w-screen flex-1 relative z-10">
+        
+        {/* Panel izquierdo - 60% del ancho */}
+        <motion.div
+          initial={{ opacity: 0, x: -100 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 1, ease: "easeOut" }}
+          className="flex-[3] flex flex-col justify-center px-16 py-12"
+        >
+          {/* Logo y título */}
+          <div className="flex items-center mb-12">
+            <motion.div
+              initial={{ scale: 0.8, rotate: -10 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ duration: 0.6, type: "spring", bounce: 0.3 }}
+              className="w-20 h-20 bg-gradient-to-br from-purple-500 to-blue-500 rounded-2xl flex items-center justify-center mr-6 backdrop-blur-sm shadow-lg"
+            >
+              <Microscope className="w-10 h-10 text-white" />
+            </motion.div>
+            <h1 className="text-5xl font-bold text-white">ESE-AG</h1>
+          </div>
+
+          <motion.h2
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="text-7xl font-extrabold text-white mb-8 leading-tight"
+          >
+            ¡Bienvenido al
+            <span className="block bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+              futuro
+            </span>
+          </motion.h2>
+
+          <motion.p
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="text-2xl text-white/90 mb-16 leading-relaxed max-w-2xl"
+          >
+            Gestiona, consulta y administra todos tus equipos y servicios del laboratorio con tecnología de vanguardia.
+          </motion.p>
+
+          {/* Características */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.7 }}
+            className="space-y-8"
+          >
+            {[
+              { icon: Shield, title: "Seguridad Empresarial", desc: "Protección y encriptación de nivel bancario", color: "text-purple-300" },
+              { icon: Microscope, title: "Gestión Avanzada", desc: "Control total de equipos y servicios", color: "text-blue-300" },
+              { icon: CheckCircle, title: "Colaboración en Equipo", desc: "Diseñado para equipos modernos", color: "text-indigo-300" }
+            ].map((item, index) => (
+              <motion.div
+                key={item.title}
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.6, delay: 0.9 + index * 0.1 }}
+                className="flex items-center"
+              >
+                <div className="w-16 h-16 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center mr-6 border border-white/20">
+                  <item.icon className={`w-8 h-8 ${item.color}`} />
                 </div>
+                <div>
+                  <h3 className="text-white font-semibold text-xl mb-1">{item.title}</h3>
+                  <p className="text-white/70 text-lg">{item.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </motion.div>
+
+        {/* Panel derecho - 40% del ancho */}
+        <motion.div
+          initial={{ opacity: 0, x: 100 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+          className="flex-[2] flex items-center justify-center px-12 py-12"
+        >
+          <div className="w-full max-w-md">
+            <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-10 border border-white/20 shadow-2xl">
+              <div className="text-center mb-10">
+                <h3 className="text-3xl font-bold text-white mb-3">Iniciar Sesión</h3>
+                <p className="text-white/70 text-lg">Sistema Equipos y Servicios AG</p>
               </div>
 
-              <div>
-                <label className="block text-base font-medium text-blue-900 mb-1">Contraseña</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 text-blue-400" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-12 pr-12 py-4 bg-blue-50 border border-blue-200 rounded-xl text-lg text-blue-900 placeholder-blue-400 focus:ring-2 focus:ring-blue-500 focus:outline-none transition shadow"
-                    placeholder="Tu contraseña"
-                    required
-                  />
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Campo Email */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.8 }}
+                >
+                  <label className="block text-white/90 text-sm font-medium mb-3">
+                    Correo electrónico
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all backdrop-blur-sm text-base"
+                      placeholder="ejemplo@ese-ag.com"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </motion.div>
+
+                {/* Campo Contraseña */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.9 }}
+                >
+                  <label className="block text-white/90 text-sm font-medium mb-3">
+                    Contraseña
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-12 pr-12 py-4 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all backdrop-blur-sm text-base"
+                      placeholder="Tu contraseña"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </motion.div>
+
+                {/* Mensaje de error */}
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-red-500/20 border border-red-400/30 text-red-200 rounded-xl p-4 text-center backdrop-blur-sm"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+
+                {/* Botón de login */}
+                <motion.button
+                  type="submit"
+                  disabled={isLoading}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 1.0 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center">
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                      Entrando...
+                    </span>
+                  ) : (
+                    'Entrar'
+                  )}
+                </motion.button>
+
+                {/* Botón registro */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.5, delay: 1.2 }}
+                  className="text-center pt-4"
+                >
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-700 transition"
-                    tabIndex={-1}
+                    onClick={onNavigateToRegister}
+                    className="text-purple-400 hover:text-purple-300 font-medium transition-colors flex items-center justify-center mx-auto"
                   >
-                    {showPassword ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                    ¿No tienes cuenta? Regístrate
+                    <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
-                </div>
-              </div>
+                </motion.div>
+              </form>
 
-              {error && (
-                <div className="bg-red-100 border border-red-300 text-red-700 rounded-lg p-2 text-center text-base">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-800 hover:to-blue-600 text-white py-3 rounded-xl font-semibold shadow-lg transition-all hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 text-lg"
+              {/* Credenciales demo */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5, delay: 1.4 }}
+                className="mt-8 pt-6 border-t border-white/10 text-center"
               >
-                {isLoading ? (
-                  <span className="flex items-center justify-center">
-                    <span className="w-5 h-5 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin mr-2" />
-                    Entrando...
-                  </span>
-                ) : (
-                  'Entrar'
-                )}
-              </button>
-            </form>
-
-            <div className="mt-5 flex justify-center">
-              <button
-                type="button"
-                className="text-blue-600 hover:underline text-base"
-                onClick={onNavigateToRegister}
-              >
-                ¿No tienes cuenta? <span className="font-semibold">Regístrate</span>
-              </button>
-            </div>
-
-            <div className="mt-10 text-center text-xs text-gray-400 select-text">
-              Demo: <span className="font-mono">admin@ese-ag.mx</span> / <span className="font-mono">admin123</span>
+                <p className="text-xs text-white/50 select-text">
+                  Demo: <span className="font-mono text-white/70">admin@ese-ag.mx</span> / <span className="font-mono text-white/70">admin123</span>
+                </p>
+              </motion.div>
             </div>
           </div>
-        </div>
+        </motion.div>
+
       </div>
 
-      {/* Mobile Layout */}
-      <div className="md:hidden min-h-screen flex flex-col">
+      {/* Layout móvil y tablet */}
+      <div className="lg:hidden w-screen flex-1 flex flex-col relative z-10">
+        
         {/* Header móvil */}
-        <div className="flex-1 flex flex-col justify-center items-center bg-gradient-to-b from-blue-100/90 to-blue-50 px-6 py-12">
-          <Microscope className="text-blue-700 w-24 h-24 mb-5 drop-shadow-md animate-fade-in" />
-          <h2 className="text-3xl font-bold text-blue-900 mb-2 text-center">¡Bienvenido!</h2>
-          <p className="text-blue-800 text-base text-center max-w-xs">
-            Gestiona, consulta y administra todos tus equipos y servicios del laboratorio en un solo lugar.
-          </p>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: -50 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="flex-1 flex flex-col justify-center items-center px-6 py-12"
+        >
+          <div className="flex items-center mb-8">
+            <motion.div
+              initial={{ scale: 0.8, rotate: -10 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ duration: 0.6, type: "spring", bounce: 0.3 }}
+              className="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl flex items-center justify-center mr-4 shadow-lg"
+            >
+              <Microscope className="w-8 h-8 text-white" />
+            </motion.div>
+            <h1 className="text-3xl font-bold text-white">ESE-AG</h1>
+          </div>
+          
+          <motion.h2
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="text-4xl font-bold text-white mb-6 text-center"
+          >
+            ¡Bienvenido al <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">futuro</span>
+          </motion.h2>
+          
+          <motion.p
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+            className="text-white/90 text-lg text-center max-w-sm px-4"
+          >
+            Gestiona todos tus equipos y servicios del laboratorio con tecnología avanzada.
+          </motion.p>
+        </motion.div>
 
         {/* Login Form móvil */}
-        <div className="flex-1 bg-white px-6 py-8 rounded-t-3xl shadow-2xl">
+        <motion.div
+          initial={{ opacity: 0, y: 100 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+          className="flex-1 bg-white/10 backdrop-blur-xl px-6 py-8 rounded-t-3xl shadow-2xl border-t border-transparent"
+        >
           <div className="max-w-sm mx-auto">
-            <h1 className="text-3xl font-extrabold text-blue-900 mb-2 text-center drop-shadow-sm">Iniciar sesión</h1>
-            <p className="text-gray-500 text-base text-center mb-6">Sistema Equipos y Servicios AG</p>
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-bold text-white mb-2">Iniciar Sesión</h3>
+              <p className="text-white/70">Sistema Equipos y Servicios AG</p>
+            </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5 animate-slide-up">
-              <div>
-                <label className="block text-sm font-medium text-blue-900 mb-1">Correo electrónico</label>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Campo Email móvil */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.6 }}
+              >
+                <label className="block text-white/90 text-sm font-medium mb-2">
+                  Correo electrónico
+                </label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-400" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-base text-blue-900 placeholder-blue-400 focus:ring-2 focus:ring-blue-500 focus:outline-none transition shadow"
+                    className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all backdrop-blur-sm"
                     placeholder="ejemplo@ese-ag.com"
                     autoFocus
                     required
                   />
                 </div>
-              </div>
+              </motion.div>
 
-              <div>
-                <label className="block text-sm font-medium text-blue-900 mb-1">Contraseña</label>
+              {/* Campo Contraseña móvil */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.7 }}
+              >
+                <label className="block text-white/90 text-sm font-medium mb-2">
+                  Contraseña
+                </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-400" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 bg-blue-50 border border-blue-200 rounded-lg text-base text-blue-900 placeholder-blue-400 focus:ring-2 focus:ring-blue-500 focus:outline-none transition shadow"
+                    className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all backdrop-blur-sm"
                     placeholder="Tu contraseña"
                     required
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-700 transition"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
                     tabIndex={-1}
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
-              </div>
+              </motion.div>
 
+              {/* Mensaje de error móvil */}
               {error && (
-                <div className="bg-red-100 border border-red-300 text-red-700 rounded-lg p-2 text-center text-sm">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-red-500/20 border border-red-400/30 text-red-200 rounded-lg p-3 text-center text-sm backdrop-blur-sm"
+                >
                   {error}
-                </div>
+                </motion.div>
               )}
 
-              <button
+              {/* Botón login móvil */}
+              <motion.button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-800 hover:to-blue-600 text-white py-3 rounded-lg font-semibold shadow-lg transition-all hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 text-base"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.8 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {isLoading ? (
-                  <span className="flex items-center justify-center">
-                    <span className="w-4 h-4 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin mr-2" />
+                  <span className="flex items-center">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
                     Entrando...
                   </span>
                 ) : (
                   'Entrar'
                 )}
-              </button>
+              </motion.button>
+
+              {/* Botón registro móvil */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5, delay: 1.0 }}
+                className="text-center"
+              >
+                <button
+                  type="button"
+                  onClick={onNavigateToRegister}
+                  className="text-purple-400 hover:text-purple-300 font-medium transition-colors text-sm flex items-center justify-center mx-auto"
+                >
+                  ¿No tienes cuenta? Regístrate
+                  <ArrowRight className="w-3 h-3 ml-1" />
+                </button>
+              </motion.div>
             </form>
 
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                className="text-blue-600 hover:underline text-sm"
-                onClick={onNavigateToRegister}
-              >
-                ¿No tienes cuenta? <span className="font-semibold">Regístrate</span>
-              </button>
-            </div>
-
-            <div className="mt-8 text-center text-xs text-gray-400 select-text">
-              Demo: <span className="font-mono">admin@ese-ag.mx</span> / <span className="font-mono">admin123</span>
-            </div>
+            {/* Credenciales demo móvil */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 1.2 }}
+              className="mt-6 pt-4 border-t border-white/10 text-center"
+            >
+              <p className="text-xs text-white/50 select-text">
+                Demo: <span className="font-mono text-white/70">admin@ese-ag.mx</span> / <span className="font-mono text-white/70">admin123</span>
+              </p>
+            </motion.div>
           </div>
-        </div>
+        </motion.div>
+
       </div>
     </div>
   );
