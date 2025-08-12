@@ -1,3 +1,4 @@
+/* MainMenu.tsx */
 import React from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
@@ -15,6 +16,7 @@ import {
   FolderKanban
 } from 'lucide-react';
 
+/** Menú original (no se cambia el contenido ni ids) */
 const menuItems = [
   { id: 'calendario', title: 'CALENDARIO', icon: Calendar, color: 'bg-blue-500', available: true },
   { id: 'consecutivos', title: 'CONSECUTIVOS', icon: Hash, color: 'bg-green-500', available: true },
@@ -26,7 +28,7 @@ const menuItems = [
   { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'bg-yellow-500', available: true },
   { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'bg-cyan-500', available: false },
   { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: true },
-  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'bg-cyan-500', available: true }, // Agregar el icono adecuado para el Calibración Managern', title: 'FORMATOS DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: false },
+  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'bg-cyan-500', available: true },
 ];
 
 export const MainMenu: React.FC = () => {
@@ -34,35 +36,23 @@ export const MainMenu: React.FC = () => {
   const { user, logout } = useAuth();
 
   const handleMenuClick = (item: any) => {
-    if (!item.available) {
-      return;
-    }
-    
-    if (item.id === 'consecutivos') {
-      navigateTo('consecutivos');
-    } else if (item.id === 'friday') {
-      navigateTo('friday');
-    } else if (item.id === 'empresas') {
-      navigateTo('empresas');
-    } else if (item.id === 'calendario') {
-      navigateTo('calendario');
-    } else if (item.id === 'programa-calibracion') {
-      navigateTo('programa-calibracion'); 
-    } else if (item.id === 'calibration-manager') {
-      navigateTo('calibration-manager');
-    } else if (item.id === 'hoja-servicio') {
-      navigateTo('hoja-servicio');
-    } else if (item.id === 'normas') {
-      navigateTo('normas');  
-    } else if (item.id === 'drive') {
-      navigateTo('drive');  
-    }
+    if (!item.available) return;
+    if (item.id === 'consecutivos') navigateTo('consecutivos');
+    else if (item.id === 'friday') navigateTo('friday');
+    else if (item.id === 'empresas') navigateTo('empresas');
+    else if (item.id === 'calendario') navigateTo('calendario');
+    else if (item.id === 'programa-calibracion') navigateTo('programa-calibracion');
+    else if (item.id === 'calibration-manager') navigateTo('calibration-manager');
+    else if (item.id === 'hoja-servicio') navigateTo('hoja-servicio');
+    else if (item.id === 'normas') navigateTo('normas');
+    else if (item.id === 'drive') navigateTo('drive');
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
+
+      {/* ===== Desktop header (igual al original) ===== */}
+      <div className="hidden md:block bg-white shadow-sm border-b border-gray-200">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -75,7 +65,7 @@ export const MainMenu: React.FC = () => {
           </div>
           
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
+            <div className="hidden md:flex items-center space-x-2">
               <User className="w-5 h-5 text-gray-400" />
               <span className="text-sm font-medium text-gray-700">{user?.name}</span>
             </div>
@@ -90,31 +80,54 @@ export const MainMenu: React.FC = () => {
         </div>
       </div>
 
-      {/* Menu Grid */}
-      <div className="p-6">
+      {/* ===== Mobile header compacto (nuevo) ===== */}
+      <div className="md:hidden sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200">
+        <div className="px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+              <Hash className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-gray-900 leading-none">ESE-AG</h1>
+              <p className="text-[11px] text-gray-500 leading-none mt-0.5">Sistema de Gestión</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1">
+              <User className="w-4 h-4 text-gray-400" />
+              <span className="text-xs font-medium text-gray-700 max-w-[120px] truncate">{user?.name}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="ml-2 p-2 rounded-md bg-red-50 text-red-600 hover:bg-red-100 active:scale-95 transition"
+              aria-label="Salir"
+              title="Salir"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Desktop grid (sin cambios visuales importantes) ===== */}
+      <div className="hidden md:block p-6">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 mb-8">Menú Principal</h2>
-          
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {menuItems.map((item) => (
               <div
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
-                className={`
-                  relative group cursor-pointer transition-all duration-300 transform hover:scale-105 hover:shadow-xl
-                  ${item.available ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'}
-                `}
+                className={`relative group cursor-pointer transition-all duration-300 transform hover:scale-105
+                  ${item.available ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'}`}
               >
                 <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-md">
                   <div className="flex flex-col items-center text-center space-y-4">
                     <div className={`w-20 h-20 ${item.color} rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all`}>
                       <item.icon className="w-10 h-10 text-white" />
                     </div>
-                    
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 mb-1">
-                        {item.title}
-                      </h3>
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">{item.title}</h3>
                       {!item.available && (
                         <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
                           Próximamente
@@ -122,7 +135,6 @@ export const MainMenu: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  
                   {item.available && (
                     <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
                   )}
@@ -130,6 +142,42 @@ export const MainMenu: React.FC = () => {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* ===== Mobile grid (nuevo, 2 columnas tipo app) ===== */}
+      <div className="md:hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">Menú</h2>
+
+        <div className="grid grid-cols-2 gap-3">
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => handleMenuClick(item)}
+              disabled={!item.available}
+              className={`relative group rounded-2xl border text-left
+                ${item.available ? 'bg-white active:scale-[0.99] border-gray-200' : 'bg-gray-50 border-gray-200 opacity-60'}
+                shadow-sm hover:shadow-md transition-all p-3`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`min-w-12 min-h-12 ${item.color} rounded-xl flex items-center justify-center shadow`}>
+                  <item.icon className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-[11px] font-semibold text-gray-800 leading-tight">{item.title}</p>
+                  {!item.available && (
+                    <span className="mt-0.5 inline-block text-[10px] text-gray-500">Próximamente</span>
+                  )}
+                </div>
+              </div>
+              {item.available && (
+                <span className="pointer-events-none absolute right-3 top-3 inline-flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-30"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
     </div>
