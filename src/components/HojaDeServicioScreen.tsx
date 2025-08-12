@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Download, FileText, User, Calendar, Phone, Mail, MapPin, Settings, MessageSquare, Star, Edit3, Save, X } from 'lucide-react';
+import { Download, FileText, User, Calendar, Phone, Mail, MapPin, Settings, MessageSquare, Star, Edit3, Save, X, ArrowLeft } from 'lucide-react';
+import { useNavigation } from '../hooks/useNavigation';
 
 const camposIniciales = {
   folio: '',
@@ -23,6 +24,8 @@ export default function HojaDeServicioPro() {
   const [vistaPrevia, setVistaPrevia] = useState(false);
   const pdfRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const { goBack } = useNavigation();
 
   // -------- Funciones de firma ---------
   const comenzarFirma = (tipo: 'cliente' | 'tecnico') => {
@@ -144,6 +147,15 @@ export default function HojaDeServicioPro() {
           <div className="bg-white rounded-lg shadow-lg overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4">
               <div className="flex flex-col sm:flex-row justify-between items-center">
+                {/* Botón de regresar */}
+                <button
+                  onClick={() => goBack()}
+                  className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-3 py-2 rounded-lg transition-colors mb-2 sm:mb-0"
+                >
+                  <ArrowLeft size={18} />
+                  Regresar
+                </button>
+
                 <h1 className="text-2xl font-bold">Vista Previa - Hoja de Servicio</h1>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <button
@@ -278,7 +290,7 @@ export default function HojaDeServicioPro() {
             </div>
           </div>
         </div>
-      </div>
+      </div>      
     );
   }
 
@@ -290,8 +302,18 @@ export default function HojaDeServicioPro() {
           <div className="bg-gradient-to-r from-blue-600 to-blue-800 p-6">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <FileText className="text-white" size={32} />
-                <h1 className="text-3xl font-bold text-white">Hoja de Servicio Profesional</h1>
+                {/* Botón de regresar */}
+                <button
+                  onClick={() => goBack()}
+                  className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-3 py-2 rounded-lg transition-colors"
+                >
+                  <ArrowLeft size={18} />
+                  Regresar
+                </button>
+                <div className="flex items-center gap-3">
+                  <FileText className="text-white" size={32} />
+                  <h1 className="text-3xl font-bold text-white">Hoja de Servicio Profesional</h1>
+                </div>
               </div>
               <button
                 onClick={toggleVistaPrevia}
@@ -387,7 +409,7 @@ export default function HojaDeServicioPro() {
                       </label>
                       <input
                         type="text"
-                                                className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                         value={campos.direccion}
                         onChange={e => setCampos({ ...campos, direccion: e.target.value })}
                         placeholder="Dirección completa"
