@@ -2,19 +2,19 @@ import React, { useEffect, useMemo, useRef, useState, Fragment, useCallback } fr
 import {
   Upload, Download, Search, Calendar, User, Trash2, Eye, FolderOpen, Plus, X, Check, AlertCircle, Settings,
   Star, TrendingUp, Shield, Clock, Database, Activity, History, FileSpreadsheet, MessageSquareWarning,
-  FileCheck2, FileX2, Send, Archive, Edit3
+  FileCheck2, FileX2, Send, Archive, Edit3, ArrowLeft
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Dialog, Transition } from "@headlessui/react";
 import { toast, Toaster } from "react-hot-toast";
 
 /* ======= Firebase (usa tu helper) ======= */
-import { auth, db, storage } from "../utils/firebase"; // <-- ajusta la ruta si es necesario
+import { auth, db, storage } from "../utils/firebase"; // <-- ajusta ruta si es necesario
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  collection, onSnapshot, addDoc, doc, getDoc, updateDoc, serverTimestamp, query, orderBy, arrayUnion
+  collection, onSnapshot, addDoc, doc, getDoc, updateDoc, serverTimestamp, query, orderBy, arrayUnion, deleteDoc
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL, getBytes, deleteObject } from "firebase/storage";
 
 /* ======= Tipos ======= */
 type WorkflowStatus = "uploaded" | "review" | "published" | "rejected" | "archived";
@@ -114,8 +114,15 @@ function permissionsFor(role: Role): string[] {
   }
 }
 
+/* ======= Props opcionales ======= */
+interface CalibrationManagerProps {
+  /** Si lo proporcionas, este handler se usa al presionar "Regresar".
+   *  Si no, se usa window.history.back(). */
+  onBack?: () => void;
+}
+
 /* ======= Componente principal ======= */
-const CalibrationManager: React.FC = () => {
+const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
   /* --- Sesión Firebase --- */
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
@@ -282,6 +289,10 @@ const CalibrationManager: React.FC = () => {
   const [editFor, setEditFor] = useState<CalibrationFile | null>(null);
   const [editData, setEditData] = useState({ version: "", description: "", certification: "", tags: "" });
 
+  // Eliminar definitivamente (modal)
+  const [deleteFor, setDeleteFor] = useState<CalibrationFile | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   /* --- Acciones: seleccionar archivo --- */
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -318,7 +329,7 @@ const CalibrationManager: React.FC = () => {
 
       const downloadURL = await getDownloadURL(storageRef);
 
-      // Crear doc
+      // Crear doc (⚠️ history como arreglo normal para evitar issues con arrayUnion en addDoc)
       await addDoc(collection(db, "formatos"), {
         name: safeName,
         magnitude: uploadForm.magnitude,
@@ -338,7 +349,7 @@ const CalibrationManager: React.FC = () => {
         downloads: 0,
         rating: 5.0,
         tags: uploadForm.tags,
-        history: arrayUnion({ ts: nowISO(), user: currentUser.name, action: "upload" } as HistoryEvent),
+        history: [{ ts: nowISO(), user: currentUser.name, action: "upload" } as HistoryEvent],
         createdAt: serverTimestamp(),
       });
 
@@ -372,7 +383,6 @@ const CalibrationManager: React.FC = () => {
       return;
     }
     try {
-      // Apertura directa
       const a = document.createElement("a");
       a.href = file.downloadURL;
       a.download = file.name;
@@ -432,9 +442,17 @@ const CalibrationManager: React.FC = () => {
   const sendToReview = async (file: CalibrationFile) => {
     if (!currentUser) return toast.error("Inicia sesión");
     if (!["technician", "admin", "supervisor"].includes(currentUser.role)) return toast.error("Sin permiso");
-    await pushHistory(file, "send_review");
-    await setStatus(file, "review");
-    toast.success("Enviado a revisión");
+    try {
+      await updateDoc(doc(db, "formatos", file.id), {
+        history: arrayUnion({ ts: nowISO(), user: currentUser.name, action: "send_review" } as HistoryEvent),
+        status: "review",
+        lastModifiedDate: nowISO(),
+      });
+      toast.success("Enviado a revisión");
+    } catch (e) {
+      console.error(e);
+      toast.error("No se pudo enviar a revisión (revisa reglas de Firestore/permiso).");
+    }
   };
 
   const approve = async (file: CalibrationFile) => {
@@ -469,17 +487,22 @@ const CalibrationManager: React.FC = () => {
     toast.success("Archivado");
   };
 
-  const deleteFile = async (file: CalibrationFile) => {
+  const deleteForever = async (file: CalibrationFile) => {
     if (!currentUser) return toast.error("Inicia sesión");
     if (!["admin", "supervisor"].includes(currentUser.role)) return toast.error("Sin permiso");
+    setDeleting(true);
     try {
-      // Opcional: también podrías borrar de Storage. (Ten cuidado con permisos)
-      // await deleteObject(ref(storage, file.storagePath));
-      await updateDoc(doc(db, "formatos", file.id), { status: "archived", lastModifiedDate: nowISO() });
-      toast.success(`"${file.name}" movido a archivados`);
+      // 1) Borrar Storage
+      await deleteObject(ref(storage, file.storagePath)).catch(() => { /* si no existe, continuamos */ });
+      // 2) Borrar Firestore
+      await deleteDoc(doc(db, "formatos", file.id));
+      toast.success(`"${file.name}" eliminado definitivamente`);
+      setDeleteFor(null);
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo eliminar");
+      toast.error("No se pudo eliminar el archivo");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -531,6 +554,17 @@ const CalibrationManager: React.FC = () => {
     );
   }
 
+  /* --- Handler volver --- */
+  const handleBack = () => {
+    if (onBack) return onBack();
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+    } else {
+      // fallback: puedes redirigir al dashboard si usas router
+      // e.g., navigate("/dashboard")
+    }
+  };
+
   /* --- Render --- */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -543,6 +577,14 @@ const CalibrationManager: React.FC = () => {
           <div className="relative bg-white/10 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 border border-white/20">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
               <div className="flex items-center gap-3 sm:gap-4">
+                <button
+                  onClick={handleBack}
+                  className="hidden sm:inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl border border-white/20"
+                  title="Regresar"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                  <span className="text-sm font-semibold">Regresar</span>
+                </button>
                 <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center">
                   <Activity className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-white" />
                 </div>
@@ -553,6 +595,15 @@ const CalibrationManager: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 sm:gap-3">
+                {/* Botón regresar en móvil */}
+                <button
+                  onClick={handleBack}
+                  className="sm:hidden bg-white/15 hover:bg-white/25 text-white p-2.5 rounded-xl border border-white/20"
+                  title="Regresar"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+
                 <div className="text-white/80 text-xs sm:text-sm text-right hidden xs:flex flex-col">
                   <span className="font-semibold">{currentUser.name}</span>
                   <span className="opacity-80 capitalize">{currentUser.role} • {currentUser.department}</span>
@@ -749,8 +800,10 @@ const CalibrationManager: React.FC = () => {
                               <Edit3 className="w-5 h-5" />
                             </ActionIcon>
                           )}
-                          {(currentUser.role === "admin" || currentUser.role === "supervisor") && (
-                            <ActionIcon title="Archivar" onClick={() => deleteFile(file)}><Trash2 className="w-5 h-5" /></ActionIcon>
+                          {["admin","supervisor"].includes(currentUser.role) && (
+                            <ActionIcon title="Eliminar definitivamente" onClick={() => setDeleteFor(file)}>
+                              <Trash2 className="w-5 h-5 text-red-600" />
+                            </ActionIcon>
                           )}
                         </div>
 
@@ -852,8 +905,10 @@ const CalibrationManager: React.FC = () => {
                               <Edit3 className="w-4 h-4" />
                             </ActionIcon>
                           )}
-                          {(currentUser.role === "admin" || currentUser.role === "supervisor") && (
-                            <ActionIcon title="Archivar" onClick={() => deleteFile(file)}><Trash2 className="w-4 h-4" /></ActionIcon>
+                          {["admin","supervisor"].includes(currentUser.role) && (
+                            <ActionIcon title="Eliminar definitivamente" onClick={() => setDeleteFor(file)}>
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </ActionIcon>
                           )}
                           <GhostBtn onClick={() => setHistoryFor(file)} icon={<History className="w-4 h-4" />}>Historial</GhostBtn>
                         </div>
@@ -1258,6 +1313,43 @@ const CalibrationManager: React.FC = () => {
             </div>
           </Dialog>
         </Transition>
+
+        {/* Modal Eliminar definitivamente */}
+        <Transition appear show={!!deleteFor} as={Fragment}>
+          <Dialog as="div" className="relative z-50" onClose={() => setDeleteFor(null)}>
+            <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+            </Transition.Child>
+            <div className="fixed inset-0 overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-4">
+                <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                  <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 shadow-2xl">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                        <Trash2 className="w-5 h-5 text-red-600" />
+                      </div>
+                      <Dialog.Title className="text-lg font-bold">Eliminar definitivamente</Dialog.Title>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Vas a eliminar <span className="font-semibold">{deleteFor?.name}</span>. Esta acción no se puede deshacer.
+                    </p>
+                    <div className="mt-6 flex justify-end gap-3">
+                      <button onClick={() => setDeleteFor(null)} className="px-5 py-2.5 border-2 border-gray-200 rounded-xl font-semibold">Cancelar</button>
+                      <button
+                        onClick={() => deleteFor && deleteForever(deleteFor)}
+                        disabled={deleting}
+                        className="px-6 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white rounded-xl font-semibold disabled:opacity-60"
+                      >
+                        {deleting ? "Eliminando…" : "Eliminar"}
+                      </button>
+                    </div>
+                  </Dialog.Panel>
+                </Transition.Child>
+              </div>
+            </div>
+          </Dialog>
+        </Transition>
+
       </div>
     </div>
   );
