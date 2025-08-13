@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { setDoc, doc } from "firebase/firestore";
 import { auth, db } from "../utils/firebase";
-import { Eye, EyeOff, Lock, User, Mail, Briefcase, Microscope, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Mail, Briefcase, Microscope, ArrowLeft, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
 import { motion } from "framer-motion";
 
 interface RegisterScreenProps {
@@ -15,7 +15,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
-  const [puesto, setPuesto] = useState("");
+  const [puesto, setPuesto] = useState<"" | "Metrólogo" | "Calidad">("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -25,14 +25,20 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
     e.preventDefault();
     setError("");
     setSuccess("");
-    setIsLoading(true);
 
+    // Validaciones básicas
+    if (!puesto) {
+      setError("Selecciona tu puesto de trabajo.");
+      return;
+    }
+
+    setIsLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, correo, password);
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
         nombre,
         correo,
-        puesto,
+        puesto,               // <-- Guardamos SOLO los valores permitidos: "Metrólogo" o "Calidad"
         creado: new Date()
       });
       setSuccess("¡Usuario registrado exitosamente!");
@@ -105,7 +111,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       {/* Contenido principal - Flexbox */}
       <div className="flex min-h-screen relative z-10">
         
-        {/* Panel izquierdo - 60% del ancho */}
+        {/* Panel izquierdo */}
         <motion.div
           initial={{ opacity: 0, x: -100 }}
           animate={{ opacity: 1, x: 0 }}
@@ -154,9 +160,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             className="space-y-8"
           >
             {[
-              { icon: CheckCircle, title: "Acceso Completo", desc: "Todas las funcionalidades desde el primer día", color: "text-green-300" },
-              { icon: Lock, title: "Datos Protegidos", desc: "Tu información siempre segura y encriptada", color: "text-blue-300" },
-              { icon: Microscope, title: "Tecnología Avanzada", desc: "Herramientas de última generación", color: "text-purple-300" }
+              { title: "Acceso Completo", desc: "Todas las funcionalidades desde el primer día", color: "text-green-300" },
+              { title: "Datos Protegidos", desc: "Tu información siempre segura y encriptada", color: "text-blue-300" },
+              { title: "Tecnología Avanzada", desc: "Herramientas de última generación", color: "text-purple-300" }
             ].map((item, index) => (
               <motion.div
                 key={item.title}
@@ -166,7 +172,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 className="flex items-center"
               >
                 <div className="w-16 h-16 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center mr-6 border border-white/20">
-                  <item.icon className={`w-8 h-8 ${item.color}`} />
+                  {/* Solo decorativo */}
+                  <div className={`w-8 h-8 rounded-full border-2 border-white/20 ${item.color}`} />
                 </div>
                 <div>
                   <h3 className="text-white font-semibold text-xl mb-1">{item.title}</h3>
@@ -177,7 +184,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           </motion.div>
         </motion.div>
 
-        {/* Panel derecho - 40% del ancho */}
+        {/* Panel derecho */}
         <motion.div
           initial={{ opacity: 0, x: 100 }}
           animate={{ opacity: 1, x: 0 }}
@@ -193,14 +200,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
               <form onSubmit={handleRegister} className="space-y-6">
                 {/* Campo Nombre */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.8 }}
-                >
-                  <label className="block text-white/90 text-sm font-medium mb-3">
-                    Nombre completo
-                  </label>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.8 }}>
+                  <label className="block text-white/90 text-sm font-medium mb-3">Nombre completo</label>
                   <div className="relative">
                     <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                     <input
@@ -216,14 +217,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 </motion.div>
 
                 {/* Campo Email */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.9 }}
-                >
-                  <label className="block text-white/90 text-sm font-medium mb-3">
-                    Correo electrónico
-                  </label>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.9 }}>
+                  <label className="block text-white/90 text-sm font-medium mb-3">Correo electrónico</label>
                   <div className="relative">
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                     <input
@@ -238,14 +233,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 </motion.div>
 
                 {/* Campo Contraseña */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 1.0 }}
-                >
-                  <label className="block text-white/90 text-sm font-medium mb-3">
-                    Contraseña
-                  </label>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 1.0 }}>
+                  <label className="block text-white/90 text-sm font-medium mb-3">Contraseña</label>
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                     <input
@@ -269,26 +258,26 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </div>
                 </motion.div>
 
-                {/* Campo Puesto */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 1.1 }}
-                >
-                  <label className="block text-white/90 text-sm font-medium mb-3">
-                    Puesto de trabajo
-                  </label>
+                {/* Campo Puesto (Select con lista cerrada) */}
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 1.1 }}>
+                  <label className="block text-white/90 text-sm font-medium mb-3">Puesto de trabajo</label>
                   <div className="relative">
                     <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                    <input
-                      type="text"
+                    <select
                       value={puesto}
-                      onChange={(e) => setPuesto(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all backdrop-blur-sm text-base"
-                      placeholder="Ej: Técnico de laboratorio"
+                      onChange={(e) => setPuesto(e.target.value as "Metrólogo" | "Calidad" | "")}
+                      className="appearance-none w-full pl-12 pr-12 py-4 bg-white/5 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all backdrop-blur-sm text-base"
                       required
-                    />
+                    >
+                      <option value="" className="bg-slate-800 text-white">Selecciona tu puesto…</option>
+                      <option value="Metrólogo" className="bg-slate-800 text-white">Metrólogo</option>
+                      <option value="Calidad" className="bg-slate-800 text-white">Calidad</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                   </div>
+                  <p className="text-white/60 text-xs mt-2">
+                    Este dato define tus permisos en la plataforma.
+                  </p>
                 </motion.div>
 
                 {/* Mensajes de error/éxito */}
@@ -336,12 +325,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 </motion.button>
 
                 {/* Botón volver */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.5, delay: 1.4 }}
-                  className="text-center pt-4"
-                >
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 1.4 }} className="text-center pt-4">
                   <button
                     type="button"
                     onClick={onNavigateToLogin}
@@ -354,12 +338,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
               </form>
 
               {/* Términos */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, delay: 1.6 }}
-                className="mt-8 pt-6 border-t border-white/10 text-center"
-              >
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 1.6 }} className="mt-8 pt-6 border-t border-white/10 text-center">
                 <p className="text-xs text-white/50">
                   Al crear una cuenta, aceptas nuestros términos de servicio y política de privacidad
                 </p>
