@@ -1,5 +1,5 @@
 /* MainMenu.tsx */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { 
@@ -34,6 +34,15 @@ const menuItems = [
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
+
+  // Paso 1: Pedir permiso de notificaciones al entrar a la app (una sola vez)
+  useEffect(() => {
+    if ('Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+  }, []);
 
   const handleMenuClick = (item: any) => {
     if (!item.available) return;

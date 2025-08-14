@@ -4,9 +4,10 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import {
   ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check,
   Repeat, Download, Trash2, XCircle, Search, Filter, Eye, Edit3,
-  Zap, Clock, User, CheckCircle2, RotateCcw, Loader2, Maximize, Minimize
+  Zap, Clock, User, CheckCircle2, RotateCcw, Loader2, Maximize, Minimize,
+  ExternalLink, ZoomIn, ZoomOut, RotateCw
 } from 'lucide-react';
-import { doc, getDocs, collection, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { doc, collection, updateDoc, addDoc, deleteDoc, getDocs, onSnapshot } from 'firebase/firestore';
 import { db, storage } from '../utils/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigation } from '../hooks/useNavigation';
@@ -611,7 +612,7 @@ const ServicioModal = ({
   };
   const removeFile = (index: number) => setFiles(files.filter((_, i) => i !== index));
   const uploadFiles = async () => {
-    const urls = [];
+    const urls:string[] = [];
     setUploading(true);
     try {
       for (const file of files) {
@@ -792,7 +793,7 @@ const ServicioCard = ({ s, group, usuarios, handleUpdateField, handleDelete, set
             onChange={e => handleUpdateField(s.id, 'estado', e.target.value)}
             onClick={e => e.stopPropagation()}
           >
-            {estados.map(est => <option key={est.value} value={est.value}>{est.label}</option>)}
+            {estados.map((est: any) => <option key={est.value} value={est.value}>{est.label}</option>)}
           </select>
           <button 
             className="p-1.5 hover:bg-slate-700 rounded-lg text-gray-400 hover:text-white transition-colors"
@@ -817,7 +818,12 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
-  const [notifiedServicios, setNotifiedServicios] = useState<string[]>([]);
+  const [notifiedServicios, setNotifiedServicios] = useState<string[]>(() => {
+    try {
+      const key = `notifiedServicios:${CURRENT_USER_ID}`;
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch { return []; }
+  });
   const [showPushBanner, setShowPushBanner] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isMobile, setIsMobile] = useState(false);
@@ -832,43 +838,55 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // === LISTENERS EN VIVO: servicios y usuarios ===
   useEffect(() => {
-    const fetchData = async () => {
-      const serviciosSnap = await getDocs(collection(db, 'servicios'));
-      const serviciosData = serviciosSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      const usuariosSnap = await getDocs(collection(db, 'usuarios'));
-      const usuariosData = usuariosSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const unsubServicios = onSnapshot(collection(db, 'servicios'), (snap) => {
+      const serviciosData = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setServicios(serviciosData);
+    });
+    const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snap) => {
+      const usuariosData = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setUsuarios(usuariosData);
+    });
+    return () => {
+      unsubServicios();
+      unsubUsuarios();
     };
-    fetchData();
   }, []);
 
+  // === Notificación / banner cuando me asignan (con de-duplicación por localStorage) ===
   useEffect(() => {
-    const serviciosAsignados = servicios.filter(s =>
-      Array.isArray(s.personas) && s.personas.includes(CURRENT_USER_ID)
-    );
-    serviciosAsignados.forEach(s => {
-      if (!notifiedServicios.includes(s.id)) {
-        setShowPushBanner(true);
-        setNotifiedServicios(prev => [...prev, s.id]);
-        if (window.Notification && Notification.permission === 'granted') {
-          new Notification('Nuevo servicio asignado', {
-            body: `Se te asignó: ${s.elemento || 'Un servicio'}`,
-            icon: '/bell.png'
-          });
-        } else if (window.Notification && Notification.permission !== 'denied') {
-          Notification.requestPermission().then(permission => {
-            if (permission === 'granted') {
-              new Notification('Nuevo servicio asignado', {
-                body: `Se te asignó: ${s.elemento || 'Un servicio'}`,
-                icon: '/bell.png'
-              });
-            }
-          });
+    const key = `notifiedServicios:${CURRENT_USER_ID}`;
+    const asignados = servicios.filter(s => Array.isArray(s.personas) && s.personas.includes(CURRENT_USER_ID));
+    const prevSet = new Set<string>(notifiedServicios);
+
+    const nuevos = asignados.filter((s:any) => !prevSet.has(s.id));
+    if (nuevos.length > 0) {
+      setShowPushBanner(true);
+      setNotifiedServicios((prev) => {
+        const merged = Array.from(new Set([...prev, ...asignados.map((x:any) => x.id)]));
+        try { localStorage.setItem(key, JSON.stringify(merged)); } catch {}
+        return merged;
+      });
+
+      // Notificación nativa
+      if ('Notification' in window) {
+        const notify = () => {
+          const body = nuevos.length === 1
+            ? `Se te asignó: ${nuevos[0].elemento || 'Un servicio'}`
+            : `Se te asignaron ${nuevos.length} servicios`;
+          try { new Notification('Nuevo servicio asignado', { body, icon: '/bell.png' }); } catch {}
+        };
+        if (Notification.permission === 'granted') notify();
+        else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(p => { if (p === 'granted') notify(); });
         }
       }
-    });
+    } else {
+      // Mantén sincronizada la lista con lo actualmente asignado (evita “fantasmas”)
+      try { localStorage.setItem(key, JSON.stringify(asignados.map((x:any) => x.id))); } catch {}
+    }
+
     if (showPushBanner) {
       const t = setTimeout(() => setShowPushBanner(false), 6000);
       return () => clearTimeout(t);
@@ -879,7 +897,8 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
   const handleSaveServicio = async (nuevoServicio: any) => {
     try {
       const docRef = await addDoc(collection(db, 'servicios'), nuevoServicio);
-      setServicios(prev => [...prev, { ...nuevoServicio, id: docRef.id }]);
+      // No hace falta setServicios aquí porque onSnapshot actualizará el estado
+      toast.success('Servicio creado');
     } catch (error) {
       toast.error('Error al crear el servicio');
     }
@@ -888,9 +907,7 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
   const handleUpdateField = async (servicioId: string, field: string, value: any) => {
     try {
       await updateDoc(doc(db, 'servicios', servicioId), { [field]: value });
-      setServicios(prev => prev.map(s =>
-        s.id === servicioId ? { ...s, [field]: value } : s
-      ));
+      // onSnapshot reflejará el cambio
       toast.success(`Campo '${field}' actualizado correctamente`);
     } catch (error) {
       toast.error(`Error al actualizar el campo '${field}'`);
@@ -908,7 +925,6 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
     if (!window.confirm(`¿Seguro que quieres eliminar ${idsToDelete.length > 1 ? 'estos servicios' : 'este servicio'}?`)) return;
     try {
       await Promise.all(idsToDelete.map(id => deleteDoc(doc(db, 'servicios', id))));
-      setServicios(servicios.filter(s => !idsToDelete.includes(s.id)));
       setSelectedRows([]);
       toast.success(idsToDelete.length > 1 ? 'Servicios eliminados correctamente' : 'Servicio eliminado correctamente');
     } catch (error) {
@@ -926,9 +942,6 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
           elemento: (copy.elemento || '') + ' (Copia)',
         });
       }
-      const serviciosSnap = await getDocs(collection(db, 'servicios'));
-      const serviciosData = serviciosSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      setServicios(serviciosData);
       setSelectedRows([]);
       toast.success('Servicios duplicados correctamente');
     } catch (error) {
@@ -972,9 +985,6 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
     const servicioId = e.dataTransfer.getData('servicioId');
     try {
       await updateDoc(doc(db, 'servicios', servicioId), { estado: nuevoEstado });
-      setServicios(servicios.map(s =>
-        s.id === servicioId ? { ...s, estado: nuevoEstado } : s
-      ));
       toast.success('Estado actualizado correctamente');
     } catch (error) {
       toast.error('Error al actualizar el estado');
@@ -985,10 +995,10 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
 
   // -------------------- Agrupamiento y Filtro --------------------
   const filteredServicios = servicios.filter(s =>
-    s.elemento?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.personas?.some((pid: string) => {
+    (s.elemento || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.personas || []).some((pid: string) => {
       const user = usuarios.find(u => u.id === pid);
-      return user?.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
+      return (user?.nombre || '').toLowerCase().includes(searchTerm.toLowerCase());
     })
   );
   const grouped = estados.map((est) => ({
@@ -1122,15 +1132,21 @@ export const FridayServiciosScreen: React.FC<{ onBack?: () => void }> = ({ onBac
                       </div>
                     ) : (
                       group.servicios.map((s) => (
-                        <ServicioCard
+                        <div
                           key={s.id}
-                          s={s}
-                          group={group}
-                          usuarios={usuarios}
-                          handleUpdateField={handleUpdateField}
-                          handleDelete={handleDelete}
-                          setFileToView={setFileToView}
-                        />
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, s.id)}
+                          onDragEnd={handleDragEnd}
+                        >
+                          <ServicioCard
+                            s={s}
+                            group={group}
+                            usuarios={usuarios}
+                            handleUpdateField={handleUpdateField}
+                            handleDelete={handleDelete}
+                            setFileToView={setFileToView}
+                          />
+                        </div>
                       ))
                     )}
                   </div>
