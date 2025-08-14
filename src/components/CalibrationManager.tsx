@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, Fragment, useCallback } fr
 import {
   Upload, Download, Search, Calendar, User, Trash2, Eye, FolderOpen, Plus, X, Check, AlertCircle, Settings,
   Star, TrendingUp, Shield, Clock, Database, Activity, History, FileSpreadsheet, MessageSquareWarning,
-  FileCheck2, FileX2, Send, Archive, Edit3, ArrowLeft
+  FileCheck2, FileX2, Send, Archive, Edit3, ArrowLeft, Home
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Dialog, Transition } from "@headlessui/react";
@@ -114,15 +114,19 @@ function permissionsFor(role: Role): string[] {
   }
 }
 
-/* ======= Props opcionales ======= */
+/* ======= Props de navegación ======= */
 interface CalibrationManagerProps {
-  /** Si lo proporcionas, este handler se usa al presionar "Regresar".
-   *  Si no, se usa window.history.back(). */
-  onBack?: () => void;
+  onNavigateBack?: () => void;        // como en otros screens
+  onNavigateToMenu?: () => void;      // como en otros screens
+  menuRoute?: string;                  // ruta del menú (hash o pathname). Default '#/menu'
 }
 
 /* ======= Componente principal ======= */
-const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
+const CalibrationManager: React.FC<CalibrationManagerProps> = ({
+  onNavigateBack,
+  onNavigateToMenu,
+  menuRoute = "#/menu",
+}) => {
   /* --- Sesión Firebase --- */
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
@@ -329,7 +333,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
 
       const downloadURL = await getDownloadURL(storageRef);
 
-      // Crear doc (⚠️ history como arreglo normal para evitar issues con arrayUnion en addDoc)
+      // Crear doc (history como arreglo normal)
       await addDoc(collection(db, "formatos"), {
         name: safeName,
         magnitude: uploadForm.magnitude,
@@ -492,9 +496,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
     if (!["admin", "supervisor"].includes(currentUser.role)) return toast.error("Sin permiso");
     setDeleting(true);
     try {
-      // 1) Borrar Storage
       await deleteObject(ref(storage, file.storagePath)).catch(() => { /* si no existe, continuamos */ });
-      // 2) Borrar Firestore
       await deleteDoc(doc(db, "formatos", file.id));
       toast.success(`"${file.name}" eliminado definitivamente`);
       setDeleteFor(null);
@@ -515,6 +517,32 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
     rejected: files.filter((f) => f.status === "rejected").length,
     totalDownloads: files.reduce((s, f) => s + (f.downloads || 0), 0),
     avgRating: files.length ? (files.reduce((s, f) => s + (f.rating || 0), 0) / files.length).toFixed(1) : "0",
+  };
+
+  /* --- Navegación segura (no recarga) --- */
+  const goToMenu = () => {
+    if (onNavigateToMenu) return onNavigateToMenu(); // usa prop del resto de screens
+    const route = menuRoute || localStorage.getItem("app_menu_route") || "#/menu";
+    if (route.startsWith("#")) {
+      // Hash routing (no recarga)
+      window.location.hash = route;
+      return;
+    }
+    // History API (no recarga). Muchos routers escuchan popstate.
+    window.history.pushState({}, "", route);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  const handleBack = () => {
+    if (onNavigateBack) return onNavigateBack(); // usa prop del resto de screens
+    // Si venimos de una vista dentro de la misma app (misma origin) y hay historial, vamos atrás.
+    const sameOrigin = document.referrer && document.referrer.startsWith(window.location.origin);
+    if (sameOrigin && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    // Si no, mandamos a Menú sin recargar
+    goToMenu();
   };
 
   /* --- Stepper --- */
@@ -554,17 +582,6 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
     );
   }
 
-  /* --- Handler volver --- */
-  const handleBack = () => {
-    if (onBack) return onBack();
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      window.history.back();
-    } else {
-      // fallback: puedes redirigir al dashboard si usas router
-      // e.g., navigate("/dashboard")
-    }
-  };
-
   /* --- Render --- */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -577,6 +594,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
           <div className="relative bg-white/10 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 border border-white/20">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
               <div className="flex items-center gap-3 sm:gap-4">
+                {/* Regresar */}
                 <button
                   onClick={handleBack}
                   className="hidden sm:inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl border border-white/20"
@@ -585,6 +603,16 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
                   <ArrowLeft className="w-5 h-5" />
                   <span className="text-sm font-semibold">Regresar</span>
                 </button>
+                {/* Menú directo */}
+                <button
+                  onClick={goToMenu}
+                  className="hidden sm:inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-xl border border-white/20"
+                  title="Ir al menú"
+                >
+                  <Home className="w-5 h-5" />
+                  <span className="text-sm font-semibold">Menú</span>
+                </button>
+
                 <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center">
                   <Activity className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-white" />
                 </div>
@@ -595,13 +623,20 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
               </div>
 
               <div className="flex items-center gap-2 sm:gap-3">
-                {/* Botón regresar en móvil */}
+                {/* Botones en móvil */}
                 <button
                   onClick={handleBack}
                   className="sm:hidden bg-white/15 hover:bg-white/25 text-white p-2.5 rounded-xl border border-white/20"
                   title="Regresar"
                 >
                   <ArrowLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={goToMenu}
+                  className="sm:hidden bg-white/15 hover:bg-white/25 text-white p-2.5 rounded-xl border border-white/20"
+                  title="Menú"
+                >
+                  <Home className="w-5 h-5" />
                 </button>
 
                 <div className="text-white/80 text-xs sm:text-sm text-right hidden xs:flex flex-col">
@@ -634,7 +669,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
           <StatCard icon={<TrendingUp className="w-6 h-6 text-white" />} label="Descargas" value={stats.totalDownloads} className="from-purple-500 to-indigo-600" />
         </section>
 
-        {/* Filtros (stack en móvil) */}
+        {/* Filtros */}
         <section className="bg-white rounded-2xl sm:rounded-3xl shadow-xl border border-gray-100 p-4 sm:p-6 md:p-8 mb-6 sm:mb-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Búsqueda */}
@@ -741,7 +776,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
             />
           ) : viewMode === "cards" ? (
             <div className="p-4 sm:p-6 md:p-8">
-              {/* Grid responsive móvil → 1 col, tablet → 2, desktop → 3 */}
+              {/* Grid responsive */}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
                 {sortedFiles.map((file) => {
                   const priority = priorityConfig[file.priority];
@@ -837,7 +872,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
               </div>
             </div>
           ) : (
-            // Tabla (desktop), scroll suave en móvil
+            // Tabla
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -1199,7 +1234,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
         {/* Modal Rechazo */}
         <Transition appear show={!!rejectFor} as={Fragment}>
           <Dialog as="div" className="relative z-50" onClose={() => setRejectFor(null)}>
-            <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             </Transition.Child>
             <div className="fixed inset-0 overflow-y-auto">
@@ -1238,7 +1273,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({ onBack }) => {
         {/* Modal Edición metadatos */}
         <Transition appear show={!!editFor} as={Fragment}>
           <Dialog as="div" className="relative z-50" onClose={() => setEditFor(null)}>
-            <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             </Transition.Child>
             <div className="fixed inset-0 overflow-y-auto">
