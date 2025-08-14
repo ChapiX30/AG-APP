@@ -1,4 +1,4 @@
-/* MainMenu.tsx (versión con listener global de asignaciones) */
+/* MainMenu.tsx — con FCM (Paso 3B) */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
@@ -19,9 +19,10 @@ import {
 } from 'lucide-react';
 
 import { db } from '../utils/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { getFcmToken, onForegroundMessage } from '../utils/firebase';
 
-/** Menú original (igual) */
+/** Menú (igual que antes) */
 const menuItems = [
   { id: 'calendario', title: 'CALENDARIO', icon: Calendar, color: 'bg-blue-500', available: true },
   { id: 'consecutivos', title: 'CONSECUTIVOS', icon: Hash, color: 'bg-green-500', available: true },
@@ -40,9 +41,8 @@ export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
 
-  // === ID del usuario para comparar asignaciones ===
+  // Identidad para comparar asignaciones y guardar token
   const uid = useMemo(() => {
-    // Prioriza Firebase Auth
     const authUid = (user as any)?.uid || (user as any)?.id;
     const localUid = localStorage.getItem('usuario_id');
     return (authUid || localUid || '').toString();
@@ -54,83 +54,106 @@ export const MainMenu: React.FC = () => {
     return (authEmail || localEmail || '').toString().toLowerCase();
   }, [user]);
 
-  // Banner visual
+  // Banner visual cuando hay asignaciones
   const [showAssignedBanner, setShowAssignedBanner] = useState(false);
   const [assignedCount, setAssignedCount] = useState(0);
 
-  // Paso 1: Pedir permiso de notificaciones al entrar a la app (una sola vez)
+  // 1) Pedir permiso de notificaciones
   useEffect(() => {
-    if ('Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission().catch(() => {});
-      }
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
     }
   }, []);
 
-  // Paso 2 (global): Escuchar servicios y notificar si me asignan
+  // 2) Listener global: servicios asignados a mí (uid o email) -> banner + notificación
   useEffect(() => {
-    if (!uid && !email) return; // sin identidad no podemos comparar
+    if (!uid && !email) return;
 
     const key = `notifiedServicios:${uid || email}`;
-    // inicializa memoria local
     let notifiedSet = new Set<string>();
-    try {
-      notifiedSet = new Set<string>(JSON.parse(localStorage.getItem(key) || '[]'));
-    } catch { /* noop */ }
+    try { notifiedSet = new Set<string>(JSON.parse(localStorage.getItem(key) || '[]')); } catch {}
 
     const unsub = onSnapshot(collection(db, 'servicios'), (snap) => {
-      // Normaliza documentos
       const servicios = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
 
-      // Filtro: asignados a mí (por uid o por email)
       const asignados = servicios.filter(s => {
         const personas = Array.isArray(s.personas) ? s.personas : [];
         const personasLower = personas.map((p: any) => (p || '').toString().toLowerCase());
-        // Coincidir uid exacto o email (en minúsculas)
         return personas.includes(uid) || (email && personasLower.includes(email));
       });
 
-      // Detectar nuevos no notificados
       const nuevos = asignados.filter(s => !notifiedSet.has(s.id));
       setAssignedCount(asignados.length);
 
       if (nuevos.length > 0) {
-        // 1) Banner visual
         setShowAssignedBanner(true);
         setTimeout(() => setShowAssignedBanner(false), 6000);
 
-        // 2) Notificación nativa
         if ('Notification' in window) {
           const title = 'Nuevo servicio asignado';
           const body = nuevos.length === 1
             ? `Se te asignó: ${nuevos[0].elemento || 'Servicio'}`
             : `Se te asignaron ${nuevos.length} servicios`;
-          const show = () => {
-            try { new Notification(title, { body, icon: '/bell.png' }); } catch { /* noop */ }
-          };
+          const show = () => { try { new Notification(title, { body, icon: '/bell.png' }); } catch {} };
           if (Notification.permission === 'granted') show();
           else if (Notification.permission !== 'denied') {
             Notification.requestPermission().then(p => { if (p === 'granted') show(); });
           }
         }
 
-        // 3) Persistir para no repetir
         nuevos.forEach(s => notifiedSet.add(s.id));
-        try {
-          localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet)));
-        } catch { /* noop */ }
+        try { localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet))); } catch {}
       } else {
-        // Sin nuevos; sincroniza la lista con los asignados actuales (evita “fantasmas”)
-        try {
-          localStorage.setItem(key, JSON.stringify(asignados.map(s => s.id)));
-        } catch { /* noop */ }
+        try { localStorage.setItem(key, JSON.stringify(asignados.map(s => s.id))); } catch {}
       }
     }, (err) => {
-      // Para depurar rápido si hay problema de permisos / reglas
       console.error('onSnapshot servicios error:', err);
     });
 
     return () => unsub();
+  }, [uid, email]);
+
+  // 3) FCM: obtener y guardar token + manejar mensajes en primer plano
+  useEffect(() => {
+    (async () => {
+      if (!uid) return; // necesitamos un uid para guardar el token
+
+      // Asegura permiso de notificaciones
+      if ('Notification' in window && Notification.permission === 'default') {
+        try { await Notification.requestPermission(); } catch {}
+      }
+
+      // VAPID Public Key (Firebase Console → Cloud Messaging → Web Push certificates)
+      const vapidKey = 'BFwUKgd3-0eEIuCzS3ySbG05x5iNRZ2hDMUsVBXQ7b7xgvcMGIpjnOb-8Ka_g0sj6RAr1Xx4qV9fWevdMgMTJdc';
+      if (!vapidKey || vapidKey.startsWith('TU_')) {
+        console.warn('⚠️ Configura tu VAPID PUBLIC KEY en MainMenu.tsx');
+        return;
+      }
+
+      // 3.1) Obtener token y guardarlo en usuarios/{uid}
+      const token = await getFcmToken(vapidKey);
+      if (token) {
+        try {
+          await setDoc(doc(db, 'usuarios', uid), { fcmToken: token, email: email || null }, { merge: true });
+          localStorage.setItem('fcmToken', token);
+        } catch (e) {
+          console.warn('No se pudo guardar fcmToken en usuarios/', e);
+        }
+      } else {
+        console.warn('No se obtuvo fcmToken (quizá sin permiso o navegador no soportado)');
+      }
+
+      // 3.2) Mensajes en primer plano (opcional)
+      onForegroundMessage((payload) => {
+        const title = payload?.notification?.title || 'Nuevo servicio asignado';
+        const body  = payload?.notification?.body  || '';
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/bell.png' });
+          }
+        } catch {}
+      });
+    })();
   }, [uid, email]);
 
   const handleMenuClick = (item: any) => {
