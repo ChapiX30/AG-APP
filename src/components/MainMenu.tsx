@@ -1,5 +1,5 @@
-/* MainMenu.tsx */
-import React, { useEffect } from 'react';
+/* MainMenu.tsx (versión con listener global de asignaciones) */
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { 
@@ -13,10 +13,15 @@ import {
   LogOut,
   User,
   Database,
-  FolderKanban
+  FolderKanban,
+  Bell,
+  Check
 } from 'lucide-react';
 
-/** Menú original (no se cambia el contenido ni ids) */
+import { db } from '../utils/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+
+/** Menú original (igual) */
 const menuItems = [
   { id: 'calendario', title: 'CALENDARIO', icon: Calendar, color: 'bg-blue-500', available: true },
   { id: 'consecutivos', title: 'CONSECUTIVOS', icon: Hash, color: 'bg-green-500', available: true },
@@ -35,6 +40,24 @@ export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
 
+  // === ID del usuario para comparar asignaciones ===
+  const uid = useMemo(() => {
+    // Prioriza Firebase Auth
+    const authUid = (user as any)?.uid || (user as any)?.id;
+    const localUid = localStorage.getItem('usuario_id');
+    return (authUid || localUid || '').toString();
+  }, [user]);
+
+  const email = useMemo(() => {
+    const authEmail = (user as any)?.email;
+    const localEmail = localStorage.getItem('usuario.email');
+    return (authEmail || localEmail || '').toString().toLowerCase();
+  }, [user]);
+
+  // Banner visual
+  const [showAssignedBanner, setShowAssignedBanner] = useState(false);
+  const [assignedCount, setAssignedCount] = useState(0);
+
   // Paso 1: Pedir permiso de notificaciones al entrar a la app (una sola vez)
   useEffect(() => {
     if ('Notification' in window) {
@@ -43,6 +66,72 @@ export const MainMenu: React.FC = () => {
       }
     }
   }, []);
+
+  // Paso 2 (global): Escuchar servicios y notificar si me asignan
+  useEffect(() => {
+    if (!uid && !email) return; // sin identidad no podemos comparar
+
+    const key = `notifiedServicios:${uid || email}`;
+    // inicializa memoria local
+    let notifiedSet = new Set<string>();
+    try {
+      notifiedSet = new Set<string>(JSON.parse(localStorage.getItem(key) || '[]'));
+    } catch { /* noop */ }
+
+    const unsub = onSnapshot(collection(db, 'servicios'), (snap) => {
+      // Normaliza documentos
+      const servicios = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Filtro: asignados a mí (por uid o por email)
+      const asignados = servicios.filter(s => {
+        const personas = Array.isArray(s.personas) ? s.personas : [];
+        const personasLower = personas.map((p: any) => (p || '').toString().toLowerCase());
+        // Coincidir uid exacto o email (en minúsculas)
+        return personas.includes(uid) || (email && personasLower.includes(email));
+      });
+
+      // Detectar nuevos no notificados
+      const nuevos = asignados.filter(s => !notifiedSet.has(s.id));
+      setAssignedCount(asignados.length);
+
+      if (nuevos.length > 0) {
+        // 1) Banner visual
+        setShowAssignedBanner(true);
+        setTimeout(() => setShowAssignedBanner(false), 6000);
+
+        // 2) Notificación nativa
+        if ('Notification' in window) {
+          const title = 'Nuevo servicio asignado';
+          const body = nuevos.length === 1
+            ? `Se te asignó: ${nuevos[0].elemento || 'Servicio'}`
+            : `Se te asignaron ${nuevos.length} servicios`;
+          const show = () => {
+            try { new Notification(title, { body, icon: '/bell.png' }); } catch { /* noop */ }
+          };
+          if (Notification.permission === 'granted') show();
+          else if (Notification.permission !== 'denied') {
+            Notification.requestPermission().then(p => { if (p === 'granted') show(); });
+          }
+        }
+
+        // 3) Persistir para no repetir
+        nuevos.forEach(s => notifiedSet.add(s.id));
+        try {
+          localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet)));
+        } catch { /* noop */ }
+      } else {
+        // Sin nuevos; sincroniza la lista con los asignados actuales (evita “fantasmas”)
+        try {
+          localStorage.setItem(key, JSON.stringify(asignados.map(s => s.id)));
+        } catch { /* noop */ }
+      }
+    }, (err) => {
+      // Para depurar rápido si hay problema de permisos / reglas
+      console.error('onSnapshot servicios error:', err);
+    });
+
+    return () => unsub();
+  }, [uid, email]);
 
   const handleMenuClick = (item: any) => {
     if (!item.available) return;
@@ -60,7 +149,20 @@ export const MainMenu: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
 
-      {/* ===== Desktop header (igual al original) ===== */}
+      {/* Banner de asignación */}
+      {showAssignedBanner && (
+        <div className="sticky top-0 z-50 bg-emerald-50 border-b border-emerald-200 text-emerald-800">
+          <div className="max-w-6xl mx-auto px-4 py-2 flex items-center gap-2">
+            <Bell className="w-4 h-4" />
+            <span className="text-sm">
+              ¡Tienes {assignedCount} servicio{assignedCount !== 1 ? 's' : ''} asignado{assignedCount !== 1 ? 's' : ''}!
+            </span>
+            <Check className="w-4 h-4 ml-auto text-emerald-600" />
+          </div>
+        </div>
+      )}
+
+      {/* ===== Desktop header ===== */}
       <div className="hidden md:block bg-white shadow-sm border-b border-gray-200">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -76,7 +178,7 @@ export const MainMenu: React.FC = () => {
           <div className="flex items-center space-x-4">
             <div className="hidden md:flex items-center space-x-2">
               <User className="w-5 h-5 text-gray-400" />
-              <span className="text-sm font-medium text-gray-700">{user?.name}</span>
+              <span className="text-sm font-medium text-gray-700">{(user as any)?.name}</span>
             </div>
             <button
               onClick={logout}
@@ -89,7 +191,7 @@ export const MainMenu: React.FC = () => {
         </div>
       </div>
 
-      {/* ===== Mobile header compacto (nuevo) ===== */}
+      {/* ===== Mobile header ===== */}
       <div className="md:hidden sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -104,7 +206,7 @@ export const MainMenu: React.FC = () => {
           <div className="flex items-center space-x-2">
             <div className="flex items-center space-x-1">
               <User className="w-4 h-4 text-gray-400" />
-              <span className="text-xs font-medium text-gray-700 max-w-[120px] truncate">{user?.name}</span>
+              <span className="text-xs font-medium text-gray-700 max-w-[120px] truncate">{(user as any)?.name}</span>
             </div>
             <button
               onClick={logout}
@@ -118,7 +220,7 @@ export const MainMenu: React.FC = () => {
         </div>
       </div>
 
-      {/* ===== Desktop grid (sin cambios visuales importantes) ===== */}
+      {/* ===== Desktop grid ===== */}
       <div className="hidden md:block p-6">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 mb-8">Menú Principal</h2>
@@ -154,7 +256,7 @@ export const MainMenu: React.FC = () => {
         </div>
       </div>
 
-      {/* ===== Mobile grid (nuevo, 2 columnas tipo app) ===== */}
+      {/* ===== Mobile grid ===== */}
       <div className="md:hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
         <h2 className="text-lg font-bold text-gray-900 mb-4">Menú</h2>
 
