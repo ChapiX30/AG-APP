@@ -124,7 +124,7 @@ export const MainMenu: React.FC = () => {
       }
 
       // VAPID Public Key (Firebase Console → Cloud Messaging → Web Push certificates)
-      const vapidKey = 'BFwUKgd3-0eEIuCzS3ySbG05x5iNRZ2hDMUsVBXQ7b7xgvcMGIpjnOb-8Ka_g0sj6RAr1Xx4qV9fWevdMgMTJdc';
+      const vapidKey = 'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
       if (!vapidKey || vapidKey.startsWith('TU_')) {
         console.warn('⚠️ Configura tu VAPID PUBLIC KEY en MainMenu.tsx');
         return;
