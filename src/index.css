@@ -1,3 +1,37 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ========= Global fixes anti-franja/overflow ========= */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;          /* bloquea scroll horizontal global */
+  overscroll-behavior-x: none; /* evita arrastre lateral */
+  background-color: #0f172a;   /* fondo oscuro por si se llega a ver el body */
+  color-scheme: dark;
+  /* IMPORTANTE: sin scrollbar-gutter => nada de bandas reservadas */
+}
+
+/* Suaviza tipografía */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Medios no empujan layout */
+img, video, canvas, svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* Si usas overflow-x-hidden/clip, aísla el pintado para evitar 1px de sangrado */
+:is(.overflow-x-hidden, .overflow-x-clip) {
+  contain: paint;
+}

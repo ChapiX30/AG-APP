@@ -521,27 +521,30 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({
 
   /* --- Navegación segura (no recarga) --- */
   const goToMenu = () => {
-    if (onNavigateToMenu) return onNavigateToMenu(); // usa prop del resto de screens
-    const route = menuRoute || localStorage.getItem("app_menu_route") || "#/menu";
-    if (route.startsWith("#")) {
-      // Hash routing (no recarga)
-      window.location.hash = route;
+    if (onNavigateToMenu) return onNavigateToMenu();
+
+    const stored = localStorage.getItem("app_menu_route");
+    const target = stored || menuRoute || "#/menu";
+
+    if (target.startsWith("#")) {
+      if (window.location.hash !== target) window.location.hash = target;
+      else window.dispatchEvent(new HashChangeEvent("hashchange"));
       return;
     }
-    // History API (no recarga). Muchos routers escuchan popstate.
-    window.history.pushState({}, "", route);
+    window.history.replaceState({}, "", target);
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
   const handleBack = () => {
-    if (onNavigateBack) return onNavigateBack(); // usa prop del resto de screens
-    // Si venimos de una vista dentro de la misma app (misma origin) y hay historial, vamos atrás.
-    const sameOrigin = document.referrer && document.referrer.startsWith(window.location.origin);
-    if (sameOrigin && window.history.length > 1) {
+    if (onNavigateBack) return onNavigateBack();
+
+    const sameOrigin = !!document.referrer && document.referrer.startsWith(window.location.origin);
+    const cameFromAuth = sameOrigin && /(login|signin|register|auth)/i.test(document.referrer);
+
+    if (sameOrigin && !cameFromAuth && window.history.length > 1) {
       window.history.back();
       return;
     }
-    // Si no, mandamos a Menú sin recargar
     goToMenu();
   };
 
