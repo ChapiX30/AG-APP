@@ -2,20 +2,31 @@ import React, { useState, useEffect, useRef } from "react";
 import { Cpu, Table2, ClipboardList, Menu } from "lucide-react";
 import clsx from "clsx";
 
+type Props = {
+  active: string;
+  onNavigate: (key: string) => void;
+  onToggle?: (open: boolean) => void; // ← NUEVO
+};
+
 const items = [
   { key: "friday", label: "Equipos en Calibración", icon: <Table2 size={20} /> },
   { key: "friday-servicios", label: "Servicios en Sitio", icon: <ClipboardList size={20} /> },
 ];
 
-export default function SidebarFriday({ active, onNavigate }) {
+export default function SidebarFriday({ active, onNavigate, onToggle }: Props) {
   const [open, setOpen] = useState(true);
-  const sidebarRef = useRef(null);
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+
+  // Notificar al padre cuando cambia el estado (abre/cierra)
+  useEffect(() => {
+    onToggle?.(open);
+  }, [open, onToggle]);
 
   // Ocultar al hacer click fuera
   useEffect(() => {
     if (!open) return;
-    const handleClick = (e) => {
-      if (sidebarRef.current && !sidebarRef.current.contains(e.target)) setOpen(false);
+    const handleClick = (e: MouseEvent) => {
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -23,10 +34,8 @@ export default function SidebarFriday({ active, onNavigate }) {
 
   // Abrir con Ctrl+B (como Notion)
   useEffect(() => {
-    const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "b") {
-        setOpen((v) => !v);
-      }
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") setOpen((v) => !v);
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
@@ -63,6 +72,7 @@ export default function SidebarFriday({ active, onNavigate }) {
         >
           <Menu size={22} className="rotate-90 text-cyan-200" />
         </button>
+
         {/* Logo */}
         <div className="flex items-center gap-3 px-7 mb-7">
           <div className="bg-cyan-600 rounded-2xl p-2 shadow-inner shadow-cyan-700/40 flex items-center justify-center animate-spin-logo">
@@ -72,6 +82,7 @@ export default function SidebarFriday({ active, onNavigate }) {
             EQUIPOS<span className="text-white font-light">AG</span>
           </span>
         </div>
+
         {/* Menu */}
         <nav className="flex flex-col gap-2 flex-1">
           {items.map((item) => (
@@ -104,6 +115,7 @@ export default function SidebarFriday({ active, onNavigate }) {
             </button>
           ))}
         </nav>
+
         {/* Footer */}
         <div className="mt-auto px-8 pt-8 pb-4 flex flex-col gap-2">
           <span className="text-xs text-cyan-900/70 font-medium tracking-wide">
@@ -113,14 +125,11 @@ export default function SidebarFriday({ active, onNavigate }) {
           <span className="text-xs text-neutral-700/70">v1.0 - A. Ginez</span>
         </div>
       </div>
+
       <style>{`
-        .animate-fadein-sidebar {
-          animation: sidebarfadein .58s cubic-bezier(.21,1,.21,1);
-        }
+        .animate-fadein-sidebar { animation: sidebarfadein .58s cubic-bezier(.21,1,.21,1); }
         @keyframes sidebarfadein { from { opacity:0; transform: translateX(-42px) scale(.98); } to { opacity:1; transform: none; } }
-        .animate-spin-logo {
-          animation: spinlogo 2.5s linear infinite;
-        }
+        .animate-spin-logo { animation: spinlogo 2.5s linear infinite; }
         @keyframes spinlogo { 0% { transform:rotate(0deg);} 100% {transform:rotate(360deg);} }
         .animate-sidebar-btn { animation: sidebarbtnfade .22s cubic-bezier(.3,1.7,.7,1.01); }
         @keyframes sidebarbtnfade { from { opacity:0; transform: scale(.7);} to {opacity:1; transform:scale(1);} }

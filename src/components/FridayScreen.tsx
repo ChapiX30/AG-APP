@@ -445,6 +445,9 @@ function renderEditor(col: Column, value: any, setValue: (val: any) => void, onS
 
 /* -------------------- Componente principal -------------------- */
 export default function FridayScreen() {
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  
   // ---- Estados principales ----
   const [columns, setColumns] = useState<Column[]>(() => {
     const d = localStorage.getItem(LOCAL_KEY);
@@ -496,7 +499,7 @@ export default function FridayScreen() {
   const [editValue, setEditValue] = useState<any>("");
   const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "", navigateTo: () => { } };
   const [openColMenuKey, setOpenColMenuKey] = useState<string | null>(null);
-  const [selectedRows, setSelectedRows] = useState<{ gidx: number; ridx: number }[]>([]);
+  const [selectedRows, setSelectedRows] = useState<{ gidx: number; id: number }[]>([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [viewMode, setViewMode] = useState("table");
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -716,7 +719,7 @@ export default function FridayScreen() {
 
   /* -------------------- Render tabla -------------------- */
   function renderTable() {
-    const isSelected = (gidx: number, ridx: number) => selectedRows.some(sel => sel.gidx === gidx && sel.ridx === ridx);
+    const isSelected = (gidx: number, rowId: number) => selectedRows.some(sel => sel.gidx === gidx && sel.id === rowId);
     const toggleRow = (gidx: number, ridx: number) => {
       setSelectedRows(prev => {
         const idx = prev.findIndex(sel => sel.gidx === gidx && sel.ridx === ridx);
@@ -1617,11 +1620,15 @@ export default function FridayScreen() {
 
   /* -------------------- Layout PRO sin huecos -------------------- */
   return (
-    <div className="min-h-screen bg-slate-950 dark:bg-[#0e1726] flex">
-      {/* Sidebar fijo en desktop */}
-      <div className="hidden md:block fixed top-0 left-0 h-full z-40">
-        <SidebarFriday active={currentScreen} onNavigate={navigateTo} />
-      </div>
+    <div className="flex h-screen w-full">
+      {/* Sidebar */}
+      <SidebarFriday
+        active="friday"
+        onNavigate={(key) => {
+          console.log("Navigate to", key);
+        }}
+        onToggle={(open) => setSidebarOpen(open)} // 👈 Captura estado
+      />
 
       {/* Sidebar móvil overlay */}
       {showMobileSidebar && (
