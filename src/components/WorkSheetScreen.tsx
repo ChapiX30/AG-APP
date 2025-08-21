@@ -14,13 +14,14 @@ import {
   Loader2,
   NotebookPen,
   Edit3,
+  Zap, // NUEVO: Icono para indicar transferencia automática
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc, getDocs } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // MODIFICADO: Agregadas funciones para Friday
 import masterCelestica from "../data/masterCelestica.json";
 
 type CelesticaRecord = {
@@ -102,6 +103,100 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   "Par Torsional": ["N·m", "lbf·ft"],
 };
 
+// NUEVO: Función para transferir worksheet a Friday
+const transferToFriday = async (formData: any, userId: string) => {
+  try {
+    // Obtener el tablero principal
+    const boardRef = doc(db, "tableros", "principal");
+    const boardSnap = await getDoc(boardRef);
+    
+    if (!boardSnap.exists()) {
+      console.log("Tablero principal no existe, no se puede transferir");
+      return false;
+    }
+    
+    const boardData = boardSnap.data();
+    let { groups = [] } = boardData;
+    
+    // Buscar o crear grupo "Calibraciones"
+    let calibracionesGroup = groups.find((g: any) => g.name.includes("Calibraciones") || g.id === "calibraciones");
+    
+    if (!calibracionesGroup) {
+      calibracionesGroup = {
+        id: "calibraciones",
+        name: "🔧 Calibraciones",
+        colorIdx: 2, // Verde
+        collapsed: false,
+        rows: []
+      };
+      groups.push(calibracionesGroup);
+    }
+    
+    // Generar folio automático
+    const generateAutoNumber = (groups: any[], colKey: string): number => {
+      let maxNum = 0;
+      groups.forEach((g: any) => {
+        g.rows.forEach((row: any) => {
+          if (row[colKey] && typeof row[colKey] === 'number') {
+            maxNum = Math.max(maxNum, row[colKey]);
+          }
+        });
+      });
+      return maxNum + 1;
+    };
+    
+    const newFolio = generateAutoNumber(groups, "folio");
+    
+    // Crear nueva fila para Friday
+    const newRow = {
+      id: "r" + Math.random().toString(36).slice(2, 8),
+      folio: newFolio,
+      equipo: formData.equipo || "Sin especificar",
+      cliente: formData.cliente || "Sin especificar", 
+      responsable: userId || "unknown",
+      estado: "En proceso",
+      prioridad: "Media",
+      progreso: 0,
+      fecha_limite: formData.fecha || new Date().toISOString().slice(0, 10),
+      created_at: { timestamp: Date.now(), userId: userId || "unknown" },
+      last_updated: { timestamp: Date.now(), userId: userId || "unknown" },
+      // Campos específicos del worksheet
+      certificado: formData.certificado,
+      magnitud: formData.magnitud,
+      unidad: formData.unidad,
+      lugar_calibracion: formData.lugarCalibracion,
+      frecuencia_calibracion: formData.frecuenciaCalibracion,
+      marca: formData.marca,
+      modelo: formData.modelo,
+      numero_serie: formData.numeroSerie,
+      notas_calibracion: formData.notas,
+      temp_ambiente: formData.tempAmbiente,
+      humedad_relativa: formData.humedadRelativa,
+      // Metadatos de transferencia
+      source_type: "worksheet",
+      transferred_at: Date.now()
+    };
+    
+    // Agregar la fila al grupo de calibraciones
+    const groupIndex = groups.findIndex((g: any) => g.id === calibracionesGroup.id);
+    groups[groupIndex].rows.push(newRow);
+    
+    // Actualizar el tablero en Firebase
+    await updateDoc(boardRef, { 
+      groups, 
+      columns: boardData.columns || [], 
+      updatedAt: Date.now() 
+    });
+    
+    console.log("✅ Worksheet transferido exitosamente al tablero Friday");
+    return true;
+    
+  } catch (error) {
+    console.error("❌ Error al transferir al tablero Friday:", error);
+    return false;
+  }
+};
+
 // Generación de PDF (sin cambios)
 const generateTemplatePDF = (formData: any, JsPDF: any) => {
   const doc = new jsPDF({ orientation:"p", unit: "pt", format: "a4" }); 
@@ -120,7 +215,10 @@ export const WorkSheetScreen: React.FC = () => {
   const [isCelestica, setIsCelestica] = useState(false);
   const [fieldsLocked, setFieldsLocked] = useState(false);
   const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
-
+  // NUEVO: Estado para auto-transferencia
+  const [autoTransferEnabled, setAutoTransferEnabled] = useState(() => 
+    localStorage.getItem('autoTransferWorksheets') === 'true'
+  );
 
   const [formData, setFormData] = useState({
     lugarCalibracion: "",
@@ -279,6 +377,7 @@ export const WorkSheetScreen: React.FC = () => {
   const magnitudReadOnly = !!currentMagnitude;
   const unidadesDisponibles = formData.magnitud ? unidadesPorMagnitud[formData.magnitud] || [] : [];
 
+  // MODIFICADO: handleSave con integración automática
   const handleSave = useCallback(async () => {
     if (!valid) {
       alert("⚠️ Completa todos los campos obligatorios");
@@ -295,20 +394,54 @@ export const WorkSheetScreen: React.FC = () => {
       const pdfRef = ref(storage, nombreArchivo);
       await uploadBytes(pdfRef, blob);
       await getDownloadURL(pdfRef);
-      await addDoc(collection(db, "hojasDeTrabajo"), {
+      
+      // Agregar timestamp para tracking
+      const worksheetDataWithTimestamp = {
         ...formData,
-      });
-      alert("✅ Guardado exitoso");
+        timestamp: Date.now(),
+        userId: currentUser?.uid || user?.uid || "unknown"
+      };
+      
+      await addDoc(collection(db, "hojasDeTrabajo"), worksheetDataWithTimestamp);
+      
+      // 🚀 NUEVA FUNCIONALIDAD: Auto-transferencia al tablero Friday
+      if (autoTransferEnabled) {
+        try {
+          const transferSuccess = await transferToFriday(
+            worksheetDataWithTimestamp, 
+            currentUser?.uid || user?.uid || "unknown"
+          );
+          
+          if (transferSuccess) {
+            alert("✅ Guardado exitoso y transferido automáticamente al tablero Friday");
+          } else {
+            alert("✅ Guardado exitoso (transferencia manual disponible en Friday)");
+          }
+        } catch (transferError) {
+          console.error("Error en auto-transferencia:", transferError);
+          alert("✅ Guardado exitoso (error en transferencia automática)");
+        }
+      } else {
+        alert("✅ Guardado exitoso");
+      }
+      
       goBack();
     } catch (e: any) {
       alert("❌ Error: " + e.message);
     } finally {
       setIsSaving(false);
     }
-  }, [valid, formData, currentUser, user, goBack]);
+  }, [valid, formData, currentUser, user, goBack, autoTransferEnabled]);
 
   const handleCancel = () => goBack();
   const esMagnitudMasa = (m: string) => m === "Masa";
+
+  // NUEVO: Toggle para auto-transferencia
+  const toggleAutoTransfer = () => {
+    const newValue = !autoTransferEnabled;
+    setAutoTransferEnabled(newValue);
+    localStorage.setItem('autoTransferWorksheets', newValue.toString());
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -331,13 +464,28 @@ export const WorkSheetScreen: React.FC = () => {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2"
-          >
-            <Edit3 className="w-4 h-4" />
-            <span>{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            {/* NUEVO: Toggle de auto-transferencia */}
+            <button
+              onClick={toggleAutoTransfer}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all ${
+                autoTransferEnabled 
+                  ? 'bg-green-500/20 text-green-200 border border-green-400/50' 
+                  : 'bg-white/10 text-white border border-white/20'
+              }`}
+              title={autoTransferEnabled ? "Auto-transferencia activada" : "Auto-transferencia desactivada"}
+            >
+              <Zap className="w-4 h-4" />
+              <span className="text-sm">Auto → Friday</span>
+            </button>
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -349,6 +497,13 @@ export const WorkSheetScreen: React.FC = () => {
             <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
               <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
               <p className="text-gray-600 mt-1">Complete los datos para generar la hoja de trabajo</p>
+              {/* NUEVO: Indicador de auto-transferencia */}
+              {autoTransferEnabled && (
+                <div className="mt-3 flex items-center space-x-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg">
+                  <Zap className="w-4 h-4" />
+                  <span className="text-sm font-medium">Se transferirá automáticamente al tablero Friday</span>
+                </div>
+              )}
             </div>
             <div className="p-8 space-y-8">
               {/* 1. Lugar de Calibración */}
@@ -419,7 +574,8 @@ export const WorkSheetScreen: React.FC = () => {
                     type="text"
                     value={formData.certificado}
                     readOnly
-                    className="w-full p-4 border rounded-lg bg-gray-50"
+                    className="w-full p-4 border rounded-lg bg-gray-50 text-gray-500"
+                    placeholder="Se asignará automáticamente"
                   />
                 </div>
                 <div>
@@ -597,7 +753,7 @@ export const WorkSheetScreen: React.FC = () => {
                     ))}
                   </select>
                   {formData.magnitud && unidadesDisponibles.length === 0 && (
-                    <p className="text-sm text-amber-600 mt-1">⚠️ Sin unidades definidas</p>
+                    <p className="text-sm text-amber-600 mt-1">Sin unidades definidas</p>
                   )}
                 </div>
               </div>
@@ -810,7 +966,6 @@ export const WorkSheetScreen: React.FC = () => {
                         <div className="p-2 text-xs">
                           {formData.linealidad}
                         </div>
-                        {/* Puedes añadir una tercera fila o ajustar el diseño para repetibilidad */}
                         <div className="col-span-2 p-2 text-xs border-t border-gray-400">
                           <strong>Repetibilidad:</strong> {formData.repetibilidad}
                         </div>

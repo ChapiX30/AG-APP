@@ -446,7 +446,7 @@ function renderEditor(col: Column, value: any, setValue: (val: any) => void, onS
 /* -------------------- Componente principal -------------------- */
 export default function FridayScreen() {
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // ---- Estados principales ----
   const [columns, setColumns] = useState<Column[]>(() => {
@@ -497,9 +497,10 @@ export default function FridayScreen() {
   const [search, setSearch] = useState("");
   const [editCell, setEditCell] = useState<{ gidx: number; ridx: number; colKey: string } | null>(null);
   const [editValue, setEditValue] = useState<any>("");
+  const [activeTab, setActiveTab] = useState("friday");
   const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "", navigateTo: () => { } };
   const [openColMenuKey, setOpenColMenuKey] = useState<string | null>(null);
-  const [selectedRows, setSelectedRows] = useState<{ gidx: number; id: number }[]>([]);
+  const [selectedRows, setSelectedRows] = useState<{ gidx: number; ridx: number }[]>([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [viewMode, setViewMode] = useState("table");
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -719,7 +720,7 @@ export default function FridayScreen() {
 
   /* -------------------- Render tabla -------------------- */
   function renderTable() {
-    const isSelected = (gidx: number, rowId: number) => selectedRows.some(sel => sel.gidx === gidx && sel.id === rowId);
+    const isSelected = (gidx: number, ridx: number) => selectedRows.some(sel => sel.gidx === gidx && sel.ridx === ridx);
     const toggleRow = (gidx: number, ridx: number) => {
       setSelectedRows(prev => {
         const idx = prev.findIndex(sel => sel.gidx === gidx && sel.ridx === ridx);
@@ -1620,12 +1621,17 @@ export default function FridayScreen() {
 
   /* -------------------- Layout PRO sin huecos -------------------- */
   return (
-    <div className="flex h-screen w-full">
+    <div className={clsx(
+      "flex h-screen transition-all duration-500 ease-in-out", // 👈 Captura estado
+    sidebarOpen ? "pl-[256px]" : "pl-0",
+    )}  
+    >
       {/* Sidebar */}
       <SidebarFriday
-        active="friday"
+        active="activeTab"
         onNavigate={(key) => {
-          console.log("Navigate to", key);
+          setActiveTab(key);
+          navigateTo(key); // <--
         }}
         onToggle={(open) => setSidebarOpen(open)} // 👈 Captura estado
       />
@@ -1641,7 +1647,7 @@ export default function FridayScreen() {
       )}
 
       {/* Main content */}
-      <div className={clsx("flex-1 min-h-screen flex flex-col transition-all duration-300", "md:ml-[235px] bg-[#f6f7fb]")}>
+      <div className={clsx("flex-1 min-h-screen overflow-auto", "md:ml-[235px] bg-[#f6f7fb]")}>
         {/* Header */}
         <div className="sticky top-0 z-30 bg-white border-b border-[#e6e9ef]">
           <div className="flex items-center gap-4 px-6 py-4">

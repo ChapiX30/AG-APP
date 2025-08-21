@@ -130,7 +130,10 @@ export const MagnitudeDetailScreen: React.FC = () => {
       'masa': '⚖️',
       'par-torsional': '🔧',
       'presion': '📊',
+      'quimica': '🔬',
+      'Reporte Diagnostico': '📊',
       'temperatura': '🌡️',
+      'tiempo': '⏱️',
       'volumen': '📦'
     };
     return icons[name?.toLowerCase()] || '🔬';
@@ -249,7 +252,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
       {deshacerModalOpen && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full">
-            <h3 className="text-lg font-bold mb-4">Selecciona el consecutivo a deshacer</h3>
+            <h3 className="text-lg font-bold mb-4 text-gray-900">Selecciona el consecutivo a deshacer</h3>
             <div className="space-y-2">
               {consecutivos
                 .filter(cons => cons.usuario === user.name)
@@ -259,8 +262,8 @@ export const MagnitudeDetailScreen: React.FC = () => {
                     onClick={() => handleSeleccionarAEliminar(cons)}
                     className={`block w-full text-left px-4 py-2 rounded-lg border ${
                       consecutivoAEliminar && consecutivoAEliminar.consecutivo === cons.consecutivo
-                        ? "bg-red-100 border-red-400 font-bold"
-                        : "hover:bg-gray-100 border-gray-200"
+                        ? "bg-red-100 border-red-400 font-bold text-gray-800"
+                        : "hover:bg-gray-100 border-black-200 text-gray-800"
                     }`}
                   >
                     {cons.consecutivo} — {cons.usuario}

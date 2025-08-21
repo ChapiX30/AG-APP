@@ -35,6 +35,7 @@ const menuItems = [
   { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'bg-cyan-500', available: false },
   { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: true },
   { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'bg-cyan-500', available: true },
+  { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'bg-cyan-500', available: true },
 ];
 
 export const MainMenu: React.FC = () => {
@@ -166,6 +167,7 @@ export const MainMenu: React.FC = () => {
     else if (item.id === 'calibration-manager') navigateTo('calibration-manager');
     else if (item.id === 'hoja-servicio') navigateTo('hoja-servicio');
     else if (item.id === 'normas') navigateTo('normas');
+    else if (item.id === 'check-list') navigateTo('check-list');
     else if (item.id === 'drive') navigateTo('drive');
   };
 
