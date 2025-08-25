@@ -142,155 +142,130 @@ export default function HojaDeServicioPro() {
 
   if (vistaPrevia) {
     return (
-      <div className="min-h-screen bg-gray-100 py-8 px-4">
-        <div className="max-w-full mx-auto px-2 sm:px-4">
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4">
-              <div className="flex flex-col sm:flex-row justify-between items-center">
-                {/* Botón de regresar */}
-                <button
-                  onClick={() => goBack()}
-                  className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-3 py-2 rounded-lg transition-colors mb-2 sm:mb-0"
-                >
-                  <ArrowLeft size={18} />
-                  Regresar
-                </button>
+       <div className="min-h-screen bg-gray-100 py-10 px-4">
+      <div className="max-w-[900px] mx-auto bg-white shadow-2xl border border-gray-300 rounded-xl overflow-hidden text-black">
+        {/* Encabezado con logo y datos empresa */}
+        <div className="p-6 border-b border-black text-center">
+          <div className="flex flex-col items-center">
+            <img src="/assets/logo.png" alt="Logo" className="h-16 mb-2" />
+            <h1 className="text-xl font-bold uppercase">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h1>
+            <p className="text-sm italic">
+              Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422
+            </p>
+            <p className="text-sm italic">Teléfonos: 8127116538 / 8127116357</p>
+          </div>
+        </div>
 
-                <h1 className="text-2xl font-bold">Vista Previa - Hoja de Servicio</h1>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    onClick={generarPDF}
-                    className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                  >
-                    <Download size={18} />
-                    Descargar PDF
-                  </button>
-                  <button
-                    onClick={toggleVistaPrevia}
-                    className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                  >
-                    <Edit3 size={18} />
-                    Editar
-                  </button>
-                </div>
-              </div>
+        {/* Título y datos generales */}
+        <div className="p-6 text-center border-b border-black">
+          <h2 className="text-2xl font-bold underline mb-2">HOJA DE SERVICIO</h2>
+          <div className="flex justify-between text-sm font-semibold max-w-[650px] mx-auto">
+            <span>Folio: {campos.folio || '__________'}</span>
+            <span>Fecha: {campos.fecha || '__________'}</span>
+          </div>
+        </div>
+
+        {/* Información cliente */}
+        <div className="p-6 border-b border-black text-sm space-y-2">
+          <div><strong>Planta:</strong> {campos.empresa || '____________________'}</div>
+          <div><strong>Domicilio:</strong> {campos.direccion || '____________________'}</div>
+          <div className="flex justify-between">
+            <span><strong>Contacto:</strong> {campos.contacto || '____________________'}</span>
+            <span><strong>Teléfono:</strong> {campos.telefono || '____________________'}</span>
+          </div>
+          <div><strong>Correo:</strong> {campos.correo || '____________________'}</div>
+        </div>
+
+        {/* Equipos calibrados */}
+        <div className="p-6 border-b border-black">
+          <h3 className="font-bold underline mb-2">Se calibraron los siguientes equipos:</h3>
+          <div className="min-h-[100px] border border-gray-400 p-3 bg-gray-50 whitespace-pre-wrap">
+            <strong>ID:</strong> {campos.equipos || '____________________'}
+          </div>
+        </div>
+
+        {/* Comentarios y calidad */}
+        <div className="p-6 border-b border-black grid grid-cols-1 sm:grid-cols-2 gap-6 text-sm">
+          <div>
+            <strong>Comentarios:</strong>
+            <div className="mt-2 min-h-[60px] bg-gray-50 border border-gray-400 p-2 whitespace-pre-wrap">
+              {campos.comentarios || '[Sin comentarios]'}
             </div>
-
-            {/* Plantilla para PDF */}
-            <div ref={pdfRef} className="w-full bg-white text-black">
-              <div className="p-4 sm:p-8 max-w-[800px] mx-auto">
-                {/* Header */}
-                <div className="text-center mb-6">
-                  <div className="border-2 border-black p-4 mb-4">
-                    <h1 className="text-2xl font-bold mb-2">HOJA DE SERVICIO</h1>
-                    <div className="flex flex-col sm:flex-row justify-between text-sm">
-                      <span><strong>Folio:</strong> {campos.folio || '[Sin folio]'}</span>
-                      <span><strong>Fecha:</strong> {campos.fecha || '[Sin fecha]'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Información de la empresa */}
-                <div className="border-2 border-black mb-6">
-                  <div className="bg-gray-200 p-3 text-center">
-                    <div className="w-16 h-12 bg-blue-600 mx-auto mb-2 rounded flex items-center justify-center">
-                      <span className="text-white font-bold text-xs">LOGO</span>
-                    </div>
-                    <h2 className="font-bold text-lg">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h2>
-                    <p className="text-sm italic">Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, Nuevo León, México, C.P. 66422</p>
-                    <p className="text-sm italic">Teléfonos: 8127116538/8127116357</p>
-                  </div>
-                </div>
-
-                {/* Información del cliente */}
-                <div className="border-2 border-black mb-6 p-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p><strong>Planta:</strong> {campos.empresa || '[Sin especificar]'}</p>
-                      <p><strong>Domicilio:</strong> {campos.direccion || '[Sin especificar]'}</p>
-                      <p><strong>Contacto:</strong> {campos.contacto || '[Sin especificar]'}</p>
-                    </div>
-                    <div>
-                      <p><strong>Teléfono:</strong> {campos.telefono || '[Sin especificar]'}</p>
-                      <p><strong>Correo:</strong> {campos.correo || '[Sin especificar]'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Equipos calibrados */}
-                <div className="border-2 border-black mb-6 p-4">
-                  <h3 className="font-bold underline mb-3">Se calibraron los siguientes equipos:</h3>
-                  <div className="min-h-[100px] border border-gray-300 p-3 bg-gray-50">
-                    <strong>ID:</strong>
-                    <div className="mt-2 whitespace-pre-wrap">
-                      {campos.equipos || '[No se especificaron equipos]'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Comentarios */}
-                <div className="border-2 border-black mb-8 p-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <strong>Comentarios:</strong>
-                      <div className="mt-2 min-h-[60px] whitespace-pre-wrap">
-                        {campos.comentarios || '[Sin comentarios]'}
-                      </div>
-                    </div>
-                    <div>
-                      <strong>Calidad del Servicio:</strong>
-                      <div className="mt-2 text-lg font-semibold text-blue-600">
-                        {campos.calidadServicio}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mensaje de firma */}
-                <div className="text-center mb-6 p-3 bg-gray-100 border-2 border-black">
-                  <strong>SE REQUIERE LA FIRMA DEL USUARIO Y EL PERSONAL PARA CONFIRMAR LA CONFORMIDAD DEL SERVICIO</strong>
-                </div>
-
-                {/* Firmas */}
-                <div className="border-2 border-black p-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                    <div className="text-center">
-                      <div className="border-b-2 border-black pb-4 mb-2 h-24 flex items-end justify-center">
-                        {firmaTecnico ? (
-                          <img src={firmaTecnico} alt="Firma técnico" className="max-h-20 max-w-full" />
-                        ) : (
-                          <span className="text-gray-400 text-sm">[Firma del técnico]</span>
-                        )}
-                      </div>
-                      <div className="text-sm">
-                        <div className="border-b border-black mb-1 pb-1">
-                          <strong>{campos.tecnicoResponsable || '[Nombre del técnico]'}</strong>
-                        </div>
-                        <strong>TÉCNICO RESPONSABLE</strong>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="border-b-2 border-black pb-4 mb-2 h-24 flex items-end justify-center">
-                        {firmaCliente ? (
-                          <img src={firmaCliente} alt="Firma cliente" className="max-h-20 max-w-full" />
-                        ) : (
-                          <span className="text-gray-400 text-sm">[Firma del usuario]</span>
-                        )}
-                      </div>
-                      <div className="text-sm">
-                        <div className="border-b border-black mb-1 pb-1">
-                          {campos.contacto || '[Nombre del usuario]'}
-                        </div>
-                        <strong>NOMBRE Y FIRMA DEL USUARIO</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+          </div>
+          <div>
+            <strong>Calidad del Servicio:</strong>
+            <div className="mt-2 text-lg font-semibold text-blue-700">
+              {campos.calidadServicio}
             </div>
           </div>
         </div>
-      </div>      
+
+        {/* Mensaje de confirmación */}
+        <div className="text-center text-sm font-semibold p-4 border-b border-black bg-gray-100">
+          SE REQUIERE LA FIRMA DEL USUARIO Y EL PERSONAL PARA CONFIRMAR LA CONFORMIDAD DEL SERVICIO
+        </div>
+
+        {/* Firmas */}
+        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-8 text-sm">
+          {/* Técnico */}
+          <div className="text-center">
+            <div className="border-b-2 border-black h-24 flex items-end justify-center mb-2">
+              {firmaTecnico ? (
+                <img src={firmaTecnico} alt="Firma técnico" className="max-h-20 max-w-full" />
+              ) : (
+                <span className="text-gray-400">[Firma del técnico]</span>
+              )}
+            </div>
+            <div className="border-b border-black mb-1 pb-1">
+              <strong>{campos.tecnicoResponsable || '[Nombre del técnico]'}</strong>
+            </div>
+            <strong>TÉCNICO RESPONSABLE</strong>
+          </div>
+
+          {/* Cliente */}
+          <div className="text-center">
+            <div className="border-b-2 border-black h-24 flex items-end justify-center mb-2">
+              {firmaCliente ? (
+                <img src={firmaCliente} alt="Firma cliente" className="max-h-20 max-w-full" />
+              ) : (
+                <span className="text-gray-400">[Firma del cliente]</span>
+              )}
+            </div>
+            <div className="border-b border-black mb-1 pb-1">
+              <strong>{campos.contacto || '[Nombre del usuario]'}</strong>
+            </div>
+            <strong>NOMBRE Y FIRMA DEL USUARIO</strong>
+          </div>
+        </div>
+
+        {/* Botones */}
+        <div className="flex justify-between items-center px-6 py-4 border-t border-gray-300 bg-gray-50">
+          <button
+            onClick={() => goBack()}
+            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md flex items-center gap-2"
+          >
+            <ArrowLeft size={16} />
+            Regresar
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={generarPDF}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
+            >
+              <Download size={16} />
+              Descargar PDF
+            </button>
+            <button
+              onClick={toggleVistaPrevia}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
+            >
+              <Edit3 size={16} />
+              Editar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
     );
   }
 

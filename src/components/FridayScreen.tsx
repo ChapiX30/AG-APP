@@ -467,26 +467,72 @@ export default function FridayScreen() {
   const [groups, setGroups] = useState<Group[]>(() => {
     const d = localStorage.getItem(LOCAL_KEY);
     if (d) try { return JSON.parse(d).groups || []; } catch { }
-    return [
-      {
-        id: "g1",
-        name: "🔧 Servicio en Sitio",
-        colorIdx: 0,
-        collapsed: false,
-        rows: [
-          {
-            id: "r1",
-            folio: 1,
-            equipo: "Máquina CNC XYZ",
-            cliente: "cliente1",
-            responsable: "user1",
-            estado: "En proceso",
-            prioridad: "Alta",
-            progreso: 50,
-            fecha_limite: "2025-08-08",
-            created_at: { timestamp: Date.now(), userId: "user1" }
-          }
-        ]
+   
+    const allRows: Row[] = [
+    {
+      id: "r1",
+      folio: 1,
+      lugar: "Sitio",
+      magnitud: "Dimensional",
+      unidad: "in",
+      frecuencia: "1 año",
+      marca: "Dbd",
+      modelo: "Db",
+      serie: "",
+      notas: "",
+      temp_amb: "",
+      hr: "",
+      responsable: "",
+      created_at: { timestamp: Date.now(), userId: "user1" }
+    },
+    {
+      id: "r2",
+      folio: 2,
+      lugar: "Laboratorio",
+      magnitud: "Dimensional",
+      unidad: "min",
+      frecuencia: "1 año",
+      marca: "Dewit",
+      modelo: "Smc",
+      serie: "Dhbd",
+      notas: "",
+      temp_amb: "23",
+      hr: "45",
+      responsable: "",
+      created_at: { timestamp: Date.now(), userId: "user2" }
+    },
+    {
+      id: "r3",
+      folio: 3,
+      lugar: "Sitio",
+      magnitud: "Electrica",
+      unidad: "kV",
+      frecuencia: "2 años",
+      marca: "Dhd",
+      modelo: "Vdvd",
+      serie: "Gdd",
+      notas: "Vdvd",
+      temp_amb: "23.5",
+      hr: "54",
+      responsable: "",
+      created_at: { timestamp: Date.now(), userId: "user1" }
+    }
+  ];
+
+  return [
+    {
+      id: "g1",
+      name: "🔧 Servicio en Sitio",
+      colorIdx: 0,
+      collapsed: false,
+      rows: allRows.filter(r => r.lugar === "Sitio"),
+    },
+    {
+      id: "g2",
+      name: "🏭 Laboratorio",
+      colorIdx: 2,
+      collapsed: false,
+      rows: allRows.filter(r => r.lugar === "Laboratorio"),
       }
     ];
   });
