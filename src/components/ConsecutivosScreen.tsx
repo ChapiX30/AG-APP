@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
-// import labLogo from '../assets/lab_logo.png'; // Si tienes tu logo real
+import labLogo from '../assets/lab_logo.png'; // Si tienes tu logo real
 
 const magnitudesAcreditadas = [
   { id: 'acustica', name: 'Acústica', icon: '🔊', description: 'Medición de sonido y vibraciones' },
