@@ -21,7 +21,7 @@ import html2canvas from "html2canvas";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc, getDocs, doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // MODIFICADO: Agregadas funciones para Friday
+import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // MODIFICADO: Agregadas funciones para Friday
 import masterCelestica from "../data/masterCelestica.json";
 import { set } from "date-fns";
 
@@ -354,6 +354,7 @@ export const WorkSheetScreen: React.FC = () => {
     notas: "",
     tempAmbiente: "",
     humedadRelativa: "",
+    excepcion: false,
   });
 
   // Cuando cambia el cliente: aplica EP- si es Celestica y limpia
@@ -495,16 +496,38 @@ export const WorkSheetScreen: React.FC = () => {
     }
     setIsSaving(true);
     try {
+    // Paso 4.1 – Validar si el certificado ya existe en Firestore
+  const certificado = formData.certificado;
+  const q = query(
+    collection(db, "worksheets"),
+    where("consecutivo", "==", certificado)
+  );
+  const existingDocs = await getDocs(q);
+
+  if (!existingDocs.empty) {
+    alert("❌ Este certificado ya existe. Intenta con otro consecutivo.");
+    setIsSaving(false);
+    return;
+  }
+    // Paso 4.2 - Generar PDF
       const { jsPDF } = await import("jspdf");
       const pdfDoc = generateTemplatePDF(formData, jsPDF);
       const blob = (pdfDoc as any).output("blob");
+
       const fecha = new Date().toISOString().split("T")[0];
       const carpeta = getUserName(currentUser || user);
       const nombreArchivo = `worksheets/${carpeta}/${formData.certificado}_${fecha}.pdf`;
       const pdfRef = ref(storage, nombreArchivo);
+
       await uploadBytes(pdfRef, blob);
       await getDownloadURL(pdfRef);
       
+    const yaExiste = await verificarDuplicado(formData.id, formData.frecuenciaCalibracion);
+if (yaExiste) {
+  alert("⚠️ Ya existe una calibración registrada con este ID y frecuencia en este año.");
+  return; // Detenemos el guardado
+}
+
       // Agregar timestamp para tracking
       const worksheetDataWithTimestamp = {
         ...formData,
@@ -639,6 +662,21 @@ export const WorkSheetScreen: React.FC = () => {
                 </div>
               </div>
 
+{formData.lugarCalibracion === "Laboratorio" && (
+  <div className="mt-4">
+    <label className="block font-semibold text-sm text-gray-700 mb-1">
+      Fecha de Recepción
+    </label>
+    <input
+      type="date"
+      className="w-full border rounded px-3 py-2 text-sm"
+      value={formData.fechaRecepcion || ""}
+      onChange={(e) =>
+        handleInputChange("fechaRecepcion", e.target.value)
+      }
+    />
+  </div>
+)}
               {/* 2. Frecuencia y Fecha */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
@@ -737,6 +775,24 @@ export const WorkSheetScreen: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Permitir Excepción */}
+<div className="mt-6">
+  <label className="flex items-center space-x-2">
+    <input
+      type="checkbox"
+      checked={formData.excepcionAprobada}
+      onChange={(e) =>
+        setFormData({ ...formData, excepcionAprobada: e.target.checked })
+      }
+      className="form-checkbox h-5 w-5 text-blue-600"
+    />
+    <span className="text-sm text-gray-700">
+      Permitir excepción (requiere aprobación)
+    </span>
+  </label>
+</div>
+
 
               {/* 5. Equipo & Marca */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -850,14 +906,8 @@ export const WorkSheetScreen: React.FC = () => {
                     <span>Unidad*</span>
                   </label>
                   <select
-                  multiple
                     value={formData.unidad}
-                    onChange={(e) => 
-                    handleInputChange(
-                      "unidad", 
-                    Array.from(e.target.selectedOptions, (option) => option.value)
-                    )
-                  }
+                    onChange={(e) => handleInputChange("unidad", e.target.value)}
                     disabled={!formData.magnitud}
                     className="w-full p-4 border rounded-lg"
                   >
@@ -1134,5 +1184,19 @@ export const WorkSheetScreen: React.FC = () => {
     </div>
   );
 };
+const verificarDuplicado = async (id: string, frecuencia: string): Promise<boolean> => {
+  const anioActual = new Date().getFullYear().toString();
+  const worksheetRef = collection(db, "worksheets"); // <-- Cambia si tu colección se llama diferente
 
+  const q = query(
+    worksheetRef,
+    where("id", "==", id),
+    where("frecuenciaCalibracion", "==", frecuencia),
+    where("certificado", ">=", `AG-${id}-0000-${anioActual}`),
+    where("certificado", "<=", `AG-${id}-9999-${anioActual}`)
+  );
+
+  const querySnapshot = await getDocs(q);
+  return !querySnapshot.empty;
+};
 export default WorkSheetScreen;

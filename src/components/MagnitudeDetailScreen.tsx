@@ -7,6 +7,18 @@ import { collection, query, where, orderBy, limit, onSnapshot, doc, deleteDoc, g
 import { db } from '../utils/firebase';
 import masterCelestica from "../data/masterCelestica.json";
 import { getPrefijo } from '../utils/prefijos';
+import { m } from 'framer-motion';
+
+const magnitudImages: Record<string, string> = {
+  Acustica: "/images/acustica.png",
+  Dimensional: "/images/dimensional.png",
+  Presión: "/images/presion.png",
+  Fuerza: "/images/fuerza.png",
+  Eléctrica: "/images/electrica.png",
+  Masa: "/images/masa.png",
+  ParTorsional: "/images/par-torsional.png",
+  // agrega las que uses en selectedMagnitude
+};
 
 export const MagnitudeDetailScreen: React.FC = () => {
   const { selectedMagnitude, goBack, navigateTo } = useNavigation();
@@ -172,10 +184,14 @@ export const MagnitudeDetailScreen: React.FC = () => {
           {/* Instrument Display */}
           <div className="bg-white rounded-2xl shadow-lg p-8 mb-8 text-center">
             <div className="w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg">
-              <div className="w-24 h-24 bg-black rounded-lg flex items-center justify-center">
-                <div className="text-green-400 font-mono text-sm">53.8</div>
-              </div>
+              <div className="w-24 h-24 bg-black rounded-lg flex items-center justify-center bg-white border">
+                <img
+                  src={magnitudImages[selectedMagnitude] || "/images/default.png"}
+                  alt={selectedMagnitude}
+                  className="w-full h-full object-contain"
+              />
             </div>
+
             <h2 className="text-2xl font-bold text-gray-900 capitalize mb-2">{selectedMagnitude}</h2>
           </div>
 
@@ -294,5 +310,6 @@ export const MagnitudeDetailScreen: React.FC = () => {
         </div>
       )}
     </div>
+  </div>
   );
 };

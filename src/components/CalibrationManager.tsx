@@ -524,7 +524,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({
     if (onNavigateToMenu) return onNavigateToMenu();
 
     const stored = localStorage.getItem("app_menu_route");
-    const target = stored || menuRoute || "#/menu";
+    const target = stored || menuRoute || "menu";
 
     if (target.startsWith("#")) {
       if (window.location.hash !== target) window.location.hash = target;
@@ -536,7 +536,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({
   };
 
   const handleBack = () => {
-    if (onNavigateBack) return onNavigateBack();
+    window.location.hash = "menu";
 
     const sameOrigin = !!document.referrer && document.referrer.startsWith(window.location.origin);
     const cameFromAuth = sameOrigin && /(login|signin|register|auth)/i.test(document.referrer);

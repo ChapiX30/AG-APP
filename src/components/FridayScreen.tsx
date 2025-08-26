@@ -10,11 +10,12 @@ import {
   Star as StarIcon,
 } from "lucide-react";
 import clsx from "clsx";
+// Importación corregida para useNavigation
 import { useNavigation } from "../hooks/useNavigation";
 import SidebarFriday from "./SidebarFriday";
 import { collection, onSnapshot, doc, setDoc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd"; // Importar DropResult
 
 /* -------------------- Tipos visuales -------------------- */
 const COLUMN_TYPE_CATEGORIES = [
@@ -51,9 +52,6 @@ const COLUMN_TYPE_CATEGORIES = [
       { key: "auto_number", icon: <HashIcon size={18} className="text-indigo-500" />, label: "Número Automático", description: "Genera un número secuencial" },
       { key: "creation_log", icon: <UserPlusIcon size={18} className="text-cyan-500" />, label: "Creado por", description: "Usuario y fecha de creación" },
       { key: "last_updated", icon: <TrendingUpIcon size={18} className="text-red-500" />, label: "Última Actualización", description: "Usuario y fecha de última modificación" },
-      // { key: "link_to_item", icon: <LinkIcon2 size={18} className="text-green-600" />, label: "Enlace a Elemento", description: "Vincula elementos de otros tableros" },
-      // { key: "mirror", icon: <CodeIcon size={18} className="text-blue-600" />, label: "Espejo", description: "Muestra información de un elemento vinculado" },
-      // { key: "vote", icon: <BarChart2Icon size={18} className="text-pink-600" />, label: "Voto", description: "Sistema de votación simple" },
     ]
   }
 ];
@@ -125,6 +123,7 @@ interface Group {
   rows: Row[];
 }
 
+// Inicialización de PEOPLE y CLIENTS como arrays vacíos
 const PEOPLE: { id: string; name: string; role: string; initials: string; color: string }[] = [];
 const CLIENTS: { id: string; name: string }[] = [];
 
@@ -134,13 +133,19 @@ function setTheme(dark: boolean) {
   else document.documentElement.classList.remove("dark");
 }
 const useTheme = () => {
-  const [dark, setDark] = useState(() => window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [dark, setDark] = useState(() => {
+    // Evitar el error de window no definido en SSR
+    if (typeof window !== 'undefined') {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false; // Valor por defecto para SSR
+  });
   useEffect(() => setTheme(dark), [dark]);
   return [dark, setDark] as const;
 };
 
 /* -------------------- Modal vidrio -------------------- */
-function GlassModal({ open, onClose, children, title, className = "" }) {
+function GlassModal({ open, onClose, children, title, className = "" }: { open: boolean; onClose: () => void; children: React.ReactNode; title: string; className?: string }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
@@ -184,7 +189,8 @@ function evalFormula(formula: string, row: Record<string, any>) {
   });
 
   // Validate expression to prevent arbitrary code execution
-  if (!/^[0-9+\-*/().\s,]*$/.test(expr)) return "—"; // Allow commas for functions
+  // Allow numbers, basic arithmetic operators, parentheses, and commas (for functions)
+  if (!/^[0-9+\-*/().,\s]*$/.test(expr)) return "—";
 
   try {
     // eslint-disable-next-line no-new-func
@@ -447,11 +453,22 @@ function renderEditor(col: Column, value: any, setValue: (val: any) => void, onS
 export default function FridayScreen() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
+
   // ---- Estados principales ----
   const [columns, setColumns] = useState<Column[]>(() => {
-    const d = localStorage.getItem(LOCAL_KEY);
-    if (d) try { return JSON.parse(d).columns || []; } catch { }
+    if (typeof window !== 'undefined') { // Asegurarse de que window esté definido
+      const d = localStorage.getItem(LOCAL_KEY);
+      if (d) {
+        try {
+          const parsed = JSON.parse(d);
+          if (parsed.columns && Array.isArray(parsed.columns)) {
+            return parsed.columns;
+          }
+        } catch (error) {
+          console.error("Error parsing columns from localStorage:", error);
+        }
+      }
+    }
     return [
       { label: "FOLIO", key: "folio", type: "auto_number", width: 100, sticky: true },
       { label: "EQUIPO", key: "equipo", type: "text", width: 200 },
@@ -464,78 +481,92 @@ export default function FridayScreen() {
       { label: "CREADO", key: "created_at", type: "creation_log", width: 180 },
     ];
   });
-  const [groups, setGroups] = useState<Group[]>(() => {
-    const d = localStorage.getItem(LOCAL_KEY);
-    if (d) try { return JSON.parse(d).groups || []; } catch { }
-   
-    const allRows: Row[] = [
-    {
-      id: "r1",
-      folio: 1,
-      lugar: "Sitio",
-      magnitud: "Dimensional",
-      unidad: "in",
-      frecuencia: "1 año",
-      marca: "Dbd",
-      modelo: "Db",
-      serie: "",
-      notas: "",
-      temp_amb: "",
-      hr: "",
-      responsable: "",
-      created_at: { timestamp: Date.now(), userId: "user1" }
-    },
-    {
-      id: "r2",
-      folio: 2,
-      lugar: "Laboratorio",
-      magnitud: "Dimensional",
-      unidad: "min",
-      frecuencia: "1 año",
-      marca: "Dewit",
-      modelo: "Smc",
-      serie: "Dhbd",
-      notas: "",
-      temp_amb: "23",
-      hr: "45",
-      responsable: "",
-      created_at: { timestamp: Date.now(), userId: "user2" }
-    },
-    {
-      id: "r3",
-      folio: 3,
-      lugar: "Sitio",
-      magnitud: "Electrica",
-      unidad: "kV",
-      frecuencia: "2 años",
-      marca: "Dhd",
-      modelo: "Vdvd",
-      serie: "Gdd",
-      notas: "Vdvd",
-      temp_amb: "23.5",
-      hr: "54",
-      responsable: "",
-      created_at: { timestamp: Date.now(), userId: "user1" }
-    }
-  ];
 
-  return [
-    {
-      id: "g1",
-      name: "🔧 Servicio en Sitio",
-      colorIdx: 0,
-      collapsed: false,
-      rows: allRows.filter(r => r.lugar === "Sitio"),
-    },
-    {
-      id: "g2",
-      name: "🏭 Laboratorio",
-      colorIdx: 2,
-      collapsed: false,
-      rows: allRows.filter(r => r.lugar === "Laboratorio"),
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => columns.map((c) => c.key));
+
+  const [groups, setGroups] = useState<Group[]>(() => {
+    if (typeof window !== 'undefined') { // Asegurarse de que window esté definido
+      const d = localStorage.getItem(LOCAL_KEY);
+      if (d) {
+        try {
+          const parsed = JSON.parse(d);
+          if (parsed.groups && Array.isArray(parsed.groups)) {
+            return parsed.groups;
+          }
+        } catch (error) {
+          console.error("Error parsing groups from localStorage:", error);
+        }
+      }
+    }
+    const allRows: Row[] = [
+      {
+        id: "r1",
+        folio: 1,
+        lugar: "Sitio",
+        magnitud: "Dimensional",
+        unidad: "in",
+        frecuencia: "1 año",
+        marca: "Dbd",
+        modelo: "Db",
+        serie: "",
+        notas: "",
+        temp_amb: "",
+        hr: "",
+        responsable: "",
+        created_at: { timestamp: Date.now(), userId: "user1" }
+      },
+      {
+        id: "r2",
+        folio: 2,
+        lugar: "Laboratorio",
+        magnitud: "Dimensional",
+        unidad: "min",
+        frecuencia: "1 año",
+        marca: "Dewit",
+        modelo: "Smc",
+        serie: "Dhbd",
+        notas: "",
+        temp_amb: "23",
+        hr: "45",
+        responsable: "",
+        created_at: { timestamp: Date.now(), userId: "user2" }
+      },
+      {
+        id: "r3",
+        folio: 3,
+        lugar: "Sitio",
+        magnitud: "Electrica",
+        unidad: "kV",
+        frecuencia: "2 años",
+        marca: "Dhd",
+        modelo: "Vdvd",
+        serie: "Gdd",
+        notas: "Vdvd",
+        temp_amb: "23.5",
+        hr: "54",
+        responsable: "",
+        created_at: { timestamp: Date.now(), userId: "user1" }
+      }
+    ];
+
+    return [
+      {
+        id: "g1",
+        name: "🔧 Servicio en Sitio",
+        colorIdx: 0,
+        collapsed: false,
+        rows: allRows.filter(r => r.lugar === "Sitio"),
+      },
+      {
+        id: "g2",
+        name: "🏭 Laboratorio",
+        colorIdx: 2,
+        collapsed: false,
+        rows: allRows.filter(r => r.lugar === "Laboratorio"),
       }
     ];
   });
+
   const [showAddColModal, setShowAddColModal] = useState(false);
   const [showAddGroupModal, setShowAddGroupModal] = useState(false);
   const [showColType, setShowColType] = useState("text"); // Default type for new column
@@ -544,7 +575,8 @@ export default function FridayScreen() {
   const [editCell, setEditCell] = useState<{ gidx: number; ridx: number; colKey: string } | null>(null);
   const [editValue, setEditValue] = useState<any>("");
   const [activeTab, setActiveTab] = useState("friday");
-  const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "", navigateTo: () => { } };
+  // Implementación básica de useNavigation si no está disponible
+  const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "friday", navigateTo: (screen: string) => console.log(`Navigate to ${screen}`) };
   const [openColMenuKey, setOpenColMenuKey] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<{ gidx: number; ridx: number }[]>([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -654,6 +686,7 @@ export default function FridayScreen() {
         if (!data) return;
         setColumns(data.columns || []);
         setGroups(data.groups || []);
+        setColumnOrder((data.columns || []).map((c: Column) => c.key)); // Actualizar columnOrder al cargar
       });
     })();
     return () => unsub && unsub();
@@ -666,7 +699,8 @@ export default function FridayScreen() {
       const ref = doc(db, "tableros", BOARD_DOC_ID);
       try {
         await updateDoc(ref, { columns, groups, updatedAt: Date.now() });
-      } catch {
+      } catch (e) {
+        console.error("Error updating document, attempting to set:", e);
         await setDoc(ref, { columns, groups, updatedAt: Date.now() }, { merge: true });
       }
     }, 350);
@@ -706,63 +740,64 @@ export default function FridayScreen() {
   }, [selectedRows, massEstado, massPrioridad]);
 
   /* -------------------- Drag & Drop -------------------- */
-  const onDragEnd = useCallback((result) => {
-    if (!result.destination) return;
+  const onDragEnd = (result: DropResult) => {
+    const { destination, source, type } = result;
+    if (!destination) return;
 
-    if (result.type === "group") {
+    // Reordenar grupos
+    if (type === "group") {
       const newGroups = Array.from(groups);
-      const [removed] = newGroups.splice(result.source.index, 1);
-      newGroups.splice(result.destination.index, 0, removed);
+      const [removed] = newGroups.splice(source.index, 1);
+      newGroups.splice(destination.index, 0, removed);
       setGroups(newGroups);
       setSaveTick(t => t + 1);
       return;
     }
 
-    if (result.type === "column") {
-      const newCols = Array.from(columns);
-      const [removed] = newCols.splice(result.source.index, 1);
-      newCols.splice(result.destination.index, 0, removed);
-      setColumns(newCols);
+    // Reordenar columnas
+    if (type === "column") {
+      const newColumnOrder = Array.from(columnOrder);
+      const [removed] = newColumnOrder.splice(source.index, 1);
+      newColumnOrder.splice(destination.index, 0, removed);
+      setColumnOrder(newColumnOrder);
       setSaveTick(t => t + 1);
       return;
     }
 
-    if (result.type === "row") {
-      const gFrom = +result.source.droppableId.replace("group-", "");
-      const gTo = +result.destination.droppableId.replace("group-", "");
-      const fromGroup = groups[gFrom];
-      const toGroup = groups[gTo];
+    // Reordenar filas (dentro o entre grupos)
+    if (type === "row") {
+      const gFrom = parseInt(source.droppableId.replace("group-", ""));
+      const gTo = parseInt(destination.droppableId.replace("group-", ""));
 
-      const newFromRows = Array.from(fromGroup.rows);
-      const [moved] = newFromRows.splice(result.source.index, 1);
+      const newGroups = Array.from(groups);
+      const sourceGroup = newGroups[gFrom];
+      const destinationGroup = newGroups[gTo];
 
-      // If moving between status columns in Kanban view
-      if (viewMode === "kanban" && result.destination.droppableId.startsWith("kanban-status-")) {
-        const targetStatus = result.destination.droppableId.replace("kanban-status-", "");
-        moved.estado = targetStatus;
+      const newSourceRows = Array.from(sourceGroup.rows);
+      const [movedRow] = newSourceRows.splice(source.index, 1);
+
+      // Si se mueve entre columnas de estado en vista Kanban
+      if (viewMode === "kanban" && destination.droppableId.startsWith("kanban-status-")) {
+        const targetStatus = destination.droppableId.replace("kanban-status-", "");
+        movedRow.estado = targetStatus;
       }
 
       if (gFrom === gTo) {
-        newFromRows.splice(result.destination.index, 0, moved);
-        setGroups(gs => {
-          const ngs = [...gs];
-          ngs[gFrom] = { ...ngs[gFrom], rows: newFromRows };
-          return ngs;
-        });
+        // Mover dentro del mismo grupo
+        newSourceRows.splice(destination.index, 0, movedRow);
+        newGroups[gFrom] = { ...sourceGroup, rows: newSourceRows };
       } else {
-        const newToRows = Array.from(toGroup.rows);
-        newToRows.splice(result.destination.index, 0, moved);
-        setGroups(gs => {
-          const ngs = [...gs];
-          ngs[gFrom] = { ...ngs[gFrom], rows: newFromRows };
-          ngs[gTo] = { ...ngs[gTo], rows: newToRows };
-          return ngs;
-        });
+        // Mover entre diferentes grupos
+        const newDestinationRows = Array.from(destinationGroup.rows);
+        newDestinationRows.splice(destination.index, 0, movedRow);
+        newGroups[gFrom] = { ...sourceGroup, rows: newSourceRows };
+        newGroups[gTo] = { ...destinationGroup, rows: newDestinationRows };
       }
+      setGroups(newGroups);
       setSaveTick(t => t + 1);
       return;
     }
-  }, [groups, columns, viewMode]);
+  };
 
   /* -------------------- Render tabla -------------------- */
   function renderTable() {
@@ -899,8 +934,8 @@ export default function FridayScreen() {
                                 <table className="w-full min-w-[1200px]">
                                   <thead>
                                     {/* ── IMPORTANTE: solo el PRIMER grupo tiene Droppable de columnas ── */}
-                                    {gidx === 0 ? (
-                                      <Droppable droppableId="columns-droppable" direction="horizontal" type="column">
+                                    {gidx === 0 ? ( // Solo el primer grupo tiene el Droppable de columnas
+                                      <Droppable droppableId={`columns-droppable`} direction="horizontal" type="column">
                                         {(providedDroppable) => (
                                           <tr ref={providedDroppable.innerRef} {...providedDroppable.droppableProps} className="bg-[#f8f9fd] border-b border-[#e6e9ef]">
                                             <th className="w-12 px-4 py-3">
@@ -917,159 +952,175 @@ export default function FridayScreen() {
                                                 }}
                                               />
                                             </th>
-                                            {columns.filter(c => !c.hidden).map((col, cidx) => (
-                                              <Draggable draggableId={`column-${col.key}`} index={cidx} key={col.key}>
-                                                {(provCol) => (
-                                                  <th
-                                                    ref={provCol.innerRef}
-                                                    {...provCol.draggableProps}
-                                                    {...provCol.dragHandleProps}
-                                                    className={clsx(
-                                                      "text-left px-4 py-3 text-sm font-semibold text-[#323338] relative group border-r border-[#e6e9ef] last:border-r-0 bg-[#f8f9fd]",
-                                                      col.sticky ? "sticky left-0 z-10" : ""
-                                                    )}
-                                                    style={{ minWidth: col.width, width: col.width }}
-                                                    title={COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.description}
-                                                  >
-                                                    <div className="flex items-center gap-2">
-                                                      {COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.icon}
-                                                      <span className="text-sm font-medium">{col.label}</span>
-                                                      <button
-                                                        className="column-menu-button opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e6e9ef] transition-all"
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          setOpenColMenuKey(openColMenuKey === col.key ? null : col.key);
-                                                        }}
-                                                      >
-                                                        <MoreVertical size={14} />
-                                                      </button>
-                                                    </div>
-                                                    {openColMenuKey === col.key && (
-                                                      <div className="column-menu-dropdown absolute top-full left-0 z-50 w-64 bg-white border border-[#e6e9ef] rounded-lg shadow-lg p-2 mt-1 animate-slideDown">
+                                            {columnOrder.map((key, cidx) => {
+                                              const col = columns.find(c => c.key === key);
+                                              if (!col || col.hidden) return null;
+                                              return (
+                                                <Draggable draggableId={`column-${col.key}`} index={cidx} key={col.key}>
+                                                  {(provCol, snapshot) => (
+                                                    <th
+                                                      ref={provCol.innerRef}
+                                                      {...provCol.draggableProps}
+                                                      {...provCol.dragHandleProps}
+                                                      className={clsx(
+                                                        "text-left px-4 py-3 text-sm font-semibold text-[#323338] relative group border-r border-[#e6e9ef] last:border-r-0 bg-[#f8f9fd]",
+                                                        col.sticky ? "sticky left-0 z-10" : "",
+                                                        snapshot.isDragging && "ring-2 ring-blue-400 shadow-xl scale-105 bg-white z-50"
+                                                      )}
+                                                      style={{
+                                                        minWidth: col.width,
+                                                        width: col.width,
+                                                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                                                        cursor: snapshot.isDragging ? "grabbing" : "grab"
+                                                      }}
+                                                      title={COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.description}
+                                                    >
+                                                      <div className="flex items-center gap-2">
+                                                        {COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.icon}
+                                                        <span className="text-sm font-medium">{col.label}</span>
                                                         <button
-                                                          className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
-                                                          onClick={() => {
-                                                            const name = prompt("Nuevo nombre:", col.label);
-                                                            if (name) setColumns(cols => cols.map((c) => c.key === col.key ? { ...c, label: name.toUpperCase() } : c));
-                                                            setOpenColMenuKey(null);
-                                                            setSaveTick(t => t + 1);
+                                                          className="column-menu-button opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e6e9ef] transition-all"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenColMenuKey(openColMenuKey === col.key ? null : col.key);
                                                           }}
                                                         >
-                                                          <Pencil size={16} className="text-[#676879]" />
-                                                          <span>Renombrar</span>
-                                                        </button>
-
-                                                        {["status", "priority", "dropdown", "tags"].includes(col.type) && (
-                                                          <button
-                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
-                                                            onClick={() => {
-                                                              setEditingColOptions(col);
-                                                              setTempColOptions(col.options || []);
-                                                              setShowEditColOptionsModal(true);
-                                                              setOpenColMenuKey(null);
-                                                            }}
-                                                          >
-                                                            <Palette size={16} className="text-orange-500" />
-                                                            <span>Editar opciones…</span>
-                                                          </button>
-                                                        )}
-
-                                                        {col.type === "currency" && (
-                                                          <button
-                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
-                                                            onClick={() => {
-                                                              const curr = prompt("Código de moneda (p.ej. MXN, USD):", col.currency || "MXN") || "MXN";
-                                                              setColumns(cols => cols.map((c) => c.key === col.key ? { ...c, currency: curr } : c));
-                                                              setOpenColMenuKey(null);
-                                                              setSaveTick(t => t + 1);
-                                                            }}
-                                                          >
-                                                            <DollarSign size={16} className="text-emerald-500" />
-                                                            <span>Moneda…</span>
-                                                          </button>
-                                                        )}
-                                                        {col.type === "formula" && (
-                                                          <button
-                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
-                                                            onClick={() => {
-                                                              const f = prompt("Fórmula (usa [campo], p.ej. [progreso] * [numero]):", col.formula || "") || "";
-                                                              setColumns(cols => cols.map((c) => c.key === col.key ? { ...c, formula: f } : c));
-                                                              setOpenColMenuKey(null);
-                                                              setSaveTick(t => t + 1);
-                                                            }}
-                                                          >
-                                                            <Sigma size={16} className="text-fuchsia-500" />
-                                                            <span>Editar fórmula…</span>
-                                                          </button>
-                                                        )}
-
-                                                        <div className="h-px bg-[#e6e9ef] my-1" />
-                                                        <button
-                                                          className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
-                                                          onClick={() => {
-                                                            setColumns(cols => [
-                                                              ...cols.slice(0, cidx + 1),
-                                                              { ...col, key: col.key + "_copy_" + Math.random().toString(36).slice(2, 5), label: col.label + " (COPIA)" },
-                                                              ...cols.slice(cidx + 1)
-                                                            ]);
-                                                            setOpenColMenuKey(null);
-                                                            setSaveTick(t => t + 1);
-                                                          }}
-                                                        >
-                                                          <Copy size={16} className="text-[#676879]" />
-                                                          <span>Duplicar</span>
-                                                        </button>
-                                                        <button
-                                                          className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
-                                                          onClick={() => {
-                                                            setColumns(cols => cols.map(c => c.key === col.key ? { ...c, hidden: !c.hidden } : c));
-                                                            setOpenColMenuKey(null);
-                                                            setSaveTick(t => t + 1);
-                                                          }}
-                                                        >
-                                                          <Eye size={16} className="text-[#676879]" />
-                                                          <span>{col.hidden ? "Mostrar" : "Ocultar"}</span>
-                                                        </button>
-                                                        <button
-                                                          className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-red-50 text-[#e2445c] text-sm transition-all"
-                                                          onClick={() => {
-                                                            if (window.confirm("¿Eliminar esta columna? Se perderán todos los datos asociados.")) {
-                                                              setColumns(cols => cols.filter((c) => c.key !== col.key));
-                                                              setSaveTick(t => t + 1);
-                                                            }
-                                                            setOpenColMenuKey(null);
-                                                          }}
-                                                        >
-                                                          <Trash2 size={16} />
-                                                          <span>Eliminar</span>
+                                                          <MoreVertical size={14} />
                                                         </button>
                                                       </div>
-                                                    )}
-                                                    <div
-                                                      className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-blue-300/50 transition-colors"
-                                                      onMouseDown={(e) => {
-                                                        e.stopPropagation();
-                                                        let startX = e.clientX;
-                                                        let startWidth = col.width;
+                                                      {snapshot.isDragging && (
+                                                        <div className="fixed top-4 left-4 z-50 pointer-events-none bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg shadow-2xl px-6 py-3 border border-blue-600 font-bold text-base animate-bounce">
+                                                          {col.label}
+                                                        </div>
+                                                      )}
 
-                                                        const doDrag = (e: MouseEvent) => {
-                                                          const newWidth = startWidth + (e.clientX - startX);
-                                                          handleColumnResize(col.key, newWidth);
-                                                        };
+                                                      {openColMenuKey === col.key && (
+                                                        <div className="column-menu-dropdown absolute top-full left-0 z-50 w-64 bg-white border border-[#e6e9ef] rounded-lg shadow-lg p-2 mt-1 animate-slideDown">
+                                                          <button
+                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
+                                                            onClick={() => {
+                                                              const name = prompt("Nuevo nombre:", col.label);
+                                                              if (name) setColumns(cols => cols.map((c) => c.key === col.key ? { ...c, label: name.toUpperCase() } : c));
+                                                              setOpenColMenuKey(null);
+                                                              setSaveTick(t => t + 1);
+                                                            }}
+                                                          >
+                                                            <Pencil size={16} className="text-[#676879]" />
+                                                            <span>Renombrar</span>
+                                                          </button>
 
-                                                        const stopDrag = () => {
-                                                          document.removeEventListener('mousemove', doDrag);
-                                                          document.removeEventListener('mouseup', stopDrag);
-                                                        };
+                                                          {["status", "priority", "dropdown", "tags"].includes(col.type) && (
+                                                            <button
+                                                              className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
+                                                              onClick={() => {
+                                                                setEditingColOptions(col);
+                                                                setTempColOptions(col.options || []);
+                                                                setShowEditColOptionsModal(true);
+                                                                setOpenColMenuKey(null);
+                                                              }}
+                                                            >
+                                                              <Palette size={16} className="text-orange-500" />
+                                                              <span>Editar opciones…</span>
+                                                            </button>
+                                                          )}
 
-                                                        document.addEventListener('mousemove', doDrag);
-                                                        document.addEventListener('mouseup', stopDrag);
-                                                      }}
-                                                    />
-                                                  </th>
-                                                )}
-                                              </Draggable>
-                                            ))}
+                                                          {col.type === "currency" && (
+                                                            <button
+                                                              className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
+                                                              onClick={() => {
+                                                                const curr = prompt("Código de moneda (p.ej. MXN, USD):", col.currency || "MXN") || "MXN";
+                                                                setColumns(cols => cols.map((c) => c.key === col.key ? { ...c, currency: curr } : c));
+                                                                setOpenColMenuKey(null);
+                                                                setSaveTick(t => t + 1);
+                                                              }}
+                                                            >
+                                                              <DollarSign size={16} className="text-emerald-500" />
+                                                              <span>Moneda…</span>
+                                                            </button>
+                                                          )}
+                                                          {col.type === "formula" && (
+                                                            <button
+                                                              className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
+                                                              onClick={() => {
+                                                                const f = prompt("Fórmula (usa [campo], p.ej. [progreso] * [numero]):", col.formula || "") || "";
+                                                                setColumns(cols => cols.map((c) => c.key === col.key ? { ...c, formula: f } : c));
+                                                                setOpenColMenuKey(null);
+                                                                setSaveTick(t => t + 1);
+                                                              }}
+                                                            >
+                                                              <Sigma size={16} className="text-fuchsia-500" />
+                                                              <span>Fórmula…</span>
+                                                            </button>
+                                                          )}
+
+                                                          <div className="h-px bg-[#e6e9ef] my-1" />
+                                                          <button
+                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
+                                                            onClick={() => {
+                                                              setColumns(cols => [
+                                                                ...cols.slice(0, cidx + 1),
+                                                                { ...col, key: col.key + "_copy_" + Math.random().toString(36).slice(2, 5), label: col.label + " (COPIA)" },
+                                                                ...cols.slice(cidx + 1)
+                                                              ]);
+                                                              setOpenColMenuKey(null);
+                                                              setSaveTick(t => t + 1);
+                                                            }}
+                                                          >
+                                                            <Copy size={16} className="text-[#676879]" />
+                                                            <span>Duplicar</span>
+                                                          </button>
+                                                          <button
+                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-[#f8f9fd] text-sm transition-all text-[#323338]"
+                                                            onClick={() => {
+                                                              setColumns(cols => cols.map(c => c.key === col.key ? { ...c, hidden: !c.hidden } : c));
+                                                              setOpenColMenuKey(null);
+                                                              setSaveTick(t => t + 1);
+                                                            }}
+                                                          >
+                                                            <Eye size={16} className="text-[#676879]" />
+                                                            <span>{col.hidden ? "Mostrar" : "Ocultar"}</span>
+                                                          </button>
+                                                          <button
+                                                            className="flex items-center gap-3 px-3 py-2 w-full rounded-md hover:bg-red-50 text-[#e2445c] text-sm transition-all"
+                                                            onClick={() => {
+                                                              if (window.confirm("¿Eliminar esta columna? Se perderán todos los datos asociados.")) {
+                                                                setColumns(cols => cols.filter((c) => c.key !== col.key));
+                                                                setSaveTick(t => t + 1);
+                                                              }
+                                                              setOpenColMenuKey(null);
+                                                            }}
+                                                          >
+                                                            <Trash2 size={16} />
+                                                            <span>Eliminar</span>
+                                                          </button>
+                                                        </div>
+                                                      )}
+                                                      <div
+                                                        className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-blue-300/50 transition-colors"
+                                                        onMouseDown={(e) => {
+                                                          e.stopPropagation();
+                                                          let startX = e.clientX;
+                                                          let startWidth = col.width;
+
+                                                          const doDrag = (e: MouseEvent) => {
+                                                            const newWidth = startWidth + (e.clientX - startX);
+                                                            handleColumnResize(col.key, newWidth);
+                                                          };
+
+                                                          const stopDrag = () => {
+                                                            document.removeEventListener('mousemove', doDrag);
+                                                            document.removeEventListener('mouseup', stopDrag);
+                                                          };
+
+                                                          document.addEventListener('mousemove', doDrag);
+                                                          document.addEventListener('mouseup', stopDrag);
+                                                        }}
+                                                      />
+                                                    </th>
+                                                  )}
+                                                </Draggable>
+                                              );
+                                            })}
                                             <th className="w-12 px-4 py-3"></th>
                                             {providedDroppable.placeholder}
                                           </tr>
@@ -1079,21 +1130,25 @@ export default function FridayScreen() {
                                       // Header estático para siguientes grupos (sin droppable duplicado)
                                       <tr className="bg-[#f8f9fd] border-b border-[#e6e9ef]">
                                         <th className="w-12 px-4 py-3"></th>
-                                        {columns.filter(c => !c.hidden).map((col) => (
-                                          <th
-                                            key={`static-${col.key}`}
-                                            className={clsx(
-                                              "text-left px-4 py-3 text-sm font-semibold text-[#323338] relative border-r border-[#e6e9ef] last:border-r-0 bg-[#f8f9fd]",
-                                              col.sticky ? "sticky left-0 z-10" : ""
-                                            )}
-                                            style={{ minWidth: col.width, width: col.width }}
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              {COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.icon}
-                                              <span className="text-sm font-medium">{col.label}</span>
-                                            </div>
-                                          </th>
-                                        ))}
+                                        {columnOrder.map((key) => { // Usar columnOrder para renderizar
+                                          const col = columns.find(c => c.key === key);
+                                          if (!col || col.hidden) return null;
+                                          return (
+                                            <th
+                                              key={`static-${col.key}`}
+                                              className={clsx(
+                                                "text-left px-4 py-3 text-sm font-semibold text-[#323338] relative border-r border-[#e6e9ef] last:border-r-0 bg-[#f8f9fd]",
+                                                col.sticky ? "sticky left-0 z-10" : ""
+                                              )}
+                                              style={{ minWidth: col.width, width: col.width }}
+                                            >
+                                              <div className="flex items-center gap-2">
+                                                {COLUMN_TYPE_CATEGORIES.flatMap(x => x.types).find(x => x.key === col.type)?.icon}
+                                                <span className="text-sm font-medium">{col.label}</span>
+                                              </div>
+                                            </th>
+                                          );
+                                        })}
                                         <th className="w-12 px-4 py-3"></th>
                                       </tr>
                                     )}
@@ -1120,7 +1175,9 @@ export default function FridayScreen() {
                                               />
                                             </td>
 
-                                            {columns.filter(c => !c.hidden).map((col) => {
+                                            {columnOrder.map((key) => { // Usar columnOrder para renderizar
+                                              const col = columns.find(c => c.key === key);
+                                              if (!col || col.hidden) return null;
                                               const isEditing = editCell && editCell.gidx === gidx && editCell.ridx === ridx && editCell.colKey === col.key;
                                               if (isEditing) {
                                                 return (
@@ -1374,6 +1431,7 @@ export default function FridayScreen() {
       }
 
       setColumns(cols => [...cols, newColumn]);
+      setColumnOrder(prevOrder => [...prevOrder, newColumn.key]); // Actualizar columnOrder
       setShowAddColModal(false);
       setColName("");
       setSelectedType(null);
@@ -1531,7 +1589,7 @@ export default function FridayScreen() {
               {editingColOptions.type !== "tags" && ( // Tags don't need color picker
                 <input
                   type="color"
-                  value={option.color.replace("bg-[", "").replace("]", "")} // Extract hex color
+                  value={option.color.replace("bg-[", "").replace("] text-white", "")} // Extract hex color
                   onChange={e => handleOptionChange(index, "color", `bg-[${e.target.value}] text-white`)}
                   className="w-10 h-10 rounded-lg border border-slate-600 cursor-pointer"
                   title="Seleccionar color"
@@ -1669,58 +1727,60 @@ export default function FridayScreen() {
   return (
     <div className={clsx(
       "flex h-screen transition-all duration-500 ease-in-out", // 👈 Captura estado
-    sidebarOpen ? "pl-[256px]" : "pl-0",
-    )}  
+      sidebarOpen ? "md:pl-[256px]" : "md:pl-0", // Ajuste para que el padding solo afecte en desktop
+    )}
     >
       {/* Sidebar */}
       <SidebarFriday
-        active="activeTab"
+        active={currentScreen}
         onNavigate={(key) => {
           setActiveTab(key);
-          navigateTo(key); // <--
+          navigateTo(key);
         }}
-        onToggle={(open) => setSidebarOpen(open)} // 👈 Captura estado
+        onToggle={(open) => setSidebarOpen(open)}
       />
 
       {/* Sidebar móvil overlay */}
       {showMobileSidebar && (
         <div className="fixed inset-0 z-50 flex md:hidden">
           <div className="bg-slate-900 w-64 h-full shadow-2xl">
-            <SidebarFriday active={currentScreen} onNavigate={(scr) => { setShowMobileSidebar(false); navigateTo(scr); }} />
+            <SidebarFriday active={currentScreen} onNavigate={(scr) => { setShowMobileSidebar(false); navigateTo(scr); }} onToggle={() => {}} />
           </div>
           <div className="flex-1 bg-black/60 backdrop-blur-sm" onClick={() => setShowMobileSidebar(false)} />
         </div>
       )}
 
       {/* Main content */}
-      <div className={clsx("flex-1 min-h-screen overflow-auto", "md:ml-[235px] bg-[#f6f7fb]")}>
+      <div className={clsx("flex-1 min-h-screen overflow-auto", sidebarOpen ? "md:ml-0" : "md:ml-[-235px]", "bg-[#f6f7fb]")}>
         {/* Header */}
         <div className="sticky top-0 z-30 bg-white border-b border-[#e6e9ef]">
-          <div className="flex items-center gap-4 px-6 py-4">
+          <div className="flex items-center gap-4 px-4 py-4 sm:px-6"> {/* Ajuste de padding para móviles */}
+            {/* Botón para abrir sidebar en móvil */}
             <button className="rounded-lg hover:bg-[#f8f9fd] p-2 md:hidden transition-all" onClick={() => setShowMobileSidebar(true)}>
               <Menu size={20} className="text-[#323338]" />
             </button>
+            {/* Botón de regreso para desktop */}
             <button className="rounded-lg hover:bg-[#f8f9fd] p-2 hidden md:block transition-all" onClick={() => navigateTo('dashboard')} title="Volver al menú principal">
               <ArrowLeft size={20} className="text-[#323338]" />
             </button>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-[#323338]">Tablero Principal</h1>
+              <h1 className="text-xl font-bold text-[#323338] sm:text-2xl">Tablero Principal</h1> {/* Ajuste de tamaño de texto */}
               <Star size={20} className="text-[#fdab3d]" />
             </div>
-            <div className="ml-auto flex items-center gap-3">
-              <div className="relative">
+            <div className="ml-auto flex items-center gap-2 sm:gap-3"> {/* Ajuste de gap para móviles */}
+              <div className="relative w-full max-w-[180px] sm:max-w-64"> {/* Ajuste de ancho para móviles */}
                 <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#676879]" />
                 <input
-                  className="pl-10 pr-4 py-2 rounded-lg bg-white border border-[#d0d4e4] text-[#323338] placeholder-[#676879] focus:outline-none focus:ring-2 focus:ring-[#0073ea]/50 focus:border-[#0073ea] w-64 transition-all"
-                  placeholder="Buscar en el tablero..."
+                  className="pl-10 pr-4 py-2 rounded-lg bg-white border border-[#d0d4e4] text-[#323338] placeholder-[#676879] focus:outline-none focus:ring-2 focus:ring-[#0073ea]/50 focus:border-[#0073ea] w-full transition-all text-sm" /* w-full para móviles */
+                  placeholder="Buscar..." /* Placeholder más corto para móviles */
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
               </div>
-              <button className="flex items-center gap-2 px-3 py-2 rounded-lg text-[#676879] hover:bg-[#f8f9fd] transition-all" onClick={() => setShowFilterModal(true)}>
+              <button className="flex items-center gap-2 px-2 py-2 rounded-lg text-[#676879] hover:bg-[#f8f9fd] transition-all sm:px-3" onClick={() => setShowFilterModal(true)}>
                 <Filter size={18} /><span className="hidden sm:inline">Filtros</span>
               </button>
-              <button className="flex items-center gap-2 px-3 py-2 rounded-lg text-[#676879] hover:bg-[#f8f9fd] transition-all">
+              <button className="flex items-center gap-2 px-2 py-2 rounded-lg text-[#676879] hover:bg-[#f8f9fd] transition-all sm:px-3">
                 <Eye size={18} /><span className="hidden sm:inline">Vista</span>
               </button>
               <button className="p-2 rounded-full hover:bg-[#f8f9fd] text-[#fdab3d]" title={dark ? "Modo claro" : "Modo oscuro"} onClick={() => setDark(d => !d)}>
@@ -1729,16 +1789,16 @@ export default function FridayScreen() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 px-6 py-3 border-t border-[#e6e9ef]">
-            <button className="bg-[#0073ea] hover:bg-[#005bb5] text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-all" onClick={() => setShowAddColModal(true)}>
-              <Plus size={18} />Nueva columna
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t border-[#e6e9ef] sm:px-6"> {/* Ajuste de padding y flex-wrap */}
+            <button className="bg-[#0073ea] hover:bg-[#005bb5] text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all text-sm sm:px-4 sm:py-2" onClick={() => setShowAddColModal(true)}>
+              <Plus size={16} />Nueva columna
             </button>
-            <button className="bg-[#00c875] hover:bg-[#00a661] text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-all" onClick={() => setShowAddGroupModal(true)}>
-              <Plus size={18} />Nuevo grupo
+            <button className="bg-[#00c875] hover:bg-[#00a661] text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all text-sm sm:px-4 sm:py-2" onClick={() => setShowAddGroupModal(true)}>
+              <Plus size={16} />Nuevo grupo
             </button>
-            <div className="h-6 w-px bg-[#e6e9ef] mx-2" />
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-[#676879]">Vista:</span>
+            <div className="h-6 w-px bg-[#e6e9ef] mx-1 sm:mx-2" /> {/* Ajuste de margen */}
+            <div className="flex items-center gap-2 mt-2 sm:mt-0"> {/* Ajuste de margen superior para móviles */}
+              <span className="text-sm text-[#676879] hidden sm:inline">Vista:</span> {/* Ocultar "Vista:" en móviles */}
               <div className="flex bg-[#f8f9fd] rounded-lg p-1 border border-[#e6e9ef]">
                 {[
                   { key: "table", icon: ListChecks, label: "Tabla" },
@@ -1747,11 +1807,11 @@ export default function FridayScreen() {
                 ].map(({ key, icon: Icon, label }) => (
                   <button
                     key={key}
-                    className={clsx("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                    className={clsx("flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all sm:gap-2 sm:px-3 sm:py-1.5 sm:text-sm",
                       viewMode === key ? "bg-[#0073ea] text-white shadow-sm" : "text-[#676879] hover:text-[#323338] hover:bg-white")}
                     onClick={() => setViewMode(key)}
                   >
-                    <Icon size={16} /><span className="hidden sm:inline">{label}</span>
+                    <Icon size={14} /><span className="hidden sm:inline">{label}</span>
                   </button>
                 ))}
               </div>
@@ -1759,7 +1819,7 @@ export default function FridayScreen() {
           </div>
 
           {notif && (
-            <div className="flex items-center gap-2 p-2 bg-gradient-to-r from-[#ffe6e9] via-[#fff4e6] to-transparent text-[#e2445c] text-sm font-medium px-8 animate-fadeIn">
+            <div className="flex items-center gap-2 p-2 bg-gradient-to-r from-[#ffe6e9] via-[#fff4e6] to-transparent text-[#e2445c] text-sm font-medium px-4 sm:px-8 animate-fadeIn"> {/* Ajuste de padding */}
               <AlertCircle size={18} className="text-[#e2445c]" />{notif}
             </div>
           )}
@@ -1771,7 +1831,7 @@ export default function FridayScreen() {
         </button>
 
         {/* Contenido */}
-        <div className="p-6 bg-[#f6f7fb]">
+        <div className="p-4 bg-[#f6f7fb] sm:p-6"> {/* Ajuste de padding para móviles */}
           <div className="max-w-[1600px] mx-auto">
             {viewMode === "table" && renderTable()}
             {viewMode === "kanban" && renderKanban()}
