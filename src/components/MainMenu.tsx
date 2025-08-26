@@ -1,10 +1,8 @@
-/* MainMenu.tsx — con FCM (Paso 3B) */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { 
   Calendar, 
-  Hash, 
   Building2, 
   FileText, 
   ClipboardList, 
@@ -18,78 +16,82 @@ import {
   Check
 } from 'lucide-react';
 
+import labLogo from '../assets/lab_logo.png'; // Ajusta el path si usas otra estructura
+
 import { db } from '../utils/firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { getFcmToken, onForegroundMessage } from '../utils/firebase';
 
-/** Menú (igual que antes) */
 const menuItems = [
-  { id: 'calendario', title: 'CALENDARIO', icon: Calendar, color: 'bg-blue-500', available: true },
-  { id: 'consecutivos', title: 'CONSECUTIVOS', icon: Hash, color: 'bg-green-500', available: true },
-  { id: 'empresas', title: 'EMPRESAS', icon: Building2, color: 'bg-indigo-500', available: true },
-  { id: 'hojas-trabajo', title: 'HOJAS DE TRABAJO', icon: FileText, color: 'bg-orange-500', available: false },
-  { id: 'hoja-servicio', title: 'HOJA DE SERVICIO', icon: ClipboardList, color: 'bg-purple-500', available: true },
-  { id: 'normas', title: 'NORMAS', icon: BookOpen, color: 'bg-teal-500', available: true },
-  { id: 'friday', title: 'FRIDAY', icon: Database, color: 'bg-emerald-500', available: true },
-  { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'bg-yellow-500', available: true },
-  { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'bg-cyan-500', available: false },
-  { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'bg-cyan-500', available: true },
-  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'bg-cyan-500', available: true },
-  { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'bg-cyan-500', available: true },
+  { id: 'calendario', title: 'CALENDARIO', icon: Calendar, color: 'from-[#3d485c] to-[#234e70]', available: true },
+  { id: 'consecutivos', title: 'CONSECUTIVOS', icon: Database, color: 'from-[#36537c] to-[#3a6073]', available: true },
+  { id: 'empresas', title: 'EMPRESAS', icon: Building2, color: 'from-[#5a5f73] to-[#42495b]', available: true },
+  { id: 'hojas-trabajo', title: 'HOJAS DE TRABAJO', icon: FileText, color: 'from-[#8e9eab] to-[#eef2f3]', available: false },
+  { id: 'hoja-servicio', title: 'HOJA DE SERVICIO', icon: ClipboardList, color: 'from-[#49516f] to-[#444e72]', available: true },
+  { id: 'normas', title: 'NORMAS', icon: BookOpen, color: 'from-[#304352] to-[#d7d2cc]', available: true },
+  { id: 'friday', title: 'FRIDAY', icon: Database, color: 'from-[#232526] to-[#414345]', available: true },
+  { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'from-[#d7d2cc] to-[#304352]', available: true },
+  { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'from-[#314755] to-[#26a0da]', available: false },
+  { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'from-[#232526] to-[#485563]', available: true },
+  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'from-[#232526] to-[#3a6073]', available: true },
+  { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'from-[#36475c] to-[#232526]', available: true },
 ];
 
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
 
-  // Identidad para comparar asignaciones y guardar token
   const uid = useMemo(() => {
     const authUid = (user as any)?.uid || (user as any)?.id;
     const localUid = localStorage.getItem('usuario_id');
     return (authUid || localUid || '').toString();
   }, [user]);
-
   const email = useMemo(() => {
     const authEmail = (user as any)?.email;
     const localEmail = localStorage.getItem('usuario.email');
     return (authEmail || localEmail || '').toString().toLowerCase();
   }, [user]);
-
-  // Banner visual cuando hay asignaciones
   const [showAssignedBanner, setShowAssignedBanner] = useState(false);
   const [assignedCount, setAssignedCount] = useState(0);
+  const [showProfile, setShowProfile] = useState(false);
+  const [editName, setEditName] = useState((user as any)?.name || "");
+  const [editEmail, setEditEmail] = useState((user as any)?.email || "");
+  const [saving, setSaving] = useState(false);
 
-  // 1) Pedir permiso de notificaciones
+  const handleProfileSave = async () => {
+    setSaving(true);
+    try {
+      localStorage.setItem('usuario.name', editName);
+      localStorage.setItem('usuario.email', editEmail);
+      setShowProfile(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {});
     }
   }, []);
 
-  // 2) Listener global: servicios asignados a mí (uid o email) -> banner + notificación
   useEffect(() => {
     if (!uid && !email) return;
-
     const key = `notifiedServicios:${uid || email}`;
     let notifiedSet = new Set<string>();
     try { notifiedSet = new Set<string>(JSON.parse(localStorage.getItem(key) || '[]')); } catch {}
-
     const unsub = onSnapshot(collection(db, 'servicios'), (snap) => {
       const servicios = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-
       const asignados = servicios.filter(s => {
         const personas = Array.isArray(s.personas) ? s.personas : [];
         const personasLower = personas.map((p: any) => (p || '').toString().toLowerCase());
         return personas.includes(uid) || (email && personasLower.includes(email));
       });
-
       const nuevos = asignados.filter(s => !notifiedSet.has(s.id));
       setAssignedCount(asignados.length);
-
       if (nuevos.length > 0) {
         setShowAssignedBanner(true);
         setTimeout(() => setShowAssignedBanner(false), 6000);
-
         if ('Notification' in window) {
           const title = 'Nuevo servicio asignado';
           const body = nuevos.length === 1
@@ -101,7 +103,6 @@ export const MainMenu: React.FC = () => {
             Notification.requestPermission().then(p => { if (p === 'granted') show(); });
           }
         }
-
         nuevos.forEach(s => notifiedSet.add(s.id));
         try { localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet))); } catch {}
       } else {
@@ -110,28 +111,20 @@ export const MainMenu: React.FC = () => {
     }, (err) => {
       console.error('onSnapshot servicios error:', err);
     });
-
     return () => unsub();
   }, [uid, email]);
 
-  // 3) FCM: obtener y guardar token + manejar mensajes en primer plano
   useEffect(() => {
     (async () => {
-      if (!uid) return; // necesitamos un uid para guardar el token
-
-      // Asegura permiso de notificaciones
+      if (!uid) return;
       if ('Notification' in window && Notification.permission === 'default') {
         try { await Notification.requestPermission(); } catch {}
       }
-
-      // VAPID Public Key (Firebase Console → Cloud Messaging → Web Push certificates)
       const vapidKey = 'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
       if (!vapidKey || vapidKey.startsWith('TU_')) {
         console.warn('⚠️ Configura tu VAPID PUBLIC KEY en MainMenu.tsx');
         return;
       }
-
-      // 3.1) Obtener token y guardarlo en usuarios/{uid}
       const token = await getFcmToken(vapidKey);
       if (token) {
         try {
@@ -143,8 +136,6 @@ export const MainMenu: React.FC = () => {
       } else {
         console.warn('No se obtuvo fcmToken (quizá sin permiso o navegador no soportado)');
       }
-
-      // 3.2) Mensajes en primer plano (opcional)
       onForegroundMessage((payload) => {
         const title = payload?.notification?.title || 'Nuevo servicio asignado';
         const body  = payload?.notification?.body  || '';
@@ -172,14 +163,62 @@ export const MainMenu: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-[#181c25] via-[#202734] to-[#283046]">
+
+      {/* Modal editar perfil */}
+      {showProfile && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-voldemort-fadein">
+          <div className="bg-gradient-to-b from-[#23293a] to-[#181c25] rounded-2xl shadow-voldemort w-full max-w-sm mx-auto p-7 animate-fade-in border border-[#262a39]">
+            <h3 className="text-lg font-semibold mb-3 text-gray-100">Editar perfil</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Nombre</label>
+                <input
+                  className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  autoFocus
+                  placeholder="Tu nombre"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Correo</label>
+                <input
+                  className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  type="email"
+                  autoComplete="off"
+                  placeholder="tucorreo@empresa.com"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end mt-6 gap-2">
+              <button
+                className="px-4 py-2 rounded-lg bg-[#212634] text-gray-300 hover:bg-[#283047] transition"
+                onClick={() => setShowProfile(false)}
+                disabled={saving}
+              >
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#4877b2] to-[#4e5caa] text-white font-medium shadow-voldemortglow hover:brightness-110 transition"
+                onClick={handleProfileSave}
+                disabled={saving}
+              >
+                {saving ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Banner de asignación */}
       {showAssignedBanner && (
-        <div className="sticky top-0 z-50 bg-emerald-50 border-b border-emerald-200 text-emerald-800">
+        <div className="sticky top-0 z-50 bg-gradient-to-r from-[#b6f0d6] to-[#94baff] border-b border-emerald-200 text-[#22444a] shadow-voldemortglow">
           <div className="max-w-6xl mx-auto px-4 py-2 flex items-center gap-2">
             <Bell className="w-4 h-4" />
-            <span className="text-sm">
+            <span className="text-sm font-semibold">
               ¡Tienes {assignedCount} servicio{assignedCount !== 1 ? 's' : ''} asignado{assignedCount !== 1 ? 's' : ''}!
             </span>
             <Check className="w-4 h-4 ml-auto text-emerald-600" />
@@ -188,26 +227,50 @@ export const MainMenu: React.FC = () => {
       )}
 
       {/* ===== Desktop header ===== */}
-      <div className="hidden md:block bg-white shadow-sm border-b border-gray-200">
+      <div className="hidden md:block bg-gradient-to-r from-[#23293a] to-[#283046] shadow-voldemortglow border-b border-[#23293a]">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Hash className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow-voldemortglow">
+              <img
+                src={labLogo}
+                alt="Logo"
+                className="w-8 h-8 object-contain rounded-xl drop-shadow-voldemorticon"
+                style={{ background: "transparent" }}
+              />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Equipos y Servicios AG</h1>
-              <p className="text-sm text-gray-500">Sistema de Gestión</p>
+              <h1 className="text-xl font-extrabold text-gray-100 tracking-wide">Equipos y Servicios AG</h1>
+              <p className="text-xs text-gray-400">Sistema de Gestión</p>
             </div>
           </div>
-          
-          <div className="flex items-center space-x-4">
-            <div className="hidden md:flex items-center space-x-2">
-              <User className="w-5 h-5 text-gray-400" />
-              <span className="text-sm font-medium text-gray-700">{(user as any)?.name}</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-full flex items-center justify-center shadow">
+                <User className="w-5 h-5 text-[#8ad7ff]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-medium text-gray-100">{(user as any)?.name || "Usuario"}</span>
+                  <button
+                    onClick={() => {
+                      setEditName((user as any)?.name || "");
+                      setEditEmail((user as any)?.email || "");
+                      setShowProfile(true);
+                    }}
+                    className="ml-1 p-1 rounded-full hover:bg-[#222e45] transition"
+                    title="Editar perfil"
+                  >
+                    <svg className="w-4 h-4 text-[#78aaff] drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6-6a2.121 2.121 0 113 3l-6 6a2.121 2.121 0 01-3-3z" />
+                    </svg>
+                  </button>
+                </div>
+                <span className="text-xs text-gray-400">{(user as any)?.email}</span>
+              </div>
             </div>
             <button
               onClick={logout}
-              className="flex items-center space-x-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 bg-[#23293a] text-gray-300 rounded-lg hover:bg-[#31406c] hover:text-white transition-colors shadow"
             >
               <LogOut className="w-4 h-4" />
               <span className="text-sm font-medium">Salir</span>
@@ -217,25 +280,45 @@ export const MainMenu: React.FC = () => {
       </div>
 
       {/* ===== Mobile header ===== */}
-      <div className="md:hidden sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200">
+      <div className="md:hidden sticky top-0 z-10 bg-gradient-to-r from-[#22293c]/90 to-[#23293a]/90 backdrop-blur border-b border-[#1b2231]">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
-              <Hash className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow">
+              <img
+                src={labLogo}
+                alt="Logo"
+                className="w-7 h-7 object-contain rounded-xl drop-shadow-voldemorticon"
+                style={{ background: "transparent" }}
+              />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-gray-900 leading-none">ESE-AG</h1>
-              <p className="text-[11px] text-gray-500 leading-none mt-0.5">Sistema de Gestión</p>
+              <h1 className="text-base font-extrabold text-gray-100 leading-none">ESE-AG</h1>
+              <p className="text-[11px] text-gray-400 leading-none mt-0.5">Sistema de Gestión</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-1">
-              <User className="w-4 h-4 text-gray-400" />
-              <span className="text-xs font-medium text-gray-700 max-w-[120px] truncate">{(user as any)?.name}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div className="w-7 h-7 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-full flex items-center justify-center">
+                <User className="w-4 h-4 text-[#7ac7ff]" />
+              </div>
+              <span className="text-xs font-medium text-gray-100 max-w-[90px] truncate">{(user as any)?.name}</span>
+              <button
+                onClick={() => {
+                  setEditName((user as any)?.name || "");
+                  setEditEmail((user as any)?.email || "");
+                  setShowProfile(true);
+                }}
+                className="ml-1 p-1 rounded-full hover:bg-[#222e45] transition"
+                title="Editar perfil"
+              >
+                <svg className="w-4 h-4 text-[#78aaff] drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6-6a2.121 2.121 0 113 3l-6 6a2.121 2.121 0 01-3-3z" />
+                </svg>
+              </button>
             </div>
             <button
               onClick={logout}
-              className="ml-2 p-2 rounded-md bg-red-50 text-red-600 hover:bg-red-100 active:scale-95 transition"
+              className="ml-2 p-2 rounded-md bg-[#212634] text-gray-300 hover:bg-[#293148] active:scale-95 transition"
               aria-label="Salir"
               title="Salir"
             >
@@ -246,33 +329,43 @@ export const MainMenu: React.FC = () => {
       </div>
 
       {/* ===== Desktop grid ===== */}
-      <div className="hidden md:block p-6">
+      <div className="hidden md:block p-8">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-8">Menú Principal</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <h2 className="text-2xl font-bold text-gray-100 mb-8 tracking-widest drop-shadow">Menú Principal</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {menuItems.map((item) => (
               <div
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
-                className={`relative group cursor-pointer transition-all duration-300 transform hover:scale-105
-                  ${item.available ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'}`}
+                className={`
+                  relative group cursor-pointer transition-all duration-300 
+                  hover:scale-105 hover:brightness-110
+                  ${item.available ? 'hover:shadow-voldemortcard' : 'opacity-60 cursor-not-allowed'}
+                `}
               >
-                <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-md">
-                  <div className="flex flex-col items-center text-center space-y-4">
-                    <div className={`w-20 h-20 ${item.color} rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all`}>
-                      <item.icon className="w-10 h-10 text-white" />
+                <div className="bg-gradient-to-br rounded-2xl p-8 border border-[#262a39] shadow-voldemortcard
+                  from-[#23293a] to-[#2c3144] group-hover:from-[#38405e] group-hover:to-[#253051] 
+                  transition-all duration-300 overflow-hidden">
+                  <div className="flex flex-col items-center text-center space-y-5">
+                    <div className={`
+                      w-20 h-20 rounded-xl flex items-center justify-center
+                      shadow-xl group-hover:shadow-voldemortglow
+                      bg-gradient-to-br ${item.color} transition-all duration-300
+                      group-hover:ring-2 group-hover:ring-[#78aaff]
+                    `}>
+                      <item.icon className="w-10 h-10 text-white drop-shadow-voldemorticon transition-all duration-300" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 mb-1">{item.title}</h3>
+                      <h3 className="text-lg font-bold text-gray-100 mb-1 tracking-wide">{item.title}</h3>
                       {!item.available && (
-                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
+                        <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-full border border-gray-600">
                           Próximamente
                         </span>
                       )}
                     </div>
                   </div>
                   {item.available && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-[#78aaff1b] to-[#21293a00] opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
                   )}
                 </div>
               </div>
@@ -283,39 +376,56 @@ export const MainMenu: React.FC = () => {
 
       {/* ===== Mobile grid ===== */}
       <div className="md:hidden p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Menú</h2>
-
-        <div className="grid grid-cols-2 gap-3">
+        <h2 className="text-lg font-bold text-gray-100 mb-4 tracking-widest">Menú</h2>
+        <div className="grid grid-cols-2 gap-4">
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => handleMenuClick(item)}
               disabled={!item.available}
-              className={`relative group rounded-2xl border text-left
-                ${item.available ? 'bg-white active:scale-[0.99] border-gray-200' : 'bg-gray-50 border-gray-200 opacity-60'}
-                shadow-sm hover:shadow-md transition-all p-3`}
+              className={`
+                group rounded-2xl border text-left
+                ${item.available ? 'bg-gradient-to-br from-[#23293a] to-[#293149] border-[#293149] active:scale-[0.98]' : 'bg-gray-800 border-gray-700 opacity-60'}
+                shadow-voldemortcard hover:shadow-voldemortglow transition-all p-4
+              `}
             >
               <div className="flex items-center gap-3">
-                <div className={`min-w-12 min-h-12 ${item.color} rounded-xl flex items-center justify-center shadow`}>
-                  <item.icon className="w-6 h-6 text-white" />
+                <div className={`
+                  min-w-12 min-h-12 rounded-xl flex items-center justify-center shadow
+                  bg-gradient-to-br ${item.color} 
+                  group-hover:ring-2 group-hover:ring-[#78aaff] transition-all
+                `}>
+                  <item.icon className="w-6 h-6 text-white drop-shadow-voldemorticon" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-[11px] font-semibold text-gray-800 leading-tight">{item.title}</p>
+                  <p className="text-[11px] font-semibold text-gray-100 leading-tight">{item.title}</p>
                   {!item.available && (
-                    <span className="mt-0.5 inline-block text-[10px] text-gray-500">Próximamente</span>
+                    <span className="mt-0.5 inline-block text-[10px] text-gray-400">Próximamente</span>
                   )}
                 </div>
               </div>
               {item.available && (
                 <span className="pointer-events-none absolute right-3 top-3 inline-flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-30"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#78aaff] opacity-40"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#78aaff]"></span>
                 </span>
               )}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Animaciones mágicas */}
+      <style>{`
+        @keyframes fade-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+        @keyframes voldemort-fadein { from { opacity: 0; filter: blur(8px); } to { opacity: 1; filter: blur(0); } }
+        .animate-fade-in { animation: fade-in 0.25s cubic-bezier(.22,.68,.54,1.04) both; }
+        .animate-voldemort-fadein { animation: voldemort-fadein 0.40s cubic-bezier(.16,.94,.54,1.04) both; }
+        .shadow-voldemort { box-shadow: 0 8px 40px 0 #23293a99, 0 0px 2px 0 #387aff22; }
+        .shadow-voldemortglow { box-shadow: 0 0 24px 0 #78aaff44, 0 1.5px 8px 0 #20272c55; }
+        .shadow-voldemortcard { box-shadow: 0 2px 16px 0 #23293a66, 0 1px 4px 0 #20272c33; }
+        .drop-shadow-voldemorticon { filter: drop-shadow(0 0 12px #78aaff33); }
+      `}</style>
     </div>
   );
 };

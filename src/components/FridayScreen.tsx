@@ -757,11 +757,18 @@ export default function FridayScreen() {
     // Reordenar columnas
     if (type === "column") {
       const newColumnOrder = Array.from(columnOrder);
-      const [removed] = newColumnOrder.splice(source.index, 1);
-      newColumnOrder.splice(destination.index, 0, removed);
-      setColumnOrder(newColumnOrder);
-      setSaveTick(t => t + 1);
-      return;
+      const [removedKey] = newColumnOrder.splice(source.index, 1);
+      newColumnOrder.splice(destination.index, 0, removedKey);
+      
+      // Reordenar también los objetos de columna según el nuevo orden
+  const newColumns = newColumnOrder
+    .map((key) => columns.find((col) => col.key === key)!)
+    .filter(Boolean);
+
+  setColumnOrder(newColumnOrder);
+  setColumns(newColumns);
+  setSaveTick(t => t + 1);
+  return;
     }
 
     // Reordenar filas (dentro o entre grupos)
@@ -789,6 +796,7 @@ export default function FridayScreen() {
       } else {
         // Mover entre diferentes grupos
         const newDestinationRows = Array.from(destinationGroup.rows);
+        movedRow.lugar = destinationGroup.name.includes("Sitio") ? "Sitio" : "Laboratorio"; // ⬅️ Esta línea es clave
         newDestinationRows.splice(destination.index, 0, movedRow);
         newGroups[gFrom] = { ...sourceGroup, rows: newSourceRows };
         newGroups[gTo] = { ...destinationGroup, rows: newDestinationRows };
@@ -1751,7 +1759,7 @@ export default function FridayScreen() {
       )}
 
       {/* Main content */}
-      <div className={clsx("flex-1 min-h-screen overflow-auto", sidebarOpen ? "md:ml-0" : "md:ml-[-235px]", "bg-[#f6f7fb]")}>
+      <div className={clsx("flex-1 min-h-screen overflow-auto", sidebarOpen ? "md:ml-0" : "md:ml-[30px]", "bg-[#f6f7fb]")}>
         {/* Header */}
         <div className="sticky top-0 z-30 bg-white border-b border-[#e6e9ef]">
           <div className="flex items-center gap-4 px-4 py-4 sm:px-6"> {/* Ajuste de padding para móviles */}
