@@ -16,7 +16,7 @@ import {
   Check
 } from 'lucide-react';
 
-import labLogo from '../assets/lab_logo.png'; // Ajusta el path si usas otra estructura
+import labLogo from '../assets/lab_logo.png';
 
 import { db } from '../utils/firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
@@ -230,12 +230,14 @@ export const MainMenu: React.FC = () => {
       <div className="hidden md:block bg-gradient-to-r from-[#23293a] to-[#283046] shadow-voldemortglow border-b border-[#23293a]">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow-voldemortglow">
+            <div className="w-10 h-10 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow-voldemortglow overflow-hidden">
               <img
                 src={labLogo}
                 alt="Logo"
-                className="w-8 h-8 object-contain rounded-xl drop-shadow-voldemorticon"
+                className="w-8 h-8 object-contain rounded-xl drop-shadow-voldemorticon animate-lablogo-idle transition-all duration-300
+                  hover:animate-lablogo-bounce hover:shadow-voldemortglow cursor-pointer select-none"
                 style={{ background: "transparent" }}
+                draggable={false}
               />
             </div>
             <div>
@@ -283,12 +285,13 @@ export const MainMenu: React.FC = () => {
       <div className="md:hidden sticky top-0 z-10 bg-gradient-to-r from-[#22293c]/90 to-[#23293a]/90 backdrop-blur border-b border-[#1b2231]">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow">
+            <div className="w-9 h-9 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow overflow-hidden">
               <img
                 src={labLogo}
                 alt="Logo"
-                className="w-7 h-7 object-contain rounded-xl drop-shadow-voldemorticon"
+                className="w-7 h-7 object-contain rounded-xl drop-shadow-voldemorticon animate-lablogo-idle transition-all duration-300 select-none"
                 style={{ background: "transparent" }}
+                draggable={false}
               />
             </div>
             <div>
@@ -425,6 +428,26 @@ export const MainMenu: React.FC = () => {
         .shadow-voldemortglow { box-shadow: 0 0 24px 0 #78aaff44, 0 1.5px 8px 0 #20272c55; }
         .shadow-voldemortcard { box-shadow: 0 2px 16px 0 #23293a66, 0 1px 4px 0 #20272c33; }
         .drop-shadow-voldemorticon { filter: drop-shadow(0 0 12px #78aaff33); }
+        @keyframes lablogo-idle {
+          0%   { filter: drop-shadow(0 0 0px #78aaff66) brightness(0.9) scale(1.12); opacity: 0; }
+          20%  { opacity: 1; }
+          65%  { filter: drop-shadow(0 0 16px #78aaff66) brightness(1.13) scale(1.07);}
+          100% { filter: drop-shadow(0 0 10px #78aaff88) brightness(1.02) scale(1);}
+        }
+        @keyframes lablogo-bounce {
+          0%   { transform: scale(1); filter: drop-shadow(0 0 12px #78aaff77); }
+          30%  { transform: scale(1.2) rotate(-8deg); filter: drop-shadow(0 0 24px #78aaffee); }
+          55%  { transform: scale(0.92) rotate(4deg); filter: drop-shadow(0 0 10px #78aaff88);}
+          70%  { transform: scale(1.05); filter: drop-shadow(0 0 16px #78aaffbb);}
+          100% { transform: scale(1); filter: drop-shadow(0 0 10px #78aaff88);}
+        }
+        .animate-lablogo-idle {
+          animation: lablogo-idle 1.15s cubic-bezier(.16,1.18,.56,.94) 1 both;
+          animation-delay: .06s;
+        }
+        .hover\\:animate-lablogo-bounce:hover {
+          animation: lablogo-bounce 0.55s cubic-bezier(.18,0.78,.43,1.22) 1 both !important;
+        }
       `}</style>
     </div>
   );
