@@ -119,19 +119,39 @@ const transferToFriday = async (formData: any, userId: string) => {
     const boardData = boardSnap.data();
     let { groups = [] } = boardData;
     
-    // Buscar o crear grupo "Calibraciones"
-    let calibracionesGroup = groups.find((g: any) => g.name.includes("Calibraciones") || g.id === "calibraciones");
-    
-    if (!calibracionesGroup) {
-      calibracionesGroup = {
-        id: "calibraciones",
-        name: "🔧 Calibraciones",
-        colorIdx: 2, // Verde
-        collapsed: false,
-        rows: []
-      };
-      groups.push(calibracionesGroup);
-    }
+    // Determina el grupo destino
+const lugar = (formData.lugarCalibracion || "").toLowerCase();
+let destinoGroupId = "laboratorio";
+let destinoGroupName = "🧪 Laboratorio";
+let destinoColorIdx = 1;
+if (lugar.includes("sitio")) {
+  destinoGroupId = "sitio";
+  destinoGroupName = "🏭 Sitio";
+  destinoColorIdx = 0;
+}
+
+// Busca o crea el grupo correcto
+let destinoGroup = groups.find((g: any) => g.id === destinoGroupId || g.name.toLowerCase().includes(destinoGroupName.toLowerCase()));
+if (!destinoGroup) {
+  destinoGroup = {
+    id: destinoGroupId,
+    name: destinoGroupName,
+    colorIdx: destinoColorIdx,
+    collapsed: false,
+    rows: [],
+  };
+  groups.push(destinoGroup);
+}
+
+// Inserta la fila en el grupo correcto
+const groupIndex = groups.findIndex((g: any) => g.id === destinoGroup.id);
+
+// Ahora sí, inserta la fila
+if (groupIndex !== -1) {
+groups[groupIndex].rows.push(newRow);
+} else {
+  throw new Error("No se encontró el grupo destino para insertar la fila.");
+}
     
     // Generar folio automático
     const generateAutoNumber = (groups: any[], colKey: string): number => {
@@ -177,10 +197,6 @@ const transferToFriday = async (formData: any, userId: string) => {
       source_type: "worksheet",
       transferred_at: Date.now()
     };
-    
-    // Agregar la fila al grupo de calibraciones
-    const groupIndex = groups.findIndex((g: any) => g.id === calibracionesGroup.id);
-    groups[groupIndex].rows.push(newRow);
     
     // Actualizar el tablero en Firebase
     await updateDoc(boardRef, { 
