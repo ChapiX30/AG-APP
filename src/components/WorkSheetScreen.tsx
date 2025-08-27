@@ -131,7 +131,7 @@ if (lugar.includes("sitio")) {
 }
 
 // Busca o crea el grupo correcto
-let destinoGroup = groups.find((g: any) => g.id === destinoGroupId || g.name.toLowerCase().includes(destinoGroupName.toLowerCase()));
+let destinoGroup = groups.find((g: any) => g.id === destinoGroupId || g.name.toLowerCase().includes(destinoGroupName.replace(/[^a-zA-Z]/g, '').toLowerCase()));
 if (!destinoGroup) {
   destinoGroup = {
     id: destinoGroupId,
@@ -144,7 +144,9 @@ if (!destinoGroup) {
 }
 
 // Inserta la fila en el grupo correcto
-const groupIndex = groups.findIndex((g: any) => g.id === destinoGroup.id);
+const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId ||
+    g.name.toLowerCase().includes(destinoGroupName.replace(/[^a-zA-Z]/g, '').toLowerCase())
+);
 
 // Ahora sí, inserta la fila
 if (groupIndex !== -1) {
