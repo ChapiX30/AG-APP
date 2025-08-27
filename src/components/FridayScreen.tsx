@@ -596,6 +596,32 @@ export default function FridayScreen() {
   const [editingColOptions, setEditingColOptions] = useState<Column | null>(null);
   const [tempColOptions, setTempColOptions] = useState<{ value: string; color: string }[]>([]);
 
+const handleDeleteRow = useCallback(async (groupId: string, rowId: string) => {
+  setGroups(prev =>
+    prev.map(group =>
+      group.id === groupId
+        ? { ...group, rows: group.rows.filter(row => row.id !== rowId) }
+        : group
+    )
+  );
+  try {
+    const boardRef = doc(db, "tableros", BOARD_DOC_ID);
+    const boardSnap = await getDoc(boardRef);
+    if (boardSnap.exists()) {
+      let data = boardSnap.data();
+      let { groups } = data;
+      groups = groups.map((g: any) =>
+        g.id === groupId
+          ? { ...g, rows: g.rows.filter((row: any) => row.id !== rowId) }
+          : g
+      );
+      await updateDoc(boardRef, { groups, updatedAt: Date.now() });
+    }
+  } catch (err) {
+    alert("Error al eliminar fila: " + err);
+  }
+}, []);
+
   // Notificación visual automática
   useEffect(() => {
     let urgente = false, bloquear = false;
@@ -1205,6 +1231,15 @@ export default function FridayScreen() {
                                                       setEditCell(null);
                                                       setSaveTick(t => t + 1);
                                                     })}
+                                                    <td className="px-2 py-2 text-center">
+        <button
+          className="text-red-500 hover:bg-red-100 p-1 rounded"
+          onClick={() => handleDeleteRow(group.id, row.id)}
+          title="Eliminar fila"
+        >
+          <Trash2 size={16} />
+        </button>
+                                                  </td>
                                                   </td>
                                                 );
                                               }
