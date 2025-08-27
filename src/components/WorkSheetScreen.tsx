@@ -131,7 +131,7 @@ if (lugar.includes("sitio")) {
 }
 
 // Busca o crea el grupo correcto
-let destinoGroup = groups.find((g: any) => g.id === destinoGroupId || g.name.toLowerCase().includes(destinoGroupName.replace(/[^a-zA-Z]/g, '').toLowerCase()));
+let destinoGroup = groups.find((g: any) => g.id === destinoGroupId);
 if (!destinoGroup) {
   destinoGroup = {
     id: destinoGroupId,
@@ -144,9 +144,7 @@ if (!destinoGroup) {
 }
 
 // Inserta la fila en el grupo correcto
-const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId ||
-    g.name.toLowerCase().includes(destinoGroupName.replace(/[^a-zA-Z]/g, '').toLowerCase())
-);
+const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId);
 
 // Generar folio automático
     const generateAutoNumber = (groups: any[], colKey: string): number => {
@@ -163,13 +161,30 @@ const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId ||
     
     const newFolio = generateAutoNumber(groups, "folio");
 
+    const getUserName = (user: any) => {
+  if (!user) return "Sin Usuario";
+  return (
+    user.displayName ||
+    user.nombre ||
+    user.firstName ||
+    user.given_name ||
+    user.profile?.name ||
+    user.profile?.displayName ||
+    (user.email
+      ? user.email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())
+      : null) ||
+    user.uid ||
+    "Sin Usuario"
+  );
+};
+
 // 1. GENERA EL OBJETO newRow ANTES DEL PUSH
 const newRow = {
   id: "r" + Math.random().toString(36).slice(2, 8),
   folio: newFolio,
   equipo: formData.equipo || "Sin especificar",
-  cliente: formData.cliente || "Sin especificar", 
-  responsable: userId || "unknown",
+  cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar", 
+  responsable: formData.nombre || getUserName(formData.usuario) || getUserName(user) || userId || "unknown",
   estado: "En proceso",
   prioridad: "Media",
   progreso: 0,
@@ -740,7 +755,7 @@ if (yaExiste) {
                     type="text"
                     value={formData.certificado}
                     readOnly
-                    className="w-full p-4 border rounded-lg bg-gray-50 text-gray-500"
+                    className="w-full p-4 border rounded-lg bg-gray-50 text-gray-800"
                     placeholder="Se asignará automáticamente"
                   />
                 </div>
@@ -825,7 +840,7 @@ if (yaExiste) {
                     onChange={(e) => handleInputChange("equipo", e.target.value)}
                     readOnly={fieldsLocked}
                     className={`w-full p-4 border rounded-lg text-white-700 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
+                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-800" : ""
                     }`}
                     placeholder="Equipo"
                   />
@@ -841,7 +856,7 @@ if (yaExiste) {
                     onChange={(e) => handleInputChange("marca", e.target.value)}
                     readOnly={fieldsLocked}
                     className={`w-full p-4 border rounded-lg text-white-700 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
+                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-800" : ""
                     }`}
                     placeholder="Marca"
                   />
@@ -861,7 +876,7 @@ if (yaExiste) {
                     onChange={(e) => handleInputChange("modelo", e.target.value)}
                     readOnly={fieldsLocked}
                     className={`w-full p-4 border rounded-lg text-white-800 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
+                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-800" : ""
                     }`}
                     placeholder="Modelo"
                   />
@@ -877,7 +892,7 @@ if (yaExiste) {
                     onChange={(e) => handleInputChange("numeroSerie", e.target.value)}
                     readOnly={fieldsLocked}
                     className={`w-full p-4 border rounded-lg text-white-800 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
+                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-900" : ""
                     }`}
                     placeholder="Número de Serie"
                   />
