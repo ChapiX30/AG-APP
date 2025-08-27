@@ -148,6 +148,21 @@ const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId ||
     g.name.toLowerCase().includes(destinoGroupName.replace(/[^a-zA-Z]/g, '').toLowerCase())
 );
 
+// Generar folio automático
+    const generateAutoNumber = (groups: any[], colKey: string): number => {
+      let maxNum = 0;
+      groups.forEach((g: any) => {
+        g.rows.forEach((row: any) => {
+          if (row[colKey] && typeof row[colKey] === 'number') {
+            maxNum = Math.max(maxNum, row[colKey]);
+          }
+        });
+      });
+      return maxNum + 1;
+    };
+    
+    const newFolio = generateAutoNumber(groups, "folio");
+
 // 1. GENERA EL OBJETO newRow ANTES DEL PUSH
 const newRow = {
   id: "r" + Math.random().toString(36).slice(2, 8),
@@ -183,21 +198,6 @@ groups[groupIndex].rows.push(newRow);
 } else {
   throw new Error("No se encontró el grupo destino para insertar la fila.");
 }
-    
-    // Generar folio automático
-    const generateAutoNumber = (groups: any[], colKey: string): number => {
-      let maxNum = 0;
-      groups.forEach((g: any) => {
-        g.rows.forEach((row: any) => {
-          if (row[colKey] && typeof row[colKey] === 'number') {
-            maxNum = Math.max(maxNum, row[colKey]);
-          }
-        });
-      });
-      return maxNum + 1;
-    };
-    
-    const newFolio = generateAutoNumber(groups, "folio");
     
     // Actualizar el tablero en Firebase
     await updateDoc(boardRef, { 
