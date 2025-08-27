@@ -148,6 +148,35 @@ const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId ||
     g.name.toLowerCase().includes(destinoGroupName.replace(/[^a-zA-Z]/g, '').toLowerCase())
 );
 
+// 1. GENERA EL OBJETO newRow ANTES DEL PUSH
+const newRow = {
+  id: "r" + Math.random().toString(36).slice(2, 8),
+  folio: newFolio,
+  equipo: formData.equipo || "Sin especificar",
+  cliente: formData.cliente || "Sin especificar", 
+  responsable: userId || "unknown",
+  estado: "En proceso",
+  prioridad: "Media",
+  progreso: 0,
+  fecha_limite: formData.fecha || new Date().toISOString().slice(0, 10),
+  created_at: { timestamp: Date.now(), userId: userId || "unknown" },
+  last_updated: { timestamp: Date.now(), userId: userId || "unknown" },
+  // ...agrega aquí todos los campos del worksheet...
+  certificado: formData.certificado,
+  magnitud: formData.magnitud,
+  unidad: formData.unidad,
+  lugar_calibracion: formData.lugarCalibracion,
+  frecuencia_calibracion: formData.frecuenciaCalibracion,
+  marca: formData.marca,
+  modelo: formData.modelo,
+  numero_serie: formData.numeroSerie,
+  notas_calibracion: formData.notas,
+  temp_ambiente: formData.tempAmbiente,
+  humedad_relativa: formData.humedadRelativa,
+  source_type: "worksheet",
+  transferred_at: Date.now()
+};
+
 // Ahora sí, inserta la fila
 if (groupIndex !== -1) {
 groups[groupIndex].rows.push(newRow);
