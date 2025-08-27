@@ -6,7 +6,7 @@ import labLogo from '../assets/lab_logo.png'; // Si tienes tu logo real
 const magnitudesAcreditadas = [
   { id: 'acustica', name: 'Acústica', icon: '🔊', description: 'Medición de sonido y vibraciones' },
   { id: 'dimensional', name: 'Dimensional', icon: '📏', description: 'Mediciones de longitud y dimensiones' },
-  { id: 'electrica', name: 'Eléctrica', icon: '⚡', description: 'Mediciones eléctricas y electrónicas' },
+  { id: 'electrica', name: 'Electrica', icon: '⚡', description: 'Mediciones eléctricas y electrónicas' },
   { id: 'flujo', name: 'Flujo', icon: '🌊', description: 'Medición de fluidos y caudales' },
   { id: 'frecuencia', name: 'Frecuencia', icon: '📡', description: 'Mediciones de frecuencia y tiempo' },
   { id: 'fuerza', name: 'Fuerza', icon: '💪', description: 'Medición de fuerzas y torques' },
