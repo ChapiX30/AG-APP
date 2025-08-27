@@ -487,8 +487,8 @@ export const WorkSheetScreen: React.FC = () => {
     }));
   };
 
-  const handleInputChange = (field: string, value: string) =>
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const handleInputChange = (field: string, value: any) =>
+    setFormData((prev: any) => ({ ...prev, [field]: value }));
 
   const camposObligatorios = [
     "lugarCalibracion",
@@ -496,6 +496,7 @@ export const WorkSheetScreen: React.FC = () => {
     "nombre",
     "cliente",
     "id",
+    "alcance",
     "equipo",
     "marca",
     "magnitud",
@@ -823,7 +824,7 @@ if (yaExiste) {
                     value={formData.equipo}
                     onChange={(e) => handleInputChange("equipo", e.target.value)}
                     readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-gray-700 ${
+                    className={`w-full p-4 border rounded-lg text-white-700 ${
                       fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
                     }`}
                     placeholder="Equipo"
@@ -839,7 +840,7 @@ if (yaExiste) {
                     value={formData.marca}
                     onChange={(e) => handleInputChange("marca", e.target.value)}
                     readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-gray-700 ${
+                    className={`w-full p-4 border rounded-lg text-white-700 ${
                       fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
                     }`}
                     placeholder="Marca"
@@ -859,7 +860,7 @@ if (yaExiste) {
                     value={formData.modelo}
                     onChange={(e) => handleInputChange("modelo", e.target.value)}
                     readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-gray-800 ${
+                    className={`w-full p-4 border rounded-lg text-white-800 ${
                       fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
                     }`}
                     placeholder="Modelo"
@@ -875,7 +876,7 @@ if (yaExiste) {
                     value={formData.numeroSerie}
                     onChange={(e) => handleInputChange("numeroSerie", e.target.value)}
                     readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-gray-800 ${
+                    className={`w-full p-4 border rounded-lg text-white-800 ${
                       fieldsLocked ? "bg-gray-50 cursor-not-allowed" : ""
                     }`}
                     placeholder="Número de Serie"
@@ -940,6 +941,21 @@ if (yaExiste) {
                   )}
                 </div>
               </div>
+              
+              <div className="mb-4">
+  <label className="block text-sm font-medium mb-1 text-gray-700" htmlFor="alcance">
+    Alcance
+  </label>
+  <input
+    id="alcance"
+    type="text"
+    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring"
+    placeholder="Ejemplo: 0 - 10 kg, 0.1 mm, etc."
+    value={formData.alcance || ""}
+    onChange={(e) => handleInputChange("alcance", e.target.value)}
+  />
+</div>
+
 
               {/* 8. Medición o Excentricidad/Linealidad/Repetibilidad */}
               {esMagnitudMasa(formData.magnitud) ? (

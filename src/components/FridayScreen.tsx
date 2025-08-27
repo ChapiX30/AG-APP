@@ -16,6 +16,7 @@ import SidebarFriday from "./SidebarFriday";
 import { collection, onSnapshot, doc, setDoc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd"; // Importar DropResult
+import { set } from "date-fns";
 
 /* -------------------- Tipos visuales -------------------- */
 const COLUMN_TYPE_CATEGORIES = [
@@ -604,22 +605,18 @@ const handleDeleteRow = useCallback(async (groupId: string, rowId: string) => {
         : group
     )
   );
-  try {
-    const boardRef = doc(db, "tableros", BOARD_DOC_ID);
-    const boardSnap = await getDoc(boardRef);
-    if (boardSnap.exists()) {
-      let data = boardSnap.data();
-      let { groups } = data;
-      groups = groups.map((g: any) =>
-        g.id === groupId
-          ? { ...g, rows: g.rows.filter((row: any) => row.id !== rowId) }
-          : g
-      );
-      await updateDoc(boardRef, { groups, updatedAt: Date.now() });
-    }
-  } catch (err) {
-    alert("Error al eliminar fila: " + err);
+  useEffect(() => {
+  })
+    const boardRef = doc(db, "tableros", "principal");
+    // Suscribe el listener a Firebase
+    const unsub = onSnapshot(boardRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      setGroups(data.groups || []);
+      setColumns(data.columns || []);
   }
+});
+return () => unsub();
 }, []);
 
   // Notificación visual automática
