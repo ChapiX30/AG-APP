@@ -855,11 +855,11 @@ return () => unsub();
         {/* Drag de grupos */}
         <Droppable droppableId="groups" type="group">
           {(provided) => (
-            <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-4">
+            <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-4 w-full">
               {groups.map((group, gidx) => (
                 <Draggable draggableId={group.id} index={gidx} key={group.id}>
                   {(provGroup, snapGroup) => (
-                    <div ref={provGroup.innerRef} {...provGroup.draggableProps} className="group-container">
+                    <div ref={provGroup.innerRef} {...provGroup.draggableProps} className="group-container w-full">
                       {/* Header del grupo */}
                       <div className={clsx(
                         "flex items-center px-6 py-3 font-bold text-base rounded-t-lg",
@@ -868,7 +868,7 @@ return () => unsub();
                         snapGroup.isDragging && "shadow-xl"
                       )}>
                         <span {...provGroup.dragHandleProps} className="cursor-grab pr-3 hover:scale-110 transition-transform">
-                          {group.collapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
+                          {group.collapsed ? <ChevronRight size={20} /> : <ChevronDown size={21} />}
                         </span>
                         <button
                           className="flex-1 text-left flex items-center gap-3"
@@ -1195,11 +1195,16 @@ return () => unsub();
                                         {(provR, snapR) => (
                                           <tr ref={provR.innerRef} {...provR.draggableProps}
                                             className={clsx(
-                                              "hover:bg-[#f8f9fd] transition-all border-b border-[#e6e9ef] group",
-                                              isSelected(gidx, ridx) && "bg-[#e6f3ff] ring-2 ring-[#0073ea]/30",
-                                              snapR.isDragging && "shadow-md"
+                                                group.name.toLowerCase().includes("laboratorio")
+                                                 ? "bg-[#f6e7fa]" // lila pastel
+                                                 : group.name.toLowerCase().includes("sitio")
+                                                 ? "bg-[#eaf4fe]" // azul pastel
+                                                 : "bg-white",
+                                              "hover:bg-[#e2e7fd] transition-all border-b border-[#ececec] group",
+                                               isSelected(gidx, ridx) && "bg-[#e1f5fe] ring-2 ring-[#00c875]/30",
+                                               snapR.isDragging && "shadow-lg"
                                             )}
-                                            style={{ transform: snapR.isDragging ? "scale(1.005)" : undefined }}
+                                            style={{ transform: snapR.isDragging ? "scale(1.008)" : undefined }}
                                           >
                                             <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r border-[#e6e9ef]">
                                               <input
