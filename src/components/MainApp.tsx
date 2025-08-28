@@ -15,7 +15,8 @@ import HojaDeServicioScreen from './HojaDeServicioScreen';
 import  CalibrationManager  from './CalibrationManager';
 import { EmpresasScreen } from './EmpresasScreen';
 import NormasScreen from './NormasScreen';
-import { InventoryProScreen }  from './InventoryProScreen'; // 👈 AGREGA ESTA LÍNEA
+import TablerosScreen from './TablerosScreen';
+import  InventoryProScreen   from './InventoryProScreen'; // 👈 AGREGA ESTA LÍNEA
 import { CalendarScreen }   from './CalendarScreen';
 import { RegisterScreen } from './RegisterScreen'; // 👈 AGREGA ESTA LÍNEA
 
@@ -90,6 +91,8 @@ export const MainApp: React.FC = () => {
       return <CalibrationManager />;
     case 'drive':
       return <DriveScreen />;
+    case 'tableros':
+      return <TablerosScreen />;
     case 'programa-calibracion':
       return <ProgramaCalibracionScreen />;  
     case 'friday-servicios':

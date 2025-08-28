@@ -23,6 +23,7 @@ import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // MODIFICADO: Agregadas funciones para Friday
 import masterCelestica from "../data/masterCelestica.json";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { set } from "date-fns";
 
 type CelesticaRecord = {
@@ -105,7 +106,7 @@ const unidadesPorMagnitud: Record<string, string[]> = {
 };
 
 // NUEVO: Función para transferir worksheet a Friday
-const transferToFriday = async (formData: any, userId: string) => {
+const transferToFriday = async (formData: any, userId: string, user: any) => {
   try {
     // Obtener el tablero principal
     const boardRef = doc(db, "tableros", "principal");
@@ -184,7 +185,7 @@ const newRow = {
   folio: newFolio,
   equipo: formData.equipo || "Sin especificar",
   cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar", 
-  responsable: formData.nombre || getUserName(formData.usuario) || getUserName(user) || userId || "unknown",
+  responsable: getUserName(user),
   estado: "En proceso",
   prioridad: "Media",
   progreso: 0,
@@ -280,7 +281,7 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
     ["Número de Serie", formData.numeroSerie],
     ["Unidad", formData.unidad],
     ["Alcance", formData.alcance],
-    ["Resolución", formData.resolucion],
+    ["Resolucion", formData.resolucion],
     ["Frecuencia de Calibración", formData.frecuenciaCalibracion],
     ["Temp. Ambiente", `${formData.tempAmbiente} °C`],
     ["HR%", `${formData.humedadRelativa} %`],
@@ -356,6 +357,8 @@ export const WorkSheetScreen: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [isCelestica, setIsCelestica] = useState(false);
   const [fieldsLocked, setFieldsLocked] = useState(false);
+  const [resolucion, setResolucion] = useState("");
+  const [alcance, setAlcance] = useState("");
   const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
   // NUEVO: Estado para auto-transferencia
   const [autoTransferEnabled, setAutoTransferEnabled] = useState(() => 
@@ -956,21 +959,35 @@ if (yaExiste) {
                   )}
                 </div>
               </div>
-              
-              <div className="mb-4">
-  <label className="block text-sm font-medium mb-1 text-gray-700" htmlFor="alcance">
-    Alcance
-  </label>
-  <input
-    id="alcance"
-    type="text"
-    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring"
-    placeholder="Ejemplo: 0 - 10 kg, 0.1 mm, etc."
-    value={formData.alcance || ""}
-    onChange={(e) => handleInputChange("alcance", e.target.value)}
-  />
-</div>
+        
+  <div>
+    <label className="block text-sm font-medium text-gray-200 mb-1">Alcance</label>
+    <input
+      type="text"
+      className="w-full px-3 py-2 rounded-lg bg-[#232323] border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#38bdf8] transition"
+      value={alcance}
+      onChange={e => setAlcance(e.target.value)}
+      placeholder="Ej: 10 A 10V"
+      autoComplete="off"
+      spellCheck={false}
+      required
+    />
+  </div>
 
+{/* Resolución */}
+  <div>
+    <label className="block text-sm font-medium text-gray-200 mb-1">Resolución</label>
+    <input
+      type="text"
+      className="w-full px-3 py-2 rounded-lg bg-[#232323] border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#38bdf8] transition"
+      value={resolucion}
+      onChange={e => setResolucion(e.target.value)}
+      placeholder="Ej: 0.01 V"
+      autoComplete="off"
+      spellCheck={false}
+      required
+    />
+  </div>
 
               {/* 8. Medición o Excentricidad/Linealidad/Repetibilidad */}
               {esMagnitudMasa(formData.magnitud) ? (
@@ -1146,7 +1163,7 @@ if (yaExiste) {
                     <div><strong>Unidad:</strong> {formData.unidad}</div>
                     <div><strong>Alcance:</strong> {formData.alcance}</div>
                   </div>
-                  <div><strong>Resolución:</strong> {formData.resolucion}</div>
+                  <div><strong>Resolucion:</strong> {formData.resolucion}</div>
                   <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
                   <div className="flex space-x-8 text-black">
                     <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>

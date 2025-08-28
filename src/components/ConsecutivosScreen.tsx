@@ -4,7 +4,7 @@ import { ArrowLeft, ChevronRight } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png'; // Si tienes tu logo real
 
 const magnitudesAcreditadas = [
-  { id: 'acustica', name: 'Acústica', icon: '🔊', description: 'Medición de sonido y vibraciones' },
+  { id: 'acustica', name: 'Acustica', icon: '🔊', description: 'Medición de sonido y vibraciones' },
   { id: 'dimensional', name: 'Dimensional', icon: '📏', description: 'Mediciones de longitud y dimensiones' },
   { id: 'electrica', name: 'Electrica', icon: '⚡', description: 'Mediciones eléctricas y electrónicas' },
   { id: 'flujo', name: 'Flujo', icon: '🌊', description: 'Medición de fluidos y caudales' },
@@ -13,8 +13,8 @@ const magnitudesAcreditadas = [
   { id: 'humedad', name: 'Humedad', icon: '💧', description: 'Medición de humedad relativa' },
   { id: 'masa', name: 'Masa', icon: '⚖️', description: 'Mediciones de masa y peso' },
   { id: 'par-torsional', name: 'Par Torsional', icon: '🔧', description: 'Medición de torque y par' },
-  { id: 'presion', name: 'Presión', icon: '📊', description: 'Mediciones de presión y vacío' },
-  { id: 'quimica', name: 'Química', icon: '🔬', description: 'Mediciones químicas' },
+  { id: 'presion', name: 'Presion', icon: '📊', description: 'Mediciones de presión y vacío' },
+  { id: 'quimica', name: 'Quimica', icon: '🔬', description: 'Mediciones químicas' },
   { id: 'Reporte Diagnostico', name: 'Reporte Diagnóstico', icon: '📝', description: 'Mediciones de reporte diagnóstico' },
   { id: 'temperatura', name: 'Temperatura', icon: '🌡️', description: 'Mediciones térmicas' },
   { id: 'tiempo', name: 'Tiempo', icon: '⏱️', description: 'Mediciones temporales' },

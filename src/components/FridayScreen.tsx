@@ -17,6 +17,8 @@ import { collection, onSnapshot, doc, setDoc, updateDoc, getDoc } from "firebase
 import { db } from "../utils/firebase";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd"; // Importar DropResult
 import { set } from "date-fns";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/Tabs";
+
 
 /* -------------------- Tipos visuales -------------------- */
 const COLUMN_TYPE_CATEGORIES = [
@@ -575,7 +577,7 @@ export default function FridayScreen() {
   const [search, setSearch] = useState("");
   const [editCell, setEditCell] = useState<{ gidx: number; ridx: number; colKey: string } | null>(null);
   const [editValue, setEditValue] = useState<any>("");
-  const [activeTab, setActiveTab] = useState("friday");
+  const [activeTab, setActiveTab] = useState("equipos");
   // Implementación básica de useNavigation si no está disponible
   const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "friday", navigateTo: (screen: string) => console.log(`Navigate to ${screen}`) };
   const [openColMenuKey, setOpenColMenuKey] = useState<string | null>(null);
@@ -596,6 +598,7 @@ export default function FridayScreen() {
   const [showEditColOptionsModal, setShowEditColOptionsModal] = useState(false);
   const [editingColOptions, setEditingColOptions] = useState<Column | null>(null);
   const [tempColOptions, setTempColOptions] = useState<{ value: string; color: string }[]>([]);
+  
 
 const handleDeleteRow = useCallback(async (groupId: string, rowId: string) => {
   setGroups(prev =>
@@ -847,6 +850,7 @@ return () => unsub();
     }, []);
 
     return (
+      
       <DragDropContext onDragEnd={onDragEnd}>
         {/* Drag de grupos */}
         <Droppable droppableId="groups" type="group">

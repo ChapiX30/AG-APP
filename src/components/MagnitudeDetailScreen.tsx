@@ -12,9 +12,33 @@ import { m } from 'framer-motion';
 const magnitudImages: Record<string, string> = {
   Acustica: "/images/acustica.png",
   Dimensional: "/images/dimensional.png",
-  Presión: "/images/presion.png",
+  Temperatura: "/images/temperatura.png",
+  Humedad: "/images/humedad.png",
+  Flujo: "/images/flujo.png",
+  Presion: "/images/presion.png",
   Fuerza: "/images/fuerza.png",
-  Eléctrica: "/images/electrica.png",
+  Electrica: "/images/electrica.png",
+  Frecuencia: "/images/frecuencia.png",
+  Dureza: "/images/dureza.png",
+  Volumen: "/images/volumen.png",
+  "Par Torsional": "/images/par-torsional.png",
+  Optica: "/images/optica.png",
+  Quimica: "/images/quimica.png",
+  Tiempo: "/images/tiempo.png",
+  MasaTrazable: "/images/masa-trazable.png",
+  ParTorsionalTrazable: "/images/par-torsional-trazable.png",
+  AcusticaTrazable: "/images/acustica-trazable.png",
+  DimensionalTrazable: "/images/dimensional-trazable.png",
+  TemperaturaTrazable: "/images/temperatura-trazable.png",
+  HumedadTrazable: "/images/humedad-trazable.png",
+  FlujoTrazable: "/images/flujo-trazable.png",
+  PresionTrazable: "/images/presion-trazable.png",
+  FuerzaTrazable: "/images/fuerza-trazable.png",
+  ElectricaTrazable: "/images/electrica-trazable.png",
+  FrecuenciaTrazable: "/images/frecuencia-trazable.png",
+  DurezaTrazable: "/images/dureza-trazable.png",
+  VolumenTrazable: "/images/volumen-trazable.png",
+  OpticaTrazable: "/images/optica-trazable.png",
   Masa: "/images/masa.png",
   ParTorsional: "/images/par-torsional.png",
   // agrega las que uses en selectedMagnitude
@@ -156,108 +180,113 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const anterior = consecutivos[1];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-900 flex flex-col">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
+      <div className="bg-white/80 dark:bg-slate-950/90 shadow-lg border-b border-blue-300/40 sticky top-0 z-30 backdrop-blur">
         <div className="px-6 py-4 flex items-center space-x-4">
           <button 
             onClick={goBack}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-lg transition-colors shadow"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
+            <ArrowLeft className="w-5 h-5 text-blue-700 dark:text-blue-300" />
           </button>
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <span className="text-2xl">{getMagnitudeIcon(selectedMagnitude || '')}</span>
+            <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 via-blue-600 to-blue-400 rounded-xl flex items-center justify-center shadow-lg border border-white/50 dark:border-slate-700">
+              <span className="text-3xl">{getMagnitudeIcon(selectedMagnitude || '')}</span>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Detalles</h1>
-              <p className="text-sm text-gray-500">{selectedMagnitude}</p>
+              <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">Detalles</h1>
+              <p className="text-sm text-blue-600 dark:text-blue-200 font-medium">{selectedMagnitude}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-6">
-        <div className="max-w-2xl mx-auto">
+      <div className="flex-1 flex flex-col justify-center items-center px-4 py-8">
+        <div className="w-full max-w-xl">
           {/* Instrument Display */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 mb-8 text-center">
-            <div className="w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg">
-              <div className="w-24 h-24 bg-black rounded-lg flex items-center justify-center bg-white border">
-                <img
-                  src={magnitudImages[selectedMagnitude] || "/images/default.png"}
-                  alt={selectedMagnitude}
-                  className="w-full h-full object-contain"
-              />
+          <div className="relative bg-gradient-to-br from-white/70 via-slate-100/70 to-blue-100/80 dark:from-blue-900 dark:via-blue-950 dark:to-slate-950 rounded-3xl shadow-2xl p-0 mb-10 overflow-visible transition-all duration-300">
+            {/* Imagen con glow y relieve */}
+            <div className="flex flex-col items-center -mt-16">
+              <div className="relative w-40 h-40 flex items-center justify-center drop-shadow-xl z-10">
+                <div className="absolute w-full h-full rounded-2xl bg-gradient-to-br from-yellow-300 via-orange-500 to-pink-600 opacity-30 blur-2xl animate-pulse" />
+                <div className="w-36 h-36 bg-white dark:bg-slate-900 border-4 border-blue-200 dark:border-blue-800 rounded-2xl flex items-center justify-center shadow-lg ring-4 ring-blue-300/10 relative overflow-hidden">
+                  <img
+                    src={magnitudImages[selectedMagnitude] || "/images/default.png"}
+                    alt={selectedMagnitude}
+                    className="w-32 h-32 object-contain scale-110 drop-shadow-lg animate-glow"
+                    style={{
+                      filter: "drop-shadow(0 4px 24px #38bdf8cc)"
+                    }}
+                  />
+                </div>
+              </div>
+              <h2 className="mt-4 text-3xl font-bold text-blue-900 dark:text-blue-100 capitalize tracking-wide drop-shadow-lg">
+                {selectedMagnitude}
+              </h2>
             </div>
-
-            <h2 className="text-2xl font-bold text-gray-900 capitalize mb-2">{selectedMagnitude}</h2>
+            {/* Glow borde exterior */}
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 w-48 h-10 rounded-full bg-blue-200/40 blur-lg z-0" />
           </div>
 
           {/* Consecutive Info */}
-          <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-            <div className="space-y-4">
-              {/* Consecutivo Actual */}
+          <div className="bg-white/90 dark:bg-slate-900 rounded-2xl shadow-xl p-6 mb-8">
+            <div className="space-y-5">
               {actual && (
-                <>
-                  <div className="flex items-center space-x-3">
-                    <Calendar className="w-5 h-5 text-blue-500" />
-                    <span className="text-gray-700">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <Calendar className="w-6 h-6 text-blue-400 dark:text-blue-300" />
+                    <span className="text-gray-700 dark:text-blue-100 font-medium">
                       {actual.fecha && actual.fecha.toDate
                         ? actual.fecha.toDate().toLocaleString()
                         : ""}
                     </span>
                   </div>
-                  
-                  <div className="flex items-center space-x-3">
-                    <Hash className="w-5 h-5 text-green-500" />
-                    <span className="font-mono text-lg font-semibold text-gray-900">{actual.consecutivo}</span>
+                  <div className="flex items-center gap-3">
+                    <Hash className="w-6 h-6 text-green-500 dark:text-green-400" />
+                    <span className="font-mono text-2xl font-bold text-gray-900 dark:text-green-300 drop-shadow">
+                      {actual.consecutivo}
+                    </span>
                   </div>
-                  
-                  <div className="flex items-center space-x-3">
-                    <User className="w-5 h-5 text-purple-500" />
-                    <span className="text-red-600 font-medium">{actual.usuario}</span>
+                  <div className="flex items-center gap-3">
+                    <User className="w-6 h-6 text-purple-500 dark:text-purple-300" />
+                    <span className="text-rose-600 dark:text-pink-300 font-semibold">{actual.usuario}</span>
                   </div>
-                </>
+                </div>
               )}
-
-              {/* Consecutivo Anterior */}
               {anterior && (
-                <>
-                  <div className="flex items-center space-x-3">
-                    <Hash className="w-5 h-5 text-orange-500" />
-                    <span className="font-mono text-gray-700">{anterior.consecutivo}</span>
+                <div className="flex flex-col gap-2 border-t border-dashed border-blue-200 dark:border-blue-700 pt-4 mt-2">
+                  <div className="flex items-center gap-3">
+                    <Hash className="w-5 h-5 text-orange-400 dark:text-orange-300" />
+                    <span className="font-mono text-lg text-gray-700 dark:text-gray-200">{anterior.consecutivo}</span>
                   </div>
-                  
-                  <div className="flex items-center space-x-3">
-                    <User className="w-5 h-5 text-blue-500" />
-                    <span className="text-gray-700 italic">{anterior.usuario}</span>
+                  <div className="flex items-center gap-3">
+                    <User className="w-5 h-5 text-blue-400 dark:text-blue-300" />
+                    <span className="text-gray-500 italic dark:text-gray-300">{anterior.usuario}</span>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-6">
             <button
               onClick={handleGenerarConsecutivo}
               disabled={loading || generando}
-              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2 disabled:opacity-60"
+              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 px-6 rounded-2xl font-bold shadow-xl hover:from-green-600 hover:to-emerald-700 hover:scale-105 transition-all flex items-center justify-center gap-2 ring-2 ring-green-200/30 dark:ring-emerald-700/40 disabled:opacity-60"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-6 h-6" />
               <span>
                 {loading || generando ? "Generando..." : "Generar Consecutivo"}
               </span>
             </button>
-            
-            {/* Botón Deshacer: Solo los del usuario logueado */}
             <button
               onClick={handleOpenDeshacerModal}
-              className="bg-gradient-to-r from-red-500 to-rose-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-red-600 hover:to-rose-700 transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
+              className="bg-gradient-to-r from-red-500 to-rose-600 text-white py-4 px-6 rounded-2xl font-bold shadow-xl hover:from-red-600 hover:to-rose-700 hover:scale-105 transition-all flex items-center justify-center gap-2 ring-2 ring-red-200/30 dark:ring-red-700/40"
             >
-              <Minus className="w-5 h-5" />
+              <Minus className="w-6 h-6" />
               <span>Deshacer</span>
             </button>
           </div>
@@ -266,9 +295,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
       {/* Modal para Deshacer Consecutivo */}
       {deshacerModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-40 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full">
-            <h3 className="text-lg font-bold mb-4 text-gray-900">Selecciona el consecutivo a deshacer</h3>
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center animate-fadein">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-8 max-w-md w-full border-2 border-blue-200/40 dark:border-blue-800/50 relative animate-modalpop">
+            <h3 className="text-xl font-extrabold mb-4 text-gray-900 dark:text-blue-100">Selecciona el consecutivo a deshacer</h3>
             <div className="space-y-2">
               {consecutivos
                 .filter(cons => cons.usuario === user.name)
@@ -276,10 +305,10 @@ export const MagnitudeDetailScreen: React.FC = () => {
                   <button
                     key={cons.consecutivo}
                     onClick={() => handleSeleccionarAEliminar(cons)}
-                    className={`block w-full text-left px-4 py-2 rounded-lg border ${
+                    className={`block w-full text-left px-4 py-2 rounded-lg border-2 transition-colors font-mono text-base ${
                       consecutivoAEliminar && consecutivoAEliminar.consecutivo === cons.consecutivo
-                        ? "bg-red-100 border-red-400 font-bold text-gray-800"
-                        : "hover:bg-gray-100 border-black-200 text-gray-800"
+                        ? "bg-red-100/80 dark:bg-red-900/60 border-red-400 text-red-900 dark:text-red-200 font-extrabold ring-2 ring-red-400/20"
+                        : "hover:bg-blue-50/60 dark:hover:bg-blue-800/50 border-blue-200 dark:border-blue-700 text-gray-800 dark:text-gray-100"
                     }`}
                   >
                     {cons.consecutivo} — {cons.usuario}
@@ -293,7 +322,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
             <div className="flex justify-end space-x-2 mt-6">
               <button
                 onClick={() => setDeshacerModalOpen(false)}
-                className="px-4 py-2 rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800"
+                className="px-4 py-2 rounded-md bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-gray-100"
                 disabled={eliminando}
               >
                 Cancelar
@@ -310,6 +339,5 @@ export const MagnitudeDetailScreen: React.FC = () => {
         </div>
       )}
     </div>
-  </div>
   );
 };

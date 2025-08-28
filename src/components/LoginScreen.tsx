@@ -228,7 +228,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
 
                   <div className="mt-8 pt-6 border-t border-white/10 text-center">
                     <p className="text-xs text-white/50 select-text">
-                      Demo: <span className="font-mono text-white/70">admin@ese-ag.mx</span> / <span className="font-mono text-white/70">admin123</span>
+                     <span className="font-mono text-white 0"></span> / <span className="font-mono text-white/70"></span>
                     </p>
                   </div>
                 </div>
@@ -358,7 +358,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
 
                 <div className="mt-6 pt-4 border-t border-white/10 text-center">
                   <p className="text-xs text-white/50 select-text">
-                    Demo: <span className="font-mono text-white/70">admin@ese-ag.mx</span> / <span className="font-mono text-white/70">admin123</span>
+                    Demo: <span className="font-mono text-white/0"></span> / <span className="font-mono text-white/70"></span>
                   </p>
                 </div>
               </div>
