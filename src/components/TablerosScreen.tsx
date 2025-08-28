@@ -1,7 +1,7 @@
 // src/screens/TablerosScreen.tsx
 
 import { useState } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"; // Usa tu librería de tabs
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/Tabs"; // Usa tu librería de tabs
 import FridayScreen from "./FridayScreen"; // Asegúrate que la ruta es correcta
 import { DashboardGraficos } from "./DashboardGraficos"; // Crea este archivo con el dashboard de gráficos
 
