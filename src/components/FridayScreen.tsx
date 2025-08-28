@@ -473,6 +473,7 @@ export default function FridayScreen() {
       }
     }
     return [
+      { label: "ID", key: "id", type: "text", width: 110, sticky: true },
       { label: "FOLIO", key: "folio", type: "auto_number", width: 100, sticky: true },
       { label: "EQUIPO", key: "equipo", type: "text", width: 200 },
       { label: "CLIENTE", key: "cliente", type: "client", width: 200 },

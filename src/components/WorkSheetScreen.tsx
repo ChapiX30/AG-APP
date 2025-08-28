@@ -96,140 +96,144 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   Acustica: ["dB", "Hz", "Pa"],
   Dimensional: ["m", "cm", "mm", "in", "min", "°", "µm"],
   Fuerza: ["N", "kgf", "lbf"],
-  Presión: ["kPa", "bar", "psi"],
+  Flujo: ["m3/s", "l/s", "g/s", "kg/s", "lb/s"],
+  Frecuencia: ["RPM", "Hz", "kHz"],
+  Presión: ["kPa", "bar", "mBar", "psi", "InH2O", "MPa", "Pa", "mmH20"],
+  Quimica: ["µS", "pH"],
   Electrica: ["V", "mV", "kV", "A", "mA", "µA", "Ω"],
   Temperatura: ["°C", "°F", "°K"],
   Masa: ["g", "kg", "lb"],
   Tiempo: ["s", "min", "h"],
   Velocidad: ["m/s", "km/h"],
-  "Par Torsional": ["N·m", "lbf·ft"],
+  "Par Torsional": ["N*m", "Lbf*ft", "kgf*m", "Lbf*in", "cN"],
 };
+
+console.log("Datos que se intentan transferir a Friday:", formData);
 
 // NUEVO: Función para transferir worksheet a Friday
 const transferToFriday = async (formData: any, userId: string, user: any) => {
   try {
-    // Obtener el tablero principal
+    // 1. Obtener el tablero principal
     const boardRef = doc(db, "tableros", "principal");
     const boardSnap = await getDoc(boardRef);
-    
+
     if (!boardSnap.exists()) {
-      console.log("Tablero principal no existe, no se puede transferir");
+      alert("Tablero principal no existe, no se puede transferir");
       return false;
     }
-    
+
     const boardData = boardSnap.data();
     let { groups = [] } = boardData;
-    
-    // Determina el grupo destino
-const lugar = (formData.lugarCalibracion || "").toLowerCase();
-let destinoGroupId = "laboratorio";
-let destinoGroupName = "🧪 Laboratorio";
-let destinoColorIdx = 1;
-if (lugar.includes("sitio")) {
-  destinoGroupId = "sitio";
-  destinoGroupName = "🏭 Sitio";
-  destinoColorIdx = 0;
-}
 
-// Busca o crea el grupo correcto
-let destinoGroup = groups.find((g: any) => g.id === destinoGroupId);
-if (!destinoGroup) {
-  destinoGroup = {
-    id: destinoGroupId,
-    name: destinoGroupName,
-    colorIdx: destinoColorIdx,
-    collapsed: false,
-    rows: [],
-  };
-  groups.push(destinoGroup);
-}
+    // 2. DETERMINA EL GRUPO DESTINO
+    const lugar = (formData.lugarCalibracion || "").toLowerCase();
+    let destinoGroupId = "laboratorio";
+    let destinoGroupName = "🧪 Laboratorio";
+    let destinoColorIdx = 1;
+    if (lugar === "sitio") {
+      destinoGroupId = "sitio";
+      destinoGroupName = "🏭 Sitio";
+      destinoColorIdx = 0;
+    }
 
-// Inserta la fila en el grupo correcto
-const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId);
+    // 3. Busca o crea el grupo correcto
+    let destinoGroup = groups.find((g: any) => g.id === destinoGroupId);
+    if (!destinoGroup) {
+      destinoGroup = {
+        id: destinoGroupId,
+        name: destinoGroupName,
+        colorIdx: destinoColorIdx,
+        collapsed: false,
+        rows: [],
+      };
+      groups.push(destinoGroup);
+    }
+    const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId);
 
-// Generar folio automático
+    // 4. GENERA EL FOLIO AUTOMÁTICO
     const generateAutoNumber = (groups: any[], colKey: string): number => {
       let maxNum = 0;
       groups.forEach((g: any) => {
         g.rows.forEach((row: any) => {
-          if (row[colKey] && typeof row[colKey] === 'number') {
+          if (row[colKey] && typeof row[colKey] === "number") {
             maxNum = Math.max(maxNum, row[colKey]);
           }
         });
       });
       return maxNum + 1;
     };
-    
     const newFolio = generateAutoNumber(groups, "folio");
 
-    const getUserName = (user: any) => {
-  if (!user) return "Sin Usuario";
-  return (
-    user.displayName ||
-    user.nombre ||
-    user.firstName ||
-    user.given_name ||
-    user.profile?.name ||
-    user.profile?.displayName ||
-    (user.email
-      ? user.email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())
-      : null) ||
-    user.uid ||
-    "Sin Usuario"
-  );
-};
+    // 5. Genera el objeto newRow (¡ya con folio!)
+    const newRow = {
+      id: "r" + Math.random().toString(36).slice(2, 8),
+      folio: newFolio,
+      equipo: formData.equipo || "Sin especificar",
+      cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar",
+      responsable: getUserName(user),
+      estado: "En proceso",
+      prioridad: "Media",
+      progreso: 0,
+      fecha_limite: formData.fecha || new Date().toISOString().slice(0, 10),
+      created_at: { timestamp: Date.now(), userId: userId || "unknown" },
+      last_updated: { timestamp: Date.now(), userId: userId || "unknown" },
+      certificado: formData.certificado,
+      magnitud: formData.magnitud,
+      unidad: formData.unidad,
+      lugar_calibracion: formData.lugarCalibracion,
+      frecuencia_calibracion: formData.frecuenciaCalibracion,
+      marca: formData.marca,
+      modelo: formData.modelo,
+      numero_serie: formData.numeroSerie,
+      notas_calibracion: formData.notas,
+      temp_ambiente: formData.tempAmbiente,
+      humedad_relativa: formData.humedadRelativa,
+      source_type: "worksheet",
+      transferred_at: Date.now(),
+    };
 
-// 1. GENERA EL OBJETO newRow ANTES DEL PUSH
-const newRow = {
-  id: "r" + Math.random().toString(36).slice(2, 8),
-  folio: newFolio,
-  equipo: formData.equipo || "Sin especificar",
-  cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar", 
-  responsable: getUserName(user),
-  estado: "En proceso",
-  prioridad: "Media",
-  progreso: 0,
-  fecha_limite: formData.fecha || new Date().toISOString().slice(0, 10),
-  created_at: { timestamp: Date.now(), userId: userId || "unknown" },
-  last_updated: { timestamp: Date.now(), userId: userId || "unknown" },
-  // ...agrega aquí todos los campos del worksheet...
-  certificado: formData.certificado,
-  magnitud: formData.magnitud,
-  unidad: formData.unidad,
-  lugar_calibracion: formData.lugarCalibracion,
-  frecuencia_calibracion: formData.frecuenciaCalibracion,
-  marca: formData.marca,
-  modelo: formData.modelo,
-  numero_serie: formData.numeroSerie,
-  notas_calibracion: formData.notas,
-  temp_ambiente: formData.tempAmbiente,
-  humedad_relativa: formData.humedadRelativa,
-  source_type: "worksheet",
-  transferred_at: Date.now()
-};
-
-// Ahora sí, inserta la fila
-if (groupIndex !== -1) {
-groups[groupIndex].rows.push(newRow);
-} else {
-  throw new Error("No se encontró el grupo destino para insertar la fila.");
-}
-    
-    // Actualizar el tablero en Firebase
-    await updateDoc(boardRef, { 
-      groups, 
-      columns: boardData.columns || [], 
-      updatedAt: Date.now() 
+    // LIMPIA newRow de valores undefined o problemáticos
+    Object.keys(newRow).forEach((key) => {
+      if (typeof newRow[key] === "undefined") delete newRow[key];
+      if (
+        typeof newRow[key] === "object" &&
+        newRow[key] !== null &&
+        !Array.isArray(newRow[key])
+      ) {
+        if (!("timestamp" in newRow[key]) || !("userId" in newRow[key])) {
+          delete newRow[key];
+        }
+      }
     });
-    
-    console.log("✅ Worksheet transferido exitosamente al tablero Friday");
+    console.log("Row limpio para insertar:", newRow);
+
+    // 6. Inserta la fila al grupo correcto
+    if (groupIndex !== -1) {
+      groups[groupIndex].rows.push(newRow);
+    } else {
+      alert("No se encontró el grupo destino para insertar la fila.");
+      return false;
+    }
+
+    // 7. Justo antes de actualizar, log de debug
+    console.log("Grupos antes de updateDoc:", JSON.stringify(groups, null, 2));
+
+    // 8. Actualizar el tablero en Firestore
+    await updateDoc(boardRef, {
+      groups,
+      columns: boardData.columns || [],
+      updatedAt: Date.now(),
+    });
+
+    alert("Transferencia exitosa al tablero Friday");
     return true;
-    
   } catch (error) {
     console.error("❌ Error al transferir al tablero Friday:", error);
+    alert("Error al transferir al tablero Friday: " + error);
     return false;
   }
 };
+
 
 // Generación de PDF (sin cambios)
 const generateTemplatePDF = (formData: any, JsPDF: any) => {
