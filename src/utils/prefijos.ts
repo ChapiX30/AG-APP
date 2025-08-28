@@ -19,7 +19,7 @@ const prefijos: Record<string, string> = {
     "Masa Trazable": "AGMT",
     "Optica Trazable": "AGOT",
     "Par Torsional": "AGPT",
-    "Presion Trazable": "AGPTT",
+    "Par Torsional Trazable": "AGPTT",
     "Presion": "AGP",
     "Presion Trazable": "AGPRT",
     "Temperatura": "AGT",
