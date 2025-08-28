@@ -514,7 +514,6 @@ export const WorkSheetScreen: React.FC = () => {
     "nombre",
     "cliente",
     "id",
-    "alcance",
     "equipo",
     "marca",
     "magnitud",
