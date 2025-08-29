@@ -96,8 +96,8 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   Acustica: ["dB", "Hz", "Pa"],
   Dimensional: ["m", "cm", "mm", "in", "min", "°", "µm"],
   Fuerza: ["N", "kgf", "lbf"],
-  Flujo: ["m3/s", "l/s", "g/s", "kg/s", "lb/s"],
-  Frecuencia: ["RPM", "Hz", "kHz"],
+  Flujo: ["m3/h", "slpm", "lpm", "scfm", "cfh", "m3/pm", "gpm", "ccm", "SCMH", "SCFH"],
+  Frecuencia: ["RPM", "Hz", "kHz", "MHz", "GHz", "rad/s"],
   Presión: ["kPa", "bar", "mBar", "psi", "InH2O", "MPa", "Pa", "mmH20"],
   Quimica: ["µS", "pH"],
   Electrica: ["V", "mV", "kV", "A", "mA", "µA", "Ω"],
@@ -105,10 +105,9 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   Masa: ["g", "kg", "lb"],
   Tiempo: ["s", "min", "h"],
   Velocidad: ["m/s", "km/h"],
-  "Par Torsional": ["N*m", "Lbf*ft", "kgf*m", "Lbf*in", "cN"],
+  Vacio: ["atm", "Psi", "mbar", "Torr", "mmHg", "micron", "inHg"],
+  "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
 };
-
-console.log("Datos que se intentan transferir a Friday:", formData);
 
 // NUEVO: Función para transferir worksheet a Friday
 const transferToFriday = async (formData: any, userId: string, user: any) => {
@@ -224,6 +223,7 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       columns: boardData.columns || [],
       updatedAt: Date.now(),
     });
+    
 
     alert("Transferencia exitosa al tablero Friday");
     return true;
