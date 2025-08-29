@@ -83,12 +83,16 @@ const magnitudesDisponibles = [
   "Acustica",
   "Dimensional",
   "Fuerza",
+  "Flujo",
+  "Frecuencia",
   "Presión",
+  "Quimica",
   "Electrica",
   "Temperatura",
   "Masa",
   "Tiempo",
   "Velocidad",
+  "Vacio",
   "Par Torsional",
 ];
 
