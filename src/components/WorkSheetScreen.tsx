@@ -113,9 +113,13 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
 };
 
+
 // NUEVO: Función para transferir worksheet a Friday
 const transferToFriday = async (formData: any, userId: string, user: any) => {
   try {
+
+    console.log('Datos que se intentan transferir a Friday:', formData);
+
     // 1. Obtener el tablero principal
     const boardRef = doc(db, "tableros", "principal");
     const boardSnap = await getDoc(boardRef);
@@ -228,7 +232,7 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       updatedAt: Date.now(),
     });
     
-
+  
     alert("Transferencia exitosa al tablero Friday");
     return true;
   } catch (error) {
