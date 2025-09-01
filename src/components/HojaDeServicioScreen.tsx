@@ -110,7 +110,6 @@ export default function HojaDeServicioScreen() {
         }
       });
       setEquiposCalibrados(equiposPorTecnico);
-      setLoadingEquipos(false);
     };
     fetchEquipos();
   }, [campos.empresa, campos.fecha]);
