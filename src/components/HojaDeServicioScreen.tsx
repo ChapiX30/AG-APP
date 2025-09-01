@@ -94,15 +94,15 @@ export default function HojaDeServicioScreen() {
       }
       const q = query(
         collection(db, "hojasDeTrabajo"),
-        where("empresa", "==", campos.empresa),
+        where("cliente", "==", campos.empresa),
         where("fecha", "==", campos.fecha)
       );
       const qs = await getDocs(q);
       const equiposPorTecnico: Record<string, EquipoCalibrado[]> = {};
       qs.forEach(doc => {
         const data = doc.data();
-        if (data.lugarCalibracion && data.lugarCalibracion.toUpperCase().includes("sitio")) {
-          const tecnico = data.tecnicoResponsable || data.tecnico || 'Sin Técnico';
+        if (data.lugarCalibracion && data.lugarCalibracion.toLowerCase().includes("sitio")) {
+          const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
           if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
           equiposPorTecnico[tecnico].push({
             id: data.id // este es el campo "id" de tu doc, puede contener varios
@@ -110,6 +110,7 @@ export default function HojaDeServicioScreen() {
         }
       });
       setEquiposCalibrados(equiposPorTecnico);
+      setLoadingEquipos(false);
     };
     fetchEquipos();
   }, [campos.empresa, campos.fecha]);
