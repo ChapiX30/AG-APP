@@ -43,7 +43,7 @@ export default function SidebarFriday({ active, onNavigate }) {
       {/* Botón flotante abrir */}
       {!open && (
         <button
-          className="fixed top-4 left-4 z-[90] p-3 rounded-full bg-cyan-700/90 hover:bg-cyan-800 shadow-lg transition-all animate-sidebar-btn"
+          className="fixed top-10 left-4 z-[90] p-3 rounded-full bg-cyan-700/90 hover:bg-cyan-800 shadow-lg transition-all animate-sidebar-btn"
           onClick={() => setOpen(true)}
         >
           <Menu size={26} className="text-white drop-shadow" />

@@ -174,6 +174,7 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
     // 5. Genera el objeto newRow (¡ya con folio!)
     const newRow = {
       id: "r" + Math.random().toString(36).slice(2, 8),
+      id_equipo: formData.id || "",
       folio: newFolio,
       equipo: formData.equipo || "Sin especificar",
       cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar",
@@ -264,7 +265,7 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
   // Título del laboratorio
   doc.setFontSize(14);
   doc.setFont(undefined, "bold");
-  doc.text("Equipos y Servicios Especializados AG, S.A. de C.V.", marginLeft + 60, y + 20);
+  doc.text("Equipos y Servicios Especializados AG", marginLeft + 60, y + 20);
 
   // Fecha y nombre
   doc.setFontSize(12);

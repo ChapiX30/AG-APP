@@ -28,13 +28,13 @@ const menuItems = [
   { id: 'empresas', title: 'EMPRESAS', icon: Building2, color: 'from-[#5a5f73] to-[#42495b]', available: true },
   { id: 'hojas-trabajo', title: 'HOJAS DE TRABAJO', icon: FileText, color: 'from-[#8e9eab] to-[#eef2f3]', available: false },
   { id: 'hoja-servicio', title: 'HOJA DE SERVICIO', icon: ClipboardList, color: 'from-[#49516f] to-[#444e72]', available: true },
-  { id: 'normas', title: 'NORMAS', icon: BookOpen, color: 'from-[#304352] to-[#d7d2cc]', available: true },
+  { id: 'normas', title: 'NORMAS', icon: BookOpen, color: 'from-[#304352] to-[#d7d2cc]', available: false },
   { id: 'friday', title: 'FRIDAY', icon: Database, color: 'from-[#232526] to-[#414345]', available: true },
   { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'from-[#d7d2cc] to-[#304352]', available: true },
   { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'from-[#314755] to-[#26a0da]', available: false },
-  { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'from-[#232526] to-[#485563]', available: true },
-  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'from-[#232526] to-[#3a6073]', available: true },
-  { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'from-[#36475c] to-[#232526]', available: true },
+  { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'from-[#232526] to-[#485563]', available: false },
+  { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'from-[#232526] to-[#3a6073]', available: false },
+  { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'from-[#36475c] to-[#232526]', available: false },
 ];
 
 export const MainMenu: React.FC = () => {

@@ -31,7 +31,7 @@ const magnitudesTrazables = [
   { id: 'masa Trazable', name: 'Masa Trazable', icon: '⚖️', description: 'Mediciones de masa y peso' },
   { id: 'optica Trazable', name: 'Óptica Trazable', icon: '🔭', description: 'Mediciones ópticas' },
   { id: 'par-torsional Trazable', name: 'Par Torsional Trazable', icon: '🔧', description: 'Medición de torque y par' },
-  { id: 'presion Trazable', name: 'Presión Trazable', icon: '📊', description: 'Mediciones de presión y vacío' },
+  { id: 'presion Trazable', name: 'Presion Trazable', icon: '📊', description: 'Mediciones de presion y vacio' },
   { id: 'Temperatura Trazable', name: 'Temperatura Trazable', icon: '🌡️', description: 'Mediciones térmicas' },
   { id: 'volumen Trazable', name: 'Volumen Trazable', icon: '📦', description: 'Mediciones volumétricas' },
   { id: 'fuerza Trazable', name: 'Fuerza Trazable', icon: '💪', description: 'Medición de fuerzas y torques' },

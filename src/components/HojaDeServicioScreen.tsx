@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Download, FileText, User, Calendar, Phone, Mail, MapPin, Settings, MessageSquare, Star, Edit3, ArrowLeft, Building2, Loader2, Wrench
+  Download, FileText, User, Calendar, Phone, Mail, MapPin, Settings, MessageSquare, Star, Edit3, ArrowLeft, Building2, Loader2, Wrench, PlusCircle
 } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
 import { db } from '../utils/firebase';
-import { collection, getDocs, query, where, doc, getDoc } from "firebase/firestore";
-import { useAuth } from '../hooks/useAuth';
+import { collection, getDocs, query, where, doc, getDoc, orderBy, limit } from "firebase/firestore";
 
+// ---- ESTADOS Y TIPOS ----
 const camposIniciales = {
   folio: '',
   fecha: '',
@@ -35,6 +35,161 @@ type EquipoCalibrado = {
   tecnico?: string;
 };
 
+// ---- OBTENER LOGO BASE64 PARA PDF ----
+async function getLogoBase64(): Promise<string | undefined> {
+  try {
+    const response = await fetch('/assets/lab_logo.png');
+    if (!response.ok) return undefined;
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+// --------- GENERADOR PDF PRO CON CLIENTE ENCUADRADO ---------
+async function generarPDFFormal({
+  campos,
+  firmaTecnico,
+  firmaCliente,
+  equiposCalibrados,
+}: {
+  campos: any;
+  firmaTecnico: string;
+  firmaCliente: string;
+  equiposCalibrados: Record<string, any[]>;
+}) {
+  const jsPDF = (await import('jspdf')).default;
+  const autoTable = (await import('jspdf-autotable')).default;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+  // LOGO
+  try {
+    const logoBase64 = await getLogoBase64();
+    if (logoBase64) doc.addImage(logoBase64, 'PNG', 12, 8, 28, 15, undefined, 'FAST');
+  } catch {}
+
+  // HEADER
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13.5);
+  doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.', 42, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text('Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422', 42, 19);
+  doc.text('Teléfonos: 8127116538 / 8127116357', 42, 23);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14.5);
+  doc.text('HOJA DE SERVICIO', 105, 34, { align: 'center' });
+  doc.setDrawColor(60, 105, 225);
+  doc.setLineWidth(0.7);
+  doc.line(15, 38, 195, 38);
+
+  // RECTÁNGULO GRANDE PARA INFO DEL CLIENTE
+  const startY = 42;
+  const boxHeight = 35;
+  doc.setDrawColor(60, 105, 225);
+  doc.setLineWidth(1);
+  doc.roundedRect(17, startY, 176, boxHeight, 4, 4, 'S');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text(`Folio: ${campos.folio || '__________'}`, 21, startY + 7);
+  doc.text(`Fecha: ${campos.fecha || '__________'}`, 145, startY + 7);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Planta: ${campos.empresa || '____________________'}`, 21, startY + 14);
+  doc.text(`Domicilio: ${campos.direccion || '____________________'}`, 21, startY + 21);
+  doc.text(`Contacto: ${campos.contacto || '____________________'}`, 21, startY + 28);
+  doc.text(`Teléfono: ${campos.telefono || '____________________'}`, 100, startY + 28);
+  doc.text(`Correo: ${campos.correo || '____________________'}`, 21, startY + 35);
+
+  // TABLA DE EQUIPOS
+  let equiposY = startY + boxHeight + 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11.2);
+  doc.text('Se calibraron los siguientes equipos:', 18, equiposY);
+
+  equiposY += 3;
+  if (Object.keys(equiposCalibrados).length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9.2);
+    doc.text('No hay equipos calibrados registrados para este cliente y fecha.', 18, equiposY + 6);
+  } else {
+    Object.entries(equiposCalibrados).forEach(([tecnico, equipos], idx) => {
+      equiposY += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.8);
+      doc.setTextColor(49, 113, 196);
+      doc.text(`${tecnico}`, 20, equiposY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(50, 50, 50);
+      equipos.forEach((equipo: any) => {
+        if (!equipo.id) return;
+        equipo.id.split(',').forEach((idSingle: string) => {
+          equiposY += 6;
+          doc.text(`- ${idSingle.trim()}`, 27, equiposY);
+        });
+      });
+    });
+    doc.setTextColor(0, 0, 0);
+  }
+
+  // COMENTARIOS Y CALIDAD
+  let comentariosY = equiposY + 15;
+  autoTable(doc, {
+    startY: comentariosY,
+    theme: 'plain',
+    styles: { fontSize: 10 },
+    body: [
+      [
+        { content: 'Comentarios:', styles: { fontStyle: 'bold', textColor: [78, 99, 165] } },
+        { content: campos.comentarios || '[Sin comentarios]', styles: { textColor: [66, 66, 66] } },
+      ],
+      [
+        { content: 'Calidad del Servicio:', styles: { fontStyle: 'bold', textColor: [78, 99, 165] } },
+        { content: campos.calidadServicio || '', styles: { fontStyle: 'bold', textColor: [13, 90, 250] } },
+      ]
+    ],
+    margin: { left: 18, right: 18 },
+    tableLineWidth: 0.2,
+    tableLineColor: [70, 130, 250],
+    cellPadding: 2,
+  });
+
+  // FIRMAS
+  let firmasY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 18 : comentariosY + 22;
+  doc.setLineWidth(0.4);
+  doc.setDrawColor(30, 30, 30);
+  doc.line(38, firmasY, 88, firmasY); // Técnico
+  doc.line(122, firmasY, 172, firmasY); // Cliente
+
+  try { if (firmaTecnico) doc.addImage(firmaTecnico, 'PNG', 44, firmasY - 16, 38, 14); } catch {}
+  try { if (firmaCliente) doc.addImage(firmaCliente, 'PNG', 128, firmasY - 16, 38, 14); } catch {}
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text(campos.tecnicoResponsable || '[Nombre del Técnico]', 63, firmasY + 7, { align: 'center' });
+  doc.text(campos.contacto || '[Nombre del Usuario]', 147, firmasY + 7, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('TÉCNICO RESPONSABLE', 63, firmasY + 13, { align: 'center' });
+  doc.text('NOMBRE Y FIRMA DEL USUARIO', 147, firmasY + 13, { align: 'center' });
+
+  doc.setTextColor(66, 105, 200);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.2);
+  doc.text('SE REQUIERE LA FIRMA DEL USUARIO Y EL PERSONAL PARA CONFIRMAR LA CONFORMIDAD DEL SERVICIO', 105, firmasY + 22, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
+
+  doc.save(`HojaServicio_${campos.folio || new Date().getTime()}.pdf`);
+}
+
+// ----------- COMPONENTE PRINCIPAL ---------------
 export default function HojaDeServicioScreen() {
   const [campos, setCampos] = useState(camposIniciales);
   const [firmaCliente, setFirmaCliente] = useState('');
@@ -45,12 +200,34 @@ export default function HojaDeServicioScreen() {
   const [equiposCalibrados, setEquiposCalibrados] = useState<Record<string, EquipoCalibrado[]>>({});
   const [loadingEquipos, setLoadingEquipos] = useState(false);
   const [searchEmpresa, setSearchEmpresa] = useState('');
-  const pdfRef = useRef<HTMLDivElement | null>(null);
+  const [autoFolioLoading, setAutoFolioLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { goBack } = useNavigation();
-  const { user } = useAuth();
 
-  // Cargar lista de empresas al inicio
+  // --- OBTIENE EL SIGUIENTE FOLIO DISPONIBLE ---
+  const generarFolio = async (setCampos: any, setAutoFolioLoading: any) => {
+    setAutoFolioLoading(true);
+    const q = query(
+      collection(db, "hojasDeServicio"),
+      orderBy("folioNum", "desc"),
+      limit(1)
+    );
+    const qs = await getDocs(q);
+    let ultimo = 0;
+    qs.forEach(doc => {
+      const f: any = doc.data();
+      if (f.folio && typeof f.folio === 'string' && f.folio.startsWith('HSDG-')) {
+      const num = parseInt(f.folio.replace('HSDG-', ''), 10);
+      if (num > ultimo) ultimo = num;
+      }
+    });
+    const nuevoNum = ultimo + 1;
+    const nuevoFolio = `HSDG-${nuevoNum.toString().padStart(4, '0')}`;
+    setCampos(c => ({ ...c, folio: nuevoFolio }));
+    setAutoFolioLoading(false);
+  };
+
+  // --- CARGA EMPRESAS ---
   useEffect(() => {
     const fetchEmpresas = async () => {
       const q = query(collection(db, "clientes"));
@@ -63,7 +240,7 @@ export default function HojaDeServicioScreen() {
     fetchEmpresas();
   }, []);
 
-  // Cuando seleccionas empresaId, cargar datos cliente automáticamente
+  // --- CARGA DATOS EMPRESA ---
   useEffect(() => {
     const loadDatosEmpresa = async () => {
       if (!campos.empresaId) return;
@@ -83,7 +260,7 @@ export default function HojaDeServicioScreen() {
     loadDatosEmpresa();
   }, [campos.empresaId]);
 
-  // Buscar equipos calibrados cuando cambian empresaId o fecha
+  // --- CARGA EQUIPOS CALIBRADOS ---
   useEffect(() => {
     const fetchEquipos = async () => {
       setLoadingEquipos(true);
@@ -104,9 +281,7 @@ export default function HojaDeServicioScreen() {
         if (data.lugarCalibracion && data.lugarCalibracion.toLowerCase().includes("sitio")) {
           const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
           if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
-          equiposPorTecnico[tecnico].push({
-            id: data.id // este es el campo "id" de tu doc, puede contener varios
-          });
+          equiposPorTecnico[tecnico].push({ id: data.id });
         }
       });
       setEquiposCalibrados(equiposPorTecnico);
@@ -115,7 +290,7 @@ export default function HojaDeServicioScreen() {
     fetchEquipos();
   }, [campos.empresa, campos.fecha]);
 
-  // -------- Firmas ---------
+  // ---- FIRMAS (igual que antes) ----
   const comenzarFirma = (tipo: 'cliente' | 'tecnico') => {
     setFirmando(tipo);
     setTimeout(() => {
@@ -135,7 +310,6 @@ export default function HojaDeServicioScreen() {
     }
     setFirmando(null);
   };
-  // Dibujo en canvas
   let isDrawing = false;
   let lastX = 0;
   let lastY = 0;
@@ -171,46 +345,23 @@ export default function HojaDeServicioScreen() {
   };
   const handlePointerUp = () => { isDrawing = false; };
 
-  // -------- Generar PDF ---------
-  const generarPDF = async () => {
-    if (!pdfRef.current) return;
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const jsPDF = (await import('jspdf')).default;
-      const input = pdfRef.current;
-      const canvas = await html2canvas(input, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#fff'
-      });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`HojaServicio_${campos.folio || new Date().getTime()}.pdf`);
-      // Notificación
-      const notification = document.createElement('div');
-      notification.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-pulse';
-      notification.textContent = '¡PDF generado exitosamente!';
-      document.body.appendChild(notification);
-      setTimeout(() => notification.remove(), 2500);
-    } catch (error) {
-      console.error('Error al generar PDF:', error);
-      alert('Error al generar el PDF. Intenta de nuevo.');
-    }
+  const handleDescargarPDF = async () => {
+    await generarPDFFormal({
+      campos,
+      firmaTecnico,
+      firmaCliente,
+      equiposCalibrados,
+    });
   };
 
-  // -------- UI principal ---------
+  // ------------- UI PRINCIPAL -----------------
   if (vistaPrevia) {
-    // ----------- VISTA PREVIA PDF -----------
     return (
       <div className="min-h-screen bg-gray-100 py-10 px-4">
-        <div className="max-w-[900px] mx-auto bg-white shadow-2xl border border-gray-300 rounded-xl overflow-hidden text-black" ref={pdfRef}>
+        <div className="max-w-[900px] mx-auto bg-white shadow-2xl border border-gray-300 rounded-xl overflow-hidden text-black">
           <div className="p-6 border-b border-black text-center">
             <div className="flex flex-col items-center">
-              <img src="/assets/logo.png" alt="Logo" className="h-16 mb-2" />
+              <img src="/assets/lab_logo.png" alt="Logo" className="h-16 mb-2" />
               <h1 className="text-xl font-bold uppercase">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h1>
               <p className="text-sm italic">
                 Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422
@@ -225,14 +376,17 @@ export default function HojaDeServicioScreen() {
               <span>Fecha: {campos.fecha || '__________'}</span>
             </div>
           </div>
-          <div className="p-6 border-b border-black text-sm space-y-2">
-            <div><strong>Planta:</strong> {campos.empresa || '____________________'}</div>
-            <div><strong>Domicilio:</strong> {campos.direccion || '____________________'}</div>
-            <div className="flex justify-between">
-              <span><strong>Contacto:</strong> {campos.contacto || '____________________'}</span>
-              <span><strong>Teléfono:</strong> {campos.telefono || '____________________'}</span>
+          {/* Info Cliente ENCUADRADA */}
+          <div className="p-6 border-b border-black flex justify-center">
+            <div className="w-full max-w-[600px] rounded-xl border-2 border-blue-600 bg-blue-50 p-6 shadow-md space-y-2">
+              <div><strong>Planta:</strong> {campos.empresa || '____________________'}</div>
+              <div><strong>Domicilio:</strong> {campos.direccion || '____________________'}</div>
+              <div className="flex justify-between">
+                <span><strong>Contacto:</strong> {campos.contacto || '____________________'}</span>
+                <span><strong>Teléfono:</strong> {campos.telefono || '____________________'}</span>
+              </div>
+              <div><strong>Correo:</strong> {campos.correo || '____________________'}</div>
             </div>
-            <div><strong>Correo:</strong> {campos.correo || '____________________'}</div>
           </div>
           {/* Equipos calibrados agrupados */}
           <div className="p-6 border-b border-black">
@@ -313,8 +467,11 @@ export default function HojaDeServicioScreen() {
               <ArrowLeft size={16} /> Regresar
             </button>
             <div className="flex gap-2">
-              <button onClick={generarPDF} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2">
-                <Download size={16} /> Descargar PDF
+              <button
+                onClick={handleDescargarPDF}
+                className="bg-green-700 hover:bg-green-800 text-white px-4 py-2 rounded-md flex items-center gap-2 font-bold"
+              >
+                <Download size={16} /> Regenerar PDF
               </button>
               <button onClick={() => setVistaPrevia(false)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2">
                 <Edit3 size={16} /> Editar
@@ -326,7 +483,7 @@ export default function HojaDeServicioScreen() {
     );
   }
 
-  // ----------- FORMULARIO NORMAL -----------
+  // ----------- FORMULARIO NORMAL ---------
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 py-8 px-4">
       <div className="max-w-3xl mx-auto">
@@ -346,33 +503,52 @@ export default function HojaDeServicioScreen() {
                   <h1 className="text-3xl font-bold text-white">Hoja de Servicio Profesional</h1>
                 </div>
               </div>
-              <button
-                onClick={() => setVistaPrevia(true)}
-                className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all duration-200 hover:scale-105"
-              >
-                <FileText size={18} /> Vista Previa
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setVistaPrevia(true)}
+                  className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all duration-200 hover:scale-105"
+                >
+                  <FileText size={18} /> Vista Previa
+                </button>
+                <button
+                  onClick={handleDescargarPDF}
+                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
+                >
+                  <Download size={16} /> Descargar PDF
+                </button>
+              </div>
             </div>
           </div>
           <div className="p-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* FORMULARIO PRINCIPAL */}
               <div className="space-y-6">
-                {/* Datos generales */}
                 <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
                   <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
                     <Settings className="text-blue-400" size={20} /> Información General
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-blue-300 mb-2 block">Folio</label>
+                    <div className="relative flex items-center">
                       <input
                         type="text"
-                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all pr-10"
                         value={campos.folio}
                         onChange={e => setCampos({ ...campos, folio: e.target.value })}
-                        placeholder="Ej: 0001-2024"
+                        placeholder="Folio autogenerado"
+                        readOnly
                       />
+                      <button
+                        type="button"
+                        title="Generar folio"
+                        onClick={generarFolio}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-800 rounded-full p-1"
+                        disabled={autoFolioLoading}
+                      >
+                        <PlusCircle size={18} className="text-white" />
+                      </button>
+                      {autoFolioLoading && (
+                        <Loader2 className="animate-spin text-blue-600 absolute right-8 top-1/2 -translate-y-1/2" size={18} />
+                      )}
                     </div>
                     <div>
                       <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
@@ -412,26 +588,25 @@ export default function HojaDeServicioScreen() {
                     </div>
                   </div>
                 </div>
-                {/* Cliente */}
-                <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
-                  <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                {/* Info Cliente ENCUADRADA */}
+                <div className="rounded-2xl border-2 border-blue-600 bg-blue-50 p-6 shadow-md space-y-2">
+                  <h2 className="text-xl font-semibold text-blue-900 mb-4 flex items-center gap-2">
                     <User className="text-green-400" size={20} /> Información del Cliente
                   </h2>
-                  {/* Selector con búsqueda */}
                   <div className="mb-4">
                     <label className="text-sm text-blue-300 mb-2 block flex items-center gap-1">
                       <Building2 size={14} /> Empresa/Planta
                     </label>
                     <input
                       type="text"
-                      className="w-full rounded-xl px-4 py-3 mb-2 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="w-full rounded-xl px-4 py-3 mb-2 bg-white/10 border border-white/20 text-blue-900 placeholder-blue-900/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                       value={searchEmpresa}
                       onChange={e => setSearchEmpresa(e.target.value)}
                       placeholder="Buscar empresa..."
                     />
                     <div className="relative">
                       <select
-                        className="w-full rounded-xl px-4 py-3 bg-white/20 border border-white/20 text-white"
+                        className="w-full rounded-xl px-4 py-3 bg-white/20 border border-white/20 text-blue-900"
                         value={campos.empresaId}
                         onChange={e => setCampos({ ...campos, empresaId: e.target.value })}
                       >
@@ -454,7 +629,7 @@ export default function HojaDeServicioScreen() {
                     </label>
                     <input
                       type="text"
-                      className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-blue-900 placeholder-blue-900/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                       value={campos.direccion}
                       onChange={e => setCampos({ ...campos, direccion: e.target.value })}
                       placeholder="Dirección completa"
@@ -466,7 +641,7 @@ export default function HojaDeServicioScreen() {
                       <label className="text-sm text-blue-300 mb-2 block">Contacto</label>
                       <input
                         type="text"
-                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-blue-900 placeholder-blue-900/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                         value={campos.contacto}
                         onChange={e => setCampos({ ...campos, contacto: e.target.value })}
                         placeholder="Nombre del contacto"
@@ -479,7 +654,7 @@ export default function HojaDeServicioScreen() {
                       </label>
                       <input
                         type="text"
-                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-blue-900 placeholder-blue-900/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                         value={campos.telefono}
                         onChange={e => setCampos({ ...campos, telefono: e.target.value })}
                         placeholder="Teléfono"
@@ -493,7 +668,7 @@ export default function HojaDeServicioScreen() {
                     </label>
                     <input
                       type="email"
-                      className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="w-full rounded-xl px-4 py-3 bg-white/10 border border-white/20 text-blue-900 placeholder-blue-900/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                       value={campos.correo}
                       onChange={e => setCampos({ ...campos, correo: e.target.value })}
                       placeholder="Correo"
@@ -616,6 +791,12 @@ export default function HojaDeServicioScreen() {
                 className="bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-blue-800"
               >
                 <FileText size={18} /> Vista previa y PDF
+              </button>
+              <button
+                onClick={handleDescargarPDF}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
+              >
+                <Download size={16} /> Descargar PDF
               </button>
             </div>
           </div>
