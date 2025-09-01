@@ -101,7 +101,7 @@ export default function HojaDeServicioScreen() {
       const equiposPorTecnico: Record<string, EquipoCalibrado[]> = {};
       qs.forEach(doc => {
         const data = doc.data();
-        if (data.lugarCalibracion && data.lugarCalibracion.toUpperCase().includes("SITIO")) {
+        if (data.lugarCalibracion && data.lugarCalibracion.toUpperCase().includes("sitio")) {
           const tecnico = data.tecnicoResponsable || data.tecnico || 'Sin Técnico';
           if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
           equiposPorTecnico[tecnico].push({
