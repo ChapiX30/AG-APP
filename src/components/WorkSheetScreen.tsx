@@ -584,7 +584,7 @@ export const WorkSheetScreen: React.FC = () => {
 
       const fecha = new Date().toISOString().split("T")[0];
       const carpeta = getUserName(currentUser || user);
-      const nombreArchivo = `worksheets/${carpeta}/${formData.certificado}_${fecha}.pdf`;
+      const nombreArchivo = `worksheets/${carpeta}/${formData.certificado}_${formData.id || "SINID"}.pdf`;
       const pdfRef = ref(storage, nombreArchivo);
 
       await uploadBytes(pdfRef, blob);
