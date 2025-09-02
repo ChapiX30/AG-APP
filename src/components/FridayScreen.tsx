@@ -248,7 +248,10 @@ function renderCell(type: string, value: any, row: Row, col: Column, setFile: ((
   }
   if (type === "person") {
     const user = PEOPLE.find(u => u.id === value);
-    if (!user) return <span className="text-[#676879] text-sm">-</span>;
+    if (!user && value) {
+      return <span className="font-medium text-sm text-[#323338]">{value}</span>;
+   }   
+  if (!user) return <span className="text-[#676879] text-sm">-</span>;
     return (
       <div className="inline-flex items-center gap-2">
         <div className={clsx("w-8 h-8 rounded-full text-xs font-semibold flex items-center justify-center text-white", user.color)}>{user.initials}</div>
@@ -258,7 +261,7 @@ function renderCell(type: string, value: any, row: Row, col: Column, setFile: ((
   }
   if (type === "client") {
     const client = CLIENTS.find(c => c.id === value);
-    return <span className="text-sm text-[#323338]">{client?.name || "-"}</span>;
+    return <span className="text-sm text-[#323338]">{client?.name || value || "-"}</span>;
   }
   if (type === "checkbox") {
     return <div className="flex items-center"><input type="checkbox" checked={!!value} disabled className="w-4 h-4 accent-[#0073ea] rounded border-2 border-[#d0d4e4]" /></div>;

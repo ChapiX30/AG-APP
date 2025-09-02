@@ -8,7 +8,7 @@ import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
 import { WorkSheetScreen } from './WorkSheetScreen';
 import  FridayScreen  from './FridayScreen';
 import FridayServiciosScreen from './FridayServiciosScreen';
-import { DriveScreen } from './DriveScreen';
+import  DriveScreen  from './DriveScreen';
 import SplashScreen from "./SplashScreen";
 import ProgramaCalibracionScreen from './ProgramaCalibracionScreen';
 import HojaDeServicioScreen from './HojaDeServicioScreen';

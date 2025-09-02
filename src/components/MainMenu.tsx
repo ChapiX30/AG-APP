@@ -1,25 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
-import { 
-  Calendar, 
-  Building2, 
-  FileText, 
-  ClipboardList, 
-  BookOpen, 
-  Settings,
-  LogOut,
-  User,
-  Database,
-  FolderKanban,
-  Bell,
-  Check
+import {
+  Calendar, Building2, FileText, ClipboardList, BookOpen,
+  Settings, LogOut, User, Database, FolderKanban, Bell, Check
 } from 'lucide-react';
-
 import labLogo from '../assets/lab_logo.png';
-
-import { db } from '../utils/firebase';
-import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { db, storage } from '../utils/firebase';
+import {
+  collection, onSnapshot, doc, setDoc, getDoc, updateDoc
+} from 'firebase/firestore';
+import {
+  ref as storageRef, uploadBytes, getDownloadURL
+} from 'firebase/storage';
 import { getFcmToken, onForegroundMessage } from '../utils/firebase';
 
 const menuItems = [
@@ -40,40 +33,94 @@ const menuItems = [
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
-
-  const uid = useMemo(() => {
-    const authUid = (user as any)?.uid || (user as any)?.id;
-    const localUid = localStorage.getItem('usuario_id');
-    return (authUid || localUid || '').toString();
-  }, [user]);
-  const email = useMemo(() => {
-    const authEmail = (user as any)?.email;
-    const localEmail = localStorage.getItem('usuario.email');
-    return (authEmail || localEmail || '').toString().toLowerCase();
-  }, [user]);
-  const [showAssignedBanner, setShowAssignedBanner] = useState(false);
-  const [assignedCount, setAssignedCount] = useState(0);
+  const uid = useMemo(() => (user as any)?.uid || (user as any)?.id || localStorage.getItem('usuario_id') || '', [user]);
+  const email = useMemo(() => (user as any)?.email || localStorage.getItem('usuario.email') || '', [user]);
+  // Perfil info
   const [showProfile, setShowProfile] = useState(false);
-  const [editName, setEditName] = useState((user as any)?.name || "");
-  const [editEmail, setEditEmail] = useState((user as any)?.email || "");
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPosition, setEditPosition] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const inputFileRef = useRef<HTMLInputElement>(null);
 
+  // Sincroniza datos de usuario desde Firestore
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(doc(db, "usuarios", uid), (snap) => {
+      const d: any = snap.data() || {};
+      setEditName(d.name || (user as any)?.name || "");
+      setEditEmail(d.email || (user as any)?.email || "");
+      setEditPhone(d.phone || "");
+      setEditPosition(d.position || "");
+      setEditLocation(d.location || "");
+      setEditBio(d.bio || "");
+      setPhotoUrl(d.photoUrl || "");
+    });
+    return () => unsub();
+  }, [uid]);
+
+  // Subir foto y guardar perfil
   const handleProfileSave = async () => {
     setSaving(true);
     try {
-      localStorage.setItem('usuario.name', editName);
-      localStorage.setItem('usuario.email', editEmail);
+      let newPhotoUrl = photoUrl;
+      if (photoFile && uid) {
+        // Sube la foto al Storage
+        const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
+        await uploadBytes(storageReference, photoFile);
+        newPhotoUrl = await getDownloadURL(storageReference);
+        setPhotoUrl(newPhotoUrl);
+      }
+      // Guarda en Firestore
+      await setDoc(doc(db, "usuarios", uid), {
+        name: editName,
+        email: editEmail,
+        phone: editPhone,
+        position: editPosition,
+        location: editLocation,
+        bio: editBio,
+        photoUrl: newPhotoUrl,
+      }, { merge: true });
       setShowProfile(false);
+      setPhotoFile(null);
     } finally {
       setSaving(false);
     }
   };
 
+  // Cargar foto si ya existe
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+    if (uid) {
+      getDoc(doc(db, "usuarios", uid)).then(snap => {
+        const d: any = snap.data() || {};
+        setPhotoUrl(d.photoUrl || "");
+      });
     }
-  }, []);
+  }, [uid]);
+
+  // Permite arrastrar y soltar foto de perfil
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setPhotoFile(e.target.files[0]);
+      setPhotoUrl(URL.createObjectURL(e.target.files[0]));
+    }
+  };
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setPhotoFile(e.dataTransfer.files[0]);
+      setPhotoUrl(URL.createObjectURL(e.dataTransfer.files[0]));
+    }
+  };
+
+  // ---- TODO LO DEMÁS IGUAL (notificaciones, asignaciones, menú) ----
+  const [showAssignedBanner, setShowAssignedBanner] = useState(false);
+  const [assignedCount, setAssignedCount] = useState(0);
 
   useEffect(() => {
     if (!uid && !email) return;
@@ -138,12 +185,12 @@ export const MainMenu: React.FC = () => {
       }
       onForegroundMessage((payload) => {
         const title = payload?.notification?.title || 'Nuevo servicio asignado';
-        const body  = payload?.notification?.body  || '';
+        const body = payload?.notification?.body || '';
         try {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(title, { body, icon: '/bell.png' });
           }
-        } catch {}
+        } catch { }
       });
     })();
   }, [uid, email]);
@@ -162,19 +209,47 @@ export const MainMenu: React.FC = () => {
     else if (item.id === 'drive') navigateTo('drive');
   };
 
+  // ================= RENDER =====================
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#181c25] via-[#202734] to-[#283046]">
-
       {/* Modal editar perfil */}
       {showProfile && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-voldemort-fadein">
           <div className="bg-gradient-to-b from-[#23293a] to-[#181c25] rounded-2xl shadow-voldemort w-full max-w-sm mx-auto p-7 animate-fade-in border border-[#262a39]">
             <h3 className="text-lg font-semibold mb-3 text-gray-100">Editar perfil</h3>
-            <div className="space-y-4">
+            <div
+              className="flex flex-col items-center mb-4 gap-2"
+              onDrop={handleDrop}
+              onDragOver={e => e.preventDefault()}
+            >
+              <div
+                className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-[#30445f] shadow-voldemortglow cursor-pointer group"
+                title="Haz click o arrastra una foto"
+                onClick={() => inputFileRef.current?.click()}
+              >
+                <img
+                  src={photoUrl || "/user_default.png"}
+                  alt="Foto de perfil"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                  <span className="text-xs text-white">Cambiar foto</span>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={inputFileRef}
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+              </div>
+              <span className="text-xs text-gray-500">JPG, PNG o WebP (max 2MB)</span>
+            </div>
+            <div className="space-y-2">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Nombre</label>
-                <input
-                  className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                <input className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
                   autoFocus
@@ -183,8 +258,7 @@ export const MainMenu: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Correo</label>
-                <input
-                  className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                <input className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
                   value={editEmail}
                   onChange={e => setEditEmail(e.target.value)}
                   type="email"
@@ -192,22 +266,50 @@ export const MainMenu: React.FC = () => {
                   placeholder="tucorreo@empresa.com"
                 />
               </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Teléfono</label>
+                <input className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                  value={editPhone}
+                  onChange={e => setEditPhone(e.target.value)}
+                  type="tel"
+                  placeholder="Ej. 222-123-4567"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Puesto / Cargo</label>
+                <input className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                  value={editPosition}
+                  onChange={e => setEditPosition(e.target.value)}
+                  placeholder="Ej. Metrologo, Calidad, Técnico"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Ubicación</label>
+                <input className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                  value={editLocation}
+                  onChange={e => setEditLocation(e.target.value)}
+                  placeholder="Ej. Puebla, México"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Descripción breve</label>
+                <textarea className="w-full border border-[#353a4d] bg-[#22283a] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#5098fa] placeholder:text-gray-400"
+                  value={editBio}
+                  onChange={e => setEditBio(e.target.value)}
+                  rows={2}
+                  placeholder="Cuéntanos un poco sobre ti..."
+                />
+              </div>
             </div>
             <div className="flex justify-end mt-6 gap-2">
-              <button
-                className="px-4 py-2 rounded-lg bg-[#212634] text-gray-300 hover:bg-[#283047] transition"
+              <button className="px-4 py-2 rounded-lg bg-[#212634] text-gray-300 hover:bg-[#283047] transition"
                 onClick={() => setShowProfile(false)}
                 disabled={saving}
-              >
-                Cancelar
-              </button>
-              <button
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#4877b2] to-[#4e5caa] text-white font-medium shadow-voldemortglow hover:brightness-110 transition"
+              >Cancelar</button>
+              <button className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#4877b2] to-[#4e5caa] text-white font-medium shadow-voldemortglow hover:brightness-110 transition"
                 onClick={handleProfileSave}
                 disabled={saving}
-              >
-                {saving ? "Guardando..." : "Guardar"}
-              </button>
+              >{saving ? "Guardando..." : "Guardar"}</button>
             </div>
           </div>
         </div>
@@ -231,11 +333,10 @@ export const MainMenu: React.FC = () => {
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-xl flex items-center justify-center shadow-voldemortglow overflow-hidden">
-              <img
-                src={labLogo}
+              <img src={labLogo}
                 alt="Logo"
                 className="w-8 h-8 object-contain rounded-xl drop-shadow-voldemorticon animate-lablogo-idle transition-all duration-300
-                  hover:animate-lablogo-bounce hover:shadow-voldemortglow cursor-pointer select-none"
+                hover:animate-lablogo-bounce hover:shadow-voldemortglow cursor-pointer select-none"
                 style={{ background: "transparent" }}
                 draggable={false}
               />
@@ -247,18 +348,18 @@ export const MainMenu: React.FC = () => {
           </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-full flex items-center justify-center shadow">
-                <User className="w-5 h-5 text-[#8ad7ff]" />
+              <div className="w-9 h-9 rounded-full overflow-hidden shadow-lg border-2 border-[#30445f] flex items-center justify-center bg-[#283046]">
+                <img
+                  src={photoUrl || "/user_default.png"}
+                  alt="Perfil"
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
                 <div className="flex items-center gap-1">
-                  <span className="text-sm font-medium text-gray-100">{(user as any)?.name || "Usuario"}</span>
+                  <span className="text-sm font-medium text-gray-100">{editName || "Usuario"}</span>
                   <button
-                    onClick={() => {
-                      setEditName((user as any)?.name || "");
-                      setEditEmail((user as any)?.email || "");
-                      setShowProfile(true);
-                    }}
+                    onClick={() => setShowProfile(true)}
                     className="ml-1 p-1 rounded-full hover:bg-[#222e45] transition"
                     title="Editar perfil"
                   >
@@ -267,7 +368,7 @@ export const MainMenu: React.FC = () => {
                     </svg>
                   </button>
                 </div>
-                <span className="text-xs text-gray-400">{(user as any)?.email}</span>
+                <span className="text-xs text-gray-400">{editEmail}</span>
               </div>
             </div>
             <button
@@ -300,25 +401,23 @@ export const MainMenu: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <div className="w-7 h-7 bg-gradient-to-br from-[#385185] to-[#23293a] rounded-full flex items-center justify-center">
-                <User className="w-4 h-4 text-[#7ac7ff]" />
-              </div>
-              <span className="text-xs font-medium text-gray-100 max-w-[90px] truncate">{(user as any)?.name}</span>
-              <button
-                onClick={() => {
-                  setEditName((user as any)?.name || "");
-                  setEditEmail((user as any)?.email || "");
-                  setShowProfile(true);
-                }}
-                className="ml-1 p-1 rounded-full hover:bg-[#222e45] transition"
-                title="Editar perfil"
-              >
-                <svg className="w-4 h-4 text-[#78aaff] drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6-6a2.121 2.121 0 113 3l-6 6a2.121 2.121 0 01-3-3z" />
-                </svg>
-              </button>
+            <div className="w-8 h-8 rounded-full overflow-hidden shadow border-2 border-[#30445f] flex items-center justify-center bg-[#283046]">
+              <img
+                src={photoUrl || "/user_default.png"}
+                alt="Perfil"
+                className="w-full h-full object-cover"
+              />
             </div>
+            <span className="text-xs font-medium text-gray-100 max-w-[90px] truncate">{editName}</span>
+            <button
+              onClick={() => setShowProfile(true)}
+              className="ml-1 p-1 rounded-full hover:bg-[#222e45] transition"
+              title="Editar perfil"
+            >
+              <svg className="w-4 h-4 text-[#78aaff] drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6-6a2.121 2.121 0 113 3l-6 6a2.121 2.121 0 01-3-3z" />
+              </svg>
+            </button>
             <button
               onClick={logout}
               className="ml-2 p-2 rounded-md bg-[#212634] text-gray-300 hover:bg-[#293148] active:scale-95 transition"

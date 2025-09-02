@@ -104,7 +104,11 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   Frecuencia: ["RPM", "Hz", "kHz", "MHz", "GHz", "rad/s"],
   Presión: ["kPa", "bar", "mBar", "psi", "InH2O", "MPa", "Pa", "mmH20"],
   Quimica: ["µS", "pH"],
-  Electrica: ["V", "mV", "kV", "A", "mA", "µA", "Ω"],
+  Electrica: {
+  DC: ["mV", "V", "A", "µA", "mA", "Ω"],
+  AC: ["mV", "V", "A", "µA", "mA", "Ω"],
+  Otros: ["Hz", "kHz", "MHz"], // Si necesitas frecuencia
+},
   Temperatura: ["°C", "°F", "°K"],
   Masa: ["g", "kg", "lb"],
   Tiempo: ["s", "min", "h"],
@@ -178,7 +182,7 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       folio: newFolio,
       equipo: formData.equipo || "Sin especificar",
       cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar",
-      responsable: getUserName(user),
+      responsable: formData.responsable || getUserName(user),
       estado: "En proceso",
       prioridad: "Media",
       progreso: 0,
@@ -194,8 +198,6 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       modelo: formData.modelo,
       numero_serie: formData.numeroSerie,
       notas_calibracion: formData.notas,
-      temp_ambiente: formData.tempAmbiente,
-      humedad_relativa: formData.humedadRelativa,
       source_type: "worksheet",
       transferred_at: Date.now(),
     };
@@ -378,6 +380,8 @@ export const WorkSheetScreen: React.FC = () => {
     localStorage.getItem('autoTransferWorksheets') === 'true'
   );
 
+  const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
+
   const [formData, setFormData] = useState({
     lugarCalibracion: "",
     frecuenciaCalibracion: "",
@@ -534,7 +538,15 @@ export const WorkSheetScreen: React.FC = () => {
   ];
   const valid = camposObligatorios.every((k) => formData[k]?.trim());
   const magnitudReadOnly = !!currentMagnitude;
-  const unidadesDisponibles = formData.magnitud ? unidadesPorMagnitud[formData.magnitud] || [] : [];
+  const unidadesDisponibles = React.useMemo(() => {
+  if (formData.magnitud === "Electrica") {
+    // Solo muestra unidades según el tipo (AC, DC u Otros)
+    return unidadesPorMagnitud["Electrica"][tipoElectrica] || [];
+  } else if (formData.magnitud && unidadesPorMagnitud[formData.magnitud]) {
+    return unidadesPorMagnitud[formData.magnitud] as string[];
+  }
+  return [];
+}, [formData.magnitud, tipoElectrica]);
 
   // MODIFICADO: handleSave con integración automática
   const handleSave = useCallback(async () => {
@@ -819,7 +831,7 @@ if (yaExiste) {
                     value={formData.id}
                     onChange={(e) => handleIdChange(e.target.value)}
                     className="w-full p-4 border rounded-lg"
-                    placeholder="Ej: EP-04654"
+                    placeholder=""
                   />
                 </div>
               </div>
@@ -953,13 +965,56 @@ if (yaExiste) {
                     <Tag className="w-4 h-4 text-violet-500" />
                     <span>Unidad*</span>
                   </label>
+{formData.magnitud === "Electrica" && (
+  <div className="flex gap-4 mb-2 text-black">
+    <label>
+      <input
+        type="radio"
+        name="tipoElectrica"
+        value="DC"
+        checked={tipoElectrica === "DC"}
+        onChange={() => setTipoElectrica("DC")}
+      />{" "}
+      DC
+    </label>
+    <label>
+      <input
+        type="radio"
+        name="tipoElectrica"
+        value="AC"
+        checked={tipoElectrica === "AC"}
+        onChange={() => setTipoElectrica("AC")}
+      />{" "}
+      AC
+    </label>
+    <label>
+      <input
+        type="radio"
+        name="tipoElectrica"
+        value="Otros"
+        checked={tipoElectrica === "Otros"}
+        onChange={() => setTipoElectrica("Otros")}
+      />{" "}
+      Otros
+    </label>
+  </div>
+)}
                   <select
-                    value={formData.unidad}
-                    onChange={(e) => handleInputChange("unidad", e.target.value)}
+                    multiple
+                    value={formData.unidad || []}
+                    onChange={(e) => 
+                      setFormData({
+                       ...formData,
+                       unidad: Array.from(e.target.selectedOptions, (option) => option.value)
+                         })
+                     }
                     disabled={!formData.magnitud}
                     className="w-full p-4 border rounded-lg"
+                    required
                   >
-                    <option value="">{!formData.magnitud ? "Seleccionar magnitud primero" : "Seleccionar..."}</option>
+                    <option value="" disabled>
+                      {formData.magnitud ? "Seleccionar..." : "Seleccionar magnitud primero"}
+                    </option>
                     {unidadesDisponibles.map((u) => (
                       <option key={u} value={u}>
                         {u}
@@ -973,13 +1028,13 @@ if (yaExiste) {
               </div>
         
   <div>
-    <label className="block text-sm font-medium text-gray-200 mb-1">Alcance</label>
+    <label className="block text-sm font-medium text-gray-200 mb-1 text-gray-800">Alcance</label>
     <input
       type="text"
       className="w-full px-3 py-2 rounded-lg bg-[#232323] border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#38bdf8] transition"
       value={alcance}
       onChange={e => setAlcance(e.target.value)}
-      placeholder="Ej: 10 A 10V"
+      placeholder="Ej: 10"
       autoComplete="off"
       spellCheck={false}
       required
@@ -988,13 +1043,13 @@ if (yaExiste) {
 
 {/* Resolución */}
   <div>
-    <label className="block text-sm font-medium text-gray-200 mb-1">Resolución</label>
+    <label className="block text-sm font-medium text-gray-200 mb-1 text-gray-800">Resolución</label>
     <input
       type="text"
       className="w-full px-3 py-2 rounded-lg bg-[#232323] border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#38bdf8] transition"
       value={resolucion}
       onChange={e => setResolucion(e.target.value)}
-      placeholder="Ej: 0.01 V"
+      placeholder="Ej: 0.01"
       autoComplete="off"
       spellCheck={false}
       required
