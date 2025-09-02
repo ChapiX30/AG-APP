@@ -190,6 +190,8 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       created_at: { timestamp: Date.now(), userId: userId || "unknown" },
       last_updated: { timestamp: Date.now(), userId: userId || "unknown" },
       certificado: formData.certificado,
+      alcance: formData.alcance,
+      resolucion: formData.resolucion,
       magnitud: formData.magnitud,
       unidad: formData.unidad,
       lugar_calibracion: formData.lugarCalibracion,
@@ -536,7 +538,13 @@ export const WorkSheetScreen: React.FC = () => {
     "magnitud",
     "unidad",
   ];
-  const valid = camposObligatorios.every((k) => formData[k]?.trim());
+  const valid = camposObligatorios.every((k) => {
+    const val = formData[k];
+  if (Array.isArray(val)) {
+    return val.length > 0;
+  }
+  return !!val && typeof val === "string" ? val.trim() !== "" : !!val;
+});
   const magnitudReadOnly = !!currentMagnitude;
   const unidadesDisponibles = React.useMemo(() => {
   if (formData.magnitud === "Electrica") {
@@ -1227,7 +1235,7 @@ if (yaExiste) {
                   <div><strong>Modelo:</strong> {formData.modelo}</div>
                   <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
                   <div className="flex space-x-8 text-black">
-                    <div><strong>Unidad:</strong> {formData.unidad}</div>
+                    <div><strong>Unidad:</strong> {(formData.unidad || []).join(', ')}</div>
                     <div><strong>Alcance:</strong> {formData.alcance}</div>
                   </div>
                   <div><strong>Resolucion:</strong> {formData.resolucion}</div>

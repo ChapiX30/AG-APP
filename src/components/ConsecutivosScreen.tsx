@@ -15,7 +15,7 @@ const magnitudesAcreditadas = [
   { id: 'par-torsional', name: 'Par Torsional', icon: '🔧', description: 'Medición de torque y par' },
   { id: 'presion', name: 'Presion', icon: '📊', description: 'Mediciones de presión y vacío' },
   { id: 'quimica', name: 'Quimica', icon: '🔬', description: 'Mediciones químicas' },
-  { id: 'Reporte Diagnostico', name: 'Reporte Diagnóstico', icon: '📝', description: 'Mediciones de reporte diagnóstico' },
+  { id: 'Reporte Diagnostico', name: 'Reporte Diagnostico', icon: '📝', description: 'Mediciones de reporte diagnóstico' },
   { id: 'temperatura', name: 'Temperatura', icon: '🌡️', description: 'Mediciones térmicas' },
   { id: 'tiempo', name: 'Tiempo', icon: '⏱️', description: 'Mediciones temporales' },
   { id: 'volumen', name: 'Volumen', icon: '📦', description: 'Mediciones volumétricas' }
