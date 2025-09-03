@@ -272,6 +272,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                       <option value="" className="bg-slate-800 text-white">Selecciona tu puesto…</option>
                       <option value="Metrólogo" className="bg-slate-800 text-white">Metrólogo</option>
                       <option value="Calidad" className="bg-slate-800 text-white">Calidad</option>
+                      <option value="Logistica" className="bg-slate-800 text-white">Logistica</option>
+                      <option value="Administrativo" className="bg-slate-800 text-white">Administrativo</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                   </div>

@@ -397,7 +397,6 @@ export const WorkSheetScreen: React.FC = () => {
     modelo: "",
     numeroSerie: "",
     magnitud: "",
-    unidad: "",
     alcance: "",
     resolucion: "",
     medicionPatron: "",
@@ -411,20 +410,29 @@ export const WorkSheetScreen: React.FC = () => {
     excepcion: false,
   });
 
+  const [unidadesSeleccionadas, setUnidadesSeleccionadas] = useState<{ tipo: string, unidad: string }[]>([]);
+
   // Cuando cambia el cliente: aplica EP- si es Celestica y limpia
   const handleClienteChange = (value: string) => {
-    const cel = value.includes("Celestica");
-    setIsCelestica(cel);
-    setFormData((prev) => ({
-      ...prev,
-      cliente: value,
-      id: cel ? "EP-" : "",
-      equipo: "",
-      marca: "",
-      modelo: "",
-      numeroSerie: "",
-    }));
-    setFieldsLocked(false);
+  const cel = (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .includes("celestica");
+
+  setIsCelestica(cel);
+
+  setFormData((prev) => ({
+    ...prev,
+    cliente: value,
+    id: cel ? "EP-" : "",
+    equipo: "",
+    marca: "",
+    modelo: "",
+    numeroSerie: "",
+  }));
+
+  setFieldsLocked(false);
   };
 
   // Cuando cambia el ID: autocompleta o limpia
@@ -478,9 +486,11 @@ export const WorkSheetScreen: React.FC = () => {
     } catch {
       // fallback estático
       setListaClientes([
-        { id: "1", nombre: "Celestica Standard" },
-        { id: "2", nombre: "Celestica Medico" },
-        { id: "3", nombre: "Celestica Edificio E" },
+        { id: "1", nombre: "CELESTICA DE MONTERREY (ESTANDARD)" },
+        { id: "2", nombre: "CELESTICA DE MONTERREY (MEDICO)" },
+        { id: "3", nombre: "CELESTICA DE MONTERREY (EDIFICIO E)" },
+        { id: "4", nombre: "CELESTICA DE MONTERREY (EDIFICIO L)" },
+
       ]);
     }
   };
@@ -822,11 +832,13 @@ if (yaExiste) {
                     className="w-full p-4 border rounded-lg"
                   >
                     <option value="">Seleccionar...</option>
-                    {listaClientes.map((c) => (
-                      <option key={c.id} value={c.nombre}>
-                        {c.nombre}
-                      </option>
-                    ))}
+                    {[...listaClientes]
+  .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+  .map((c) => (
+    <option key={c.id} value={c.nombre}>
+      {c.nombre}
+    </option>
+  ))}
                   </select>
                 </div>
                 <div>
@@ -969,42 +981,36 @@ if (yaExiste) {
                   )}
                 </div>
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
                     <Tag className="w-4 h-4 text-violet-500" />
                     <span>Unidad*</span>
                   </label>
-{formData.magnitud === "Electrica" && (
-  <div className="flex gap-4 mb-2 text-black">
-    <label>
-      <input
-        type="radio"
-        name="tipoElectrica"
-        value="DC"
-        checked={tipoElectrica === "DC"}
-        onChange={() => setTipoElectrica("DC")}
-      />{" "}
-      DC
-    </label>
-    <label>
-      <input
-        type="radio"
-        name="tipoElectrica"
-        value="AC"
-        checked={tipoElectrica === "AC"}
-        onChange={() => setTipoElectrica("AC")}
-      />{" "}
-      AC
-    </label>
-    <label>
-      <input
-        type="radio"
-        name="tipoElectrica"
-        value="Otros"
-        checked={tipoElectrica === "Otros"}
-        onChange={() => setTipoElectrica("Otros")}
-      />{" "}
-      Otros
-    </label>
+{formData.magnitud === "Electrica"  (
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+    {["DC", "AC", "Otros"].map((tipo) => (
+      <div key={tipo} className="border rounded-lg p-2">
+        <div className="font-bold mb-1">{tipo}</div>
+        {unidadesPorMagnitud.Electrica[tipo].map((unidad) => {
+          const checked = unidadesSeleccionadas.some(u => u.tipo === tipo && u.unidad === unidad);
+          return (
+            <label key={unidad} className="flex items-center space-x-2 mb-1">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => {
+                  if (checked) {
+                    setUnidadesSeleccionadas(unidadesSeleccionadas.filter(u => !(u.tipo === tipo && u.unidad === unidad)));
+                  } else {
+                    setUnidadesSeleccionadas([...unidadesSeleccionadas, { tipo, unidad }]);
+                  }
+                }}
+              />
+              <span>{unidad}</span>
+            </label>
+          );
+        })}
+      </div>
+    ))}
   </div>
 )}
                   <select
@@ -1040,8 +1046,8 @@ if (yaExiste) {
     <input
       type="text"
       className="w-full px-3 py-2 rounded-lg bg-[#232323] border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#38bdf8] transition"
-      value={alcance}
-      onChange={e => setAlcance(e.target.value)}
+      value={formData.alcance}
+      onChange={e => setFormData({ ...formData, alcance: e.target.value })}
       placeholder="Ej: 10"
       autoComplete="off"
       spellCheck={false}
@@ -1055,8 +1061,8 @@ if (yaExiste) {
     <input
       type="text"
       className="w-full px-3 py-2 rounded-lg bg-[#232323] border border-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#38bdf8] transition"
-      value={resolucion}
-      onChange={e => setResolucion(e.target.value)}
+      value={formData.resolucion}
+      onChange={e => setFormData({ ...formData, resolucion: e.target.value })}
       placeholder="Ej: 0.01"
       autoComplete="off"
       spellCheck={false}
