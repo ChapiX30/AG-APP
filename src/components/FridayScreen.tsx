@@ -250,7 +250,7 @@ function renderCell(type: string, value: any, row: Row, col: Column, setFile: ((
     const user = PEOPLE.find(u => u.id === value);
     if (!user && value) {
       return <span className="font-medium text-sm text-[#323338]">{value}</span>;
-   }   
+   }
   if (!user) return <span className="text-[#676879] text-sm">-</span>;
     return (
       <div className="inline-flex items-center gap-2">
@@ -583,7 +583,7 @@ export default function FridayScreen() {
   const [editValue, setEditValue] = useState<any>("");
   const [activeTab, setActiveTab] = useState("equipos");
   // Implementación básica de useNavigation si no está disponible
-  const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "friday", navigateTo: (screen: string) => console.log(`Navigate to ${screen}`) };
+  const { currentScreen, navigateTo } = useNavigation ? useNavigation() : { currentScreen: "friday", navigateTo: (screen: string) => console.log(`Maps to ${screen}`) };
   const [openColMenuKey, setOpenColMenuKey] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<{ gidx: number; ridx: number }[]>([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -602,29 +602,29 @@ export default function FridayScreen() {
   const [showEditColOptionsModal, setShowEditColOptionsModal] = useState(false);
   const [editingColOptions, setEditingColOptions] = useState<Column | null>(null);
   const [tempColOptions, setTempColOptions] = useState<{ value: string; color: string }[]>([]);
-  
 
-const handleDeleteRow = useCallback(async (groupId: string, rowId: string) => {
-  setGroups(prev =>
-    prev.map(group =>
-      group.id === groupId
-        ? { ...group, rows: group.rows.filter(row => row.id !== rowId) }
-        : group
-    )
-  );
-  useEffect(() => {
-  })
-    const boardRef = doc(db, "tableros", "principal");
-    // Suscribe el listener a Firebase
-    const unsub = onSnapshot(boardRef, (docSnap) => {
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      setGroups(data.groups || []);
-      setColumns(data.columns || []);
-  }
-});
-return () => unsub();
-}, []);
+
+  // =================================================================================================
+  // FUNCIÓN CORREGIDA PARA ELIMINAR FILAS
+  // =================================================================================================
+  const handleDeleteRow = useCallback((groupId: string, rowId: string) => {
+    // 1. Añadimos una confirmación para evitar borrados accidentales
+    if (window.confirm("¿Estás seguro de que quieres eliminar esta fila?")) {
+        // 2. Actualizamos el estado local para que la UI responda de inmediato
+        setGroups(prevGroups =>
+            prevGroups.map(group => {
+                if (group.id === groupId) {
+                    // Filtramos la fila que queremos eliminar
+                    return { ...group, rows: group.rows.filter(row => row.id !== rowId) };
+                }
+                return group;
+            })
+        );
+        // 3. Activamos el guardado en Firebase a través del useEffect de saveTick
+        //    Este es el paso que faltaba y que es consistente con el resto de la app
+        setSaveTick(t => t + 1);
+    }
+  }, []); // Las dependencias (setGroups, setSaveTick) son estables y no necesitan ser listadas
 
   // Notificación visual automática
   useEffect(() => {
@@ -714,6 +714,16 @@ return () => unsub();
       unsub = onSnapshot(ref, (ds) => {
         const data = ds.data();
         if (!data) return;
+
+      // ARREGLA LAS FILAS VIEJAS QUE NO TIENEN id_equipo
+  const fixedGroups = (data.groups || []).map(group => ({
+    ...group,
+    rows: group.rows.map(row => ({
+      ...row,
+      id_equipo: row.id_equipo || ("EQ" + Date.now() + Math.floor(Math.random() * 1000)),
+    }))
+  }));
+
         setColumns(data.columns || []);
         setGroups(data.groups || []);
         setColumnOrder((data.columns || []).map((c: Column) => c.key)); // Actualizar columnOrder al cargar
@@ -789,8 +799,7 @@ return () => unsub();
       const newColumnOrder = Array.from(columnOrder);
       const [removedKey] = newColumnOrder.splice(source.index, 1);
       newColumnOrder.splice(destination.index, 0, removedKey);
-      
-      // Reordenar también los objetos de columna según el nuevo orden
+
   const newColumns = newColumnOrder
     .map((key) => columns.find((col) => col.key === key)!)
     .filter(Boolean);
@@ -854,7 +863,7 @@ return () => unsub();
     }, []);
 
     return (
-      
+
       <DragDropContext onDragEnd={onDragEnd}>
         {/* Drag de grupos */}
         <Droppable droppableId="groups" type="group">
@@ -938,14 +947,16 @@ return () => unsub();
                           </button>
                           <button
                             className="ml-3 px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded-md flex items-center gap-2 transition-all text-sm"
-                            onClick={() => {
+                            onClick={() =>{
                               const newRowId = "r" + Math.random().toString(36).slice(2, 8);
+                              const newEquipoId = "EQ" + Date.now() + Math.floor(Math.random() * 1000);
                               const newFolio = generateAutoNumber(groups, "folio"); // Assuming 'folio' is auto_number
                               setGroups(gs => gs.map((g, i) => i === gidx
                                 ? {
                                   ...g,
                                   rows: [...g.rows, {
                                     id: newRowId,
+                                    id_equipo: newEquipoId,
                                     folio: newFolio,
                                     estado: "No iniciado",
                                     prioridad: "Media",
@@ -957,8 +968,7 @@ return () => unsub();
                                 : g));
                               setSaveTick(t => t + 1);
                             }}
-                          >
-                            <Plus size={16} />
+                          ><Plus size={16} />
                             Nuevo elemento
                           </button>
                         </div>
@@ -1136,7 +1146,7 @@ return () => unsub();
                                                       )}
                                                       <div
                                                         className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-blue-300/50 transition-colors"
-                                                        onMouseDown={(e) => {
+                                                        onMouseDown={(e) =>{
                                                           e.stopPropagation();
                                                           let startX = e.clientX;
                                                           let startWidth = col.width;
@@ -1154,8 +1164,7 @@ return () => unsub();
                                                           document.addEventListener('mousemove', doDrag);
                                                           document.addEventListener('mouseup', stopDrag);
                                                         }}
-                                                      />
-                                                    </th>
+                                                      /></th>
                                                   )}
                                                 </Draggable>
                                               );
@@ -1236,15 +1245,6 @@ return () => unsub();
                                                       setEditCell(null);
                                                       setSaveTick(t => t + 1);
                                                     })}
-                                                    <td className="px-2 py-2 text-center">
-        <button
-          className="text-red-500 hover:bg-red-100 p-1 rounded"
-          onClick={() => handleDeleteRow(group.id, row.id)}
-          title="Eliminar fila"
-        >
-          <Trash2 size={16} />
-        </button>
-                                                  </td>
                                                   </td>
                                                 );
                                               }
@@ -1266,10 +1266,17 @@ return () => unsub();
                                                 </td>
                                               );
                                             })}
-                                            <td className="px-4 py-3">
-                                              <div {...provR.dragHandleProps} className="cursor-grab opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-[#e6e9ef] transition-all" title="Arrastrar fila">
-                                                <ListChecks size={16} className="text-[#676879]" />
-                                              </div>
+                                            <td className="px-2 py-2 text-center flex items-center h-full">
+                                                <div {...provR.dragHandleProps} className="cursor-grab opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-[#e6e9ef] transition-all" title="Arrastrar fila">
+                                                    <ListChecks size={16} className="text-[#676879]" />
+                                                </div>
+                                                <button
+                                                  className="text-red-500 hover:bg-red-100 p-1 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                                  onClick={() => handleDeleteRow(group.id, row.id)}
+                                                  title="Eliminar fila"
+                                                >
+                                                  <Trash2 size={16} />
+                                                </button>
                                             </td>
                                           </tr>
                                         )}
@@ -1302,7 +1309,7 @@ return () => unsub();
             <div className="h-6 w-px bg-[#e6e9ef]" />
             <div className="flex items-center gap-4">
               <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all" title="Duplicar"
-                onClick={() => {
+                onClick={() =>{
                   setGroups(gs => gs.map((g, gidx) => ({
                     ...g,
                     rows: [
@@ -1322,8 +1329,7 @@ return () => unsub();
                   })));
                   setSelectedRows([]);
                   setSaveTick(t => t + 1);
-                }}>
-                <Copy size={20} /><span className="text-xs font-medium">Duplicar</span>
+                }}><Copy size={20} /><span className="text-xs font-medium">Duplicar</span>
               </button>
               <button className="flex flex-col items-center gap-1 text-[#676879] hover:text-[#0073ea] transition-all" title="Exportar" onClick={() => alert("Exportar a Excel: próximamente (integrar SheetJS)")}>
                 <Download size={20} /><span className="text-xs font-medium">Exportar</span>

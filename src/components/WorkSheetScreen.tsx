@@ -985,7 +985,7 @@ if (yaExiste) {
                     <Tag className="w-4 h-4 text-violet-500" />
                     <span>Unidad*</span>
                   </label>
-{formData.magnitud === "Electrica"  (
+{formData.magnitud === "Electrica" && (
   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
     {["DC", "AC", "Otros"].map((tipo) => (
       <div key={tipo} className="border rounded-lg p-2">
