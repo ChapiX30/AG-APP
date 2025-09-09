@@ -13,7 +13,7 @@ import SplashScreen from "./SplashScreen";
 import ProgramaCalibracionScreen from './ProgramaCalibracionScreen';
 import HojaDeServicioScreen from './HojaDeServicioScreen';
 import  CalibrationManager  from './CalibrationManager';
-import { EmpresasScreen } from './EmpresasScreen';
+import  EmpresasScreen  from './EmpresasScreen';
 import NormasScreen from './NormasScreen';
 import TablerosScreen from './TablerosScreen';
 import  InventoryProScreen   from './InventoryProScreen'; // 👈 AGREGA ESTA LÍNEA
