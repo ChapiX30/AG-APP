@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ref, listAll, getDownloadURL, uploadBytes, deleteObject } from "firebase/storage";
+import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage"; // getMetadata importado
 import { storage } from "../utils/firebase";
 import { useNavigation } from "../hooks/useNavigation";
 import {
@@ -22,21 +22,26 @@ import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 
-// --- Helpers para nombres de archivo ---
-const extractCertAndId = (fileName: string) => {
-  // Esperado: AGAC-0001-25_ID1234.pdf
-  const match = fileName.match(/^(.+?-\d{4,5}-\d{2,3})[_\- ]?ID([\w\-]+)\.pdf$/i);
-  if (match) return `${match[1]} | ID${match[2]}`;
-  // Fallback: busca patrón más básico
-  const base = fileName.replace(/\.pdf$/i, "");
-  return base.replace(/_/g, " ");
+// --- MODIFICACIÓN #1: Mostrar fecha en lugar de ID ---
+// Se ha modificado esta función para mostrar una fecha en lugar del ID.
+const extractFileInfo = (fileName: string, updatedDate?: string) => {
+    // Extrae el nombre base del archivo sin la extensión.
+    const baseName = fileName.replace(/\.pdf$/i, "").replace(/_/g, " ");
+    const displayDate = updatedDate
+        ? new Date(updatedDate).toLocaleDateString()
+        : 'Fecha no disponible';
+    return {
+        displayName: baseName,
+        displayDate: displayDate
+    };
 };
 
-// --- Estructura recursiva para carpetas ---
+// --- Estructura de datos ---
 interface DriveFile {
   name: string;
   url: string;
   fullPath: string;
+  updated: string; // Fecha de modificación
 }
 interface DriveFolder {
   name: string;
@@ -51,12 +56,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [tree, setTree] = useState<DriveFolder | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string[]>([]); // path array (["usuario"], ["usuario","carpeta"])
+  const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [query, setQuery] = useState("");
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [moveFile, setMoveFile] = useState<{ file: DriveFile, anchorEl: HTMLElement | null } | null>(null);
+  // Estado para el diálogo de mover archivo
+  const [moveFile, setMoveFile] = useState<DriveFile | null>(null);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -76,10 +82,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     const files: DriveFile[] = await Promise.all(
       res.items.map(async (itemRef) => {
         const url = await getDownloadURL(itemRef);
+        const metadata = await getMetadata(itemRef); // Obtener metadata para la fecha
         return {
           name: itemRef.name,
           url,
           fullPath: itemRef.fullPath,
+          updated: metadata.updated, // Guardar fecha de modificación
         };
       })
     );
@@ -93,6 +101,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const rootTree = await fetchFolder([]);
       setTree(rootTree);
     } catch (e: any) {
+      console.error("Error loading files:", e);
       setError("No se pudieron cargar los archivos.");
     }
     setLoading(false);
@@ -118,23 +127,33 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setCreateFolderOpen(false);
     const pathArr = [...selectedPath, newFolderName.trim()];
     const fakeFileRef = ref(storage, [ROOT_PATH, ...pathArr, ".keep"].join("/"));
-    await uploadBytes(fakeFileRef, new Uint8Array([0])); // Hack: Storage no guarda carpetas vacías, crea archivo .keep
+    await uploadBytes(fakeFileRef, new Uint8Array([0]));
     setNewFolderName("");
     setTimeout(() => reloadTree(), 500);
   }
 
   // ---- Mover archivo ----
   async function handleMoveFile(targetPathArr: string[]) {
-    if (!moveFile?.file) return;
-    const file = moveFile.file;
-    // Descargar contenido actual (solo para PDFs chicos)
-    const res = await fetch(file.url);
-    const blob = await res.blob();
-    const newRef = ref(storage, [ROOT_PATH, ...targetPathArr, file.name].join("/"));
-    await uploadBytes(newRef, blob);
-    await deleteObject(ref(storage, file.fullPath));
-    setMoveFile(null);
-    setTimeout(() => reloadTree(), 600);
+    if (!moveFile) return;
+    const fileToMove = moveFile;
+    setMoveFile(null); // Cierra el diálogo inmediatamente
+    
+    try {
+        setLoading(true); // Opcional: mostrar un indicador de carga
+        const res = await fetch(fileToMove.url);
+        const blob = await res.blob();
+        
+        const newRef = ref(storage, [ROOT_PATH, ...targetPathArr, fileToMove.name].join("/"));
+        await uploadBytes(newRef, blob);
+        
+        await deleteObject(ref(storage, fileToMove.fullPath));
+        
+        setTimeout(() => reloadTree(), 600);
+    } catch (e) {
+        console.error("Failed to move file:", e);
+        setError("Error al mover el archivo.");
+        setLoading(false);
+    }
   }
 
   // ---- Render ----
@@ -144,14 +163,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     [currentFolder, query]
   );
   const filteredFiles = useMemo(() =>
-    currentFolder?.files.filter(f => extractCertAndId(f.name).toLowerCase().includes(query.toLowerCase())) || [],
+    currentFolder?.files.filter(f => {
+        const { displayName } = extractFileInfo(f.name);
+        return displayName.toLowerCase().includes(query.toLowerCase())
+    }) || [],
     [currentFolder, query]
   );
 
   // ---- UI ----
   return (
     <Box sx={{ p: isMobile ? 1 : 3 }}>
-      {/* Header */}
+      {/* Header (sin cambios) */}
       <Fade in timeout={500}>
         <Paper elevation={8} sx={{
           p: isMobile ? 2 : 4, mb: isMobile ? 2 : 4, borderRadius: 4,
@@ -255,7 +277,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </Paper>
       </Fade>
 
-      {/* Estado carga/error */}
+      {/* Estado carga/error (sin cambios) */}
       {loading && (
         <Fade in timeout={400}>
           <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={isMobile ? 6 : 10}>
@@ -264,7 +286,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </Box>
         </Fade>
       )}
-      {error && (
+      {error && !loading &&(
         <Zoom in timeout={400}>
           <Paper elevation={4} sx={{ p: isMobile ? 4 : 6, textAlign: "center", borderRadius: 4 }}>
             <CloudIcon sx={{ fontSize: isMobile ? 48 : 72, color: theme.palette.error.main, mb: 1 }} />
@@ -278,11 +300,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </Zoom>
       )}
 
-      {/* Vista carpeta actual */}
+      {/* Vista de carpeta actual */}
       {!loading && !error && currentFolder && (
         <Box>
           {view === "grid" ? (
             <Grid container spacing={isMobile ? 1.5 : 3}>
+              {/* Carpetas (sin cambios) */}
               {filteredFolders.map((folder, idx) => (
                 <Grid key={folder.fullPath} item xs={12} sm={6} md={4} lg={3}>
                   <Zoom in timeout={300 + idx * 60}>
@@ -306,41 +329,46 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   </Zoom>
                 </Grid>
               ))}
-              {filteredFiles.map((file, idx) => (
-                <Grid key={file.fullPath} item xs={12} sm={6} md={4} lg={3}>
-                  <Zoom in timeout={300 + idx * 60}>
-                    <Card elevation={2} sx={{ borderRadius: 3, position: "relative" }}>
-                      <CardContent sx={{ p: isMobile ? 2 : 3 }}>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <PictureAsPdfIcon sx={{ color: "#d32f2f" }} />
-                          <Box sx={{ flex: 1 }}>
-                            <Typography fontWeight={600} noWrap>
-                              {extractCertAndId(file.name)}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" noWrap>
-                              {file.name}
-                            </Typography>
-                          </Box>
-                          <Tooltip title="Mover archivo">
-                            <IconButton size="small" onClick={e => setMoveFile({ file, anchorEl: e.currentTarget })}>
-                              <DriveFileMoveIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Abrir PDF">
-                            <IconButton size="small" component="a" href={file.url} target="_blank">
-                              <DescriptionIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  </Zoom>
-                </Grid>
-              ))}
+              {/* Archivos */}
+              {filteredFiles.map((file, idx) => {
+                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated);
+                  return (
+                    <Grid key={file.fullPath} item xs={12} sm={6} md={4} lg={3}>
+                      <Zoom in timeout={300 + idx * 60}>
+                        <Card elevation={2} sx={{ borderRadius: 3, position: "relative" }}>
+                          <CardContent sx={{ p: isMobile ? 2 : 3 }}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <PictureAsPdfIcon sx={{ color: "#d32f2f" }} />
+                              <Box sx={{ flex: 1, overflow: 'hidden' }}>
+                                <Typography fontWeight={600} noWrap title={displayName}>
+                                  {displayName}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" noWrap>
+                                  {displayDate}
+                                </Typography>
+                              </Box>
+                              <Tooltip title="Mover archivo">
+                                <IconButton size="small" onClick={() => setMoveFile(file)}>
+                                  <DriveFileMoveIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Abrir PDF">
+                                <IconButton size="small" component="a" href={file.url} target="_blank">
+                                  <DescriptionIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+                          </CardContent>
+                        </Card>
+                      </Zoom>
+                    </Grid>
+                  )
+              })}
             </Grid>
           ) : (
-            <Paper elevation={2} sx={{ borderRadius: 3, p: 2, mt: 1 }}>
+             <Paper elevation={2} sx={{ borderRadius: 3, p: 2, mt: 1 }}>
               <Stack spacing={1.2}>
+                {/* Carpetas (sin cambios) */}
                 {filteredFolders.map(folder => (
                   <Box key={folder.fullPath} display="flex" alignItems="center" sx={{ cursor: "pointer" }}
                     onClick={() => setSelectedPath([...selectedPath, folder.name])}>
@@ -352,31 +380,40 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   </Box>
                 ))}
                 <Divider />
-                {filteredFiles.map(file => (
-                  <Box key={file.fullPath} display="flex" alignItems="center" sx={{ py: 1 }}>
-                    <PictureAsPdfIcon sx={{ color: "#d32f2f", mr: 1 }} />
-                    <Typography fontWeight={600} noWrap sx={{ flex: 1 }}>
-                      {extractCertAndId(file.name)}
-                    </Typography>
-                    <Tooltip title="Mover archivo">
-                      <IconButton size="small" onClick={e => setMoveFile({ file, anchorEl: e.currentTarget })}>
-                        <DriveFileMoveIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Abrir PDF">
-                      <IconButton size="small" component="a" href={file.url} target="_blank">
-                        <DescriptionIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                ))}
+                {/* Archivos */}
+                {filteredFiles.map(file => {
+                    const { displayName, displayDate } = extractFileInfo(file.name, file.updated);
+                    return (
+                      <Box key={file.fullPath} display="flex" alignItems="center" sx={{ py: 1 }}>
+                        <PictureAsPdfIcon sx={{ color: "#d32f2f", mr: 1.5 }} />
+                        <Box sx={{ flex: 1, overflow: 'hidden', mr: 1 }}>
+                            <Typography fontWeight={600} noWrap title={displayName}>
+                                {displayName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" noWrap>
+                                {displayDate}
+                            </Typography>
+                        </Box>
+                        <Tooltip title="Mover archivo">
+                          <IconButton size="small" onClick={() => setMoveFile(file)}>
+                            <DriveFileMoveIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Abrir PDF">
+                          <IconButton size="small" component="a" href={file.url} target="_blank">
+                            <DescriptionIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    )
+                })}
               </Stack>
             </Paper>
           )}
         </Box>
       )}
 
-      {/* Dialog crear carpeta */}
+      {/* Dialog crear carpeta (sin cambios) */}
       <Dialog open={createFolderOpen} onClose={() => setCreateFolderOpen(false)}>
         <DialogTitle>Crear nueva carpeta</DialogTitle>
         <DialogContent>
@@ -395,16 +432,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Dialog mover archivo */}
+      
+      {/* --- MODIFICACIÓN #2: Corrección del diálogo para mover archivos --- */}
       <Dialog open={!!moveFile} onClose={() => setMoveFile(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Mover archivo</DialogTitle>
+        <DialogTitle>Mover "{moveFile?.name}"</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 2 }}>
             Selecciona la carpeta de destino:
           </Typography>
+          {/* Componente del árbol de carpetas mejorado */}
           <FolderMoveTree
-            tree={tree} excludePath={[...selectedPath, moveFile?.file.name || ""]} onSelect={p => handleMoveFile(p)} />
+            tree={tree}
+            // Excluye la carpeta actual para no mover un archivo a su misma ubicación
+            excludePath={selectedPath} 
+            onSelect={(path) => handleMoveFile(path)} 
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMoveFile(null)}>Cancelar</Button>
@@ -415,22 +457,46 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 }
 
 // --- Componente para seleccionar carpeta destino (árbol) ---
+// --- Lógica mejorada para la selección y visualización ---
 function FolderMoveTree({ tree, path = [], onSelect, excludePath = [] }: {
-  tree: DriveFolder | null, path?: string[], onSelect: (p: string[]) => void, excludePath?: string[]
+  tree: DriveFolder | null;
+  path?: string[];
+  onSelect: (p: string[]) => void;
+  excludePath?: string[];
 }) {
   if (!tree) return null;
-  const fullPath = [...path, tree.name === "Drive" ? "" : tree.name].filter(Boolean);
-  if (JSON.stringify(fullPath) === JSON.stringify(excludePath)) return null;
+
+  // No mostrar la carpeta "Drive" (raíz) como una opción clickeable, pero sí sus hijos
+  const isRoot = tree.name === "Drive";
+
+  const currentFullPath = isRoot ? [] : [...path, tree.name];
+
+  // Comprueba si la ruta actual es la que se debe excluir
+  const isExcluded = JSON.stringify(currentFullPath) === JSON.stringify(excludePath);
+
+  if (isExcluded) return null;
+
   return (
-    <Box sx={{ ml: path.length ? 2 : 0, my: 1 }}>
-      {tree.name !== "Drive" && (
-        <Button variant="outlined" size="small" sx={{ mb: 1 }} onClick={() => onSelect(fullPath)}>
-          {fullPath.join(" / ")}
+    <Box sx={{ ml: isRoot ? 0 : 2, my: 0.5 }}>
+      {!isRoot && (
+        <Button 
+          variant="text" 
+          size="small" 
+          startIcon={<FolderIcon />}
+          onClick={() => onSelect(currentFullPath)}
+          sx={{ justifyContent: 'flex-start', textAlign: 'left', width: '100%' }}
+        >
+          {tree.name}
         </Button>
       )}
       {tree.folders.map(sub =>
-        <FolderMoveTree key={sub.name + sub.fullPath}
-          tree={sub} path={fullPath} onSelect={onSelect} excludePath={excludePath} />
+        <FolderMoveTree 
+          key={sub.fullPath}
+          tree={sub} 
+          path={currentFullPath} 
+          onSelect={onSelect} 
+          excludePath={excludePath} 
+        />
       )}
     </Box>
   );

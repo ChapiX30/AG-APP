@@ -476,16 +476,25 @@ export default function FridayScreen() {
       }
     }
     return [
-      { label: "ID", key: "id_equipo", type: "text", width: 90, sticky: false },
+      { label: "ID", key: "id_equipo", type: "text", "width": 90},
       { label: "FOLIO", key: "folio", type: "auto_number", width: 100, sticky: true },
       { label: "EQUIPO", key: "equipo", type: "text", width: 200 },
       { label: "CLIENTE", key: "cliente", type: "client", width: 200 },
       { label: "RESPONSABLE", key: "responsable", type: "person", width: 180 },
       { label: "ESTADO", key: "estado", type: "status", width: 140, options: DEFAULT_STATUS_OPTIONS },
       { label: "PRIORIDAD", key: "prioridad", type: "priority", width: 120, options: DEFAULT_PRIORITY_OPTIONS },
-      { label: "PROGRESO", key: "progreso", type: "progress", width: 150 },
-      { label: "FECHA LÍMITE", key: "fecha_limite", type: "date", width: 130 },
-      { label: "CREADO", key: "created_at", type: "creation_log", width: 180 },
+      { label: "ALCANCE" , key: "alcance", type: "text", width: 120 },
+      { label: "RESOLUCIÓN", key: "resolucion", type: "text", width: 120 },
+      { label: "MAGNITUD", key: "magnitud", type: "dropdown", width: 140 },
+      { label: "UNIDAD", key: "unidad", type: "text", width: 100 },
+      { label: "LUGAR CALIBRACIÓN", key: "lugar_calibracion", type: "dropdown", width: 160 },
+      { label: "FRECUENCIA CALIBRACIÓN", key: "frecuencia_calibracion", type: "dropdown", width: 180 },
+      { label: "MARCA", key: "marca", type: "text", width: 130 },
+      { label: "MODELO", key: "modelo", type: "text", width: 130 },
+      { label: "NÚMERO DE SERIE", key: "numero_serie", type: "text", width: 150 },
+      { label: "NOTAS", key: "notas_calibracion", type: "text", width: 220 },
+      { label: "PROGRESO", key: "progreso", type: "progress", width: 130 },
+      { label: "FECHA LIMITE", key: "fecha_limite", type: "date", width: 120 },
     ];
   });
 
@@ -725,7 +734,7 @@ export default function FridayScreen() {
   }));
 
         setColumns(data.columns || []);
-        setGroups(data.groups || []);
+        setGroups(fixedGroups);
         setColumnOrder((data.columns || []).map((c: Column) => c.key)); // Actualizar columnOrder al cargar
       });
     })();
