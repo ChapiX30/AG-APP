@@ -79,7 +79,6 @@ const EmpresasScreen = () => {
     loadEmpresas();
   }, []);
 
-  // SEGURIDAD: Si hay campo undefined o null, conviértelo a string vacío antes de filtrar
   const filteredEmpresas = empresas.filter(empresa =>
     ((empresa.nombre || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
     ((empresa.email || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -197,7 +196,6 @@ const EmpresasScreen = () => {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search Bar */}
         <div className="mb-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -206,7 +204,7 @@ const EmpresasScreen = () => {
               placeholder="Buscar empresas por nombre, email o requerimientos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white text-gray-700 placeholder-gray-400 transition-colors duration-200 ease-in-out"
             />
           </div>
         </div>
@@ -222,7 +220,6 @@ const EmpresasScreen = () => {
                 key={empresa.id}
                 className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200"
               >
-                {/* Card Header */}
                 <div className="p-6 pb-4">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center w-0 flex-1 min-w-0">
@@ -231,7 +228,7 @@ const EmpresasScreen = () => {
                       </div>
                       <div className="ml-3 min-w-0 w-0 flex-1">
                         <h3
-                          className="text-lg font-semibold text-gray-900 truncate"
+                          className="text-lg font-semibold text-gray-900 line-clamp-2 break-words"
                           title={empresa.nombre}
                         >
                           {empresa.nombre}
@@ -256,8 +253,6 @@ const EmpresasScreen = () => {
                       </button>
                     </div>
                   </div>
-
-                  {/* Company Info */}
                   <div className="space-y-3">
                     <div className="flex items-center text-sm text-gray-600 overflow-hidden text-ellipsis w-full">
                       <MapPin className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
