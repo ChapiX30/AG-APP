@@ -5,7 +5,7 @@ import { LoginScreen } from './LoginScreen';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
-import { WorkSheetScreen } from './WorkSheetScreen';
+import  WorkSheetScreen  from './WorkSheetScreen';
 import  FridayScreen  from './FridayScreen';
 import FridayServiciosScreen from './FridayServiciosScreen';
 import  DriveScreen  from './DriveScreen';

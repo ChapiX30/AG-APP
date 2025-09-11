@@ -5,7 +5,13 @@ import {
 } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
 import { db } from '../utils/firebase';
-import { collection, getDocs, query, where, doc, getDoc, orderBy, limit } from "firebase/firestore";
+import { 
+  collection, getDocs, query, where, doc, getDoc, orderBy, limit, 
+  setDoc, addDoc, Timestamp
+} from "firebase/firestore";
+
+// ---- IMPORTAR LOGO DIRECTAMENTE ----
+import logoImage from '../assets/lab_logo.png';
 
 // ---- ESTADOS Y TIPOS ----
 const camposIniciales = {
@@ -36,29 +42,106 @@ type EquipoCalibrado = {
   tecnico?: string;
 };
 
-// ---- OBTENER LOGO BASE64 MEJORADO ----
+// ---- FUNCIONES DE FOLIO ÚNICO ----
+async function getNextFolio(): Promise<string> {
+  try {
+    console.log('🔄 Generando siguiente folio...');
+    const folioPrefix = 'HSDG-';
+    
+    // Consultar el último folio en la base de datos
+    const q = query(
+      collection(db, "hojasDeServicio"), 
+      orderBy("folioNum", "desc"), 
+      limit(1)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    let lastNumber = 0;
+    querySnapshot.forEach(docSnapshot => {
+      const data = docSnapshot.data();
+      if (data.folio && typeof data.folio === 'string' && data.folio.startsWith(folioPrefix)) {
+        const num = parseInt(data.folio.replace(folioPrefix, ''), 10);
+        if (!isNaN(num) && num > lastNumber) {
+          lastNumber = num;
+        }
+      }
+    });
+
+    const nextNumber = lastNumber + 1;
+    const newFolio = folioPrefix + nextNumber.toString().padStart(4, '0');
+    
+    console.log(`✅ Nuevo folio generado: ${newFolio} (anterior: ${lastNumber})`);
+    return newFolio;
+  } catch (error) {
+    console.error('❌ Error generando folio:', error);
+    throw new Error('No se pudo generar el folio automáticamente');
+  }
+}
+
+async function checkFolioExists(folio: string): Promise<boolean> {
+  try {
+    const docRef = doc(db, "hojasDeServicio", folio);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists();
+  } catch (error) {
+    console.error('Error verificando folio:', error);
+    return false;
+  }
+}
+
+async function saveServiceData(campos: any, firmaTecnico: string, firmaCliente: string, equiposCalibrados: any) {
+  try {
+    console.log('💾 Guardando hoja de servicio...');
+    
+    // Verificar si el folio ya existe
+    if (await checkFolioExists(campos.folio)) {
+      throw new Error(`❌ El folio ${campos.folio} ya existe en la base de datos. Por favor, genera un nuevo folio.`);
+    }
+
+    const folioNumber = parseInt(campos.folio.replace('HSDG-', ''), 10);
+    
+    const serviceData = {
+      ...campos,
+      folioNum: folioNumber,
+      firmaTecnico: firmaTecnico || '',
+      firmaCliente: firmaCliente || '',
+      equiposCalibrados: equiposCalibrados || {},
+      fechaCreacion: Timestamp.now(),
+      fechaModificacion: Timestamp.now(),
+      estado: 'completado'
+    };
+
+    // Guardar en la colección principal
+    await setDoc(doc(db, "hojasDeServicio", campos.folio), serviceData);
+    
+    // También guardar en DriveScreen para facilitar la consulta
+    await addDoc(collection(db, "driveScreen"), {
+      tipo: 'hoja-servicio',
+      folio: campos.folio,
+      empresa: campos.empresa,
+      fecha: campos.fecha,
+      tecnico: campos.tecnicoResponsable,
+      fechaCreacion: Timestamp.now(),
+      ruta: `/hojasDeServicio/${campos.folio}`
+    });
+    
+    console.log('✅ Hoja de servicio guardada exitosamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error guardando servicio:', error);
+    throw error;
+  }
+}
+
+// ---- CONVERTIR IMAGEN IMPORTADA A BASE64 ----
 async function getLogoBase64(): Promise<string | undefined> {
-  const logoPaths = [
-    '/assets/lab_logo.png',
-    './assets/lab_logo.png',
-    '/public/assets/lab_logo.png',
-    '/src/assets/lab_logo.png',
-    '/lab_logo.png',
-    './lab_logo.png',
-    '../assets/lab_logo.png',
-    '../../assets/lab_logo.png',
-    './public/assets/lab_logo.png'
-  ];
-  
-  console.log('🔍 Buscando logo en las siguientes rutas:');
-  
-  for (const path of logoPaths) {
-    try {
-      console.log(`Intentando: ${path}`);
-      const response = await fetch(path);
-      
+  try {
+    console.log('🖼️ Intentando cargar logo importado...');
+    
+    if (logoImage) {
+      console.log('✅ Logo importado encontrado:', logoImage);
+      const response = await fetch(logoImage);
       if (response.ok) {
-        console.log(`✅ Logo encontrado en: ${path}`);
         const blob = await response.blob();
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -66,17 +149,37 @@ async function getLogoBase64(): Promise<string | undefined> {
           reader.onerror = reject;
           reader.readAsDataURL(blob);
         });
+        console.log('✅ Logo convertido a base64 exitosamente');
         return base64;
-      } else {
-        console.log(`❌ No encontrado en: ${path} (${response.status})`);
       }
-    } catch (error) {
-      console.log(`❌ Error en ${path}:`, error);
     }
+    
+    // Si el import falló, intentamos las rutas públicas
+    const publicPaths = ['/lab_logo.png', '/assets/lab_logo.png', './lab_logo.png'];
+    
+    for (const path of publicPaths) {
+      try {
+        const response = await fetch(path);
+        if (response.ok) {
+          const blob = await response.blob();
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          return base64;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    return undefined;
+  } catch (error) {
+    console.error('❌ Error general cargando logo:', error);
+    return undefined;
   }
-  
-  console.log('⚠️ Logo no encontrado en ninguna ruta, usando logo de respaldo');
-  return undefined;
 }
 
 // ---- UTILIDAD PARA TRUNCAR TEXTO ----
@@ -84,26 +187,33 @@ function truncateText(text: string, maxLength: number): string {
   return text && text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text || '';
 }
 
-// ---- ORGANIZAR EQUIPOS EN COLUMNAS ----
-function organizarEquiposEnColumnas(equiposCalibrados: Record<string, any[]>, maxItemsPerColumn: number = 8) {
-  const allEquipos: Array<{tecnico: string, equipo: string}> = [];
-  
+// ---- ORGANIZAR EQUIPOS SIN DUPLICAR NOMBRES (PROFESIONAL) ----
+function organizarEquiposProfesional(equiposCalibrados: Record<string, any[]>) {
+  const equiposPorTecnico: Array<{
+    tecnico: string;
+    equipos: string[];
+  }> = [];
+
   Object.entries(equiposCalibrados).forEach(([tecnico, equipos]) => {
+    const listaEquipos: string[] = [];
+    
     equipos.forEach((equipo: any) => {
       if (equipo.id) {
         equipo.id.split(',').forEach((idSingle: string) => {
-          allEquipos.push({ tecnico, equipo: idSingle.trim() });
+          listaEquipos.push(idSingle.trim());
         });
       }
     });
+
+    if (listaEquipos.length > 0) {
+      equiposPorTecnico.push({
+        tecnico,
+        equipos: listaEquipos
+      });
+    }
   });
 
-  const columns: Array<Array<{tecnico: string, equipo: string}>> = [];
-  for (let i = 0; i < allEquipos.length; i += maxItemsPerColumn) {
-    columns.push(allEquipos.slice(i, i + maxItemsPerColumn));
-  }
-  
-  return columns;
+  return equiposPorTecnico;
 }
 
 // --------- GENERADOR PDF PROFESIONAL MEJORADO ---------
@@ -122,54 +232,57 @@ async function generarPDFFormal({
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
   // CONFIGURACIÓN DE COLORES PROFESIONALES
-  const azulPrimario = [41, 98, 183];
+  const azulPrimario = [104, 131, 145];
   const azulSecundario = [52, 144, 220];
   const grisTexto = [60, 60, 60];
   const grisClaro = [240, 242, 247];
 
   console.log('📄 Generando PDF...');
+  console.log('👤 Datos del cliente:', {
+    empresa: campos.empresa,
+    contacto: campos.contacto,
+    direccion: campos.direccion,
+    telefono: campos.telefono,
+    correo: campos.correo
+  });
 
   // ===== HEADER PROFESIONAL =====
-  // Fondo del header
   doc.setFillColor(...grisClaro);
   doc.rect(0, 0, 210, 32, 'F');
   
-  // Línea decorativa superior
   doc.setFillColor(...azulPrimario);
   doc.rect(0, 0, 210, 3, 'F');
 
   // LOGO MEJORADO CON DEBUGGING
   try {
-    console.log('🖼️ Intentando cargar logo...');
+    console.log('🖼️ Cargando logo para PDF...');
     const logoBase64 = await getLogoBase64();
     if (logoBase64) {
-      console.log('✅ Logo cargado correctamente, insertando en PDF...');
+      console.log('✅ Insertando logo en PDF...');
       doc.addImage(logoBase64, 'PNG', 15, 6, 25, 20, undefined, 'FAST');
-      console.log('✅ Logo insertado en PDF');
+      console.log('✅ Logo insertado correctamente en PDF');
     } else {
-      console.log('⚠️ Usando logo de respaldo...');
-      // Logo alternativo más profesional
+      console.log('⚠️ Usando logo de respaldo en PDF...');
       doc.setFillColor(...azulPrimario);
       doc.circle(27.5, 16, 12, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
-      doc.text('LOGO', 27.5, 19, { align: 'center' });
+      doc.text('ESE', 27.5, 19, { align: 'center' });
       doc.setTextColor(0, 0, 0);
     }
   } catch (error) {
-    console.error('❌ Error con logo:', error);
-    // Logo de respaldo
+    console.error('❌ Error con logo en PDF:', error);
     doc.setFillColor(...azulPrimario);
     doc.circle(27.5, 16, 12, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text('LOGO', 27.5, 19, { align: 'center' });
+    doc.text('ESE', 27.5, 19, { align: 'center' });
     doc.setTextColor(0, 0, 0);
   }
 
-  // INFORMACIÓN DE LA EMPRESA (MÁS AMPLIA)
+  // INFORMACIÓN DE LA EMPRESA
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
@@ -178,7 +291,6 @@ async function generarPDFFormal({
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  // Dirección más amplia a lo largo del encabezado
   doc.text('Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422', 45, 16);
   doc.text('Teléfonos: 8127116538 / 8127116357', 45, 21);
 
@@ -193,7 +305,6 @@ async function generarPDFFormal({
   // ===== INFORMACIÓN GENERAL (COMPACTA) =====
   let currentY = 50;
   
-  // Fondo para info general
   doc.setFillColor(...grisClaro);
   doc.roundedRect(10, currentY, 190, 15, 2, 2, 'F');
   doc.setDrawColor(...azulSecundario);
@@ -204,7 +315,6 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   
-  // Primera fila - Folio, Fecha y Técnico
   doc.text('FOLIO:', 15, currentY + 6);
   doc.text('FECHA:', 80, currentY + 6);
   doc.text('TÉCNICO:', 140, currentY + 6);
@@ -217,14 +327,13 @@ async function generarPDFFormal({
 
   currentY += 19;
 
-  // ===== INFORMACIÓN DEL CLIENTE (COMO EN LA IMAGEN) =====
+  // ===== INFORMACIÓN DEL CLIENTE =====
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(10, currentY, 190, 25, 2, 2, 'F');
   doc.setDrawColor(...azulSecundario);
   doc.setLineWidth(0.5);
   doc.roundedRect(10, currentY, 190, 25, 2, 2, 'S');
 
-  // Línea divisoria vertical en el medio
   doc.setDrawColor(...azulSecundario);
   doc.line(105, currentY, 105, currentY + 25);
 
@@ -232,7 +341,7 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   
-  // LADO IZQUIERDO: Cliente, Domicilio, Contacto
+  // LADO IZQUIERDO
   doc.text('Planta:', 15, currentY + 6);
   doc.text('Domicilio:', 15, currentY + 13);
   doc.text('Contacto:', 15, currentY + 20);
@@ -240,11 +349,18 @@ async function generarPDFFormal({
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(truncateText(campos.empresa, 25), 30, currentY + 6);
-  doc.text(truncateText(campos.direccion, 25), 35, currentY + 13);
-  doc.text(truncateText(campos.contacto, 20), 30, currentY + 20);
+  
+  const empresaTexto = campos.empresa || '';
+  const direccionTexto = campos.direccion || '';
+  const contactoTexto = campos.contacto || '';
+  const telefonoTexto = campos.telefono || '';
+  const correoTexto = campos.correo || '';
+  
+  doc.text(truncateText(empresaTexto, 25), 30, currentY + 6);
+  doc.text(truncateText(direccionTexto, 25), 35, currentY + 13);
+  doc.text(truncateText(contactoTexto, 20), 30, currentY + 20);
 
-  // LADO DERECHO: Teléfono y Correo
+  // LADO DERECHO
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.text('Teléfono:', 110, currentY + 6);
@@ -252,20 +368,19 @@ async function generarPDFFormal({
 
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
-  doc.text(truncateText(campos.telefono, 25), 125, currentY + 6);
-  doc.text(truncateText(campos.correo, 25), 120, currentY + 13);
+  doc.text(truncateText(telefonoTexto, 25), 125, currentY + 6);
+  doc.text(truncateText(correoTexto, 25), 120, currentY + 13);
 
   currentY += 29;
 
-  // ===== EQUIPOS CALIBRADOS EN SITIO (RECUADRO COMPLETO) =====
+  // ===== EQUIPOS CALIBRADOS =====
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('EQUIPOS CALIBRADOS EN SITIO', 15, currentY);
   currentY += 4;
 
-  // RECUADRO COMPLETO SIEMPRE (altura fija)
-  const equiposBoxHeight = 50; // Altura fija para que siempre se vea completo
+  const equiposBoxHeight = 50;
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(10, currentY, 190, equiposBoxHeight, 2, 2, 'F');
   doc.setDrawColor(...azulSecundario);
@@ -278,40 +393,42 @@ async function generarPDFFormal({
     doc.setFontSize(9);
     doc.text('No se registraron equipos calibrados para este cliente y fecha.', 105, currentY + 25, { align: 'center' });
   } else {
-    // Organizar equipos en columnas
-    const columnasEquipos = organizarEquiposEnColumnas(equiposCalibrados, 8);
-    const columnsPerRow = Math.min(3, columnasEquipos.length);
-    const columnWidth = 190 / columnsPerRow;
-
-    columnasEquipos.forEach((columna, colIndex) => {
-      const startX = 15 + (colIndex * columnWidth);
-      let yPos = currentY + 5;
+    const equiposProfesionales = organizarEquiposProfesional(equiposCalibrados);
+    let yPos = currentY + 5;
+    
+    equiposProfesionales.forEach((grupo, groupIndex) => {
+      doc.setTextColor(...azulPrimario);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(`${grupo.tecnico}:`, 15, yPos);
+      yPos += 4;
       
-      let currentTecnico = '';
+      const equiposPorFila = 3;
+      let equipoIndex = 0;
       
-      columna.forEach((item, itemIndex) => {
-        if (item.tecnico !== currentTecnico) {
-          currentTecnico = item.tecnico;
-          doc.setTextColor(...azulPrimario);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.text(`${item.tecnico}:`, startX, yPos);
-          yPos += 3;
-        }
+      while (equipoIndex < grupo.equipos.length) {
+        let xPos = 20;
+        const columnWidth = 55;
         
-        doc.setTextColor(...grisTexto);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        const equipoTexto = truncateText(item.equipo, Math.floor(columnWidth/3));
-        doc.text(`• ${equipoTexto}`, startX + 2, yPos);
-        yPos += 3;
-      });
+        for (let col = 0; col < equiposPorFila && equipoIndex < grupo.equipos.length; col++) {
+          doc.setTextColor(...grisTexto);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          const equipoTexto = truncateText(grupo.equipos[equipoIndex], 18);
+          doc.text(`• ${equipoTexto}`, xPos, yPos);
+          xPos += columnWidth;
+          equipoIndex++;
+        }
+        yPos += 3.5;
+      }
+      
+      yPos += 2;
     });
   }
   
   currentY += equiposBoxHeight + 4;
 
-  // ===== COMENTARIOS (MÁS COMPACTOS) =====
+  // ===== COMENTARIOS =====
   if (campos.comentarios && campos.comentarios.trim()) {
     doc.setTextColor(...azulPrimario);
     doc.setFont('helvetica', 'bold');
@@ -336,9 +453,8 @@ async function generarPDFFormal({
     currentY += 16;
   }
 
-  // ===== CALIDAD DEL SERVICIO (ARRIBA DE LAS FIRMAS) =====
-  // POSICIÓN FIJA PARA FIRMAS (cerca de la franja azul)
-  const firmasFixedY = 245; // Posición fija cerca del final
+  // ===== CALIDAD DEL SERVICIO Y FIRMAS FIJAS =====
+  const firmasFixedY = 245;
   
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
@@ -348,27 +464,22 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'bold');
   doc.text(campos.calidadServicio, 70, firmasFixedY - 8);
 
-  // ===== FIRMAS FIJAS EN LA PARTE INFERIOR =====
-  // Fondo para sección de firmas
+  // Firmas
   doc.setFillColor(...grisClaro);
   doc.rect(10, firmasFixedY - 2, 190, 32, 'F');
   
-  // Cajas para firmas
   const firmaWidth = 80;
   const firmaHeight = 20;
   
-  // Firma del técnico
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(20, firmasFixedY, firmaWidth, firmaHeight, 2, 2, 'F');
   doc.setDrawColor(...azulSecundario);
   doc.setLineWidth(0.5);
   doc.roundedRect(20, firmasFixedY, firmaWidth, firmaHeight, 2, 2, 'S');
   
-  // Firma del cliente  
   doc.roundedRect(110, firmasFixedY, firmaWidth, firmaHeight, 2, 2, 'F');
   doc.roundedRect(110, firmasFixedY, firmaWidth, firmaHeight, 2, 2, 'S');
 
-  // Insertar firmas
   try {
     if (firmaTecnico) {
       doc.addImage(firmaTecnico, 'PNG', 25, firmasFixedY + 2, 70, 16);
@@ -380,7 +491,6 @@ async function generarPDFFormal({
     console.error('Error al insertar firmas:', error);
   }
 
-  // Etiquetas de firmas
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -391,9 +501,10 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.text(truncateText(campos.tecnicoResponsable || '[Nombre del técnico]', 20), 60, firmasFixedY + 29, { align: 'center' });
-  doc.text(truncateText(campos.contacto || '[Nombre del cliente]', 20), 150, firmasFixedY + 29, { align: 'center' });
+  const nombreCliente = contactoTexto || '[Nombre del cliente]';
+  doc.text(truncateText(nombreCliente, 20), 150, firmasFixedY + 29, { align: 'center' });
 
-  // Mensaje final profesional (FRANJA AZUL FIJA)
+  // Mensaje final
   doc.setFillColor(...azulPrimario);
   doc.rect(10, 280, 190, 8, 'F');
   doc.setTextColor(255, 255, 255);
@@ -402,8 +513,6 @@ async function generarPDFFormal({
   doc.text('DOCUMENTO VÁLIDO CON FIRMA DEL TÉCNICO RESPONSABLE Y AUTORIZACIÓN DEL CLIENTE', 105, 284, { align: 'center' });
 
   console.log('✅ PDF generado correctamente');
-  
-  // Guardar PDF
   doc.save(`HojaServicio_${campos.folio || new Date().getTime()}.pdf`);
 }
 
@@ -419,30 +528,45 @@ export default function HojaDeServicioScreen() {
   const [loadingEquipos, setLoadingEquipos] = useState(false);
   const [searchEmpresa, setSearchEmpresa] = useState('');
   const [autoFolioLoading, setAutoFolioLoading] = useState(false);
+  const [savingService, setSavingService] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { goBack } = useNavigation();
 
-  // --- OBTIENE EL SIGUIENTE FOLIO DISPONIBLE ---
-  const generarFolio = async (setCampos: any, setAutoFolioLoading: any) => {
+  // --- GENERAR FOLIO ÚNICO ---
+  const generarFolioUnico = async () => {
     setAutoFolioLoading(true);
-    const q = query(
-      collection(db, "hojasDeServicio"),
-      orderBy("folioNum", "desc"),
-      limit(1)
-    );
-    const qs = await getDocs(q);
-    let ultimo = 0;
-    qs.forEach(doc => {
-      const f: any = doc.data();
-      if (f.folio && typeof f.folio === 'string' && f.folio.startsWith('HSDG-')) {
-        const num = parseInt(f.folio.replace('HSDG-', ''), 10);
-        if (num > ultimo) ultimo = num;
-      }
-    });
-    const nuevoNum = ultimo + 1;
-    const nuevoFolio = `HSDG-${nuevoNum.toString().padStart(4, '0')}`;
-    setCampos(c => ({ ...c, folio: nuevoFolio }));
-    setAutoFolioLoading(false);
+    try {
+      const newFolio = await getNextFolio();
+      setCampos(c => ({ ...c, folio: newFolio }));
+      console.log(`✅ Folio generado: ${newFolio}`);
+    } catch (error) {
+      console.error('Error generando folio:', error);
+      alert('Error al generar folio automático. Intenta de nuevo.');
+    } finally {
+      setAutoFolioLoading(false);
+    }
+  };
+
+  // --- GUARDAR SERVICIO ---
+  const handleSaveService = async () => {
+    if (!campos.folio) {
+      alert('Por favor genera o ingresa un folio');
+      return;
+    }
+    if (!campos.empresa || !campos.fecha || !campos.tecnicoResponsable) {
+      alert('Por favor completa todos los campos requeridos (Empresa, Fecha, Técnico)');
+      return;
+    }
+
+    setSavingService(true);
+    try {
+      await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados);
+      alert(`✅ Hoja de servicio guardada exitosamente con folio: ${campos.folio}`);
+    } catch (error: any) {
+      alert(error.message || 'Error al guardar la hoja de servicio');
+    } finally {
+      setSavingService(false);
+    }
   };
 
   // --- CARGA EMPRESAS ---
@@ -462,18 +586,31 @@ export default function HojaDeServicioScreen() {
   useEffect(() => {
     const loadDatosEmpresa = async () => {
       if (!campos.empresaId) return;
+      
+      console.log('🏢 Cargando datos de empresa:', campos.empresaId);
+      
       const ref = doc(db, "clientes", campos.empresaId);
       const snap = await getDoc(ref);
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        console.log('❌ Empresa no encontrada');
+        return;
+      }
+      
       const data = snap.data() as Empresa;
-      setCampos(c => ({
-        ...c,
-        empresa: data.nombre,
-        direccion: data.direccion || '',
-        contacto: data.contacto || '',
-        telefono: data.telefono || '',
-        correo: data.correo || '',
-      }));
+      console.log('📊 Datos de empresa cargados:', data);
+      
+      setCampos(c => {
+        const newCampos = {
+          ...c,
+          empresa: data.nombre || '',
+          direccion: data.direccion || '',
+          contacto: data.contacto || '',
+          telefono: data.telefono || '',
+          correo: data.correo || '',
+        };
+        console.log('✅ Campos actualizados:', newCampos);
+        return newCampos;
+      });
     };
     loadDatosEmpresa();
   }, [campos.empresaId]);
@@ -573,6 +710,7 @@ export default function HojaDeServicioScreen() {
   const handlePointerUp = () => { isDrawing = false; };
 
   const handleDescargarPDF = async () => {
+    console.log('🔄 Iniciando descarga PDF con datos:', campos);
     await generarPDFFormal({
       campos,
       firmaTecnico,
@@ -586,15 +724,18 @@ export default function HojaDeServicioScreen() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700 p-4">
         <div className="max-w-4xl mx-auto">
-          {/* Vista previa mejorada */}
           <div className="bg-white rounded-lg shadow-2xl p-8 mb-6" style={{ aspectRatio: '210/297' }}>
-            {/* Header profesional con dirección amplia */}
+            {/* Header profesional */}
             <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-t-lg mb-4 relative">
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-blue-800 rounded-t-lg"></div>
               
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">LOGO</span>
+                  {logoImage ? (
+                    <img src={logoImage} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                  ) : (
+                    <span className="text-white font-bold text-sm">ESE</span>
+                  )}
                 </div>
                 <div className="flex-1">
                   <h1 className="text-blue-800 font-bold text-lg">
@@ -612,7 +753,7 @@ export default function HojaDeServicioScreen() {
               <h2 className="text-xl font-bold">HOJA DE SERVICIO TÉCNICO</h2>
             </div>
 
-            {/* Información general compacta */}
+            {/* Información general */}
             <div className="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-200">
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div><strong className="text-blue-700">FOLIO:</strong> {campos.folio || '__________'}</div>
@@ -621,27 +762,24 @@ export default function HojaDeServicioScreen() {
               </div>
             </div>
 
-            {/* Info Cliente como en la imagen - dividida */}
+            {/* Info Cliente */}
             <div className="border border-blue-200 rounded-lg mb-4 bg-white overflow-hidden">
               <div className="grid grid-cols-2 divide-x divide-blue-200">
-                {/* Lado izquierdo */}
                 <div className="p-4 space-y-2">
-                  <div className="text-sm"><strong className="text-blue-700">Planta:</strong> {truncateText(campos.empresa || '____________________', 25)}</div>
-                  <div className="text-sm"><strong className="text-blue-700">Domicilio:</strong> {truncateText(campos.direccion || '____________________', 25)}</div>
-                  <div className="text-sm"><strong className="text-blue-700">Contacto:</strong> {truncateText(campos.contacto || '__________', 25)}</div>
+                  <div className="text-sm"><strong className="text-blue-700">Planta:</strong> {truncateText(campos.empresa || 'Sin especificar', 25)}</div>
+                  <div className="text-sm"><strong className="text-blue-700">Domicilio:</strong> {truncateText(campos.direccion || 'Sin especificar', 25)}</div>
+                  <div className="text-sm"><strong className="text-blue-700">Contacto:</strong> {truncateText(campos.contacto || 'Sin especificar', 25)}</div>
                 </div>
-                {/* Lado derecho */}
                 <div className="p-4 space-y-2">
-                  <div className="text-sm"><strong className="text-blue-700">Teléfono:</strong> {truncateText(campos.telefono || '__________', 25)}</div>
-                  <div className="text-sm"><strong className="text-blue-700">Correo:</strong> {truncateText(campos.correo || '____________________', 25)}</div>
+                  <div className="text-sm"><strong className="text-blue-700">Teléfono:</strong> {truncateText(campos.telefono || 'Sin especificar', 25)}</div>
+                  <div className="text-sm"><strong className="text-blue-700">Correo:</strong> {truncateText(campos.correo || 'Sin especificar', 25)}</div>
                 </div>
               </div>
             </div>
 
-            {/* Equipos en recuadro completo */}
+            {/* Equipos */}
             <div className="mb-4">
               <h3 className="text-blue-800 font-bold mb-2">EQUIPOS CALIBRADOS EN SITIO</h3>
-              {/* Recuadro completo siempre visible */}
               <div className="bg-white border border-blue-200 rounded-lg p-4 h-32 overflow-y-auto">
                 {loadingEquipos ? (
                   <div className="flex items-center gap-2 text-gray-500 h-full justify-center">
@@ -654,25 +792,21 @@ export default function HojaDeServicioScreen() {
                       No se registraron equipos calibrados para este cliente y fecha.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-3 gap-4 text-xs">
+                    <div className="space-y-3">
                       {(() => {
-                        const columns = organizarEquiposEnColumnas(equiposCalibrados, 6);
-                        return columns.map((columna, colIndex) => (
-                          <div key={colIndex} className="space-y-1">
-                            {columna.map((item, itemIndex) => {
-                              const prevItem = columna[itemIndex - 1];
-                              const showTecnico = !prevItem || prevItem.tecnico !== item.tecnico;
-                              return (
-                                <div key={itemIndex}>
-                                  {showTecnico && (
-                                    <div className="font-bold text-blue-700 text-xs border-b border-blue-200 pb-1 mb-1">
-                                      {item.tecnico}:
-                                    </div>
-                                  )}
-                                  <div className="text-gray-700 ml-2">• {truncateText(item.equipo, 20)}</div>
+                        const equiposProfesionales = organizarEquiposProfesional(equiposCalibrados);
+                        return equiposProfesionales.map((grupo, groupIndex) => (
+                          <div key={groupIndex} className="space-y-1">
+                            <div className="font-bold text-blue-700 text-xs border-b border-blue-200 pb-1">
+                              {grupo.tecnico}:
+                            </div>
+                            <div className="grid grid-cols-3 gap-1 ml-2">
+                              {grupo.equipos.map((equipo, equipoIndex) => (
+                                <div key={equipoIndex} className="text-gray-700 text-xs">
+                                  • {truncateText(equipo, 15)}
                                 </div>
-                              );
-                            })}
+                              ))}
+                            </div>
                           </div>
                         ));
                       })()}
@@ -682,7 +816,7 @@ export default function HojaDeServicioScreen() {
               </div>
             </div>
 
-            {/* Comentarios compactos */}
+            {/* Comentarios */}
             {campos.comentarios && campos.comentarios.trim() && (
               <div className="mb-4">
                 <h4 className="text-blue-800 font-bold text-sm mb-1">OBSERVACIONES:</h4>
@@ -692,10 +826,9 @@ export default function HojaDeServicioScreen() {
               </div>
             )}
 
-            {/* Espacio flexible para empujar firmas hacia abajo */}
             <div className="flex-grow"></div>
 
-            {/* Calidad del servicio justo arriba de firmas */}
+            {/* Calidad del servicio */}
             <div className="mb-2">
               <div className="text-sm">
                 <strong className="text-blue-700">CALIDAD DEL SERVICIO:</strong> 
@@ -703,7 +836,7 @@ export default function HojaDeServicioScreen() {
               </div>
             </div>
 
-            {/* Firmas FIJAS en la parte inferior */}
+            {/* Firmas */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <div className="grid grid-cols-2 gap-8">
                 <div className="text-center">
@@ -754,7 +887,16 @@ export default function HojaDeServicioScreen() {
               className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
             >
               <Download className="w-4 h-4" />
-              Descargar PDF Professional
+              Descargar PDF
+            </button>
+            
+            <button
+              onClick={handleSaveService}
+              disabled={savingService}
+              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              {savingService ? <Loader2 className="w-4 h-4 animate-spin" /> : <Star className="w-4 h-4" />}
+              {savingService ? 'Guardando...' : 'Guardar Servicio'}
             </button>
             
             <button
@@ -770,7 +912,7 @@ export default function HojaDeServicioScreen() {
     );
   }
 
-  // ----------- FORMULARIO NORMAL (SIN CAMPOS EN BLANCO) ---------
+  // ----------- FORMULARIO NORMAL ---------
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700 p-4">
       <div className="max-w-4xl mx-auto">
@@ -822,7 +964,7 @@ export default function HojaDeServicioScreen() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Folio
+                    Folio *
                   </label>
                   <div className="relative">
                     <input
@@ -830,25 +972,26 @@ export default function HojaDeServicioScreen() {
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       value={campos.folio}
                       onChange={(e) => setCampos({ ...campos, folio: e.target.value })}
-                      placeholder="Folio autogenerado"
-                      readOnly
+                      placeholder="Folio único del servicio"
                     />
                     <button
-                      onClick={() => generarFolio(setCampos, setAutoFolioLoading)}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700"
+                      onClick={generarFolioUnico}
+                      disabled={autoFolioLoading}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-3 py-1 rounded text-xs transition-colors"
                     >
-                      {autoFolioLoading && (
+                      {autoFolioLoading ? (
                         <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
-                      )}
-                      Auto
+                      ) : null}
+                      {autoFolioLoading ? 'Generando...' : 'Auto'}
                     </button>
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">Genera automáticamente el siguiente folio disponible</p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <Calendar className="w-4 h-4 inline mr-1" />
-                    Fecha
+                    Fecha *
                   </label>
                   <input
                     type="date"
@@ -861,7 +1004,7 @@ export default function HojaDeServicioScreen() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <User className="w-4 h-4 inline mr-1" />
-                    Técnico Responsable
+                    Técnico Responsable *
                   </label>
                   <input
                     type="text"
@@ -891,18 +1034,18 @@ export default function HojaDeServicioScreen() {
               </div>
             </div>
 
-            {/* Info Cliente SIN CAMPOS EN BLANCO */}
+            {/* Info Cliente */}
             <div className="border-2 border-blue-200 rounded-xl overflow-hidden bg-blue-50/50">
               <h2 className="text-xl font-bold text-blue-800 p-6 pb-0 flex items-center gap-2">
                 <Building2 className="w-5 h-5" />
-                Información del Cliente
+                Información del Cliente *
               </h2>
 
               <div className="p-6 pt-4">
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <Building2 className="w-4 h-4 inline mr-1" />
-                    Empresa/Planta
+                    Empresa/Planta *
                   </label>
                   <input
                     type="text"
@@ -929,9 +1072,7 @@ export default function HojaDeServicioScreen() {
                   </select>
                 </div>
 
-                {/* Diseño como en la imagen: izquierda y derecha - CAMPOS EDITABLES */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-white p-6 rounded-lg border border-blue-200">
-                  {/* Lado izquierdo */}
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -962,7 +1103,6 @@ export default function HojaDeServicioScreen() {
                     </div>
                   </div>
 
-                  {/* Lado derecho */}
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1011,14 +1151,13 @@ export default function HojaDeServicioScreen() {
               />
             </div>
 
-            {/* VISTA EQUIPOS CALIBRADOS CON RECUADRO COMPLETO */}
+            {/* VISTA EQUIPOS PROFESIONAL */}
             <div className="bg-gradient-to-r from-green-50 to-green-100 p-6 rounded-xl">
               <h2 className="text-xl font-bold text-green-800 mb-4 flex items-center gap-2">
                 <Wrench className="w-5 h-5" />
                 Equipos Calibrados en SITIO
               </h2>
               
-              {/* Recuadro completo siempre visible */}
               <div className="bg-white p-4 rounded-lg min-h-[200px] border border-green-200">
                 {loadingEquipos ? (
                   <div className="flex items-center gap-2 text-gray-500 h-full justify-center">
@@ -1031,22 +1170,21 @@ export default function HojaDeServicioScreen() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {Object.entries(equiposCalibrados).map(([tecnico, equipos]) => (
-                      <div key={tecnico} className="border-l-4 border-green-500 pl-4">
-                        <h3 className="font-bold text-green-700 mb-2">{tecnico}</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                          {equipos.map((equipo, idx) =>
-                            equipo.id
-                              ? equipo.id.split(',').map((idSingle, idIdx) => (
-                                  <div key={`${idx}-${idIdx}`} className="bg-green-50 p-2 rounded text-sm text-green-800">
-                                    {idSingle.trim()}
-                                  </div>
-                                ))
-                              : null
-                          )}
+                    {(() => {
+                      const equiposProfesionales = organizarEquiposProfesional(equiposCalibrados);
+                      return equiposProfesionales.map((grupo, groupIndex) => (
+                        <div key={groupIndex} className="border-l-4 border-green-500 pl-4">
+                          <h3 className="font-bold text-green-700 mb-2">{grupo.tecnico}</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {grupo.equipos.map((equipo, equipoIndex) => (
+                              <div key={equipoIndex} className="bg-green-50 p-2 rounded text-sm text-green-800">
+                                {equipo}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 )}
               </div>
@@ -1077,14 +1215,6 @@ export default function HojaDeServicioScreen() {
                       Firmar
                     </button>
                   )}
-                  {firmaTecnico && (
-                    <button
-                      onClick={() => setFirmaTecnico('')}
-                      className="text-xs text-pink-600 hover:text-pink-800 mt-2 block"
-                    >
-                      Borrar firma
-                    </button>
-                  )}
                 </div>
 
                 <div>
@@ -1105,14 +1235,6 @@ export default function HojaDeServicioScreen() {
                       className="w-full bg-blue-700 text-white px-4 py-3 rounded-lg hover:bg-blue-800 transition-colors"
                     >
                       Firmar
-                    </button>
-                  )}
-                  {firmaCliente && (
-                    <button
-                      onClick={() => setFirmaCliente('')}
-                      className="text-xs text-pink-600 hover:text-pink-800 mt-2 block"
-                    >
-                      Borrar firma
                     </button>
                   )}
                 </div>
@@ -1164,7 +1286,16 @@ export default function HojaDeServicioScreen() {
                 className="bg-blue-700 text-white px-8 py-4 rounded-xl flex items-center gap-2 hover:bg-blue-800 transition-all duration-200 hover:scale-105"
               >
                 <FileText className="w-5 h-5" />
-                Vista previa y PDF
+                Vista previa
+              </button>
+              
+              <button
+                onClick={handleSaveService}
+                disabled={savingService || !campos.folio || !campos.empresa || !campos.fecha}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-8 py-4 rounded-xl flex items-center gap-2 transition-all duration-200 hover:scale-105"
+              >
+                {savingService ? <Loader2 className="w-5 h-5 animate-spin" /> : <Star className="w-5 h-5" />}
+                {savingService ? 'Guardando...' : 'Guardar Servicio'}
               </button>
               
               <button

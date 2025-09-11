@@ -121,8 +121,7 @@ const unidadesPorMagnitud: Record<string, string[]> = {
 // NUEVO: Función para transferir worksheet a Friday
 const transferToFriday = async (formData: any, userId: string, user: any) => {
   try {
-
-    console.log('Datos que se intentan transferir a Friday:', formData);
+ console.log('Datos que se intentan transferir a Friday:', formData);
 
     // 1. Obtener el tablero principal
     const boardRef = doc(db, "tableros", "principal");
@@ -139,11 +138,11 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
     // 2. DETERMINA EL GRUPO DESTINO
     const lugar = (formData.lugarCalibracion || "").toLowerCase();
     let destinoGroupId = "laboratorio";
-    let destinoGroupName = "🧪 Laboratorio";
+    let destinoGroupName = "Equipos en Laboratorio";
     let destinoColorIdx = 1;
     if (lugar === "sitio") {
       destinoGroupId = "sitio";
-      destinoGroupName = "🏭 Sitio";
+      destinoGroupName = "Servicio en Sitio";
       destinoColorIdx = 0;
     }
 
@@ -161,65 +160,25 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
     }
     const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId);
 
-    // 4. GENERA EL FOLIO AUTOMÁTICO
-    const generateAutoNumber = (groups: any[], colKey: string): number => {
-      let maxNum = 0;
-      groups.forEach((g: any) => {
-        g.rows.forEach((row: any) => {
-          if (row[colKey] && typeof row[colKey] === "number") {
-            maxNum = Math.max(maxNum, row[colKey]);
-          }
-        });
-      });
-      return maxNum + 1;
-    };
-    const newFolio = generateAutoNumber(groups, "folio");
-
-    // 5. Genera el objeto newRow (¡ya con folio!)
+    // 4. Genera el objeto newRow con los CAMPOS CORRECTOS para FridayScreen
     const newRow = {
-      id: "r" + Math.random().toString(36).slice(2, 8),
-      id_equipo: formData.id || "",
-      folio: newFolio,
-      equipo: formData.equipo || "Sin especificar",
+      certificado: formData.certificado || "",
       cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar",
-      responsable: formData.responsable || getUserName(user),
-      estado: "En proceso",
-      prioridad: "Media",
-      progreso: 0,
-      fecha_limite: formData.fecha || new Date().toISOString().slice(0, 10),
-      created_at: { timestamp: Date.now(), userId: userId || "unknown" },
-      last_updated: { timestamp: Date.now(), userId: userId || "unknown" },
-      certificado: formData.certificado,
-      alcance: formData.alcance,
-      resolucion: formData.resolucion,
-      magnitud: formData.magnitud,
-      unidad: formData.unidad,
-      lugar_calibracion: formData.lugarCalibracion,
-      frecuencia_calibracion: formData.frecuenciaCalibracion,
-      marca: formData.marca,
-      modelo: formData.modelo,
-      numero_serie: formData.numeroSerie,
-      notas_calibracion: formData.notas,
-      source_type: "worksheet",
-      transferred_at: Date.now(),
+      id: formData.id || "",
+      equipo: formData.equipo || "Sin especificar",
+      marca: formData.marca || "",
+      modelo: formData.modelo || "",
+      serie: formData.numeroSerie || "",
+      lugarCalibracion: (formData.lugarCalibracion || "").toLowerCase() === "sitio" ? "sitio" : "laboratorio",
+      status: "pending",
+      priority: "medium",
+      assignedTo: user?.uid || "unknown",
+      dueDate: formData.fecha || new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
     };
 
-    // LIMPIA newRow de valores undefined o problemáticos
-    Object.keys(newRow).forEach((key) => {
-      if (typeof newRow[key] === "undefined") delete newRow[key];
-      if (
-        typeof newRow[key] === "object" &&
-        newRow[key] !== null &&
-        !Array.isArray(newRow[key])
-      ) {
-        if (!("timestamp" in newRow[key]) || !("userId" in newRow[key])) {
-          delete newRow[key];
-        }
-      }
-    });
-    console.log("Row limpio para insertar:", newRow);
-
-    // 6. Inserta la fila al grupo correcto
+    // 5. Inserta la fila al grupo correcto
     if (groupIndex !== -1) {
       groups[groupIndex].rows.push(newRow);
     } else {
@@ -227,17 +186,16 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       return false;
     }
 
-    // 7. Justo antes de actualizar, log de debug
+    // 6. Justo antes de actualizar, log de debug
     console.log("Grupos antes de updateDoc:", JSON.stringify(groups, null, 2));
 
-    // 8. Actualizar el tablero en Firestore
+    // 7. Actualizar el tablero en Firestore
     await updateDoc(boardRef, {
       groups,
       columns: boardData.columns || [],
       updatedAt: Date.now(),
     });
-    
-  
+
     alert("Transferencia exitosa al tablero Friday");
     return true;
   } catch (error) {
