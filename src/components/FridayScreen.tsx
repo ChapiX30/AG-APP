@@ -82,7 +82,7 @@ const PRIORITY_OPTIONS = [
 
 const DEFAULT_COLUMNS: Column[] = [
   { key: 'certificado', label: 'N° Certificado', type: 'text', width: 140, hidden: false, sortable: true, filterable: true, required: true },
-  { key: 'cliente', label: 'Cliente', type: 'text', width: 160, hidden: false, sortable: true, filterable: true, required: true },
+  { key: 'cliente', label: 'Cliente', type: 'dropdown', width: 200, hidden: false, sortable: true, filterable: true, required: true },
   { key: 'id', label: 'ID', type: 'text', width: 100, hidden: false, sortable: true, filterable: true, required: true },
   { key: 'equipo', label: 'Equipo', type: 'text', width: 150, hidden: false, sortable: true, filterable: true, required: true },
   { key: 'marca', label: 'Marca', type: 'text', width: 120, hidden: false, sortable: true, filterable: true, required: true },
