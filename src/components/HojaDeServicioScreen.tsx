@@ -48,12 +48,8 @@ async function getNextFolio(): Promise<string> {
     console.log('🔄 Generando siguiente folio...');
     const folioPrefix = 'HSDG-';
     
-    // Consultar el último folio en la base de datos
-    const q = query(
-      collection(db, "hojasDeServicio"), 
-      orderBy("folioNum", "desc"), 
-      limit(1)
-    );
+    // Consultar todos los folios para encontrar el número más alto
+    const q = query(collection(db, "hojasDeServicio"));
     const querySnapshot = await getDocs(q);
     
     let lastNumber = 0;
@@ -646,22 +642,28 @@ export default function HojaDeServicioScreen() {
     fetchEquipos();
   }, [campos.empresa, campos.fecha]);
 
-  // ---- FIRMAS ----
+  // ---- FIRMAS MEJORADAS ----
   const comenzarFirma = (tipo: 'cliente' | 'tecnico') => {
     setFirmando(tipo);
     setTimeout(() => {
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          // Configurar mejor calidad para el canvas
+          ctx.imageSmoothingEnabled = true;
+          ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
+        }
       }
-    }, 10);
+    }, 100);
   };
 
   const guardarFirma = () => {
     const canvas = canvasRef.current;
     if (canvas) {
-      const dataURL = canvas.toDataURL('image/png');
+      const dataURL = canvas.toDataURL('image/png', 1.0);
       if (firmando === 'cliente') setFirmaCliente(dataURL);
       if (firmando === 'tecnico') setFirmaTecnico(dataURL);
     }
@@ -673,16 +675,28 @@ export default function HojaDeServicioScreen() {
   let lastY = 0;
 
   const handlePointerDown = (e: any) => {
+    e.preventDefault();
     isDrawing = true;
-    const rect = e.target.getBoundingClientRect();
-    const scaleX = e.target.width / rect.width;
-    const scaleY = e.target.height / rect.height;
-    lastX = (e.touches ? e.touches[0].clientX - rect.left : e.nativeEvent.offsetX) * scaleX;
-    lastY = (e.touches ? e.touches[0].clientY - rect.top : e.nativeEvent.offsetY) * scaleY;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    if (e.touches && e.touches.length > 0) {
+      lastX = (e.touches[0].clientX - rect.left) * scaleX;
+      lastY = (e.touches[0].clientY - rect.top) * scaleY;
+    } else {
+      lastX = (e.clientX - rect.left) * scaleX;
+      lastY = (e.clientY - rect.top) * scaleY;
+    }
   };
 
   const handlePointerMove = (e: any) => {
+    e.preventDefault();
     if (!isDrawing) return;
+    
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -691,13 +705,22 @@ export default function HojaDeServicioScreen() {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (e.touches ? e.touches[0].clientX - rect.left : e.nativeEvent.offsetX) * scaleX;
-    const y = (e.touches ? e.touches[0].clientY - rect.top : e.nativeEvent.offsetY) * scaleY;
+    
+    let x, y;
+    if (e.touches && e.touches.length > 0) {
+      x = (e.touches[0].clientX - rect.left) * scaleX;
+      y = (e.touches[0].clientY - rect.top) * scaleY;
+    } else {
+      x = (e.clientX - rect.left) * scaleX;
+      y = (e.clientY - rect.top) * scaleY;
+    }
 
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = 'source-over';
+    
     ctx.beginPath();
     ctx.moveTo(lastX, lastY);
     ctx.lineTo(x, y);
@@ -707,7 +730,10 @@ export default function HojaDeServicioScreen() {
     lastY = y;
   };
 
-  const handlePointerUp = () => { isDrawing = false; };
+  const handlePointerUp = (e: any) => { 
+    e.preventDefault();
+    isDrawing = false; 
+  };
 
   const handleDescargarPDF = async () => {
     console.log('🔄 Iniciando descarga PDF con datos:', campos);
@@ -1254,10 +1280,14 @@ export default function HojaDeServicioScreen() {
                       ref={canvasRef}
                       width={400}
                       height={200}
-                      className="w-full h-32 cursor-crosshair"
+                      className="w-full h-32 cursor-crosshair touch-none"
                       onPointerDown={handlePointerDown}
                       onPointerMove={handlePointerMove}
                       onPointerUp={handlePointerUp}
+                      onTouchStart={handlePointerDown}
+                      onTouchMove={handlePointerMove}
+                      onTouchEnd={handlePointerUp}
+                      style={{ touchAction: 'none' }}
                     />
                   </div>
                   
