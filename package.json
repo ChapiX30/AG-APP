@@ -26,6 +26,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^11.9.1",
+    "firebase-admin": "^13.5.0",
     "framer-motion": "^12.23.5",
     "gapi-script": "^1.2.0",
     "html2canvas": "^1.4.1",

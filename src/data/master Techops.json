@@ -1,0 +1,8626 @@
+[
+ {
+   "A": "ID",
+   "B": "NOMBRE",
+   "C": "MARCA",
+   "D": "MODELO",
+   "E": "SERIE"
+ },
+ {
+   "A": "1",
+   "B": "GAGE THICKNESS",
+   "C": "OLYMPUS",
+   "D": "35",
+   "E": "111561106"
+ },
+ {
+   "A": "6",
+   "B": "GAGE THICKNESS",
+   "C": "OLYMPUS",
+   "D": "35",
+   "E": "111561706"
+ },
+ {
+   "A": "11",
+   "B": "TEST KIT FOR STATIC CONTROL SURFACES",
+   "C": "3M ",
+   "D": "701",
+   "E": "10044"
+ },
+ {
+   "A": "13",
+   "B": "WRIST STRAP TESTER",
+   "C": "3M",
+   "D": "746",
+   "E": "167880405"
+ },
+ {
+   "A": "42",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092371"
+ },
+ {
+   "A": "42",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092371"
+ },
+ {
+   "A": "43",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092372"
+ },
+ {
+   "A": "43",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092372"
+ },
+ {
+   "A": "49",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092378"
+ },
+ {
+   "A": "49",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092378"
+ },
+ {
+   "A": "51",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092380"
+ },
+ {
+   "A": "51",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092380"
+ },
+ {
+   "A": "54",
+   "B": "LIGHT METER DATALOGGER",
+   "C": "EXTECH",
+   "D": "401036",
+   "E": "Z202138"
+ },
+ {
+   "A": "55",
+   "B": "LIGHT METER DATALOGGER",
+   "C": "EXTECH",
+   "D": "401036",
+   "E": "Z202137"
+ },
+ {
+   "A": "82",
+   "B": "CALIPER & MICROMETER",
+   "C": "MITUTOYO",
+   "D": "293-340",
+   "E": "67021821"
+ },
+ {
+   "A": "87",
+   "B": "DINAMOMETRO 2000 LBS",
+   "C": "DILLON",
+   "D": "30006-0035",
+   "E": "D26349"
+ },
+ {
+   "A": "93",
+   "B": "MANOMETER, 0-55 PSI",
+   "C": "USG",
+   "D": "316SS",
+   "E": "GD433"
+ },
+ {
+   "A": "93",
+   "B": "MANOMETER, 0-55 PSI",
+   "C": "USG",
+   "D": "316SS",
+   "E": "GD433"
+ },
+ {
+   "A": "144",
+   "B": "BENCH POWER SUPPLY",
+   "C": "TENMA",
+   "D": "72-6854",
+   "E": "311207"
+ },
+ {
+   "A": "150",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "10090624"
+ },
+ {
+   "A": "151",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "10090601"
+ },
+ {
+   "A": "152",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "10090617"
+ },
+ {
+   "A": "153",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "10090619"
+ },
+ {
+   "A": "154",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "GD232"
+ },
+ {
+   "A": "155",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "GD753"
+ },
+ {
+   "A": "165",
+   "B": "DESCOMPRESSION LATCH TEST",
+   "C": "MITYVAC",
+   "D": "B221075T1",
+   "E": "GD672"
+ },
+ {
+   "A": "170",
+   "B": "BONDING METER",
+   "C": "AVTRON",
+   "D": "C15292",
+   "E": "2085"
+ },
+ {
+   "A": "175",
+   "B": "CRONOMETRO",
+   "C": "STEREN",
+   "D": "CLK150",
+   "E": "GD680"
+ },
+ {
+   "A": "179",
+   "B": "INFRARED THERMOMETER",
+   "C": "WAHL HEAT SPY",
+   "D": "DHS24X",
+   "E": "3-2943"
+ },
+ {
+   "A": "184",
+   "B": "BOX-LEAKAGE TEST",
+   "C": "DEWIT",
+   "D": "EMB00168-003",
+   "E": "1W929501008"
+ },
+ {
+   "A": "190",
+   "B": "DYNAMOMETER 50KG",
+   "C": "IMADA",
+   "D": "FB50KG",
+   "E": "294391"
+ },
+ {
+   "A": "192",
+   "B": "MULTIMETER MOD 4 TRUE RMS",
+   "C": "FLUKE",
+   "D": "FLUKE87V",
+   "E": "14740036"
+ },
+ {
+   "A": "209",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01601"
+ },
+ {
+   "A": "209",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01601"
+ },
+ {
+   "A": "225",
+   "B": "TACOMETRO DIGITAL",
+   "C": "CHECK LINE",
+   "D": "PLT5000",
+   "E": "B46B8012"
+ },
+ {
+   "A": "232",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0706100242"
+ },
+ {
+   "A": "232",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0706100242"
+ },
+ {
+   "A": "250",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "72816"
+ },
+ {
+   "A": "250",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "72816"
+ },
+ {
+   "A": "273",
+   "B": "ELECTRONIC MICROMETER",
+   "C": "MITUTOYO",
+   "D": "2054A67",
+   "E": "35082150"
+ },
+ {
+   "A": "278",
+   "B": "DYNAMOMETER",
+   "C": "IMADA",
+   "D": "FB10KG",
+   "E": "258774"
+ },
+ {
+   "A": "279",
+   "B": "GAUGE-FORCE PRECISE MECHA",
+   "C": "IMADA",
+   "D": "PS-10",
+   "E": "294643"
+ },
+ {
+   "A": "281",
+   "B": "TENSIOMETER",
+   "C": "TENSITRON",
+   "D": "DZZ71777-1",
+   "E": "72486"
+ },
+ {
+   "A": "283",
+   "B": "COATING THINKNESS GUAGE",
+   "C": "ELCOMETER",
+   "D": "A355S",
+   "E": "NF13461"
+ },
+ {
+   "A": "298",
+   "B": "INDICADOR DE CARATULA",
+   "C": "BROWN & SHAPE",
+   "D": "7030-3",
+   "E": "8S18934"
+ },
+ {
+   "A": "299",
+   "B": "EQUIPEMENT PRESSURE RE",
+   "C": "S/M",
+   "D": "62B4A0010X",
+   "E": "05K04A"
+ },
+ {
+   "A": "299",
+   "B": "EQUIPEMENT PRESSURE RE",
+   "C": "WINTERS",
+   "D": "62B4A0010X",
+   "E": "05K04A"
+ },
+ {
+   "A": "300",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "NOSHOK",
+   "D": "723520",
+   "E": "GD218"
+ },
+ {
+   "A": "302",
+   "B": "MANOMETRO DE 0-200 PSI",
+   "C": "KRATOS",
+   "D": "292",
+   "E": "GD008"
+ },
+ {
+   "A": "302",
+   "B": "MANOMETRO DE 0-200 PSI",
+   "C": "KRATOS",
+   "D": "292",
+   "E": "GD008"
+ },
+ {
+   "A": "303",
+   "B": "MANOMETRO 0-6000 PSI",
+   "C": "USG",
+   "D": "40675",
+   "E": "GD029"
+ },
+ {
+   "A": "336",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092374"
+ },
+ {
+   "A": "354",
+   "B": "MICROMETRO DE PROF 0-6\"",
+   "C": "STARRETT",
+   "D": "749BZ6RL",
+   "E": "12453143"
+ },
+ {
+   "A": "361",
+   "B": "TORQUIMETR.ESP.2-36 LB.IN",
+   "C": "LEEWARD",
+   "D": "CAL36-4",
+   "E": "GD116"
+ },
+ {
+   "A": "361",
+   "B": "TORQUIMETR.ESP.2-36 LB.IN",
+   "C": "STURTEVANT RICHMONT",
+   "D": "CAL36-4",
+   "E": "GD116"
+ },
+ {
+   "A": "384",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0613501651"
+ },
+ {
+   "A": "384",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0613501651"
+ },
+ {
+   "A": "432",
+   "B": "DIGITAL MULTIMETER KIT",
+   "C": "FLUKE",
+   "D": "FLUKE179",
+   "E": "94140450"
+ },
+ {
+   "A": "440",
+   "B": "EQUIPMENT TEST VOR/ILS",
+   "C": "TIC TEL INSTRUMENT",
+   "D": "T30D",
+   "E": "1078"
+ },
+ {
+   "A": "460",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "212605050"
+ },
+ {
+   "A": "476",
+   "B": "GRAFICADOR DE TEMPERATURA",
+   "C": "OMEGA",
+   "D": "OM-EL-WIFI-TH-PLUS",
+   "E": "GD895"
+ },
+ {
+   "A": "477",
+   "B": "GRAFICADOR DE TEMPERATURA",
+   "C": "OMEGA",
+   "D": "OM-EL-WIFI-TH-PLUS",
+   "E": "GD896"
+ },
+ {
+   "A": "489",
+   "B": "BASCULA DE RECIBO",
+   "C": "TORREY",
+   "D": "EQB50-100",
+   "E": "I12-3927"
+ },
+ {
+   "A": "489",
+   "B": "BASCULA DE RECIBO",
+   "C": "TORREY",
+   "D": "EQB50-100",
+   "E": "I12-3927"
+ },
+ {
+   "A": "491",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "S/M",
+   "D": "71875",
+   "E": "QT-0001"
+ },
+ {
+   "A": "500",
+   "B": "DECADE RESISTOR",
+   "C": "TEGAM",
+   "D": "DB62",
+   "E": "R2010301DB62D"
+ },
+ {
+   "A": "511",
+   "B": "POWER STATION CADMIUM",
+   "C": "SIFCO",
+   "D": "PE1068",
+   "E": "PE0613-67603"
+ },
+ {
+   "A": "511",
+   "B": "POWER STATION CADMIUM",
+   "C": "PLATING ELECTRONIC",
+   "D": "PE1068",
+   "E": "PE0613-67603"
+ },
+ {
+   "A": "515",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "ALEAR",
+   "D": "4647303",
+   "E": "GD415"
+ },
+ {
+   "A": "521",
+   "B": "ELECTRONIC DEPTH MICROM",
+   "C": "MITUTOYO",
+   "D": "329-351",
+   "E": "703257"
+ },
+ {
+   "A": "529",
+   "B": "DINAMOMETRO 4000 LBS",
+   "C": "DILLON",
+   "D": "30006-0043",
+   "E": "25187"
+ },
+ {
+   "A": "535",
+   "B": "DIGITAL OPTICAL DEPTH MIC",
+   "C": "BLUEPOINT",
+   "D": "8400",
+   "E": "9883"
+ },
+ {
+   "A": "537",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "KRATOS",
+   "D": "4647303",
+   "E": "62865"
+ },
+ {
+   "A": "538",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092375"
+ },
+ {
+   "A": "538",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092375"
+ },
+ {
+   "A": "539",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092373"
+ },
+ {
+   "A": "539",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092373"
+ },
+ {
+   "A": "540",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "GD540"
+ },
+ {
+   "A": "554",
+   "B": "DECADE RESISTOR",
+   "C": "TEGAM",
+   "D": "DB62",
+   "E": "R2030301DB62D"
+ },
+ {
+   "A": "559",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "14212"
+ },
+ {
+   "A": "559",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "14212"
+ },
+ {
+   "A": "580",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "FINESA",
+   "D": "34830",
+   "E": "GD430"
+ },
+ {
+   "A": "580",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "GD430"
+ },
+ {
+   "A": "599",
+   "B": "PRESSURE GAUGE",
+   "C": "WIKA",
+   "D": "4023K25",
+   "E": "GD712"
+ },
+ {
+   "A": "623",
+   "B": "ELELECTRONIC MICROMETERS",
+   "C": "MITUTOYO",
+   "D": "2054A75",
+   "E": "15254355"
+ },
+ {
+   "A": "631",
+   "B": "PRECISION SURFACE PLATE",
+   "C": "S/M",
+   "D": "21700474",
+   "E": "F35"
+ },
+ {
+   "A": "634",
+   "B": "PRESSURE GAUGE",
+   "C": "WIKA",
+   "D": "4023K25",
+   "E": "GD447"
+ },
+ {
+   "A": "643",
+   "B": "TORQUIMETRO-0-175 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TEC175FU",
+   "E": "9771"
+ },
+ {
+   "A": "643",
+   "B": "TORQUIMETRO-0-175 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TEC175FU",
+   "E": "9771"
+ },
+ {
+   "A": "661",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "S/M",
+   "D": "4647303",
+   "E": "62837"
+ },
+ {
+   "A": "662",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "KRATOS",
+   "D": "4647303",
+   "E": "62842"
+ },
+ {
+   "A": "662",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "S/M",
+   "D": "4647303",
+   "E": "62842"
+ },
+ {
+   "A": "696",
+   "B": "ELECTROPLATING DC PWR SUP",
+   "C": "SIFCO",
+   "D": "PE4373",
+   "E": "PE0807/48485"
+ },
+ {
+   "A": "696",
+   "B": "ELECTROPLATING DC PWR SUP",
+   "C": "SIFCO",
+   "D": "PE4373",
+   "E": "PE0807/48485"
+ },
+ {
+   "A": "744",
+   "B": "DINAMOMETRO",
+   "C": "WAGNER",
+   "D": "FDK20",
+   "E": "AE3989"
+ },
+ {
+   "A": "752",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "MALABAR",
+   "D": "71278",
+   "E": "GD979"
+ },
+ {
+   "A": "771",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "METRON",
+   "D": "34830",
+   "E": "GD334"
+ },
+ {
+   "A": "804",
+   "B": "PRESSURE GAUGE",
+   "C": "WIKA",
+   "D": "4023K25",
+   "E": "GD444"
+ },
+ {
+   "A": "809",
+   "B": "RESIDUAL FIELD INDICATOR",
+   "C": "S/M",
+   "D": "MFS-MG10C",
+   "E": "431"
+ },
+ {
+   "A": "813",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "ABM",
+   "D": "872825",
+   "E": "GD416"
+ },
+ {
+   "A": "813",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "DIXON",
+   "D": "872825",
+   "E": "GD416"
+ },
+ {
+   "A": "849",
+   "B": "DIGITAL ULTRASONIC THICKNESS GAGE 38DL P",
+   "C": "OLYMPUS",
+   "D": "38DLP90SMUMTEES",
+   "E": "140940008"
+ },
+ {
+   "A": "849",
+   "B": "DIGITAL ULTRASONIC THICKNESS GAGE 38DL P",
+   "C": "OLYMPUS",
+   "D": "38DLP90SMUMTEES",
+   "E": "140940008"
+ },
+ {
+   "A": "861",
+   "B": "MICROMETRO EXT DE 0-1\"",
+   "C": "STARRETT",
+   "D": "796XFL1",
+   "E": "12470346"
+ },
+ {
+   "A": "864",
+   "B": "WRIST STRAP TESTER",
+   "C": "3M",
+   "D": "746",
+   "E": "152980310"
+ },
+ {
+   "A": "864",
+   "B": "WRIST STRAP TESTER",
+   "C": "3M",
+   "D": "746",
+   "E": "152980310"
+ },
+ {
+   "A": "879",
+   "B": "MANÓMETRO 600 PSI",
+   "C": "STARLINE",
+   "D": "45-1377AS-02B-600",
+   "E": "QT-0105"
+ },
+ {
+   "A": "881",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092376"
+ },
+ {
+   "A": "881",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092376"
+ },
+ {
+   "A": "882",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092377"
+ },
+ {
+   "A": "882",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092377"
+ },
+ {
+   "A": "883",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092379"
+ },
+ {
+   "A": "883",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092379"
+ },
+ {
+   "A": "913",
+   "B": "MANOMETER",
+   "C": "DWYER",
+   "D": "477-5FM",
+   "E": "GD531"
+ },
+ {
+   "A": "913",
+   "B": "MANOMETER",
+   "C": "DWYER",
+   "D": "477-5FM",
+   "E": "GD531"
+ },
+ {
+   "A": "931",
+   "B": "PANAMETRICS35",
+   "C": "OLYMPUS",
+   "D": "35DL",
+   "E": "101497610"
+ },
+ {
+   "A": "945",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "USG",
+   "D": "73975",
+   "E": "GD1054"
+ },
+ {
+   "A": "951",
+   "B": "REFRIGERADORES",
+   "C": "LUX",
+   "D": "LUX-RVA23",
+   "E": "GD1059"
+ },
+ {
+   "A": "952",
+   "B": "REFRIGERADORES",
+   "C": "LUX",
+   "D": "LUX-RVA23",
+   "E": "GD1060"
+ },
+ {
+   "A": "952",
+   "B": "REFRIGERADORES",
+   "C": "LUX",
+   "D": "LUX-RVA23",
+   "E": "GD1060"
+ },
+ {
+   "A": "953",
+   "B": "REFRIGERADORES",
+   "C": "LUX",
+   "D": "LUX-RVA23",
+   "E": "GD1061"
+ },
+ {
+   "A": "956",
+   "B": "MANOMETRO PARA OXIGENO",
+   "C": "USG",
+   "D": "4813",
+   "E": "GD1067"
+ },
+ {
+   "A": "963",
+   "B": "REGULADOR CON FLUJOMETRO PARA GAS INERTE",
+   "C": "USG",
+   "D": "4100",
+   "E": "GD1065"
+ },
+ {
+   "A": "976",
+   "B": "GSE 007 TEST SET - STATIC DISCHARGER AND",
+   "C": "CHAUVIN ARNOUX",
+   "D": "QB18",
+   "E": "C014258039"
+ },
+ {
+   "A": "979",
+   "B": "TORQUE WRENCH 0-300 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TE25FUA",
+   "E": "30535"
+ },
+ {
+   "A": "993",
+   "B": "TORQUIMETRO DE  1/2, RANGO DE 30 A 150 L",
+   "C": "SNAP-ON",
+   "D": "QD3R150",
+   "E": "914066633"
+ },
+ {
+   "A": "1002",
+   "B": "TORQUIMETRO DE  10-50 LBS/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50",
+   "E": "814804399"
+ },
+ {
+   "A": "1003",
+   "B": "LLAVE DE TORQUE DE TRINQU",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "0914803862"
+ },
+ {
+   "A": "1007",
+   "B": "15 TON FIXED HEIGHT TRIPO",
+   "C": "STARRETT",
+   "D": "711",
+   "E": "GD213"
+ },
+ {
+   "A": "1008",
+   "B": "TRANSPORTADOR DIG 0-360 G",
+   "C": "MITUTOYO",
+   "D": "PR0-360",
+   "E": "QT-0028"
+ },
+ {
+   "A": "1013",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD3R250A",
+   "E": "814503960"
+ },
+ {
+   "A": "1015",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "1014602787"
+ },
+ {
+   "A": "1018",
+   "B": "GSE 302 WRENCH SET-TRQ, FUEL LINE ISLR N",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "AGE-03381-401",
+   "E": "08074066759"
+ },
+ {
+   "A": "1019",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TEC250FU",
+   "E": "6708"
+ },
+ {
+   "A": "1022",
+   "B": "DYNAMOMETER",
+   "C": "TCI SCALE",
+   "D": "264RW-202",
+   "E": "N-1100859"
+ },
+ {
+   "A": "1033",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "0814055145"
+ },
+ {
+   "A": "1036",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "1014804928"
+ },
+ {
+   "A": "1045",
+   "B": "WRIST STRAP TESTER",
+   "C": "3M",
+   "D": "746",
+   "E": "272611310"
+ },
+ {
+   "A": "1128",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "GD539"
+ },
+ {
+   "A": "1132",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01630"
+ },
+ {
+   "A": "1158",
+   "B": "TEMP. INDICATOR",
+   "C": "HEATCON",
+   "D": "HCS2042-01",
+   "E": "2042-01035"
+ },
+ {
+   "A": "1163",
+   "B": "DINAMOMETRO",
+   "C": "DILLON",
+   "D": "98291-1091",
+   "E": "X15108"
+ },
+ {
+   "A": "1176",
+   "B": "ELECTRONIC-INDICATOR DEPT",
+   "C": "MITUTOYO",
+   "D": "543-402",
+   "E": "13037896"
+ },
+ {
+   "A": "1179",
+   "B": "GSE 499   TEST FIXTURE ASSY, LOW-STAGE B",
+   "C": "MITUTOYO",
+   "D": "GS25565-1",
+   "E": "14076558"
+ },
+ {
+   "A": "1194",
+   "B": "MESA DE GRANITO 18X24 IN",
+   "C": "MITUTOYO",
+   "D": "517-806",
+   "E": "X-79"
+ },
+ {
+   "A": "1201",
+   "B": "DIGITAL ULTRASONIC THICKNESS GAGE 38DL P",
+   "C": "OLYMPUS",
+   "D": "38DLP90SMUMTEES",
+   "E": "140941008"
+ },
+ {
+   "A": "1223",
+   "B": "MICROMETRO 0-1\"",
+   "C": "MITUTOYO",
+   "D": "10-293-340",
+   "E": "57037948"
+ },
+ {
+   "A": "1227",
+   "B": "MICROMETRO 0-2\"",
+   "C": "MITUTOYO",
+   "D": "10-293-341",
+   "E": "45172110"
+ },
+ {
+   "A": "1235",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-131J",
+   "E": "GD1158"
+ },
+ {
+   "A": "1237",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-131J",
+   "E": "GD1160"
+ },
+ {
+   "A": "1241",
+   "B": "MICROMETRO 2-3\"",
+   "C": "MITUTOYO",
+   "D": "10-293-342",
+   "E": "GD1172"
+ },
+ {
+   "A": "1250",
+   "B": "MICROMETRO PARA PROFUNDIDAD 0-6\"",
+   "C": "MITUTOYO",
+   "D": "10-129-128",
+   "E": "500197"
+ },
+ {
+   "A": "1274",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "514803308"
+ },
+ {
+   "A": "1277",
+   "B": "TORQUIMETRO DE  1/2, RANGO DE 30 A 150 L",
+   "C": "SNAP-ON",
+   "D": "QD3R150",
+   "E": "0115503008"
+ },
+ {
+   "A": "1278",
+   "B": "TORQUIMETRO DE  10-50 LBS/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50",
+   "E": "115802844"
+ },
+ {
+   "A": "1284",
+   "B": "TORQUE WRENCH 25-250FT.LB",
+   "C": "SNAP-ON",
+   "D": "ATECH3FR250",
+   "E": "0415503322"
+ },
+ {
+   "A": "1285",
+   "B": "TORQUIMETRO DE  1/2, RANGO DE 30 A 150 L",
+   "C": "SNAP-ON",
+   "D": "QD3R150",
+   "E": "0115503015"
+ },
+ {
+   "A": "1292",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "0415805260"
+ },
+ {
+   "A": "1298",
+   "B": "DIGITAL ULTRASONIC THICKNESS GAGE 38DL P",
+   "C": "OLYMPUS",
+   "D": "38DLP90SMUMTEES",
+   "E": "140938708"
+ },
+ {
+   "A": "1305",
+   "B": "MICROMETRO DE PUNTAS 0-25mm DE 15°",
+   "C": "MITUTOYO",
+   "D": "342-251",
+   "E": "YS12405C"
+ },
+ {
+   "A": "1313",
+   "B": "DINAMOMETRO",
+   "C": "DILLON",
+   "D": "98291-1091",
+   "E": "X15073"
+ },
+ {
+   "A": "1323",
+   "B": "MANOMETRO  0-4000 PSI",
+   "C": "WIKA",
+   "D": "SA6882",
+   "E": "T-08033"
+ },
+ {
+   "A": "1326",
+   "B": "DIGITAL ULTRASONIC THICKNESS GAGE 38DL P",
+   "C": "OLYMPUS",
+   "D": "38DLP90SMUMTEES",
+   "E": "140940708"
+ },
+ {
+   "A": "1337",
+   "B": "TORQUE WRENCH 20-100 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD2R100A",
+   "E": "1114802525"
+ },
+ {
+   "A": "1339",
+   "B": "TORQUE WRENCH 50-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD3R250A",
+   "E": "0515600036"
+ },
+ {
+   "A": "1340",
+   "B": "TORQUE WRENCH 50-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD3R250A",
+   "E": "0515600004"
+ },
+ {
+   "A": "1402",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "UWV470"
+ },
+ {
+   "A": "1404",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "UWV468"
+ },
+ {
+   "A": "1423",
+   "B": "HARSH ENVIRONMENT CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-784",
+   "E": "0014205"
+ },
+ {
+   "A": "1425",
+   "B": "HARSH ENVIRONMENT CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-785",
+   "E": "0005807"
+ },
+ {
+   "A": "1427",
+   "B": "HARSH ENVIRONMENT CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-785",
+   "E": "0005800"
+ },
+ {
+   "A": "1444",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "USG",
+   "D": "73975",
+   "E": "QT-0124"
+ },
+ {
+   "A": "1485",
+   "B": "CHAMFER GAGE",
+   "C": "BARCOR INC",
+   "D": "1127",
+   "E": "60550"
+ },
+ {
+   "A": "1489",
+   "B": "CHAMFER GAGE",
+   "C": "BARCOR INC.",
+   "D": "1127",
+   "E": "60553"
+ },
+ {
+   "A": "1498",
+   "B": "TENSIOMETRO",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-101-00",
+   "E": "75398"
+ },
+ {
+   "A": "1500",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8002-105-00",
+   "E": "75332"
+ },
+ {
+   "A": "1506",
+   "B": "DIGITAL ULTRASONIC THICKNESS GAGE 38DL P",
+   "C": "OLYMPUS",
+   "D": "38DLP90SMUMTEES",
+   "E": "151215011"
+ },
+ {
+   "A": "1523",
+   "B": "TENSIOMETER",
+   "C": "TENSITRON",
+   "D": "DZZ7177-1",
+   "E": "75150"
+ },
+ {
+   "A": "1534",
+   "B": "MICROMETRO DE EXTERIORES     0 - 1 \"",
+   "C": "BLUEPOINT",
+   "D": "MIC1B",
+   "E": "QT-0424"
+ },
+ {
+   "A": "1535",
+   "B": "MICROMETRO DE EXTERIORES     1 - 2\"",
+   "C": "BLUEPOINT",
+   "D": "MIC2B",
+   "E": "QT-0425"
+ },
+ {
+   "A": "1536",
+   "B": "MICROMETRO DE EXTERIORES     1 - 2\"",
+   "C": "BLUEPOINT",
+   "D": "MIC2B",
+   "E": "QT-0426"
+ },
+ {
+   "A": "1537",
+   "B": "MICROMETRO DE EXTERIORES     2-3 \"",
+   "C": "BLUEPOINT",
+   "D": "MIC3B",
+   "E": "QT-0427"
+ },
+ {
+   "A": "1538",
+   "B": "MICROMETRO DE EXTERIORES     2-3 \"",
+   "C": "BLUEPOINT",
+   "D": "MIC3B",
+   "E": "QT-0428"
+ },
+ {
+   "A": "1618",
+   "B": "MILI OHM",
+   "C": "BCD ELECTRONICS",
+   "D": "M1",
+   "E": "DC004840"
+ },
+ {
+   "A": "1634",
+   "B": "BASCULA 0-20 KG",
+   "C": "TORREY",
+   "D": "QC20-40",
+   "E": "J16-004293"
+ },
+ {
+   "A": "1662",
+   "B": "MICROMETRO 1\"-2\"",
+   "C": "MITUTOYO",
+   "D": "10-293-181",
+   "E": "QT-0903"
+ },
+ {
+   "A": "1703",
+   "B": "TORQUE WRWNCH 0-600 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC50FUA",
+   "E": "11195"
+ },
+ {
+   "A": "1707",
+   "B": "PUSH-PULL GAGE (150 LB.)",
+   "C": "CHATILLON",
+   "D": "DG200",
+   "E": "S06509"
+ },
+ {
+   "A": "1710",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B16188239"
+ },
+ {
+   "A": "1711",
+   "B": "POTABLE AND GRAY WATER SYSTEM TESTER",
+   "C": "DEWIT",
+   "D": "170-47913-701-40H1ADLMRO",
+   "E": "0012016"
+ },
+ {
+   "A": "1714",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "0716602544"
+ },
+ {
+   "A": "1715",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "0716602586"
+ },
+ {
+   "A": "1716",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "1016901493"
+ },
+ {
+   "A": "1718",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "1116503952"
+ },
+ {
+   "A": "1718",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "1116503952"
+ },
+ {
+   "A": "1759",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1047"
+ },
+ {
+   "A": "1759",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1047"
+ },
+ {
+   "A": "1782",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "MALABAR",
+   "D": "73975",
+   "E": "QT-1060"
+ },
+ {
+   "A": "1793",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1050"
+ },
+ {
+   "A": "1793",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1050"
+ },
+ {
+   "A": "1798",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0117800380"
+ },
+ {
+   "A": "1798",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0117800380"
+ },
+ {
+   "A": "1805",
+   "B": "MEGOHOMETER DIGITAL",
+   "C": "EXTECH",
+   "D": "380360",
+   "E": "160507692"
+ },
+ {
+   "A": "1813",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "117600594"
+ },
+ {
+   "A": "1814",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0317601507"
+ },
+ {
+   "A": "1814",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0317601507"
+ },
+ {
+   "A": "1847",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "371603771"
+ },
+ {
+   "A": "1857",
+   "B": "INDICADOR DE CUADRANTE STARRET",
+   "C": "STARRETT",
+   "D": "25-241J",
+   "E": "QT-1309"
+ },
+ {
+   "A": "1874",
+   "B": "INDICADOR DE CARATULA",
+   "C": "MAHR",
+   "D": "B71",
+   "E": "QT-1306"
+ },
+ {
+   "A": "1897",
+   "B": "MESA DE GRANITO 18X24 IN",
+   "C": "MITUTOYO",
+   "D": "517-806",
+   "E": "314201"
+ },
+ {
+   "A": "1911",
+   "B": "TEMPORIZADOR/CONTADOR TIMER",
+   "C": "AUTONICS",
+   "D": "CT6S-1P4",
+   "E": "QB-29"
+ },
+ {
+   "A": "1912",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "HONEYWELL",
+   "D": "DC1010",
+   "E": "SP17022340004"
+ },
+ {
+   "A": "1913",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "YOKOGAWA",
+   "D": "UP55A",
+   "E": "TIT611692"
+ },
+ {
+   "A": "1914",
+   "B": "VACUOMETRO",
+   "C": "WIKA",
+   "D": "SEN837-1",
+   "E": "160206793"
+ },
+ {
+   "A": "1915",
+   "B": "VACUOMETRO",
+   "C": "WIKA",
+   "D": "SEN837-1",
+   "E": "160206794"
+ },
+ {
+   "A": "1923",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17040682"
+ },
+ {
+   "A": "1924",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17050915"
+ },
+ {
+   "A": "1925",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17040683"
+ },
+ {
+   "A": "1926",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17050909"
+ },
+ {
+   "A": "1928",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17050916"
+ },
+ {
+   "A": "1937",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17050901"
+ },
+ {
+   "A": "1953",
+   "B": "HOLTESTS THREE POINT INTERNAL MICROMETER",
+   "C": "MITUTOYO",
+   "D": "368-918",
+   "E": "QT-1486"
+ },
+ {
+   "A": "1971",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01798"
+ },
+ {
+   "A": "1971",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01798"
+ },
+ {
+   "A": "1979",
+   "B": "TERMOMETRO INFRARROJO",
+   "C": "GENERAL",
+   "D": "IRT206",
+   "E": "QT-1535"
+ },
+ {
+   "A": "1993",
+   "B": "CABLE TENS. (20-200 LB.)",
+   "C": "TENSITRON",
+   "D": "ACM200",
+   "E": "23234"
+ },
+ {
+   "A": "1994",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17060779"
+ },
+ {
+   "A": "1995",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17071913"
+ },
+ {
+   "A": "1997",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17070572"
+ },
+ {
+   "A": "1999",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17071871"
+ },
+ {
+   "A": "2005",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01817"
+ },
+ {
+   "A": "2005",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01817"
+ },
+ {
+   "A": "2012",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17071896"
+ },
+ {
+   "A": "2014",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17060786"
+ },
+ {
+   "A": "2015",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17071899"
+ },
+ {
+   "A": "2015",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17071899"
+ },
+ {
+   "A": "2017",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17070570"
+ },
+ {
+   "A": "2019",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17060796"
+ },
+ {
+   "A": "2019",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17060796"
+ },
+ {
+   "A": "2029",
+   "B": "DIGITAL CALIPER",
+   "C": "TWIN CAL",
+   "D": "599-571-2000",
+   "E": "7H077201"
+ },
+ {
+   "A": "2044",
+   "B": "BASCULA DIGITAL 0-400 GRS",
+   "C": "ULINE",
+   "D": "SC4010",
+   "E": "A17338240"
+ },
+ {
+   "A": "2056",
+   "B": "REGISTRADOR DATALOGGER DE TEMPERATURA",
+   "C": "EXTECH",
+   "D": "UX100-001",
+   "E": "20244107"
+ },
+ {
+   "A": "2121",
+   "B": "TRANSPOR",
+   "C": "KELL-STORM",
+   "D": "KS5549",
+   "E": "QT-1918"
+ },
+ {
+   "A": "2125",
+   "B": "FUEL QUANTITY TEST SET",
+   "C": "AEROFLEX",
+   "D": "PSD60-2R",
+   "E": "1000657917"
+ },
+ {
+   "A": "2144",
+   "B": "MANOMETRO 30 PSI",
+   "C": "MITYVAC",
+   "D": "SA3960-0",
+   "E": "QT-2055"
+ },
+ {
+   "A": "2205",
+   "B": "BONDMETER / MILLIOHMETER",
+   "C": "AVTRON",
+   "D": "C15292",
+   "E": "2570"
+ },
+ {
+   "A": "2208",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "77323"
+ },
+ {
+   "A": "2208",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "77323"
+ },
+ {
+   "A": "2232",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-631J",
+   "E": "CV092"
+ },
+ {
+   "A": "2235",
+   "B": "PRESSUREGAUGE0-300PSI",
+   "C": "TRONAIR",
+   "D": "HC-1423",
+   "E": "T37544."
+ },
+ {
+   "A": "2236",
+   "B": "PRESSUREGAUGE0-300PSI",
+   "C": "TRONAIR",
+   "D": "HC-1399",
+   "E": "T37388."
+ },
+ {
+   "A": "2240",
+   "B": "ULTRASONIC FLOWMETER",
+   "C": "SIEMENS",
+   "D": "FUP1010",
+   "E": "42176"
+ },
+ {
+   "A": "2251",
+   "B": "SOUNMETERLEVEL",
+   "C": "SIMPSON",
+   "D": "886-2",
+   "E": "8547"
+ },
+ {
+   "A": "2258",
+   "B": "DIF.PRESS GAGE MANOMETER",
+   "C": "SKYDROL",
+   "D": "0-5000PSI",
+   "E": "CVT392."
+ },
+ {
+   "A": "2302",
+   "B": "A26001-191, TEST SET",
+   "C": "INDUSTRIAL AUTOMATION INC.",
+   "D": "A26001-191",
+   "E": "AE-498"
+ },
+ {
+   "A": "2305",
+   "B": "0-160 PSI GAUGE",
+   "C": "ASHCROFT",
+   "D": "595-07",
+   "E": "QT-2691"
+ },
+ {
+   "A": "2311",
+   "B": "TERMOMETER DIGITAL",
+   "C": "OMEGA",
+   "D": "HH82A",
+   "E": "8303010"
+ },
+ {
+   "A": "2314",
+   "B": "MANOMETRO 0 – 5000 PSI",
+   "C": "MALABAR",
+   "D": "75931",
+   "E": "QT-2778"
+ },
+ {
+   "A": "2320",
+   "B": "HIPOT TESTER(AC/DC/IR) - SENTRY 30",
+   "C": "CHROMA",
+   "D": "19073",
+   "E": "19073US00853"
+ },
+ {
+   "A": "2321",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DEWIT",
+   "D": "2270-0003",
+   "E": "QT-2741"
+ },
+ {
+   "A": "2331",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DEWIT",
+   "D": "2270-0003",
+   "E": "QT-2756"
+ },
+ {
+   "A": "2332",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DEWIT",
+   "D": "2270-0003",
+   "E": "QT-2757"
+ },
+ {
+   "A": "2337",
+   "B": "DESCOMPRESSION LATCH TEST",
+   "C": "MITYVAC",
+   "D": "B221075T1",
+   "E": "42199593"
+ },
+ {
+   "A": "2341",
+   "B": "A26001-191, TEST SET",
+   "C": "S/M",
+   "D": "A26001-191",
+   "E": "60775"
+ },
+ {
+   "A": "2373",
+   "B": "BASCULA DIGITAL 0 A 500 GRS",
+   "C": "MEDI DATA",
+   "D": "LAB-500",
+   "E": "QT-2905"
+ },
+ {
+   "A": "2384",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DEWIT",
+   "D": "165803",
+   "E": "QT-2894"
+ },
+ {
+   "A": "2415",
+   "B": "CONTROL DE TEMPERATURA",
+   "C": "WATLOW",
+   "D": "PM6L1EJ-AAAAAAA",
+   "E": "232404"
+ },
+ {
+   "A": "2423",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-2981"
+ },
+ {
+   "A": "2463",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01384"
+ },
+ {
+   "A": "2463",
+   "B": "VACUUM GENERATOR",
+   "C": "NOSHOK",
+   "D": "HCS2025-01",
+   "E": "2025-01384"
+ },
+ {
+   "A": "2504",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "NOSHOK",
+   "D": "165803",
+   "E": "QT-3264"
+ },
+ {
+   "A": "2505",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "NOSHOK",
+   "D": "165803",
+   "E": "QT-3265"
+ },
+ {
+   "A": "2506",
+   "B": "MANOMETRO 0 – 5000 PSI",
+   "C": "NOSHOK",
+   "D": "75931",
+   "E": "QT-3263"
+ },
+ {
+   "A": "2534",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "WIKA",
+   "D": "71875",
+   "E": "QT-3273"
+ },
+ {
+   "A": "2535",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "WIKA",
+   "D": "71875",
+   "E": "QT-3274"
+ },
+ {
+   "A": "2548",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "78393"
+ },
+ {
+   "A": "2548",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "78393"
+ },
+ {
+   "A": "2554",
+   "B": "DIGITAL MULTIMETER KIT",
+   "C": "FLUKE",
+   "D": "FLUKE179",
+   "E": "45580009"
+ },
+ {
+   "A": "2555",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "543-783",
+   "E": "18200760"
+ },
+ {
+   "A": "2556",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "543-783",
+   "E": "18200705"
+ },
+ {
+   "A": "2557",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-431J",
+   "E": "QT-3377"
+ },
+ {
+   "A": "2558",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-431J",
+   "E": "QT-3378"
+ },
+ {
+   "A": "2558",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-431J",
+   "E": "QT-3378"
+ },
+ {
+   "A": "2564",
+   "B": "MANOMETRO DE 0 -100 PSI",
+   "C": "DIXON",
+   "D": "4FLU1",
+   "E": "QT-3389"
+ },
+ {
+   "A": "2576",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "0119092362"
+ },
+ {
+   "A": "2576",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "0119092362"
+ },
+ {
+   "A": "2592",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0319123133"
+ },
+ {
+   "A": "2592",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0319123133"
+ },
+ {
+   "A": "2592",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0319123133"
+ },
+ {
+   "A": "2593",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "0419500643"
+ },
+ {
+   "A": "2593",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "0419500643"
+ },
+ {
+   "A": "2593",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "0419500643"
+ },
+ {
+   "A": "2603",
+   "B": "PRESSURE GAUGE 0-5000 PSI",
+   "C": "NOSHOK",
+   "D": "4088K715",
+   "E": "QT-3554"
+ },
+ {
+   "A": "2610",
+   "B": "MANOMETRO 0 -100 PSI",
+   "C": "DEWIT",
+   "D": "95PP-160",
+   "E": "07191001203"
+ },
+ {
+   "A": "2621",
+   "B": "MANOMETRO 30” HG VAC-0/100 PSI",
+   "C": "DIXON",
+   "D": "GL310",
+   "E": "QT-3661"
+ },
+ {
+   "A": "2622",
+   "B": "MANOMETRO DE 2” PARA OXIGENO INFRA MODEL",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "QT-3662"
+ },
+ {
+   "A": "2623",
+   "B": "MANOMETRO DE 2” PARA OXIGENO INFRA MODEL",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "QT-3663"
+ },
+ {
+   "A": "2624",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-104A-00",
+   "E": "78714"
+ },
+ {
+   "A": "2625",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-104A-00",
+   "E": "79000"
+ },
+ {
+   "A": "2625",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-104A-00",
+   "E": "79000"
+ },
+ {
+   "A": "2626",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-104A-00",
+   "E": "78715"
+ },
+ {
+   "A": "2630",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "T-13879"
+ },
+ {
+   "A": "2634",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1075"
+ },
+ {
+   "A": "2634",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1075"
+ },
+ {
+   "A": "2636",
+   "B": "DIGITAL CABLE TENSIOMETERS 20-250 LB",
+   "C": "TENSITRON",
+   "D": "ACX-250",
+   "E": "974GX"
+ },
+ {
+   "A": "2641",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "T-13883"
+ },
+ {
+   "A": "2652",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "SNAP-ON",
+   "D": "1501MRMH",
+   "E": "0719902667"
+ },
+ {
+   "A": "2652",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0719902667"
+ },
+ {
+   "A": "2652",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0719902667"
+ },
+ {
+   "A": "2687",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1084"
+ },
+ {
+   "A": "2687",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1084"
+ },
+ {
+   "A": "2687",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1084"
+ },
+ {
+   "A": "2697",
+   "B": "TENSIOMETRO",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-101-00",
+   "E": "79240"
+ },
+ {
+   "A": "2701",
+   "B": "TRUE RMS AC, CLAMP METER, 600A",
+   "C": "FLUKE",
+   "D": "FLUKE373",
+   "E": "45750015"
+ },
+ {
+   "A": "2710",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "13834"
+ },
+ {
+   "A": "2710",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "13834"
+ },
+ {
+   "A": "2722",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "WIKA",
+   "D": "4813",
+   "E": "13850"
+ },
+ {
+   "A": "2724",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0219703287"
+ },
+ {
+   "A": "2728",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8002-105-00",
+   "E": "79191"
+ },
+ {
+   "A": "2734",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "I18-011104"
+ },
+ {
+   "A": "2734",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "I18-011104"
+ },
+ {
+   "A": "2734",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "I18-011104"
+ },
+ {
+   "A": "2735",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "A19-014076"
+ },
+ {
+   "A": "2735",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "A19-014076"
+ },
+ {
+   "A": "2754",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "79135"
+ },
+ {
+   "A": "2754",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "79135"
+ },
+ {
+   "A": "2758",
+   "B": "TORQUE WRENCH 0-30 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC3A",
+   "E": "4953"
+ },
+ {
+   "A": "2758",
+   "B": "TORQUE WRENCH 0-30 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC3A",
+   "E": "4953"
+ },
+ {
+   "A": "2760",
+   "B": "PRESSURE GAUGE 1000 PSI",
+   "C": "SPAN",
+   "D": "LFS310-1000-PSI-G",
+   "E": "MC030708"
+ },
+ {
+   "A": "2781",
+   "B": "TEMPERATURE CONTROLLER",
+   "C": "AOLEABY",
+   "D": "NFY700-101000",
+   "E": "18080370269"
+ },
+ {
+   "A": "2782",
+   "B": "TEMPERATURE CONTROLLER",
+   "C": "AOLEABY",
+   "D": "NFY700-101000",
+   "E": "18072570001"
+ },
+ {
+   "A": "2804",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "S/M",
+   "D": "4647303",
+   "E": "QT-4780"
+ },
+ {
+   "A": "2804",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "S/M",
+   "D": "4647303",
+   "E": "QT-4780"
+ },
+ {
+   "A": "2812",
+   "B": "MANOMETRO GLICERINA 0 - 300 PSI",
+   "C": "DIXON",
+   "D": "GLSS300",
+   "E": "QT-4727"
+ },
+ {
+   "A": "2816",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "DIXON",
+   "D": "GLSS200",
+   "E": "QT-4723"
+ },
+ {
+   "A": "2816",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "DIXON",
+   "D": "GLSS200",
+   "E": "QT-4723"
+ },
+ {
+   "A": "2820",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-4731"
+ },
+ {
+   "A": "2820",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-4731"
+ },
+ {
+   "A": "2827",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "32484"
+ },
+ {
+   "A": "2827",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "32484"
+ },
+ {
+   "A": "2851",
+   "B": "MANOMETRO 30 PSI",
+   "C": "DEWIT",
+   "D": "SA3960-0",
+   "E": "QT-4820"
+ },
+ {
+   "A": "2851",
+   "B": "MANOMETRO 30 PSI",
+   "C": "DEWIT",
+   "D": "SA3960-0",
+   "E": "QT-4820"
+ },
+ {
+   "A": "2882",
+   "B": "LAST WORD DIAL TEST INDICATOR",
+   "C": "STARRETT",
+   "D": "711LCSZ",
+   "E": "QT-4906"
+ },
+ {
+   "A": "2890",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "WIKA",
+   "D": "4647303",
+   "E": "QT-4989"
+ },
+ {
+   "A": "2918",
+   "B": "TERMOMETRO DIGITAL",
+   "C": "ACURITE",
+   "D": "53DP81",
+   "E": "QT-5043"
+ },
+ {
+   "A": "2923",
+   "B": "BASCULA DE CONTEO MOD. RANGER 6X.0002KG",
+   "C": "OHAUS",
+   "D": "RC31P6",
+   "E": "8341306247"
+ },
+ {
+   "A": "2926",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "543-783",
+   "E": "19171293"
+ },
+ {
+   "A": "2929",
+   "B": "HANDHELD LCR METER",
+   "C": "GW INSTEK",
+   "D": "LCR-915",
+   "E": "GET221450"
+ },
+ {
+   "A": "2930",
+   "B": "MANOMETRO DE 0-300 PSI",
+   "C": "TRONAIR",
+   "D": "H-2686",
+   "E": "T90356"
+ },
+ {
+   "A": "2931",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "543-783",
+   "E": "20038855"
+ },
+ {
+   "A": "2937",
+   "B": "MANOMETROS",
+   "C": "DEWIT",
+   "D": "HC-2144",
+   "E": "QT-5182"
+ },
+ {
+   "A": "2938",
+   "B": "MANOMETROS",
+   "C": "DEWIT",
+   "D": "HC-2144",
+   "E": "QT-5181"
+ },
+ {
+   "A": "2941",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "DIXON",
+   "D": "1009",
+   "E": "QT-5055"
+ },
+ {
+   "A": "2943",
+   "B": "MANOMETRO 60 PSI",
+   "C": "DIXON",
+   "D": "K4520N14060",
+   "E": "QT-5052"
+ },
+ {
+   "A": "2943",
+   "B": "MANOMETRO 60 PSI",
+   "C": "DIXON",
+   "D": "K4520N14060",
+   "E": "QT-5052"
+ },
+ {
+   "A": "2944",
+   "B": "MANOMETRO 60 PSI",
+   "C": "DIXON",
+   "D": "K4520N14060",
+   "E": "QT-5053"
+ },
+ {
+   "A": "2945",
+   "B": "MANOMETRO 0-15 PSI",
+   "C": "DIXON",
+   "D": "PG6000",
+   "E": "QT-5094"
+ },
+ {
+   "A": "2953",
+   "B": "MANOMETER, 0-55 PSI",
+   "C": "DIXON",
+   "D": "316SS",
+   "E": "QT-5102"
+ },
+ {
+   "A": "2954",
+   "B": "MANOMETER, 0-55 PSI",
+   "C": "DIXON",
+   "D": "316SS",
+   "E": "QT-5103"
+ },
+ {
+   "A": "2956",
+   "B": "MANOMETRO 60 PSI",
+   "C": "DIXON",
+   "D": "K4520N14060",
+   "E": "QT-5105"
+ },
+ {
+   "A": "2959",
+   "B": "MANOMETRO DE 0 -100 PSI",
+   "C": "DIXON",
+   "D": "4FLU1",
+   "E": "QT-5108"
+ },
+ {
+   "A": "2962",
+   "B": "MANOMETRO DE 0 -100 PSI",
+   "C": "DIXON",
+   "D": "4FLU1",
+   "E": "QT-5111"
+ },
+ {
+   "A": "2966",
+   "B": "MANOMETRO DE 0 -100 PSI",
+   "C": "DIXON",
+   "D": "4FLU1",
+   "E": "QT-5115"
+ },
+ {
+   "A": "2972",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "165803",
+   "E": "QT-5121"
+ },
+ {
+   "A": "2973",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "165803",
+   "E": "QT-5122"
+ },
+ {
+   "A": "2975",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "165803",
+   "E": "QT-5124"
+ },
+ {
+   "A": "2990",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "DIXON",
+   "D": "1009",
+   "E": "QT-5139"
+ },
+ {
+   "A": "2997",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "DIXON",
+   "D": "1009",
+   "E": "QT-5146"
+ },
+ {
+   "A": "3001",
+   "B": "MANOMETRO 0-600 PSI",
+   "C": "DIXON",
+   "D": "4089K61",
+   "E": "QT-5150"
+ },
+ {
+   "A": "3006",
+   "B": "MANÓMETRO 0-2000 PSI",
+   "C": "DIXON",
+   "D": "2000SS-63-140",
+   "E": "QT-5155"
+ },
+ {
+   "A": "3008",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "DIXON",
+   "D": "723520",
+   "E": "QT-5157"
+ },
+ {
+   "A": "3009",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "DIXON",
+   "D": "723520",
+   "E": "QT-5158"
+ },
+ {
+   "A": "3020",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "DIXON",
+   "D": "872825",
+   "E": "QT-5169"
+ },
+ {
+   "A": "3021",
+   "B": "DIAL INDICATOR 2.000\" ",
+   "C": "STARRETT",
+   "D": "25-2041J",
+   "E": "QT-5273"
+ },
+ {
+   "A": "3022",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-141J",
+   "E": "QT-5272"
+ },
+ {
+   "A": "3025",
+   "B": "PRESSURE GAUGE 0-5000 PSI",
+   "C": "NOSHOK",
+   "D": "4088K715",
+   "E": "QT-5563"
+ },
+ {
+   "A": "3028",
+   "B": "PUSH-PULL GAGE (150 LB.)",
+   "C": "CHATILLON",
+   "D": "DG200",
+   "E": "S08505"
+ },
+ {
+   "A": "3032",
+   "B": "MANOMETRO 0-6000 PSI",
+   "C": "DEWIT",
+   "D": "40675",
+   "E": "QT-5294"
+ },
+ {
+   "A": "3033",
+   "B": "MANOMETRO 0-6000 PSI",
+   "C": "DEWIT",
+   "D": "40675",
+   "E": "QT-5293"
+ },
+ {
+   "A": "3047",
+   "B": "JGO PLUG GAGE 0.061\" PLUS VERMONT",
+   "C": "VERMONT GAGE",
+   "D": "101100400",
+   "E": "QT-5583"
+ },
+ {
+   "A": "3053",
+   "B": "GAGE PARA LÁMINAS Y ALAMBRES 281 STARRET",
+   "C": "STARRETT",
+   "D": "57-065-790",
+   "E": "QT-5595"
+ },
+ {
+   "A": "3055",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0221113227"
+ },
+ {
+   "A": "3055",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0221113227"
+ },
+ {
+   "A": "3056",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0221113176"
+ },
+ {
+   "A": "3056",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0221113176"
+ },
+ {
+   "A": "3056",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0221113176"
+ },
+ {
+   "A": "3058",
+   "B": "TORQUE WRENCH 0-75 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC6A",
+   "E": "8319"
+ },
+ {
+   "A": "3058",
+   "B": "TORQUE WRENCH 0-75 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC6A",
+   "E": "8319"
+ },
+ {
+   "A": "3072",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5599"
+ },
+ {
+   "A": "3073",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5600"
+ },
+ {
+   "A": "3074",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5601"
+ },
+ {
+   "A": "3076",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5603"
+ },
+ {
+   "A": "3077",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5604"
+ },
+ {
+   "A": "3079",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "WIKA",
+   "D": "34830",
+   "E": "QT-5606"
+ },
+ {
+   "A": "3084",
+   "B": "MANOMETER 160 PSI",
+   "C": "WINTERS",
+   "D": "GL130",
+   "E": "QT-5619"
+ },
+ {
+   "A": "3090",
+   "B": "MANOMETRO 300 PSI",
+   "C": "PARKER",
+   "D": "K4520N14300",
+   "E": "QT-5625"
+ },
+ {
+   "A": "3104",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5650"
+ },
+ {
+   "A": "3105",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5651"
+ },
+ {
+   "A": "3106",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5652"
+ },
+ {
+   "A": "3109",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "543-783",
+   "E": "19228214"
+ },
+ {
+   "A": "3117",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "521715953"
+ },
+ {
+   "A": "3122",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "GC230",
+   "E": "QT-6154"
+ },
+ {
+   "A": "3146",
+   "B": "MANOMETRO 0- 20 TON",
+   "C": "DEWIT",
+   "D": "51V100-20",
+   "E": "QT-6457"
+ },
+ {
+   "A": "3147",
+   "B": "MANOMETRO 0- 20 TON",
+   "C": "DEWIT",
+   "D": "51V100-20",
+   "E": "QT-6458"
+ },
+ {
+   "A": "3149",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-6460"
+ },
+ {
+   "A": "3153",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-6464"
+ },
+ {
+   "A": "3154",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-6465"
+ },
+ {
+   "A": "3158",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6469"
+ },
+ {
+   "A": "3161",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "GC230",
+   "E": "QT-6472"
+ },
+ {
+   "A": "3166",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "USG",
+   "D": "73975",
+   "E": "QT-6580"
+ },
+ {
+   "A": "3167",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "USG",
+   "D": "73975",
+   "E": "QT-6581"
+ },
+ {
+   "A": "3168",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "15106"
+ },
+ {
+   "A": "3168",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "15106"
+ },
+ {
+   "A": "3175",
+   "B": "VERNIER ANALOGO  0\" A 6\"",
+   "C": "MITUTOYO",
+   "D": "500-171",
+   "E": "A21096256"
+ },
+ {
+   "A": "3176",
+   "B": "VERNIER ANALOGO  0\" A 6\"",
+   "C": "MITUTOYO",
+   "D": "500-171",
+   "E": "A21096267"
+ },
+ {
+   "A": "3181",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0621714510"
+ },
+ {
+   "A": "3181",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0621714510"
+ },
+ {
+   "A": "3182",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "521713403"
+ },
+ {
+   "A": "3183",
+   "B": "TORQUE WRENCH 25-250FT.LB",
+   "C": "SNAP-ON",
+   "D": "ATECH3FR250",
+   "E": "0221102301"
+ },
+ {
+   "A": "3183",
+   "B": "TORQUE WRENCH 25-250FT.LB",
+   "C": "SNAP-ON",
+   "D": "ATECH3FR250",
+   "E": "0221102301"
+ },
+ {
+   "A": "3184",
+   "B": "INSIDE MICROMETER 2-12IN",
+   "C": "MITUTOYO",
+   "D": "141-233",
+   "E": "01009"
+ },
+ {
+   "A": "3191",
+   "B": "MANOMETRO 0 A 5000 PSIG",
+   "C": "NOSHOK",
+   "D": "721075",
+   "E": "QT-6587"
+ },
+ {
+   "A": "3198",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0721500190"
+ },
+ {
+   "A": "3199",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0721500202"
+ },
+ {
+   "A": "3199",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0721500202"
+ },
+ {
+   "A": "3209",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6939"
+ },
+ {
+   "A": "3209",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6939"
+ },
+ {
+   "A": "3212",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "10-513-518",
+   "E": "APUE35"
+ },
+ {
+   "A": "3216",
+   "B": "HOLTEST DIGITAL .5-.8 IN",
+   "C": "MITUTOYO",
+   "D": "468-977",
+   "E": "6099078"
+ },
+ {
+   "A": "3220",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DIXON",
+   "D": "2270-0003",
+   "E": "QT-6859"
+ },
+ {
+   "A": "3226",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "15145"
+ },
+ {
+   "A": "3226",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "15145"
+ },
+ {
+   "A": "3226",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "15145"
+ },
+ {
+   "A": "3241",
+   "B": "MANOMETRO 0- 20 TON",
+   "C": "DEWIT",
+   "D": "51V100-20",
+   "E": "QT-6961"
+ },
+ {
+   "A": "3245",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-6965"
+ },
+ {
+   "A": "3249",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6969"
+ },
+ {
+   "A": "3249",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6969"
+ },
+ {
+   "A": "3250",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6970"
+ },
+ {
+   "A": "3250",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6970"
+ },
+ {
+   "A": "3252",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6972"
+ },
+ {
+   "A": "3258",
+   "B": "DIAL INDICATOR .001 \"-1.000",
+   "C": "MITUTOYO",
+   "D": "2416A",
+   "E": "BDKT91"
+ },
+ {
+   "A": "3271",
+   "B": "MANOMETRO 0 -100 PSI",
+   "C": "CHONGQING YONGQING INSTRUMENTS",
+   "D": "95PP-160",
+   "E": "21102605"
+ },
+ {
+   "A": "3274",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "WIKA",
+   "D": "34830",
+   "E": "QT-7225"
+ },
+ {
+   "A": "3275",
+   "B": "MANOMETRO DE 0 A 30 PSI",
+   "C": "MITYVAC",
+   "D": "1945-04-08-03-03",
+   "E": "QT-7350"
+ },
+ {
+   "A": "3287",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-7439"
+ },
+ {
+   "A": "3290",
+   "B": "MANOMETRO 0- 5 TON",
+   "C": "DEWIT",
+   "D": "51V100-5",
+   "E": "QT-7517"
+ },
+ {
+   "A": "3291",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-7258"
+ },
+ {
+   "A": "3293",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-7260"
+ },
+ {
+   "A": "3295",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-7262"
+ },
+ {
+   "A": "3298",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-7265"
+ },
+ {
+   "A": "3299",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-7266"
+ },
+ {
+   "A": "3300",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-7267"
+ },
+ {
+   "A": "3301",
+   "B": "HARSH ENVIRONMENT CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-786",
+   "E": "0005432"
+ },
+ {
+   "A": "3302",
+   "B": "INSULATION METER",
+   "C": "FLUKE",
+   "D": "1587",
+   "E": "57110095"
+ },
+ {
+   "A": "3310",
+   "B": "DIGITAL PRESSURE GAUGE 145PSI",
+   "C": "KODIAK CONTROLS",
+   "D": "KCDG154145",
+   "E": "2109030008"
+ },
+ {
+   "A": "3322",
+   "B": "MANOMETRO 0- 5 TON",
+   "C": "DEWIT",
+   "D": "51V100-5",
+   "E": "QT-7519"
+ },
+ {
+   "A": "3325",
+   "B": "MANOMETRO 0- 120 TON",
+   "C": "DEWIT",
+   "D": "51V100-120",
+   "E": "QT-7443"
+ },
+ {
+   "A": "3326",
+   "B": "MANOMETRO 0- 120 TON",
+   "C": "DEWIT",
+   "D": "51V100-120",
+   "E": "QT-7444"
+ },
+ {
+   "A": "3329",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0422120630"
+ },
+ {
+   "A": "3329",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0422120630."
+ },
+ {
+   "A": "3331",
+   "B": "DINAMOMETRO 10000 LBS",
+   "C": "DILLON",
+   "D": "30006-0084",
+   "E": "E35781"
+ },
+ {
+   "A": "3332",
+   "B": "DINAMOMETRO 10000 LBS",
+   "C": "DILLON",
+   "D": "30006-0084",
+   "E": "E35748"
+ },
+ {
+   "A": "3343",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "NORGREN",
+   "D": "GC230",
+   "E": "QT-7636"
+ },
+ {
+   "A": "3344",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "CAL CONTROLS",
+   "D": "320050",
+   "E": "919952010007"
+ },
+ {
+   "A": "3345",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "CAL CONTROLS",
+   "D": "320050",
+   "E": "919952010023"
+ },
+ {
+   "A": "3346",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "CAL CONTROLS",
+   "D": "320050",
+   "E": "919952010002"
+ },
+ {
+   "A": "3350",
+   "B": "DICKSON TOUCH SCREEN DEVICE",
+   "C": "DICKSON",
+   "D": "M0DEL-TSB",
+   "E": "16376552"
+ },
+ {
+   "A": "3355",
+   "B": "8 IN CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-197-30",
+   "E": "B22216302"
+ },
+ {
+   "A": "3357",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "1122100827"
+ },
+ {
+   "A": "3357",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "1122100827"
+ },
+ {
+   "A": "3358",
+   "B": "PUSH-PULL GAGE (150 LB.)",
+   "C": "CHATILLON",
+   "D": "DG200",
+   "E": "S09119"
+ },
+ {
+   "A": "3358",
+   "B": "PUSH-PULL GAGE (150 LB.)",
+   "C": "CHATILLON",
+   "D": "DG200",
+   "E": "S09119"
+ },
+ {
+   "A": "3363",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22180912"
+ },
+ {
+   "A": "3365",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22191143"
+ },
+ {
+   "A": "3366",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0722905245"
+ },
+ {
+   "A": "3366",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0722905245"
+ },
+ {
+   "A": "3366",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "722905245"
+ },
+ {
+   "A": "3382",
+   "B": "1/4\" HEX ELECTRONIC SCREWDRIVER KIT (RED",
+   "C": "SNAP-ON",
+   "D": "ATECHMS80F",
+   "E": "0921139173"
+ },
+ {
+   "A": "3391",
+   "B": "MANÓMETRO 0 - 4000 PSI",
+   "C": "USG",
+   "D": "482-009",
+   "E": "40P-000130"
+ },
+ {
+   "A": "3391",
+   "B": "MANÓMETRO 0 - 4000 PSI",
+   "C": "USG",
+   "D": "482-009",
+   "E": "40P-000130"
+ },
+ {
+   "A": "3392",
+   "B": "MANÓMETRO 0 - 4000 PSI",
+   "C": "USG",
+   "D": "482-009",
+   "E": "40P-00424"
+ },
+ {
+   "A": "3418",
+   "B": "VACCUM GAUGE",
+   "C": "NOSHOK",
+   "D": "HCS2027-01",
+   "E": "QT-8175"
+ },
+ {
+   "A": "3420",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "1122404798"
+ },
+ {
+   "A": "3420",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "1122404798"
+ },
+ {
+   "A": "3431",
+   "B": "TORQUE WRENCH 3/8\" 200-1000",
+   "C": "SNAP-ON",
+   "D": "QD2R1000A",
+   "E": "1122906348"
+ },
+ {
+   "A": "3433",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0922111418"
+ },
+ {
+   "A": "3433",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0922111418"
+ },
+ {
+   "A": "3434",
+   "B": "TERMOMETRO DIGITAL",
+   "C": "ACURITE",
+   "D": "53DP81",
+   "E": "QT-8203"
+ },
+ {
+   "A": "3441",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "1122404807"
+ },
+ {
+   "A": "3446",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0922111487"
+ },
+ {
+   "A": "3446",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0922111487"
+ },
+ {
+   "A": "3449",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "60040326"
+ },
+ {
+   "A": "3450",
+   "B": "TRUE RMS AC, CLAMP METER, 600A",
+   "C": "FLUKE",
+   "D": "FLUKE373",
+   "E": "58920119"
+ },
+ {
+   "A": "3452",
+   "B": "FLOWMETER & TOTALIZER FOR WATER",
+   "C": "WINTERS",
+   "D": "TM07NQ9GMA",
+   "E": "3922531"
+ },
+ {
+   "A": "3454",
+   "B": "FLOWMETER & TOTALIZER FOR WATER",
+   "C": "FLOMEC",
+   "D": "TM07NQ9GMA",
+   "E": "3922532"
+ },
+ {
+   "A": "3456",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "0822202985"
+ },
+ {
+   "A": "3456",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "0822202985"
+ },
+ {
+   "A": "3457",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1087"
+ },
+ {
+   "A": "3457",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1087"
+ },
+ {
+   "A": "3461",
+   "B": "TRUE RMS AC, CLAMP METER, 600A",
+   "C": "FLUKE",
+   "D": "FLUKE373",
+   "E": "58920120"
+ },
+ {
+   "A": "3462",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "60040327"
+ },
+ {
+   "A": "3465",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22238367"
+ },
+ {
+   "A": "3467",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22238420"
+ },
+ {
+   "A": "3472",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22238345"
+ },
+ {
+   "A": "3489",
+   "B": "MANOMETRO 160 PSI",
+   "C": "PARKER",
+   "D": "K4520N14160",
+   "E": "QT-8333"
+ },
+ {
+   "A": "3490",
+   "B": "MANÓMETRO 0-400 PSI",
+   "C": "USG",
+   "D": "GBRW400",
+   "E": "QT-8336"
+ },
+ {
+   "A": "3491",
+   "B": "MULTIMETRO DIGITAL",
+   "C": "FLUKE",
+   "D": "FLUKE115",
+   "E": "35700367WS"
+ },
+ {
+   "A": "3492",
+   "B": "MULTIMETRO DIGITAL",
+   "C": "FLUKE",
+   "D": "FLUKE115",
+   "E": "35700368WS"
+ },
+ {
+   "A": "3493",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "37020354"
+ },
+ {
+   "A": "3494",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17040205"
+ },
+ {
+   "A": "3495",
+   "B": "MANOMETRO 0-5000PSI",
+   "C": "NOSHOK",
+   "D": "30-002",
+   "E": "QT-2986"
+ },
+ {
+   "A": "3497",
+   "B": "MANOMETRO 0-5000PSI",
+   "C": "NOSHOK",
+   "D": "30-002",
+   "E": "QT-2987"
+ },
+ {
+   "A": "3498",
+   "B": "MANOMETRO 0-5000PSI",
+   "C": "NOSHOK",
+   "D": "30-002",
+   "E": "QT-2988"
+ },
+ {
+   "A": "3499",
+   "B": "MANOMETRO 0-5000PSI",
+   "C": "NOSHOK",
+   "D": "30-002",
+   "E": "QT-2989"
+ },
+ {
+   "A": "3501",
+   "B": "MANOMETRO 200 PSI",
+   "C": "",
+   "D": "GC235",
+   "E": "QT-8337"
+ },
+ {
+   "A": "3502",
+   "B": "MANOMETRO 0 – 1000 PSI",
+   "C": "",
+   "D": "T-08130",
+   "E": "QT-8338"
+ },
+ {
+   "A": "3503",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "",
+   "D": "4647303",
+   "E": "QT-8339"
+ },
+ {
+   "A": "3506",
+   "B": "MULTIMETER MOD 4 TRUE RMS",
+   "C": "FLUKE",
+   "D": "FLUKE87V",
+   "E": "60610158"
+ },
+ {
+   "A": "3507",
+   "B": "MULTIMETER MOD 4 TRUE RMS",
+   "C": "FLUKE",
+   "D": "FLUKE87V",
+   "E": "60280061 "
+ },
+ {
+   "A": "3508",
+   "B": "MANOMETRO GLICERINA (0 a 100) PSI",
+   "C": "DIXON",
+   "D": "GLSC415",
+   "E": "QT-8340"
+ },
+ {
+   "A": "3513",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-8345"
+ },
+ {
+   "A": "3514",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-8346"
+ },
+ {
+   "A": "3515",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-8347"
+ },
+ {
+   "A": "3516",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-8348"
+ },
+ {
+   "A": "3518",
+   "B": "MANOMETRO GLICERINA (0 a 30) PSI",
+   "C": "DIXON",
+   "D": "GLSC405",
+   "E": "QT-8350"
+ },
+ {
+   "A": "3519",
+   "B": "MANOMETRO GLICERINA (0 a 30) PSI",
+   "C": "DIXON",
+   "D": "GLSC405",
+   "E": "QT-8351"
+ },
+ {
+   "A": "3520",
+   "B": "MANOMETRO GLICERINA (0 a 30) PSI",
+   "C": "DIXON",
+   "D": "GLSC405",
+   "E": "QT-8352"
+ },
+ {
+   "A": "3523",
+   "B": "MANOMETRO GLICERINA (0 a 100) PSI",
+   "C": "DIXON",
+   "D": "GLSC415",
+   "E": "QT-8341"
+ },
+ {
+   "A": "3524",
+   "B": "MANOMETRO GLICERINA (0 a 100) PSI",
+   "C": "DIXON",
+   "D": "GLSC415",
+   "E": "QT-8342"
+ },
+ {
+   "A": "3525",
+   "B": "MANOMETRO GLICERINA (0 a 100) PSI",
+   "C": "DIXON",
+   "D": "GLSC415",
+   "E": "QT-8343"
+ },
+ {
+   "A": "3526",
+   "B": "MANOMETRO GLICERINA (0 a 6000) PSI",
+   "C": "ENERPAC",
+   "D": "G2534R",
+   "E": "QT-8357"
+ },
+ {
+   "A": "3527",
+   "B": "INDICADOR DE PESTAÑA 1 1/2\"",
+   "C": "FOWLER",
+   "D": "196A1Z",
+   "E": "20200500658"
+ },
+ {
+   "A": "3528",
+   "B": "INDICADOR DE PESTAÑA 1 1/2\"",
+   "C": "FOWLER",
+   "D": "196A1Z",
+   "E": "20200500667"
+ },
+ {
+   "A": "3531",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-8353"
+ },
+ {
+   "A": "3532",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-8354"
+ },
+ {
+   "A": "3533",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-8355"
+ },
+ {
+   "A": "3534",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-8356"
+ },
+ {
+   "A": "3561",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0522906873"
+ },
+ {
+   "A": "3561",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0522906873"
+ },
+ {
+   "A": "3563",
+   "B": "TORQUE WRENCH 10-50 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50A",
+   "E": "1222910173"
+ },
+ {
+   "A": "3563",
+   "B": "TORQUE WRENCH 10-50 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50A",
+   "E": "1222910173"
+ },
+ {
+   "A": "3563",
+   "B": "TORQUE WRENCH 10-50 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50A",
+   "E": "1222910173"
+ },
+ {
+   "A": "3592",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "51053"
+ },
+ {
+   "A": "3593",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "51039"
+ },
+ {
+   "A": "3601",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "51054"
+ },
+ {
+   "A": "3626",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-8561"
+ },
+ {
+   "A": "3638",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "50614"
+ },
+ {
+   "A": "3639",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "51043"
+ },
+ {
+   "A": "3643",
+   "B": "8 IN CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-197-30",
+   "E": "A22220269"
+ },
+ {
+   "A": "3652",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN, 1/4HEX",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4A",
+   "E": "0423400373"
+ },
+ {
+   "A": "3654",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "82319"
+ },
+ {
+   "A": "3654",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "82319"
+ },
+ {
+   "A": "3656",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "34357"
+ },
+ {
+   "A": "3657",
+   "B": "TERMOMETRO INFRARROJO",
+   "C": "GENERAL",
+   "D": "IRT206",
+   "E": "QT-8625"
+ },
+ {
+   "A": "3658",
+   "B": "TERMOMETRO INFRARROJO",
+   "C": "GENERAL",
+   "D": "IRT206",
+   "E": "QT-8629"
+ },
+ {
+   "A": "3659",
+   "B": "TERMOMETRO INFRARROJO",
+   "C": "GENERAL",
+   "D": "IRT206",
+   "E": "QT-8630"
+ },
+ {
+   "A": "3660",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "82882"
+ },
+ {
+   "A": "3666",
+   "B": "TERMOMETRO INFRARROJO",
+   "C": "GENERAL",
+   "D": "IRT206",
+   "E": "QT-8626"
+ },
+ {
+   "A": "3668",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-8641"
+ },
+ {
+   "A": "3669",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-8642"
+ },
+ {
+   "A": "3670",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-8643"
+ },
+ {
+   "A": "3671",
+   "B": "MANOMETRO 0- 120 TON",
+   "C": "DEWIT",
+   "D": "51V100-120",
+   "E": "QT-8637"
+ },
+ {
+   "A": "3673",
+   "B": "MANOMETRO 0- 120 TON",
+   "C": "DEWIT",
+   "D": "51V100-120",
+   "E": "QT-8639"
+ },
+ {
+   "A": "3674",
+   "B": "MANOMETRO 0 A 4000 PSI INFERIOR",
+   "C": "DEWIT",
+   "D": "2000CB-63-280",
+   "E": "08210107221"
+ },
+ {
+   "A": "3677",
+   "B": "MANOMETRO  0 – 2000 PSI",
+   "C": "DEWIT",
+   "D": "2000CB-63-140",
+   "E": "QT-8636"
+ },
+ {
+   "A": "3682",
+   "B": "X-F/G PUSH/PULL 2500/2500 LB",
+   "C": "DILLON",
+   "D": "30800-0017",
+   "E": "X23231"
+ },
+ {
+   "A": "3684",
+   "B": "MANOMETRO SECO 0 a 160 PSI",
+   "C": "DEWIT",
+   "D": "GSS160",
+   "E": "QT-8649"
+ },
+ {
+   "A": "3685",
+   "B": "MANOMETRO SECO 0 a 400 PSI",
+   "C": "DEWIT",
+   "D": "GSS400",
+   "E": "QT-8650"
+ },
+ {
+   "A": "3686",
+   "B": "MANOMETRO SECO 0 a 1 000 PSI",
+   "C": "DEWIT",
+   "D": "GSS1000",
+   "E": "QT-8651"
+ },
+ {
+   "A": "3688",
+   "B": "MANOMETRO SECO 0 a 10 000 PSI",
+   "C": "DEWIT",
+   "D": "GSS10000",
+   "E": "QT-8653"
+ },
+ {
+   "A": "3690",
+   "B": "MANOMETRO GLICERINA 0 a 1 000 PSI",
+   "C": "DEWIT",
+   "D": "GLS435",
+   "E": "QT-8655"
+ },
+ {
+   "A": "3692",
+   "B": "MANOMETRO GLICERINA 0 a 10 000 PSI",
+   "C": "NOSHOK",
+   "D": "GSSS10000",
+   "E": "QT-8657"
+ },
+ {
+   "A": "3693",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INFRA",
+   "D": "4813",
+   "E": "QT-8658"
+ },
+ {
+   "A": "3694",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INFRA",
+   "D": "4813",
+   "E": "QT-8659"
+ },
+ {
+   "A": "3695",
+   "B": "INFRARED THERMOMETER FLUKE",
+   "C": "FLUKE",
+   "D": "FLUKE568",
+   "E": "59450136WS"
+ },
+ {
+   "A": "3697",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "GC230",
+   "E": "QT-8667"
+ },
+ {
+   "A": "3698",
+   "B": "FLUKE177",
+   "C": "FLUKE",
+   "D": "FLUKE177",
+   "E": "61271160MV"
+ },
+ {
+   "A": "3703",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "513-518-10E",
+   "E": "BTTF34"
+ },
+ {
+   "A": "3704",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "513-518-10E",
+   "E": "BTTF39"
+ },
+ {
+   "A": "3707",
+   "B": "MANOMETRO 0-3000 PSI GLICERINA",
+   "C": "DEWIT",
+   "D": "2000CB-63-210",
+   "E": "03220101787"
+ },
+ {
+   "A": "3707",
+   "B": "MANOMETRO 0-3000 PSI GLICERINA",
+   "C": "DEWIT",
+   "D": "2000CB-63-210",
+   "E": "03220101787"
+ },
+ {
+   "A": "3708",
+   "B": "MANOMETRO 0-3000 PSI GLICERINA",
+   "C": "DEWIT",
+   "D": "2000CB-63-210",
+   "E": "03220101784"
+ },
+ {
+   "A": "3708",
+   "B": "MANOMETRO 0-3000 PSI GLICERINA",
+   "C": "DEWIT",
+   "D": "2000CB-63-210",
+   "E": "03220101784"
+ },
+ {
+   "A": "3711",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8002-105-00",
+   "E": "82783"
+ },
+ {
+   "A": "3723",
+   "B": "WEIGHING PLATFORM 100 KG",
+   "C": "TORREY",
+   "D": "EQB100",
+   "E": "G23-025684"
+ },
+ {
+   "A": "3723",
+   "B": "WEIGHING PLATFORM 100 KG",
+   "C": "TORREY",
+   "D": "EQB100",
+   "E": "G23-025684"
+ },
+ {
+   "A": "3725",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8721"
+ },
+ {
+   "A": "3725",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8721"
+ },
+ {
+   "A": "3726",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8722"
+ },
+ {
+   "A": "3726",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8722"
+ },
+ {
+   "A": "3727",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8723"
+ },
+ {
+   "A": "3728",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8724"
+ },
+ {
+   "A": "3728",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8724"
+ },
+ {
+   "A": "3729",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8725"
+ },
+ {
+   "A": "3729",
+   "B": "MANOMETER 0-400 PSI",
+   "C": "WIKA",
+   "D": "9735232",
+   "E": "QT-8725"
+ },
+ {
+   "A": "3730",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009158"
+ },
+ {
+   "A": "3730",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009158"
+ },
+ {
+   "A": "3731",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009159"
+ },
+ {
+   "A": "3731",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009159"
+ },
+ {
+   "A": "3732",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009160"
+ },
+ {
+   "A": "3732",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009160"
+ },
+ {
+   "A": "3733",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009161"
+ },
+ {
+   "A": "3733",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "NOSHOK",
+   "D": "GLS455",
+   "E": "AE009161"
+ },
+ {
+   "A": "3735",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "50626"
+ },
+ {
+   "A": "3738",
+   "B": "MANOMETER 0 A 160 PSI",
+   "C": "DEWIT",
+   "D": "255V-63-11",
+   "E": "QT-8758"
+ },
+ {
+   "A": "3747",
+   "B": "WRIST STRAP TESTER",
+   "C": "SCS",
+   "D": "770030",
+   "E": "7700302236083"
+ },
+ {
+   "A": "3747",
+   "B": "WRIST STRAP TESTER",
+   "C": "SCS",
+   "D": "770030",
+   "E": "7700302236083"
+ },
+ {
+   "A": "3748",
+   "B": "WRIST STRAP TESTER",
+   "C": "SCS",
+   "D": "770030",
+   "E": "7700302236087"
+ },
+ {
+   "A": "3749",
+   "B": "WRIST STRAP TESTER",
+   "C": "SCS",
+   "D": "770030",
+   "E": "7700302236086"
+ },
+ {
+   "A": "3750",
+   "B": "MEDIDOR DE ESPESORES",
+   "C": "KRESKO",
+   "D": "MXG-9W",
+   "E": "05062448"
+ },
+ {
+   "A": "3751",
+   "B": "MANOMETRO 0-600",
+   "C": "ASHCROFT",
+   "D": "PGF-25B-600",
+   "E": "QT-3059"
+ },
+ {
+   "A": "3762",
+   "B": "Calibrador Estandar 25 Hojas, Medidas 0.",
+   "C": "BLUE POINT",
+   "D": "WS1VJ91",
+   "E": "QT-8779"
+ },
+ {
+   "A": "3764",
+   "B": "Calibrador Estandar 25 Hojas, Medidas 0.",
+   "C": "BLUE POINT",
+   "D": "WS1VJ91",
+   "E": "QT-8781"
+ },
+ {
+   "A": "3765",
+   "B": "MICROMETRO DE AIRE 145 PSI",
+   "C": "SATA",
+   "D": "27771",
+   "E": "QT-8787"
+ },
+ {
+   "A": "3766",
+   "B": "MICROMETRO DE AIRE 145 PSI",
+   "C": "SATA",
+   "D": "27771",
+   "E": "QT-8788"
+ },
+ {
+   "A": "3774",
+   "B": "MEDIDOR DE ESPESORES",
+   "C": "KRESKO NDT",
+   "D": "MXG-9W",
+   "E": "05062456"
+ },
+ {
+   "A": "3775",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "37020347"
+ },
+ {
+   "A": "3776",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "37020353"
+ },
+ {
+   "A": "3786",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B16188252"
+ },
+ {
+   "A": "3794",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "S/M",
+   "D": "4647303",
+   "E": "QT-8827"
+ },
+ {
+   "A": "3794",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "S/M",
+   "D": "4647303",
+   "E": "QT-8827"
+ },
+ {
+   "A": "3801",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B16188249"
+ },
+ {
+   "A": "3836",
+   "B": "PROGRAMMABLE DC POWER SUPPLY",
+   "C": "SIGLENT",
+   "D": "SPD3303X-E",
+   "E": "SPD3XJFX7R3236"
+ },
+ {
+   "A": "3876",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-8904"
+ },
+ {
+   "A": "3877",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-8905"
+ },
+ {
+   "A": "3878",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-8906"
+ },
+ {
+   "A": "3879",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-8907"
+ },
+ {
+   "A": "3880",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-8908"
+ },
+ {
+   "A": "3883",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "0223102030"
+ },
+ {
+   "A": "3883",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "0223102030"
+ },
+ {
+   "A": "3884",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0723902266"
+ },
+ {
+   "A": "3884",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0723902266"
+ },
+ {
+   "A": "3885",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0523903795"
+ },
+ {
+   "A": "3885",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0523903795"
+ },
+ {
+   "A": "3886",
+   "B": "ELECTRONIC TORQUE WRENCH 14-240 IN-LB",
+   "C": "SNAP-ON",
+   "D": "TECH1FR240",
+   "E": "1023107209"
+ },
+ {
+   "A": "3886",
+   "B": "ELECTRONIC TORQUE WRENCH 14-240 IN-LB",
+   "C": "SNAP-ON",
+   "D": "TECH1FR240",
+   "E": "1023107209"
+ },
+ {
+   "A": "3890",
+   "B": "GSE 037 TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8002-104B-00",
+   "E": "83537"
+ },
+ {
+   "A": "3891",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-8909"
+ },
+ {
+   "A": "3895",
+   "B": "INSULATION RESISTANCE TESTER",
+   "C": "UNI-T",
+   "D": "UT501A",
+   "E": "QT-8912"
+ },
+ {
+   "A": "3902",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "34838"
+ },
+ {
+   "A": "3902",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "34838"
+ },
+ {
+   "A": "3904",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-101-00",
+   "E": "83471"
+ },
+ {
+   "A": "3905",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-2002-101-00",
+   "E": "83472"
+ },
+ {
+   "A": "3906",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8002-105-00",
+   "E": "83500"
+ },
+ {
+   "A": "3907",
+   "B": "GSE 037 TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8002-104B-00",
+   "E": "83519"
+ },
+ {
+   "A": "3908",
+   "B": "AIR PRESSURE GAUGE",
+   "C": "3M",
+   "D": "AIR3M",
+   "E": "QT-8926"
+ },
+ {
+   "A": "3909",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "INSTRUTEK",
+   "D": "872825",
+   "E": "QT-8910"
+ },
+ {
+   "A": "3910",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "INSTRUTEK",
+   "D": "872825",
+   "E": "QT-8911"
+ },
+ {
+   "A": "3911",
+   "B": "ELECTRONIC TORQUE WRENCH 24-240 IN-LB",
+   "C": "SNAP-ON",
+   "D": "TECH1FR240",
+   "E": "1023107060"
+ },
+ {
+   "A": "3911",
+   "B": "ELECTRONIC TORQUE WRENCH 24-240 IN-LB",
+   "C": "SNAP-ON",
+   "D": "TECH1FR240",
+   "E": "1023107060"
+ },
+ {
+   "A": "3913",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "0223101973"
+ },
+ {
+   "A": "3913",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "0223101973"
+ },
+ {
+   "A": "3914",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "0723404142"
+ },
+ {
+   "A": "3918",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "SNAP-ON",
+   "D": "1501MRMH",
+   "E": "1123700044"
+ },
+ {
+   "A": "3918",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "1123700044"
+ },
+ {
+   "A": "3922",
+   "B": "BASCULA 0-20 KG",
+   "C": "RHYNO",
+   "D": "QC20-40",
+   "E": "BAR6-7064-00083"
+ },
+ {
+   "A": "3924",
+   "B": "AIR MICROMETER SATA WITH PRESSURE GAUGE",
+   "C": "SATA",
+   "D": "SAT27771",
+   "E": "QT-8885"
+ },
+ {
+   "A": "3926",
+   "B": "ELECTRONIC TORQUE 5-100 IN- LB",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR100",
+   "E": "1223100817"
+ },
+ {
+   "A": "3926",
+   "B": "ELECTRONIC TORQUE 5-100 IN- LB",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR100",
+   "E": "1223100817"
+ },
+ {
+   "A": "3931",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "1123700070"
+ },
+ {
+   "A": "3931",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "1123700070"
+ },
+ {
+   "A": "3951",
+   "B": "LOADSTAR SENSOR",
+   "C": "LOADSTAR SENSOR",
+   "D": "RSB6-2500KG",
+   "E": "LZ0109486J"
+ },
+ {
+   "A": "3953",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN, 1/4HEX",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4A",
+   "E": "0423400326"
+ },
+ {
+   "A": "3954",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-8974"
+ },
+ {
+   "A": "3955",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-8975"
+ },
+ {
+   "A": "3956",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-8976"
+ },
+ {
+   "A": "3957",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-8977"
+ },
+ {
+   "A": "3959",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-8979"
+ },
+ {
+   "A": "3960",
+   "B": "JUEGO DE 20 LAINAS DE 1/2\"",
+   "C": "PRECISION BRAND",
+   "D": "PB19990",
+   "E": "QT-8980"
+ },
+ {
+   "A": "3962",
+   "B": "MANOMETRO 0-3000 PSI",
+   "C": "DEWIT",
+   "D": "721520",
+   "E": "06170302526"
+ },
+ {
+   "A": "3963",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "DEWIT",
+   "D": "723520",
+   "E": "03220303779"
+ },
+ {
+   "A": "3964",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "DEWIT",
+   "D": "723520",
+   "E": "03220301753"
+ },
+ {
+   "A": "3966",
+   "B": "MANOMETRO 0 a 160 PSI",
+   "C": "DEWIT",
+   "D": "GSS160",
+   "E": "03220300988"
+ },
+ {
+   "A": "3967",
+   "B": "MANOMETRO 0 a 160 PSI",
+   "C": "DEWIT",
+   "D": "GSS160",
+   "E": "03220300980"
+ },
+ {
+   "A": "3968",
+   "B": "MANOMETRO 0 a 160 PSI",
+   "C": "DEWIT",
+   "D": "GSS160",
+   "E": "03220300637"
+ },
+ {
+   "A": "3969",
+   "B": "MANOMETRO 0 a 160 PSI",
+   "C": "DEWIT",
+   "D": "GSS160",
+   "E": "03220300507"
+ },
+ {
+   "A": "3971",
+   "B": "MANOMETRO GLICERINA 0 - 300 PSI",
+   "C": "DEWIT",
+   "D": "GLSS300",
+   "E": "03220302326"
+ },
+ {
+   "A": "3974",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "0124400984"
+ },
+ {
+   "A": "3975",
+   "B": "ELECTRONIC TORQUE 5-100 IN- LB",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR100",
+   "E": "1223100825"
+ },
+ {
+   "A": "3975",
+   "B": "ELECTRONIC TORQUE 5-100 IN- LB",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR100",
+   "E": "1223100825"
+ },
+ {
+   "A": "3975",
+   "B": "ELECTRONIC TORQUE 5-100 IN- LB",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR100",
+   "E": "1223100825"
+ },
+ {
+   "A": "3978",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "223113633"
+ },
+ {
+   "A": "3982",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DEWIT",
+   "D": "GLSS60",
+   "E": "03220301196"
+ },
+ {
+   "A": "3984",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "DEWIT",
+   "D": "723520",
+   "E": "03220301756"
+ },
+ {
+   "A": "3985",
+   "B": "JUEGO DE 20 LAINAS DE 1/2\"",
+   "C": "PRECISION BRAND",
+   "D": "PB19990",
+   "E": "QT-8982"
+ },
+ {
+   "A": "3986",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "DEWIT",
+   "D": "723520",
+   "E": "03220301809"
+ },
+ {
+   "A": "3987",
+   "B": "JUEGO DE 20 LAINAS DE 1/2\"",
+   "C": "PRECISION BRAND",
+   "D": "PB19990",
+   "E": "QT-8981"
+ },
+ {
+   "A": "4005",
+   "B": "PRESSURE GAUGE 0-5000 PSI",
+   "C": "LISR",
+   "D": "HC-2279",
+   "E": "T102229"
+ },
+ {
+   "A": "4006",
+   "B": "PRESSURE GAUGE 0-5000 PSI",
+   "C": "DEWIT",
+   "D": "HC-2279",
+   "E": "T102224"
+ },
+ {
+   "A": "4017",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A23120375"
+ },
+ {
+   "A": "4018",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A23120474"
+ },
+ {
+   "A": "4019",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020003"
+ },
+ {
+   "A": "4020",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020025"
+ },
+ {
+   "A": "4021",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020054"
+ },
+ {
+   "A": "4022",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020068"
+ },
+ {
+   "A": "4026",
+   "B": "GSE 364 MECHANICAL FORCE GAUGE (DG-500)",
+   "C": "CHANTILLON",
+   "D": "6635-00-867-0516",
+   "E": "S09666"
+ },
+ {
+   "A": "4067",
+   "B": "TORQUE WRENCH 40-200 IN-IB",
+   "C": "SNAP-ON",
+   "D": "QD1200A",
+   "E": "0424903031"
+ },
+ {
+   "A": "4067",
+   "B": "TORQUE WRENCH 40-200 IN-IB",
+   "C": "SNAP-ON",
+   "D": "QD1200A",
+   "E": "0424903031"
+ },
+ {
+   "A": "4069",
+   "B": "TORQUE WRENCH 200-1000 IN-IB",
+   "C": "SNAP-ON",
+   "D": "QD21000A",
+   "E": "0923501097"
+ },
+ {
+   "A": "4069",
+   "B": "TORQUE WRENCH 200-1000 IN-IB",
+   "C": "SNAP-ON",
+   "D": "QD21000A",
+   "E": "0923501097"
+ },
+ {
+   "A": "4070",
+   "B": "ELECTRONIC TORQUE WRENCH 5-100 in-lb",
+   "C": "SNAP-ON",
+   "D": "CTECH1MR100",
+   "E": "0424104475"
+ },
+ {
+   "A": "4070",
+   "B": "ELECTRONIC TORQUE WRENCH 5-100 in-lb",
+   "C": "SNAP-ON",
+   "D": "CTECH1MR100",
+   "E": "0424104475"
+ },
+ {
+   "A": "4077",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "84032"
+ },
+ {
+   "A": "4077",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "84032"
+ },
+ {
+   "A": "4079",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "84034"
+ },
+ {
+   "A": "4081",
+   "B": "MICROMETRO DE AIRE 145 PSI",
+   "C": "SATA",
+   "D": "27771",
+   "E": "QT-9511"
+ },
+ {
+   "A": "4082",
+   "B": "ELECTRONIC TORQUE WRENCH 12-240 in-lb",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR240",
+   "E": "0124101489"
+ },
+ {
+   "A": "4084",
+   "B": "ELECTRONIC TORQUE WRENCH",
+   "C": "SNAP-ON",
+   "D": "TECH2FR100",
+   "E": "0324109301"
+ },
+ {
+   "A": "4084",
+   "B": "ELECTRONIC TORQUE WRENCH",
+   "C": "SNAP-ON",
+   "D": "TECH2FR100",
+   "E": "0324109301"
+ },
+ {
+   "A": "4085",
+   "B": "DIGITAL CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-752-20",
+   "E": "B24082912"
+ },
+ {
+   "A": "4088",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9576"
+ },
+ {
+   "A": "4089",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9577"
+ },
+ {
+   "A": "4090",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9575"
+ },
+ {
+   "A": "4091",
+   "B": "8 IN CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-197-30",
+   "E": "B23203370"
+ },
+ {
+   "A": "4097",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-9613"
+ },
+ {
+   "A": "4098",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-9614"
+ },
+ {
+   "A": "4099",
+   "B": "JUEGO LAINAS POC-KIT.RANGO 0.001\" A 0.02",
+   "C": "PRECISION BRAND",
+   "D": "PB19740",
+   "E": "QT-9615"
+ },
+ {
+   "A": "4100",
+   "B": "JUEGO DE 20 LAINAS DE 1/2\"",
+   "C": "PRECISION BRAND",
+   "D": "PB19990",
+   "E": "QT-9603"
+ },
+ {
+   "A": "4104",
+   "B": "MANOMETRO GLICERINA (0 a 30) PSI",
+   "C": "DIXON",
+   "D": "GLSC405",
+   "E": "QT-9552"
+ },
+ {
+   "A": "4105",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0224902945"
+ },
+ {
+   "A": "4105",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0224902945"
+ },
+ {
+   "A": "4110",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C8-1A",
+   "E": "35392"
+ },
+ {
+   "A": "4111",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9578"
+ },
+ {
+   "A": "4112",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9579"
+ },
+ {
+   "A": "4113",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9574"
+ },
+ {
+   "A": "4114",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-9563"
+ },
+ {
+   "A": "4116",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-9562"
+ },
+ {
+   "A": "4119",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-9564"
+ },
+ {
+   "A": "4120",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-9570"
+ },
+ {
+   "A": "4121",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-9572"
+ },
+ {
+   "A": "4122",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-9573"
+ },
+ {
+   "A": "4123",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-9569"
+ },
+ {
+   "A": "4124",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-9568"
+ },
+ {
+   "A": "4125",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-9571"
+ },
+ {
+   "A": "4126",
+   "B": "MANOMETRO GLICERINA (0 a 15) PSI",
+   "C": "DIXON",
+   "D": "GLSC400",
+   "E": "QT-9585"
+ },
+ {
+   "A": "4127",
+   "B": "MANOMETRO GLICERINA (0 a 15) PSI",
+   "C": "DIXON",
+   "D": "GLSC400",
+   "E": "QT-9583"
+ },
+ {
+   "A": "4128",
+   "B": "MANOMETRO GLICERINA (0 a 15) PSI",
+   "C": "DIXON",
+   "D": "GLSC400",
+   "E": "QT-9586"
+ },
+ {
+   "A": "4129",
+   "B": "MANOMETRO GLICERINA (0 a 15) PSI",
+   "C": "DIXON",
+   "D": "GLSC400",
+   "E": "QT-9582"
+ },
+ {
+   "A": "4130",
+   "B": "MANOMETRO GLICERINA (0 a 15) PSI",
+   "C": "DIXON",
+   "D": "GLSC400",
+   "E": "QT-9587"
+ },
+ {
+   "A": "4131",
+   "B": "MANOMETRO GLICERINA (0 a 15) PSI",
+   "C": "DIXON",
+   "D": "GLSC400",
+   "E": "QT-9584"
+ },
+ {
+   "A": "4132",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-9581"
+ },
+ {
+   "A": "4133",
+   "B": "MANOMETRO GLICERINA 0 - 60 PSI",
+   "C": "DIXON",
+   "D": "GLSS60",
+   "E": "QT-9580"
+ },
+ {
+   "A": "4134",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9567"
+ },
+ {
+   "A": "4135",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9566"
+ },
+ {
+   "A": "4136",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "QT-9559"
+ },
+ {
+   "A": "4139",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "QT-9623"
+ },
+ {
+   "A": "4140",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "QT-9624"
+ },
+ {
+   "A": "4141",
+   "B": "JUEGO DE 20 LAINAS DE 1/2\"",
+   "C": "PRECISION BRAND",
+   "D": "PB19990",
+   "E": "QT-9604"
+ },
+ {
+   "A": "4142",
+   "B": "JUEGO DE 20 LAINAS DE 1/2\"",
+   "C": "PRECISION BRAND",
+   "D": "PB19990",
+   "E": "QT-9605"
+ },
+ {
+   "A": "4143",
+   "B": "DIGITAL CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A23359666"
+ },
+ {
+   "A": "4144",
+   "B": "CALIPER",
+   "C": "TRUPER",
+   "D": "CALDI-6MP",
+   "E": "QT-9600"
+ },
+ {
+   "A": "4145",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "BAR-6-6895-000444"
+ },
+ {
+   "A": "4147",
+   "B": "TORQUIMETRO 200 - 1000 FT-LB",
+   "C": "SNAP-ON",
+   "D": "QD5R1000A",
+   "E": "0823602005"
+ },
+ {
+   "A": "4147",
+   "B": "TORQUIMETRO 200 - 1000 FT-LB",
+   "C": "SNAP-ON",
+   "D": "QD5R1000A",
+   "E": "0823602005"
+ },
+ {
+   "A": "4149",
+   "B": "TORQUE WRENCH 40-200 IN/LB",
+   "C": "SNAP-ON",
+   "D": "QD1R200A",
+   "E": "0724125357"
+ },
+ {
+   "A": "4149",
+   "B": "TORQUE WRENCH 40-200 IN/LB",
+   "C": "SNAP-ON",
+   "D": "QD1R200A",
+   "E": "0724125357"
+ },
+ {
+   "A": "4150",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "DIXON",
+   "D": "872825",
+   "E": "QT-9631"
+ },
+ {
+   "A": "4151",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "QT-9625"
+ },
+ {
+   "A": "4152",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "QT-9626"
+ },
+ {
+   "A": "4153",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "DEWIT",
+   "D": "34830",
+   "E": "QT-9627"
+ },
+ {
+   "A": "4154",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "DIXON",
+   "D": "872825",
+   "E": "QT-9629"
+ },
+ {
+   "A": "4155",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "DIXON",
+   "D": "872825",
+   "E": "QT-9630"
+ },
+ {
+   "A": "4156",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9634"
+ },
+ {
+   "A": "4157",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9635"
+ },
+ {
+   "A": "4158",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLS410",
+   "E": "QT-9659"
+ },
+ {
+   "A": "4159",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLS410",
+   "E": "QT-9660"
+ },
+ {
+   "A": "4161",
+   "B": "DIGITAL CABLE TENSIOMETER",
+   "C": "BARFIELD",
+   "D": "102-03108",
+   "E": "690"
+ },
+ {
+   "A": "4171",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24010200"
+ },
+ {
+   "A": "4183",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9633"
+ },
+ {
+   "A": "4184",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLS410",
+   "E": "QT-9658"
+ },
+ {
+   "A": "4185",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24010185"
+ },
+ {
+   "A": "4186",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLS410",
+   "E": "QT-9657"
+ },
+ {
+   "A": "4187",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9632"
+ },
+ {
+   "A": "4188",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "DIXON",
+   "D": "872825",
+   "E": "QT-9628"
+ },
+ {
+   "A": "4191",
+   "B": "AIR MICROMETER SATA WITH PRESSURE GAUGE",
+   "C": "SATA",
+   "D": "SAT27771",
+   "E": "QT-9662"
+ },
+ {
+   "A": "4205",
+   "B": "DIAL INDICATOR",
+   "C": "STARRETT",
+   "D": "25-441",
+   "E": "QT-9702"
+ },
+ {
+   "A": "4218",
+   "B": "TERMOHIGROMETRO",
+   "C": "EXTECH",
+   "D": "445713",
+   "E": "QT-9780"
+ },
+ {
+   "A": "4220",
+   "B": "TORQUE DRIVER ONZ-IN",
+   "C": "PRECISION INSTRUMENT",
+   "D": "DS1F48CZHMC",
+   "E": "1321"
+ },
+ {
+   "A": "4234",
+   "B": "DIAL INDICATOR STANDARD TYPE 0-.500",
+   "C": "MITUTOYO",
+   "D": "2514A",
+   "E": "CTRM52"
+ },
+ {
+   "A": "4242",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B23307498"
+ },
+ {
+   "A": "4243",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B23307353"
+ },
+ {
+   "A": "4248",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "1024400629"
+ },
+ {
+   "A": "4256",
+   "B": "DILLON CALIBRAION KIT",
+   "C": "SNAP-ON",
+   "D": "ATI520CGC",
+   "E": "U3330"
+ },
+ {
+   "A": "4271",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-9906"
+ },
+ {
+   "A": "4272",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-9907"
+ },
+ {
+   "A": "4273",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-9908"
+ },
+ {
+   "A": "4274",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-9909"
+ },
+ {
+   "A": "4276",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9910"
+ },
+ {
+   "A": "4277",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9911"
+ },
+ {
+   "A": "4278",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9912"
+ },
+ {
+   "A": "4279",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-9913"
+ },
+ {
+   "A": "4280",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9914"
+ },
+ {
+   "A": "4281",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9915"
+ },
+ {
+   "A": "4282",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9916"
+ },
+ {
+   "A": "4283",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9917"
+ },
+ {
+   "A": "4284",
+   "B": "0-10000 PSI GAUGE",
+   "C": "SIMPLEX",
+   "D": "18905",
+   "E": "QT-9923"
+ },
+ {
+   "A": "4285",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B24387149"
+ },
+ {
+   "A": "4286",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B24387144"
+ },
+ {
+   "A": "4287",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A24306194"
+ },
+ {
+   "A": "4288",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B24387129"
+ },
+ {
+   "A": "4289",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B24387153"
+ },
+ {
+   "A": "4301",
+   "B": "ELECTRONIC TORQUE WRENCH 12-240 in-lb",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR240",
+   "E": "0523102147"
+ },
+ {
+   "A": "4311",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "AIRCRAFT",
+   "D": "34830",
+   "E": "HT-G24"
+ },
+ {
+   "A": "4331",
+   "B": "TORQUE WRENCH 0-30 LB/IN",
+   "C": "PRECISION INSTRUMENTS",
+   "D": "D1F30CHNMC",
+   "E": "1776"
+ },
+ {
+   "A": "4332",
+   "B": "TORQUE WRENCH 0-30 LB/IN",
+   "C": "PRECISION INSTRUMENTS",
+   "D": "D1F30CHNMC",
+   "E": "1699"
+ },
+ {
+   "A": "4333",
+   "B": "CORDLESS SCREWDRIVER - QX SERIES",
+   "C": "INGERSOLL RAND",
+   "D": "QXXD2PT012PS06",
+   "E": "SP23F28548"
+ },
+ {
+   "A": "4334",
+   "B": "CORDLESS SCREWDRIVER - QX SERIES",
+   "C": "INGERSOLL RAND",
+   "D": "QXXD2PT012PS06",
+   "E": "SP23F28549"
+ },
+ {
+   "A": "4335",
+   "B": "CORDLESS SCREWDRIVER - QX SERIES",
+   "C": "INGERSOLL RAND",
+   "D": "QXXD2PT012PS06",
+   "E": "SP23F28550"
+ },
+ {
+   "A": "4336",
+   "B": "CORDLESS SCREWDRIVER - QX SERIES",
+   "C": "INGERSOLL RAND",
+   "D": "QXXD2PT012PS06",
+   "E": "SP23F28546"
+ },
+ {
+   "A": "4341",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9985"
+ },
+ {
+   "A": "4346",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "INSTRUTEK",
+   "D": "872825",
+   "E": "QT-9977"
+ },
+ {
+   "A": "4347",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "INSTRUTEK",
+   "D": "872825",
+   "E": "QT-9978"
+ },
+ {
+   "A": "4350",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "INSTRUTEK",
+   "D": "872825",
+   "E": "QT-9976"
+ },
+ {
+   "A": "4362",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "824900757"
+ },
+ {
+   "A": "4363",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9982"
+ },
+ {
+   "A": "4364",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9979"
+ },
+ {
+   "A": "4365",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9980"
+ },
+ {
+   "A": "4366",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9981"
+ },
+ {
+   "A": "4367",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9984"
+ },
+ {
+   "A": "4368",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9986"
+ },
+ {
+   "A": "4369",
+   "B": "MANOMETER, 0-300 PSI",
+   "C": "INSTRUTEK",
+   "D": "1009",
+   "E": "QT-9987"
+ },
+ {
+   "A": "4370",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "INSTRUTEK",
+   "D": "GLS415",
+   "E": "QT-9973"
+ },
+ {
+   "A": "4371",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "INSTRUTEK",
+   "D": "GLSS200",
+   "E": "QT-10002"
+ },
+ {
+   "A": "4372",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "INSTRUTEK",
+   "D": "GLSS200",
+   "E": "QT-10001"
+ },
+ {
+   "A": "4373",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "INSTRUTEK",
+   "D": "GLSS200",
+   "E": "QT-10005"
+ },
+ {
+   "A": "4374",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "INSTRUTEK",
+   "D": "GLSS200",
+   "E": "QT-10006"
+ },
+ {
+   "A": "4382",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "INSTRUTEK",
+   "D": "GLS415",
+   "E": "QT-9975"
+ },
+ {
+   "A": "4383",
+   "B": "MANOMETRO GLICERINA 0 - 200 PSI",
+   "C": "DIXON",
+   "D": "GLSS200",
+   "E": "QT-10003"
+ },
+ {
+   "A": "4384",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INSTRUTEK",
+   "D": "4813",
+   "E": "QT-10013"
+ },
+ {
+   "A": "4385",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INSTRUTEK",
+   "D": "4813",
+   "E": "QT-10012"
+ },
+ {
+   "A": "4386",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INSTRUTEK",
+   "D": "4813",
+   "E": "QT-10011"
+ },
+ {
+   "A": "4387",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INSTRUTEK",
+   "D": "4813",
+   "E": "QT-10010"
+ },
+ {
+   "A": "4388",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INSTRUTEK",
+   "D": "4813",
+   "E": "QT-10009"
+ },
+ {
+   "A": "4389",
+   "B": "MANOMETRO DE 2” PARA OXIGENO",
+   "C": "INSTRUTEK",
+   "D": "4813",
+   "E": "QT-10008"
+ },
+ {
+   "A": "4390",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B17563962"
+ },
+ {
+   "A": "4391",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B17563963"
+ },
+ {
+   "A": "4392",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B17563961"
+ },
+ {
+   "A": "4398",
+   "B": "MANOMETRO DE 0-400 PSI",
+   "C": "DIXON",
+   "D": "8410125",
+   "E": "QT-10027"
+ },
+ {
+   "A": "4399",
+   "B": "MANOMETRO DE 0-400 PSI",
+   "C": "DIXON",
+   "D": "8410125",
+   "E": "QT-10028"
+ },
+ {
+   "A": "4400",
+   "B": "MANOMETRO DE 0-400 PSI",
+   "C": "DIXON",
+   "D": "8410125",
+   "E": "QT-10029"
+ },
+ {
+   "A": "4401",
+   "B": "MANOMETRO DE 0-400 PSI",
+   "C": "DIXON",
+   "D": "8410125",
+   "E": "QT-10030"
+ },
+ {
+   "A": "4429",
+   "B": "PRESSURE GAUGE 0-600 PSI",
+   "C": "TRONAIR",
+   "D": "HC-2239",
+   "E": "T108850"
+ },
+ {
+   "A": "4450",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "84653"
+ },
+ {
+   "A": "4510",
+   "B": "MICROMETER DIGIT INT 2-4\"",
+   "C": "MITUTOYO",
+   "D": "468-979",
+   "E": "6305454"
+ },
+ {
+   "A": "4519",
+   "B": "MANOMETRO 0 – 5000 PSI",
+   "C": "INSTRUTEK",
+   "D": "HC-1042",
+   "E": "QT-10225"
+ },
+ {
+   "A": "4520",
+   "B": "MANOMETRO 0 – 5000 PSI",
+   "C": "INSTRUTEK",
+   "D": "HC-1042",
+   "E": "QT-10226"
+ },
+ {
+   "A": "4521",
+   "B": "TENSIOMETER (20-200 LB.)",
+   "C": "TENSITRON",
+   "D": "ACM200",
+   "E": "22983"
+ },
+ {
+   "A": "4522",
+   "B": "TENSIOMETER (20-200 LB.)",
+   "C": "TENSITRON",
+   "D": "ACM200",
+   "E": "23718"
+ },
+ {
+   "A": "4523",
+   "B": "Electronic 3/8\" Drive Micro Torque Wrench (5–100 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "ATECH2FM100",
+   "E": "0424103342"
+ },
+ {
+   "A": "4524",
+   "B": "Interchangable Head Z-Shank ControlTech® Industrial Torque Wrench (30–600 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "CTECH4Z600A",
+   "E": "0824700221"
+ },
+ {
+   "A": "4527",
+   "B": "1/2\" Drive Flex-Head TechAngle® Torque Wrench (12.5–250 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "ATECH3FR250B",
+   "E": "0125100088"
+ },
+ {
+   "A": "4528",
+   "B": "1/2\" Drive Flex-Head TechAngle® Torque Wrench (12.5–250 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "ATECH3FR250B",
+   "E": "0125100145"
+ },
+ {
+   "A": "4529",
+   "B": "1/4\" Drive Flex-Head ControlTech® Industrial Torque Wrench (1–20 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "CTECH1R240A",
+   "E": "0524106741"
+ },
+ {
+   "A": "4530",
+   "B": "1/4\" Drive Flex-Head ControlTech® Industrial Torque Wrench (1–20 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "CTECH1R240A",
+   "E": "0524106507"
+ },
+ {
+   "A": "4531",
+   "B": "1/4\" Drive Flex-Head ControlTech® Industrial Torque Wrench (1–20 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "CTECH1R240A",
+   "E": "0524106709"
+ },
+ {
+   "A": "4532",
+   "B": "1/4\" Drive Flex-Head ControlTech® Industrial Torque Wrench (1–20 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "CTECH1R240A",
+   "E": "0524106667"
+ },
+ {
+   "A": "4533",
+   "B": "1/4\" Drive Flex-Head ControlTech® Industrial Torque Wrench (1–20 ft-lb)",
+   "C": "SNAP-ON",
+   "D": "CTECH1R240A",
+   "E": "0524105749"
+ },
+ {
+   "A": "4537",
+   "B": "ELECTRONIC TORQUE WRENCH 5-100 in-lb",
+   "C": "SNAP-ON",
+   "D": "CTECH1MR100",
+   "E": "0625105998"
+ },
+ {
+   "A": "4538",
+   "B": "INSULATION METER",
+   "C": "FLUKE",
+   "D": "1587",
+   "E": "69070072"
+ },
+ {
+   "A": "4539",
+   "B": "INSULATION METER",
+   "C": "FLUKE",
+   "D": "1587",
+   "E": "69080058"
+ },
+ {
+   "A": "4540",
+   "B": "TRUE RMS AC, CLAMP METER",
+   "C": "FLUKE",
+   "D": "FLUKE-374FC",
+   "E": "6520832WS"
+ },
+ {
+   "A": "4551",
+   "B": "MANOMETRO 0 a 400 PSI",
+   "C": "YAFU",
+   "D": "GSS400",
+   "E": "QT-10238"
+ },
+ {
+   "A": "4552",
+   "B": "MANOMETRO (0 A 4000) PSI",
+   "C": "YAFU",
+   "D": "491D46",
+   "E": "QT-10235"
+ },
+ {
+   "A": "4553",
+   "B": "MANOMETRO (0 A 4000) PSI",
+   "C": "YAFU",
+   "D": "491D46",
+   "E": "QT-10236"
+ },
+ {
+   "A": "4553",
+   "B": "MANOMETRO (0 A 4000) PSI",
+   "C": "YAFU",
+   "D": "491D46",
+   "E": "QT-10237"
+ },
+ {
+   "A": "4555",
+   "B": "MANOMETRO 0 a 160 PSI",
+   "C": "DIXON",
+   "D": "GSS160",
+   "E": "QT-10233"
+ },
+ {
+   "A": "4556",
+   "B": "MANOMETRO 0 a 160 PSI",
+   "C": "DIXON",
+   "D": "GSS160",
+   "E": "QT-10234"
+ },
+ {
+   "A": "4561",
+   "B": "BASCULA DE CONTEO MOD. RANGER 15X.0005KG",
+   "C": "RHINO",
+   "D": "RC31P15",
+   "E": "BAR6-7064-000074"
+ },
+ {
+   "A": "4562",
+   "B": "BASCULA DE CONTEO MOD. RANGER 15X.0005KG",
+   "C": "RHINO",
+   "D": "RC31P15",
+   "E": "BAR6-6895-001883"
+ },
+ {
+   "A": "4563",
+   "B": "BASCULA DE CONTEO MOD. RANGER 15X.0005KG",
+   "C": "RHINO",
+   "D": "RC31P15",
+   "E": "BAR6-7064-000084"
+ },
+ {
+   "A": "4564",
+   "B": "BASCULA DE CONTEO MOD. RANGER 15X.0005KG",
+   "C": "RHINO",
+   "D": "RC31P15",
+   "E": "BAR6-7064-000076"
+ },
+ {
+   "A": "1003",
+   "B": "LLAVE DE TORQUE DE TRINQU",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "0914803862"
+ },
+ {
+   "A": "1009",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "1014804860"
+ },
+ {
+   "A": "1015",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "1014602787"
+ },
+ {
+   "A": "1018",
+   "B": "GSE 302 WRENCH SET-TRQ, FUEL LINE ISLR N",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "AGE-03381-401",
+   "E": "08074066759"
+ },
+ {
+   "A": "1033",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "0814055145"
+ },
+ {
+   "A": "1036",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "1014804928"
+ },
+ {
+   "A": "1123",
+   "B": "GAUGE GO0960 NO GO 1000",
+   "C": "DANIELS-USA",
+   "D": "G120",
+   "E": "GD1123"
+ },
+ {
+   "A": "1125",
+   "B": "GO NO GO",
+   "C": "DANIELS-USA",
+   "D": "G411",
+   "E": "GD1125"
+ },
+ {
+   "A": "1158",
+   "B": "TEMP. INDICATOR",
+   "C": "HEATCON",
+   "D": "HCS2042-01",
+   "E": "2042-01035"
+ },
+ {
+   "A": "1159",
+   "B": "LRRA TESTER",
+   "C": "ATLANTIS",
+   "D": "110-0430-100-02",
+   "E": "495"
+ },
+ {
+   "A": "1223",
+   "B": "MICROMETRO 0-1\"",
+   "C": "MITUTOYO",
+   "D": "10-293-340",
+   "E": "57037948"
+ },
+ {
+   "A": "1224",
+   "B": "MICROMETRO 0-1\"",
+   "C": "MITUTOYO",
+   "D": "10-293-340",
+   "E": "57037946"
+ },
+ {
+   "A": "1228",
+   "B": "MICROMETRO 0-2\"",
+   "C": "MITUTOYO",
+   "D": "10-293-341",
+   "E": "45172094"
+ },
+ {
+   "A": "1228",
+   "B": "MICROMETRO 0-2\"",
+   "C": "MITUTOYO",
+   "D": "10-293-341",
+   "E": "45172094"
+ },
+ {
+   "A": "1229",
+   "B": "MICROMETRO 0-2\"",
+   "C": "MITUTOYO",
+   "D": "10-293-341",
+   "E": "45172084"
+ },
+ {
+   "A": "1242",
+   "B": "MICROMETRO 2-3\"",
+   "C": "MITUTOYO",
+   "D": "10-293-342",
+   "E": "GD1173"
+ },
+ {
+   "A": "1244",
+   "B": "MICROMETRO 2-3\"",
+   "C": "MITUTOYO",
+   "D": "10-293-342",
+   "E": "GD1175"
+ },
+ {
+   "A": "1245",
+   "B": "MICROMETRO 0-1\"",
+   "C": "MITUTOYO",
+   "D": "10-293-340",
+   "E": "45246570"
+ },
+ {
+   "A": "1245",
+   "B": "MICROMETRO 0-1\"",
+   "C": "MITUTOYO",
+   "D": "10-293-340",
+   "E": "45246570"
+ },
+ {
+   "A": "1265",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "0515046173"
+ },
+ {
+   "A": "1275",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0514803324"
+ },
+ {
+   "A": "1279",
+   "B": "TORQUIMETRO DE  10-50 LBS/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50",
+   "E": "115802894"
+ },
+ {
+   "A": "1286",
+   "B": "TORQUIMETRO DE  1/2, RANGO DE 30 A 150 L",
+   "C": "SNAP-ON",
+   "D": "QD3R150",
+   "E": "0115502914"
+ },
+ {
+   "A": "1291",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "0415805248"
+ },
+ {
+   "A": "1293",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "1114601612"
+ },
+ {
+   "A": "1300",
+   "B": "LCR METER DUAL DISPLAY",
+   "C": "BK PRECISION",
+   "D": "879",
+   "E": "08790117506110024"
+ },
+ {
+   "A": "1301",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "0415805252"
+ },
+ {
+   "A": "1302",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0315605922"
+ },
+ {
+   "A": "1303",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0415603554"
+ },
+ {
+   "A": "1304",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0415603611"
+ },
+ {
+   "A": "131",
+   "B": "MICROMETER DIGIT INT 2-4\"",
+   "C": "MITUTOYO",
+   "D": "468-979",
+   "E": "208419"
+ },
+ {
+   "A": "1322",
+   "B": "INDICADOR DE CARAT 0-1 IN",
+   "C": "PHASE II",
+   "D": "900-102",
+   "E": "04686"
+ },
+ {
+   "A": "1322",
+   "B": "INDICADOR DE CARAT 0-1 IN",
+   "C": "PHASE II",
+   "D": "900-102",
+   "E": "04686"
+ },
+ {
+   "A": "1335",
+   "B": "TORQUE WRENCH 20-100 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD2R100A",
+   "E": "0415804001"
+ },
+ {
+   "A": "1336",
+   "B": "TORQUE WRENCH 20-100 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD2R100A",
+   "E": "0415803977"
+ },
+ {
+   "A": "1338",
+   "B": "TORQUE WRENCH 50-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD3R250A",
+   "E": "0515600012"
+ },
+ {
+   "A": "1341",
+   "B": "TORQUE WRENCH 50-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD3R250A",
+   "E": "0515600015"
+ },
+ {
+   "A": "1370",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "VAG614"
+ },
+ {
+   "A": "1370",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "VAG614"
+ },
+ {
+   "A": "1371",
+   "B": "TORQUE 400-2000 FT/LB",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "20005MFMHSS",
+   "E": "314600159"
+ },
+ {
+   "A": "1386",
+   "B": "BASCULA DE CONTEO MOD. RANGER 6X.0002KG",
+   "C": "OHAUS",
+   "D": "RC31P6",
+   "E": "8336150428"
+ },
+ {
+   "A": "1389",
+   "B": "Calibrador Estandar 25 Hojas, Medidas 0.",
+   "C": "BLUE POINT",
+   "D": "WS1VJ91",
+   "E": "GD1274"
+ },
+ {
+   "A": "1401",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "VAG615"
+ },
+ {
+   "A": "1403",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "UWV467"
+ },
+ {
+   "A": "1403",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "UWV467"
+ },
+ {
+   "A": "1405",
+   "B": "DIAL INDICATOR",
+   "C": "MITUTOYO",
+   "D": "3052S-11",
+   "E": "UWV473"
+ },
+ {
+   "A": "141",
+   "B": "INDICADOR DE CARATULA",
+   "C": "STARRETT",
+   "D": "709BZ",
+   "E": "12089674"
+ },
+ {
+   "A": "141",
+   "B": "INDICADOR DE CARATULA",
+   "C": "STARRETT",
+   "D": "709BZ",
+   "E": "12089674"
+ },
+ {
+   "A": "1423",
+   "B": "HARSH ENVIRONMENT CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-784",
+   "E": "0014205"
+ },
+ {
+   "A": "1444",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "DEWIT",
+   "D": "73975",
+   "E": "QT-0124"
+ },
+ {
+   "A": "1483",
+   "B": "CHAMFER GAGE",
+   "C": "BARCOR INC.",
+   "D": "1127",
+   "E": "60547"
+ },
+ {
+   "A": "1484",
+   "B": "CHAMFER GAGE",
+   "C": "BARCOR INC",
+   "D": "1127",
+   "E": "60548"
+ },
+ {
+   "A": "1487",
+   "B": "CHAMFER GAGE",
+   "C": "BARCOR INC",
+   "D": "1127",
+   "E": "60554"
+ },
+ {
+   "A": "1563",
+   "B": "TEST EQP PRES VACUUM TANK",
+   "C": "DEWIT",
+   "D": "A21010-70",
+   "E": "0615020357"
+ },
+ {
+   "A": "158",
+   "B": "DIGITAL HAND TACHOMETER",
+   "C": "MITUTOYO",
+   "D": "982-521",
+   "E": "GD742"
+ },
+ {
+   "A": "1629",
+   "B": "DYNAMOMETER 10000LB",
+   "C": "CHATILLON",
+   "D": "TD5-10000",
+   "E": "872742S"
+ },
+ {
+   "A": "1632",
+   "B": "BASCULA 0-20 KG",
+   "C": "TORREY",
+   "D": "QC20-40",
+   "E": "J16-004237"
+ },
+ {
+   "A": "164",
+   "B": "DINAMOMETRO ELECTRONICO",
+   "C": "MECMESIN",
+   "D": "AFGR50KN",
+   "E": "12-2037-01"
+ },
+ {
+   "A": "1642",
+   "B": "MILI OHM",
+   "C": "BCD ELECTRONICS",
+   "D": "M1",
+   "E": "DC004876"
+ },
+ {
+   "A": "1647",
+   "B": "MEDIDOR DE ANGULOS",
+   "C": "STARRETT",
+   "D": "C182",
+   "E": "EDP64361"
+ },
+ {
+   "A": "1648",
+   "B": "INDICADORES DE CARATULA",
+   "C": "STARRETT",
+   "D": "708AZ",
+   "E": "EDP64212"
+ },
+ {
+   "A": "1648",
+   "B": "INDICADORES DE CARATULA",
+   "C": "STARRETT",
+   "D": "708AZ",
+   "E": "EDP64212"
+ },
+ {
+   "A": "1649",
+   "B": "CALIBRADOR DE ALTURA DE 0-12\"",
+   "C": "INSIZE",
+   "D": "1150-300",
+   "E": "2708151020"
+ },
+ {
+   "A": "1649",
+   "B": "CALIBRADOR DE ALTURA DE 0-12\"",
+   "C": "INSIZE",
+   "D": "1150-300",
+   "E": "2708151020"
+ },
+ {
+   "A": "1662",
+   "B": "MICROMETRO 1\"-2\"",
+   "C": "MITUTOYO",
+   "D": "10-293-181",
+   "E": "QT-0903"
+ },
+ {
+   "A": "1671",
+   "B": "MICROMETRO 2\"-3\"",
+   "C": "MITUTOYO",
+   "D": "10-293-182",
+   "E": "QT-0904"
+ },
+ {
+   "A": "1671",
+   "B": "MICROMETRO 2\"-3\"",
+   "C": "MITUTOYO",
+   "D": "10-293-182",
+   "E": "QT-0904"
+ },
+ {
+   "A": "169",
+   "B": "BONDING METER",
+   "C": "AVTRON",
+   "D": "C15292",
+   "E": "1757"
+ },
+ {
+   "A": "1708",
+   "B": "ELECTRONIC-INDICATOR DEPT",
+   "C": "MITUTOYO",
+   "D": "543-402",
+   "E": "16119236"
+ },
+ {
+   "A": "1712",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200",
+   "E": "1116800416"
+ },
+ {
+   "A": "1717",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "1116503995"
+ },
+ {
+   "A": "1721",
+   "B": "TORQUE WRENCH 40-250 FT/L",
+   "C": "SNAP-ON",
+   "D": "TQFR250E",
+   "E": "1116802470"
+ },
+ {
+   "A": "1722",
+   "B": "TORQUE WRENCH 40-250 FT/L",
+   "C": "SNAP-ON",
+   "D": "TQFR250E",
+   "E": "1116802469"
+ },
+ {
+   "A": "1755",
+   "B": "INDICADOR DE CUADRANTE STARRET",
+   "C": "STARRETT",
+   "D": "25-241J",
+   "E": "QT-1072"
+ },
+ {
+   "A": "1759",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1047"
+ },
+ {
+   "A": "1786",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "15313590"
+ },
+ {
+   "A": "1791",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1048"
+ },
+ {
+   "A": "1792",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1049"
+ },
+ {
+   "A": "1793",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1050"
+ },
+ {
+   "A": "1798",
+   "B": "TORQUIMETRO MICROMETRICO",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0117800380"
+ },
+ {
+   "A": "1814",
+   "B": "TORQUE WRENCH120-600LB/FT",
+   "C": "SNAP-ON",
+   "D": "QD4R600",
+   "E": "0317601507"
+ },
+ {
+   "A": "1816",
+   "B": "VERNIER ANALOGO",
+   "C": "SNAP-ON",
+   "D": "CAL6V",
+   "E": "QT-1147"
+ },
+ {
+   "A": "1816",
+   "B": "VERNIER ANALOGO",
+   "C": "SNAP-ON",
+   "D": "CAL6V",
+   "E": "QT-1147"
+ },
+ {
+   "A": "1925",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17040683"
+ },
+ {
+   "A": "1926",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17050909"
+ },
+ {
+   "A": "1928",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17050916"
+ },
+ {
+   "A": "1938",
+   "B": "VERNIER ANALOGO  0\" A 6\"",
+   "C": "MITUTOYO",
+   "D": "500-171",
+   "E": "A17209480"
+ },
+ {
+   "A": "1940",
+   "B": "ELECTRONIC DIGITAL CALIPER, 0 TO 6",
+   "C": "TWIN CAL",
+   "D": "00590302",
+   "E": "7V023301"
+ },
+ {
+   "A": "1976",
+   "B": "LAST WORD INDICATOR",
+   "C": "STARRETT",
+   "D": "711FSAZ",
+   "E": "QT-1523"
+ },
+ {
+   "A": "1976",
+   "B": "LAST WORD INDICATOR",
+   "C": "STARRETT",
+   "D": "711FSAZ",
+   "E": "QT-1523"
+ },
+ {
+   "A": "1991",
+   "B": "CABLE TENS. (20-200 LB.)",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "ACM200",
+   "E": "23261"
+ },
+ {
+   "A": "2017",
+   "B": "MITUTOYO ELECTRONIC/DIGITAL PROTRACTOR P",
+   "C": "MITUTOYO",
+   "D": "950-317",
+   "E": "17070570"
+ },
+ {
+   "A": "2044",
+   "B": "BASCULA DIGITAL 0-400 GRS",
+   "C": "ULINE",
+   "D": "SC4010",
+   "E": "A17338240"
+ },
+ {
+   "A": "2071",
+   "B": "MANÓMETRO DE CARÁTULA 0-160 PSI",
+   "C": "DEWIT",
+   "D": "63MM",
+   "E": "QT-1723"
+ },
+ {
+   "A": "2112",
+   "B": "INDICADOR DIGITAL IDC 1IN/25MM",
+   "C": "MITUTOYO",
+   "D": "543-472B",
+   "E": "17173554"
+ },
+ {
+   "A": "212",
+   "B": "THERMOMETER DIGITAL",
+   "C": "OMEGA",
+   "D": "HH12",
+   "E": "402629"
+ },
+ {
+   "A": "2132",
+   "B": "DINAMOMETRO",
+   "C": "CHATILLON",
+   "D": "IN25",
+   "E": "657361"
+ },
+ {
+   "A": "2176",
+   "B": "Calibrador Estandar 25 Hojas, Medidas 0.",
+   "C": "BLUE POINT",
+   "D": "WS1VJ91",
+   "E": "QT-2032"
+ },
+ {
+   "A": "2210",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8008-106-00",
+   "E": "77322"
+ },
+ {
+   "A": "2239",
+   "B": "MANOMETRO DE 0 A 30 PSI",
+   "C": "MYTIVAC",
+   "D": "1945-04-08-03-03",
+   "E": "CVT352"
+ },
+ {
+   "A": "225",
+   "B": "TACOMETRO DIGITAL",
+   "C": "CHECK-LINE",
+   "D": "PLT5000",
+   "E": "B46B8012"
+ },
+ {
+   "A": "2253",
+   "B": "MANOMETRO 0-35 PSI",
+   "C": "ERAM",
+   "D": "ERAM35",
+   "E": "CA-638."
+ },
+ {
+   "A": "2254",
+   "B": "PRESSURE GAUGE 0-15000 PSI",
+   "C": "ASHCROFT",
+   "D": "DG25 ",
+   "E": "T-4017."
+ },
+ {
+   "A": "2255",
+   "B": "MANOMETRO DE 0-10000 PSI",
+   "C": "ENERPAC",
+   "D": "872825",
+   "E": "T-7669."
+ },
+ {
+   "A": "2295",
+   "B": "CALIBRATION TEST FIXTURE",
+   "C": "AVTRON",
+   "D": "C15923",
+   "E": "132"
+ },
+ {
+   "A": "2304",
+   "B": "GAUGE- GAP MEASUREMENT, ENGINE V-GROOVE",
+   "C": "MITUTOYO",
+   "D": "B71047-9",
+   "E": "60787"
+ },
+ {
+   "A": "2305",
+   "B": "0-160 PSI GAUGE",
+   "C": "ASHCROFT",
+   "D": "595-07",
+   "E": "QT-2691"
+ },
+ {
+   "A": "231",
+   "B": "TORQUE WRENCH 20-100FT.LB",
+   "C": "SNAP-ON",
+   "D": "QD2100",
+   "E": "409059102"
+ },
+ {
+   "A": "2314",
+   "B": "MANOMETRO 0 – 5000 PSI",
+   "C": "MALABAR",
+   "D": "75931",
+   "E": "QT-2778"
+ },
+ {
+   "A": "2321",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DEWIT",
+   "D": "2270-0003",
+   "E": "QT-2741"
+ },
+ {
+   "A": "2331",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DEWIT",
+   "D": "2270-0003",
+   "E": "QT-2756"
+ },
+ {
+   "A": "2332",
+   "B": "MANOMETRO DE 0 A 5000 PSI",
+   "C": "DEWIT",
+   "D": "2270-0003",
+   "E": "QT-2757"
+ },
+ {
+   "A": "2357",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "10-513-518",
+   "E": "QT-2863"
+ },
+ {
+   "A": "2420",
+   "B": "MANOMETRO DIGITAL",
+   "C": "CRYSTAL",
+   "D": "5477VRG3",
+   "E": "813336"
+ },
+ {
+   "A": "2423",
+   "B": "MANOMETRO DE 25 TONELADAS",
+   "C": "DEWIT",
+   "D": "M100G025000K",
+   "E": "QT-2981"
+ },
+ {
+   "A": "2527",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C8-1A",
+   "E": "31091"
+ },
+ {
+   "A": "2532",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "WIKA",
+   "D": "71875",
+   "E": "QT-3271"
+ },
+ {
+   "A": "2541",
+   "B": "BASCULA",
+   "C": "OHAUS",
+   "D": "BASCULA",
+   "E": "B819819244"
+ },
+ {
+   "A": "2542",
+   "B": "BASCULA",
+   "C": "OHAUS",
+   "D": "BASCULA",
+   "E": "B803306197"
+ },
+ {
+   "A": "2544",
+   "B": "INDICADOR DE CARATULA 1.000\"",
+   "C": "STARRETT",
+   "D": "25-441J",
+   "E": "QT-3384"
+ },
+ {
+   "A": "2544",
+   "B": "INDICADOR DE CARATULA 1.000\"",
+   "C": "STARRETT",
+   "D": "25-441J",
+   "E": "QT-3384"
+ },
+ {
+   "A": "2545",
+   "B": "INDICADOR DE CARATULA 1.000\"",
+   "C": "STARRETT",
+   "D": "25-441J",
+   "E": "QT-3385"
+ },
+ {
+   "A": "256",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "24210"
+ },
+ {
+   "A": "2566",
+   "B": "DIAL INDICATOR 2.000\" ",
+   "C": "STARRETT",
+   "D": "25-2041J",
+   "E": "QT-3449"
+ },
+ {
+   "A": "2566",
+   "B": "DIAL INDICATOR 2.000\" ",
+   "C": "STARRETT",
+   "D": "25-2041J",
+   "E": "QT-3449"
+ },
+ {
+   "A": "2571",
+   "B": "DIAL INDICATOR 2.000\" ",
+   "C": "STARRETT",
+   "D": "25-2041J",
+   "E": "QT-3469"
+ },
+ {
+   "A": "2571",
+   "B": "DIAL INDICATOR 2.000\" ",
+   "C": "STARRETT",
+   "D": "25-2041J",
+   "E": "QT-3469"
+ },
+ {
+   "A": "2577",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0119120978"
+ },
+ {
+   "A": "2578",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0319122451"
+ },
+ {
+   "A": "2610",
+   "B": "MANOMETRO 0 -100 PSI",
+   "C": "DEWIT",
+   "D": "95PP-160",
+   "E": "07191001203"
+ },
+ {
+   "A": "262",
+   "B": "TORQUE WRWNCH 0-600 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC50FUA",
+   "E": "11098"
+ },
+ {
+   "A": "2621",
+   "B": "MANOMETRO 30” HG VAC-0/100 PSI",
+   "C": "DIXON",
+   "D": "GL310",
+   "E": "QT-3661"
+ },
+ {
+   "A": "2622",
+   "B": "MANOMETRO DE 2” PARA OXIGENO INFRA MODEL",
+   "C": "INFRA",
+   "D": "4813",
+   "E": "QT-3662"
+ },
+ {
+   "A": "2623",
+   "B": "MANOMETRO DE 2” PARA OXIGENO INFRA MODEL",
+   "C": "INFRA",
+   "D": "4813",
+   "E": "QT-3663"
+ },
+ {
+   "A": "2634",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1075"
+ },
+ {
+   "A": "2644",
+   "B": "MANOMETRO 0-3,000 PSI",
+   "C": "TEFLU",
+   "D": "G23-15A",
+   "E": "QT-3866"
+ },
+ {
+   "A": "2701",
+   "B": "TRUE RMS AC, CLAMP METER, 600A",
+   "C": "FLUKE",
+   "D": "FLUKE373",
+   "E": "45750015"
+ },
+ {
+   "A": "2711",
+   "B": "TORQUIMETRO DE  10-50 LBS/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50",
+   "E": "1219909878"
+ },
+ {
+   "A": "2712",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "1219700641"
+ },
+ {
+   "A": "2713",
+   "B": "TORQUIMETRO DE  10-50 LBS/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50",
+   "E": "1219909897"
+ },
+ {
+   "A": "2725",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "1218110074"
+ },
+ {
+   "A": "2726",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C8-1A",
+   "E": "32135"
+ },
+ {
+   "A": "2735",
+   "B": "BASCULA",
+   "C": "TORREY",
+   "D": "BASCULA",
+   "E": "A19-014076"
+ },
+ {
+   "A": "2760",
+   "B": "PRESSURE GAUGE 1000 PSI",
+   "C": "SPAN",
+   "D": "LFS310-1000-PSI-G",
+   "E": "MC030708"
+ },
+ {
+   "A": "277",
+   "B": "DYNAMOMETER",
+   "C": "IMADA",
+   "D": "FB10KG",
+   "E": "258771"
+ },
+ {
+   "A": "2841",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "10-513-518",
+   "E": "AVLJ03"
+ },
+ {
+   "A": "2842",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "10-513-518",
+   "E": "ANKF38"
+ },
+ {
+   "A": "285",
+   "B": "INDICADOR CARATULA 0-0.25",
+   "C": "FEDERAL",
+   "D": "C8I",
+   "E": "GD741"
+ },
+ {
+   "A": "285",
+   "B": "INDICADOR CARATULA 0-0.25",
+   "C": "FEDERAL",
+   "D": "C8I",
+   "E": "GD741"
+ },
+ {
+   "A": "2879",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0520905275"
+ },
+ {
+   "A": "2922",
+   "B": "BASCULA DE CONTEO MOD. RANGER 6X.0002KG",
+   "C": "OHAUS",
+   "D": "RC31P6",
+   "E": "8341377521"
+ },
+ {
+   "A": "3055",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0221113227"
+ },
+ {
+   "A": "3058",
+   "B": "TORQUE WRENCH 0-75 LB/IN",
+   "C": "SNAP-ON",
+   "D": "TEC6A",
+   "E": "8319"
+ },
+ {
+   "A": "3060",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "S/M",
+   "D": "GC230",
+   "E": "QT-6152"
+ },
+ {
+   "A": "3061",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0321120443"
+ },
+ {
+   "A": "3067",
+   "B": "DIAL TEST INDICATOR - LEVER-STYLE",
+   "C": "MITUTOYO",
+   "D": "513-446-16T",
+   "E": "QT-5841"
+ },
+ {
+   "A": "3067",
+   "B": "DIAL TEST INDICATOR - LEVER-STYLE",
+   "C": "MITUTOYO",
+   "D": "513-446-16T",
+   "E": "QT-5841"
+ },
+ {
+   "A": "3068",
+   "B": "MANOMETRO 0-3000 PSI",
+   "C": "DEWIT",
+   "D": "721520",
+   "E": "QT-6077"
+ },
+ {
+   "A": "3069",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "S/M",
+   "D": "GC230",
+   "E": "QT-6123"
+ },
+ {
+   "A": "3070",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "S/M",
+   "D": "GC230",
+   "E": "QT-6124"
+ },
+ {
+   "A": "3100",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5646"
+ },
+ {
+   "A": "3102",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5648"
+ },
+ {
+   "A": "3103",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-5649"
+ },
+ {
+   "A": "3107",
+   "B": "TORQUE WRENCH 200-1,000 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD2R1000",
+   "E": "0321113451"
+ },
+ {
+   "A": "3111",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "S/M",
+   "D": "GC230",
+   "E": "QT-6125"
+ },
+ {
+   "A": "3115",
+   "B": "GAUGE 0-60 PSI",
+   "C": "NOSHOK",
+   "D": "HC-2275",
+   "E": "AE-412059"
+ },
+ {
+   "A": "3121",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "S/M",
+   "D": "GC230",
+   "E": "QT-6153"
+ },
+ {
+   "A": "3123",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DEWIT",
+   "D": "GC230",
+   "E": "QT-6155"
+ },
+ {
+   "A": "3126",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DEWIT",
+   "D": "GC230",
+   "E": "QT-6158"
+ },
+ {
+   "A": "3127",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DEWIT",
+   "D": "GC230",
+   "E": "QT-6159"
+ },
+ {
+   "A": "3128",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "DEWIT",
+   "D": "GC230",
+   "E": "QT-6160"
+ },
+ {
+   "A": "3133",
+   "B": "MANOMETRO 0-600 PSI",
+   "C": "METRON",
+   "D": "4089K61",
+   "E": "QT-6283"
+ },
+ {
+   "A": "314",
+   "B": "TORQUE WRENCH 0-600 FT/LB",
+   "C": "SNAP-ON",
+   "D": "TEC602A",
+   "E": "5902"
+ },
+ {
+   "A": "3150",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "WIKA",
+   "D": "73975",
+   "E": "QT-6461"
+ },
+ {
+   "A": "3155",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-6466"
+ },
+ {
+   "A": "3160",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6471"
+ },
+ {
+   "A": "3166",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "USG",
+   "D": "73975",
+   "E": "QT-6580"
+ },
+ {
+   "A": "3167",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "USG",
+   "D": "73975",
+   "E": "QT-6581"
+ },
+ {
+   "A": "3168",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "15106"
+ },
+ {
+   "A": "3179",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "ASHCROFT",
+   "D": "2005CB",
+   "E": "AE008329"
+ },
+ {
+   "A": "3192",
+   "B": "MANOMETRO 0 A 5000 PSIG",
+   "C": "NOSHOK",
+   "D": "721075",
+   "E": "QT-6588"
+ },
+ {
+   "A": "3193",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "DEWIT",
+   "D": "2005CB",
+   "E": "01200201083"
+ },
+ {
+   "A": "3198",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0721500190"
+ },
+ {
+   "A": "3199",
+   "B": "TORQUIMETRO 10-100 LB-FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0721500202"
+ },
+ {
+   "A": "3200",
+   "B": "TORQUE WRENCH 25-250FT.LB",
+   "C": "SNAP-ON",
+   "D": "ATECH3FR250",
+   "E": "0621101721"
+ },
+ {
+   "A": "3202",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0921901920"
+ },
+ {
+   "A": "3241",
+   "B": "MANOMETRO 0- 20 TON",
+   "C": "DEWIT",
+   "D": "51V100-20",
+   "E": "QT-6961"
+ },
+ {
+   "A": "3245",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-6965"
+ },
+ {
+   "A": "3252",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-6972"
+ },
+ {
+   "A": "3277",
+   "B": "DINAMOMETRO 10000 LBS",
+   "C": "DILLON",
+   "D": "30006-0084",
+   "E": "E35655"
+ },
+ {
+   "A": "3278",
+   "B": "DINAMOMETRO 10000 LBS",
+   "C": "DILLON",
+   "D": "30006-0084",
+   "E": "E35656"
+ },
+ {
+   "A": "3279",
+   "B": "GO NO GO GAUGE",
+   "C": "DANIELS-USA",
+   "D": "G696",
+   "E": "QT-7375"
+ },
+ {
+   "A": "3283",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-7435"
+ },
+ {
+   "A": "3284",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-7436"
+ },
+ {
+   "A": "3285",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-7437"
+ },
+ {
+   "A": "3286",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-7438"
+ },
+ {
+   "A": "3288",
+   "B": "MANOMETRO 0- 5 TON",
+   "C": "DEWIT",
+   "D": "51V100-5",
+   "E": "QT-7515"
+ },
+ {
+   "A": "3289",
+   "B": "MANOMETRO 0- 5 TON",
+   "C": "DEWIT",
+   "D": "51V100-5",
+   "E": "QT-7516"
+ },
+ {
+   "A": "3307",
+   "B": "INSULATION TESTER / MEGOHMMETER",
+   "C": "EXTECH",
+   "D": "380260",
+   "E": "201209161"
+ },
+ {
+   "A": "3308",
+   "B": "INSULATION TESTER / MEGOHMMETER",
+   "C": "EXTECH",
+   "D": "380260",
+   "E": "201209595"
+ },
+ {
+   "A": "3309",
+   "B": "DIGITAL PRESSURE GAUGE 145PSI",
+   "C": "KODIAK CONTROLS",
+   "D": "KCDG154145",
+   "E": "2203170763"
+ },
+ {
+   "A": "3343",
+   "B": "MANÓMETRO 0-160 PSI",
+   "C": "NORGREN",
+   "D": "GC230",
+   "E": "QT-7636"
+ },
+ {
+   "A": "3344",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "CAL CONTROLS",
+   "D": "320050",
+   "E": "919952010007"
+ },
+ {
+   "A": "3345",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "CAL CONTROLS",
+   "D": "320050",
+   "E": "919952010023"
+ },
+ {
+   "A": "3346",
+   "B": "CONTROLADOR DE TEMPERATURA",
+   "C": "CAL CONTROLS",
+   "D": "320050",
+   "E": "919952010002"
+ },
+ {
+   "A": "3349",
+   "B": "SENSOR RTD DE PLATINO DICKSON RRTD",
+   "C": "DICKSON",
+   "D": "RRTD",
+   "E": "19091226"
+ },
+ {
+   "A": "3350",
+   "B": "DICKSON TOUCH SCREEN DEVICE",
+   "C": "DICKSON",
+   "D": "M0DEL-TSB",
+   "E": "16376552"
+ },
+ {
+   "A": "3352",
+   "B": "INDICADOR DE CARATULA TIPO PALANCA",
+   "C": "MITUTOYO",
+   "D": "10-513-518",
+   "E": "BRUS93"
+ },
+ {
+   "A": "3356",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "1122100803"
+ },
+ {
+   "A": "336",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092374"
+ },
+ {
+   "A": "3363",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22180912"
+ },
+ {
+   "A": "3364",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22191154"
+ },
+ {
+   "A": "3364",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22191154"
+ },
+ {
+   "A": "3381",
+   "B": "1/4\" HEX ELECTRONIC SCREWDRIVER KIT (RED",
+   "C": "SNAP-ON",
+   "D": "ATECHMS80F",
+   "E": "0921139157"
+ },
+ {
+   "A": "3384",
+   "B": "BONDMETER / MILLIOHMETER",
+   "C": "BCD ELECTRONICS",
+   "D": "M1",
+   "E": "DC007240"
+ },
+ {
+   "A": "3432",
+   "B": "TORQEU WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0922114152"
+ },
+ {
+   "A": "3433",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0922111418"
+ },
+ {
+   "A": "3443",
+   "B": "TORQUE WRENCH 3/8\" 200-1000",
+   "C": "SNAP-ON",
+   "D": "QD2R1000A",
+   "E": "1122906332"
+ },
+ {
+   "A": "3454",
+   "B": "FLOWMETER & TOTALIZER FOR WATER",
+   "C": "FLOMEC",
+   "D": "TM07NQ9GMA",
+   "E": "3922532"
+ },
+ {
+   "A": "3456",
+   "B": "TORQUIMETRO 200-600 LB-FT",
+   "C": "SNAP-ON",
+   "D": "TQR600E",
+   "E": "0822202985"
+ },
+ {
+   "A": "3457",
+   "B": "TORQUIMETRO 0-300 LB-IN",
+   "C": "SNAP-ON",
+   "D": "TE25AC",
+   "E": "1087"
+ },
+ {
+   "A": "3458",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0722905260"
+ },
+ {
+   "A": "3468",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A22238364"
+ },
+ {
+   "A": "3478",
+   "B": "MANOMETRO GLICERINA (0 A 200) PSI",
+   "C": "WIKA",
+   "D": "GLSC420",
+   "E": "QT-8372"
+ },
+ {
+   "A": "3480",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLSC425",
+   "E": "QT-8374"
+ },
+ {
+   "A": "3511",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "1122908907"
+ },
+ {
+   "A": "3535",
+   "B": "MULTIMETRO FLUKE77",
+   "C": "FLUKE",
+   "D": "FLUKE774",
+   "E": "37020356"
+ },
+ {
+   "A": "3536",
+   "B": "HANDHELD DIGITAL MULTIMET",
+   "C": "FLUKE",
+   "D": "FLUKE289",
+   "E": "36640174"
+ },
+ {
+   "A": "3541",
+   "B": "MANOMETRO (0 A 4000) PSI",
+   "C": "WIKA",
+   "D": "491D46",
+   "E": "QT-8375"
+ },
+ {
+   "A": "3543",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "DIXON",
+   "D": "GLSC455",
+   "E": "QT-8377"
+ },
+ {
+   "A": "3545",
+   "B": "MANOMETRO GLICERINA  (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLSC410",
+   "E": "QT-8379"
+ },
+ {
+   "A": "3546",
+   "B": "MANOMETRO GLICERINA  (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLSC410",
+   "E": "QT-8380"
+ },
+ {
+   "A": "3547",
+   "B": "MANOMETRO 0-100 PSI",
+   "C": "DIXON",
+   "D": "GLS415",
+   "E": "QT-8381"
+ },
+ {
+   "A": "3549",
+   "B": "MANOMETRO GLICERINA (0 a 160) PSI",
+   "C": "DIXON",
+   "D": "GLSC417",
+   "E": "QT-8383"
+ },
+ {
+   "A": "3550",
+   "B": "MANOMETRO GLICERINA (0 A 200) PSI",
+   "C": "DIXON",
+   "D": "GLS420",
+   "E": "QT-8384"
+ },
+ {
+   "A": "3553",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-8387"
+ },
+ {
+   "A": "3556",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-8390"
+ },
+ {
+   "A": "3558",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-8392"
+ },
+ {
+   "A": "3572",
+   "B": "TERMOHIGROMETRO",
+   "C": "EXTECH",
+   "D": "445713",
+   "E": "QT-8458"
+ },
+ {
+   "A": "3588",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "DEWIT",
+   "D": "2005CB",
+   "E": "03220200594"
+ },
+ {
+   "A": "3594",
+   "B": "TORQEU WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0323123598"
+ },
+ {
+   "A": "3602",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "51046"
+ },
+ {
+   "A": "3613",
+   "B": "MANOMETRO GLICERINA (0 a 100) PSI",
+   "C": "DEWIT",
+   "D": "GLSC415",
+   "E": "03221115593"
+ },
+ {
+   "A": "3614",
+   "B": "MANOMETRO GLICERINA (0 a 100) PSI",
+   "C": "DEWIT",
+   "D": "GLSC415",
+   "E": "03221115704"
+ },
+ {
+   "A": "3616",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DEWIT",
+   "D": "GLSC425",
+   "E": "03221123356"
+ },
+ {
+   "A": "3617",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLS410",
+   "E": "03221112523"
+ },
+ {
+   "A": "3623",
+   "B": "MANOMETRO 0-15 TON",
+   "C": "DEWIT",
+   "D": "55V100-15",
+   "E": "QT-8558"
+ },
+ {
+   "A": "3625",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-8560"
+ },
+ {
+   "A": "3627",
+   "B": "MANOMETRO 0- 35 TON",
+   "C": "DEWIT",
+   "D": "55V100-35",
+   "E": "QT-8562"
+ },
+ {
+   "A": "3628",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-8563"
+ },
+ {
+   "A": "3630",
+   "B": "MANOMETRO 0- 60 TON",
+   "C": "DEWIT",
+   "D": "55V100-60",
+   "E": "QT-8565"
+ },
+ {
+   "A": "3632",
+   "B": "TORQUIMETRO 30 -250 FT-LB",
+   "C": "URREA",
+   "D": "60143TOR",
+   "E": "1220700063"
+ },
+ {
+   "A": "3634",
+   "B": "TORQUE WRENCH 10-100 LB/FT",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1002MFRMH",
+   "E": "0523124138"
+ },
+ {
+   "A": "3640",
+   "B": "BLUELINK DYNAMOMETER 6.5TE-14,300 Ib",
+   "C": "CROSBY",
+   "D": "BLD6T5",
+   "E": "51041"
+ },
+ {
+   "A": "3642",
+   "B": "TORQEU WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0123900286"
+ },
+ {
+   "A": "3643",
+   "B": "8 IN CALIPER",
+   "C": "MITUTOYO",
+   "D": "500-197-30",
+   "E": "A22220269"
+ },
+ {
+   "A": "3665",
+   "B": "TERMOMETRO INFRARROJO",
+   "C": "GENERAL4",
+   "D": "IRT206",
+   "E": "QT-8628"
+ },
+ {
+   "A": "3698",
+   "B": "FLUKE177",
+   "C": "FLUKE",
+   "D": "FLUKE177",
+   "E": "61271160MV"
+ },
+ {
+   "A": "3712",
+   "B": "TENSIOMETER",
+   "C": "TENSITRON",
+   "D": "DZZ7177-1",
+   "E": "32536"
+ },
+ {
+   "A": "3713",
+   "B": "TORQEU WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0723903034"
+ },
+ {
+   "A": "3714",
+   "B": "TORQEU WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0723903076"
+ },
+ {
+   "A": "3749",
+   "B": "WRIST STRAP TESTER",
+   "C": "SCS",
+   "D": "770030",
+   "E": "7700302236086"
+ },
+ {
+   "A": "3772",
+   "B": "MEDIDOR DE ESPESORES",
+   "C": "KRESKO NDT",
+   "D": "MXG-9W",
+   "E": "05062450"
+ },
+ {
+   "A": "3773",
+   "B": "MEDIDOR DE ESPESORES",
+   "C": "KRESKO NDT",
+   "D": "MXG-9W",
+   "E": "05062451"
+ },
+ {
+   "A": "3793",
+   "B": "PRESSURIZATION LEAK TESTER",
+   "C": "HONEYWELL",
+   "D": "060-E962-02",
+   "E": "1625016"
+ },
+ {
+   "A": "3799",
+   "B": "HANDHELD DIGITAL MULTIMET",
+   "C": "FLUKE",
+   "D": "FLUKE289",
+   "E": "36580098"
+ },
+ {
+   "A": "3801",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B16188249"
+ },
+ {
+   "A": "3804",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B16188262"
+ },
+ {
+   "A": "3815",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "0723903026"
+ },
+ {
+   "A": "3817",
+   "B": "ELECTRONIC TORQUE WRENCH 5-100 FT-LB",
+   "C": "SNAP-ON",
+   "D": "ATECH2FS100",
+   "E": "0823107676"
+ },
+ {
+   "A": "3818",
+   "B": "ELECTRONIC TORQUE WRENCH 5-100 FT-LB",
+   "C": "SNAP-ON",
+   "D": "ATECH2FS100",
+   "E": "0823107667"
+ },
+ {
+   "A": "3872",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "B16188248"
+ },
+ {
+   "A": "3900",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "34836"
+ },
+ {
+   "A": "3901",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T60-1001C9-1A",
+   "E": "34837"
+ },
+ {
+   "A": "3911",
+   "B": "ELECTRONIC TORQUE WRENCH 24-240 IN-LB",
+   "C": "SNAP-ON",
+   "D": "TECH1FR240",
+   "E": "1023107060"
+ },
+ {
+   "A": "3913",
+   "B": "ELECTRONIC TORQUE WRENCH 25-250 FT-LB",
+   "C": "SNAP-ON",
+   "D": "TECH3FR250",
+   "E": "0223101973"
+ },
+ {
+   "A": "3914",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "0723404142"
+ },
+ {
+   "A": "3917",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "1123700058"
+ },
+ {
+   "A": "3918",
+   "B": "TORQUE WRENCH DR 1/2, 20-150 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRMH",
+   "E": "1123700044"
+ },
+ {
+   "A": "3926",
+   "B": "ELECTRONIC TORQUE 5-100 IN- LB",
+   "C": "SNAP-ON",
+   "D": "CTECH2MR100",
+   "E": "1223100817"
+ },
+ {
+   "A": "3933",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "1223113931"
+ },
+ {
+   "A": "3937",
+   "B": "TORQUE DEVICE 5 A 40 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QDRIVER4",
+   "E": "0723404131"
+ },
+ {
+   "A": "3976",
+   "B": "TORQUE WRENCH 10-50 LB/IN",
+   "C": "SNAP-ON",
+   "D": "QD1R50A",
+   "E": "0124900708"
+ },
+ {
+   "A": "3977",
+   "B": "TORQUE WRENCH 40-200 IN/LB",
+   "C": "SNAP-ON",
+   "D": "QD1R200A",
+   "E": "1223700874"
+ },
+ {
+   "A": "3980",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "DIXON",
+   "D": "2005CB",
+   "E": "QT-9061"
+ },
+ {
+   "A": "3989",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020034"
+ },
+ {
+   "A": "3990",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A23120318"
+ },
+ {
+   "A": "3991",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DEWIT",
+   "D": "GLS410",
+   "E": "QT-9047"
+ },
+ {
+   "A": "3992",
+   "B": "MANOMETRO GLICERINA (0 A 60) PSI",
+   "C": "DIXON",
+   "D": "GLS410",
+   "E": "QT-9048"
+ },
+ {
+   "A": "3993",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9049"
+ },
+ {
+   "A": "3994",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9050"
+ },
+ {
+   "A": "3995",
+   "B": "MANOMETRO GLICERINA (0 A 300) PSI",
+   "C": "DIXON",
+   "D": "GLS425",
+   "E": "QT-9051"
+ },
+ {
+   "A": "3997",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-9053"
+ },
+ {
+   "A": "3998",
+   "B": "MANOMETRO GLICERINA (0 a 600) PSI",
+   "C": "DIXON",
+   "D": "GLSC430",
+   "E": "QT-9054"
+ },
+ {
+   "A": "4001",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "DIXON",
+   "D": "GLS455",
+   "E": "QT-9055"
+ },
+ {
+   "A": "4002",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "DIXON",
+   "D": "GLS455",
+   "E": "QT-9056"
+ },
+ {
+   "A": "4003",
+   "B": "MANOMETRO GLICERINA (0 A 5000) PSI",
+   "C": "DIXON",
+   "D": "GLS455",
+   "E": "QT-9057"
+ },
+ {
+   "A": "4008",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020053"
+ },
+ {
+   "A": "4009",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020055"
+ },
+ {
+   "A": "4010",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "DEWIT",
+   "D": "2005CB",
+   "E": "03220303731"
+ },
+ {
+   "A": "4011",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "DIXON",
+   "D": "2005CB",
+   "E": "QT-9062"
+ },
+ {
+   "A": "4012",
+   "B": "MANÓMETRO 0-400 PSI",
+   "C": "DIXON",
+   "D": "GBRW400",
+   "E": "QT-9086"
+ },
+ {
+   "A": "4015",
+   "B": "MANÓMETRO 0-400 PSI",
+   "C": "DIXON",
+   "D": "GBRW400",
+   "E": "QT-9088"
+ },
+ {
+   "A": "4027",
+   "B": "CALIBRADOR PRESION DIGITAL 0-30 PSI",
+   "C": "DWYER",
+   "D": "41D942",
+   "E": "QT-9149"
+ },
+ {
+   "A": "4028",
+   "B": "CALIBRADOR PRESION DIGITAL 0-300 PSI",
+   "C": "SSI TECHNOLOGIES",
+   "D": "3JZA7",
+   "E": "2205240302"
+ },
+ {
+   "A": "4029",
+   "B": "CALIBRADOR PRESION DIGITAL 0-100 PSI",
+   "C": "DWYER",
+   "D": "41D946",
+   "E": "QT-9148"
+ },
+ {
+   "A": "4030",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "1023908272"
+ },
+ {
+   "A": "4031",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A24020208"
+ },
+ {
+   "A": "4040",
+   "B": "Calibrador Std 25 Hojas Extralargas 12\"",
+   "C": "BLUEPOINT",
+   "D": "WS2ZDM6",
+   "E": "QT-9075"
+ },
+ {
+   "A": "4041",
+   "B": "MANOMETRO ANALOGICO",
+   "C": "DEWIT",
+   "D": "2005CB",
+   "E": "03220303856"
+ },
+ {
+   "A": "4043",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A23120074"
+ },
+ {
+   "A": "4044",
+   "B": "TERMOHIGROMETER LOGGER",
+   "C": "EXTECH",
+   "D": "RHT20",
+   "E": "A23120155"
+ },
+ {
+   "A": "4078",
+   "B": "TENSIOMETER",
+   "C": "PACIFIC SCIENTIFIC",
+   "D": "T5-8005-110-00",
+   "E": "84033"
+ },
+ {
+   "A": "4143",
+   "B": "CALIBRADOR VERNIER DIGITA",
+   "C": "MITUTOYO",
+   "D": "500-196-30",
+   "E": "A23359666"
+ },
+ {
+   "A": "4144",
+   "B": "CALIPPER",
+   "C": "TRUPER",
+   "D": "CALDI-6MP",
+   "E": "QT-9600"
+ },
+ {
+   "A": "4163",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0824900787"
+ },
+ {
+   "A": "4164",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0824900758"
+ },
+ {
+   "A": "4165",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0824900756"
+ },
+ {
+   "A": "4172",
+   "B": "TORQUIMETRO 40-200 LB-IN",
+   "C": "SNAP-ON",
+   "D": "QD2R200A",
+   "E": "0824900776"
+ },
+ {
+   "A": "4176",
+   "B": "TORQUE WRENCH 30-250 LB/IN",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "2502MRMH",
+   "E": "0722905206"
+ },
+ {
+   "A": "419",
+   "B": "MICROMETRO BARRAS 1.5-8\"",
+   "C": "STARRETT",
+   "D": "823",
+   "E": "GD036"
+ },
+ {
+   "A": "4197",
+   "B": "PUSH-PULL GAGE (150 LB.)",
+   "C": "CHATILLON",
+   "D": "DG200",
+   "E": "S09835"
+ },
+ {
+   "A": "42",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092371"
+ },
+ {
+   "A": "4219",
+   "B": "TORQUIMETRO REVERSIBLE 1/2 (50-50NM) AIS",
+   "C": "KNIPLEX",
+   "D": "984350",
+   "E": "2282146"
+ },
+ {
+   "A": "43",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092372"
+ },
+ {
+   "A": "4406",
+   "B": "PIN GAGES 11-100 MIL",
+   "C": "IM GAGES",
+   "D": "57-062-980",
+   "E": "1088783"
+ },
+ {
+   "A": "4423",
+   "B": "MANOMETRO DE 0-200 PSI",
+   "C": "DIXON",
+   "D": "292",
+   "E": "QT-10041"
+ },
+ {
+   "A": "4424",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "8700-160",
+   "E": "QT-10042"
+ },
+ {
+   "A": "4425",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "8700-160",
+   "E": "QT-10043"
+ },
+ {
+   "A": "4437",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "8700-160",
+   "E": "QT-10044"
+ },
+ {
+   "A": "4438",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "8700-160",
+   "E": "QT-10045"
+ },
+ {
+   "A": "4439",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "8700-160",
+   "E": "QT-10046"
+ },
+ {
+   "A": "444",
+   "B": "TORQUIMETRO  0-1500 FT/LB",
+   "C": "SNAP-ON",
+   "D": "TEC1503C",
+   "E": "1001"
+ },
+ {
+   "A": "4440",
+   "B": "MANOMETRO 0-160 PSI",
+   "C": "DIXON",
+   "D": "8700-160",
+   "E": "QT-10047"
+ },
+ {
+   "A": "491",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "S/M",
+   "D": "71875",
+   "E": "QT-0001"
+ },
+ {
+   "A": "51",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092380"
+ },
+ {
+   "A": "528",
+   "B": "VERNIER CALIPER",
+   "C": "STARRETT",
+   "D": "125MEA12300",
+   "E": "11/18997"
+ },
+ {
+   "A": "528",
+   "B": "VERNIER CALIPER",
+   "C": "STARRETT",
+   "D": "125MEA12300",
+   "E": "11/18997"
+ },
+ {
+   "A": "534",
+   "B": "INDICADOR DIGITAL 0-.5\"",
+   "C": "STARRETT",
+   "D": "3600-5",
+   "E": "12/21027"
+ },
+ {
+   "A": "534",
+   "B": "INDICADOR DIGITAL 0-.5\"",
+   "C": "STARRETT",
+   "D": "3600-5",
+   "E": "12/21027"
+ },
+ {
+   "A": "539",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092373"
+ },
+ {
+   "A": "540",
+   "B": "TRANSPORTADOR DIG 0-60 GR",
+   "C": "MITUTOYO",
+   "D": "950-315",
+   "E": "GD540"
+ },
+ {
+   "A": "543",
+   "B": "INSIDE HOLE DIAL CALIPER",
+   "C": "MHC",
+   "D": "209-101",
+   "E": "GD777"
+ },
+ {
+   "A": "543",
+   "B": "INSIDE HOLE DIAL CALIPER",
+   "C": "MHC",
+   "D": "209-101",
+   "E": "GD777"
+ },
+ {
+   "A": "544",
+   "B": "MICROMETRO",
+   "C": "STARRETT",
+   "D": "436",
+   "E": "51027992"
+ },
+ {
+   "A": "559",
+   "B": "TORQUE WRENCH 0-250 LB/FT",
+   "C": "SNAP-ON",
+   "D": "TE250FU",
+   "E": "14212"
+ },
+ {
+   "A": "612",
+   "B": "TEST KIT FOR STATIC CONTROL SURFACES",
+   "C": "3M",
+   "D": "701",
+   "E": "08742"
+ },
+ {
+   "A": "689",
+   "B": "MANOMETRO 0-5000 PSI",
+   "C": "WIKA",
+   "D": "723520",
+   "E": "GD310"
+ },
+ {
+   "A": "731",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "MALABAR",
+   "D": "73975",
+   "E": "GD457"
+ },
+ {
+   "A": "752",
+   "B": "MANOMETRO 0-4000 PSI",
+   "C": "MALABAR",
+   "D": "71278",
+   "E": "GD979"
+ },
+ {
+   "A": "773",
+   "B": "MANOMETRO DE 0-4000 PSI",
+   "C": "USG",
+   "D": "34830",
+   "E": "GD450"
+ },
+ {
+   "A": "81",
+   "B": "CALIPER & MICROMETER",
+   "C": "MITUTOYO",
+   "D": "293-340",
+   "E": "65200091"
+ },
+ {
+   "A": "81",
+   "B": "CALIPER & MICROMETER",
+   "C": "MITUTOYO",
+   "D": "293-340",
+   "E": "65200091"
+ },
+ {
+   "A": "82",
+   "B": "CALIPER & MICROMETER",
+   "C": "MITUTOYO",
+   "D": "293-340",
+   "E": "67021821"
+ },
+ {
+   "A": "881",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092376"
+ },
+ {
+   "A": "882",
+   "B": "SCALE",
+   "C": "INTERCOMP",
+   "D": "100313",
+   "E": "23092377"
+ },
+ {
+   "A": "90",
+   "B": "DINAMOMETRO 8000LBS",
+   "C": "DILLON",
+   "D": "30006-0076",
+   "E": "D35613"
+ },
+ {
+   "A": "910",
+   "B": "CALIPER & MICROMETER",
+   "C": "MITUTOYO",
+   "D": "293-340",
+   "E": "85038820"
+ },
+ {
+   "A": "945",
+   "B": "MANOMETRO 0 A 4000 PSIG",
+   "C": "MALABAR",
+   "D": "73975",
+   "E": "GD1054"
+ },
+ {
+   "A": "990",
+   "B": "THERMO ANEMOMETER",
+   "C": "EXTECH",
+   "D": "CM-DT618",
+   "E": "Z316716"
+ }
+]
