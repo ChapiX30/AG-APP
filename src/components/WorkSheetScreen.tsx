@@ -23,8 +23,10 @@ import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // MODIFICADO: Agregadas funciones para Friday
 import masterCelestica from "../data/masterCelestica.json";
+import masterTechops from "../data/masterTechops.json";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { set } from "date-fns";
+import { is } from "date-fns/locale";
 
 type CelesticaRecord = {
   A: string; // ID
@@ -33,6 +35,14 @@ type CelesticaRecord = {
   D: string; // Modelo
   E: string; // Número de Serie
 };
+
+type TechopsRecord = {
+  A: string; // ID
+  B: string; // NOMBRE (equipo)
+  C: string; // MARCA
+  D: string; // MODELO
+  E: string; // SERIE
+}
 
 // Helper para sacar el nombre automáticamente del usuario logueado
 const getUserName = (user: any) => {
@@ -117,6 +127,53 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
 };
 
+const findTechopsById = (id: string): TechopsRecord | null => {
+  if (!id) return null;
+  const normalized = String(id).trim();
+  const records = (masterTechops as TechopsRecord[]).filter(
+    (r) => String(r.A ?? "").trim() === normalized
+  );
+  if (records.length === 0) return null;
+  if (records.length > 1) {
+    console.warn(`Multiple Techops records found for ID "${id}"`, records);
+  }
+  return records[0];
+};
+
+const findCelesticaById = (id: string): CelesticaRecord | null => {
+  if (!id) return null;
+  const normalized = String(id).trim();
+  const records = (masterCelestica as CelesticaRecord[]).filter(
+    (r) => String(r.A ?? "").trim() === normalized
+  );
+  if (records.length === 0) return null;
+  if (records.length > 1) {
+    console.warn(`Multiple Celestica records found for ID "${id}"`, records);
+  }
+  return records[0];
+};
+
+const isMexicoMROClient = (cliente?: string) => {
+  if (!cliente) return false;
+  const n = cliente.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return (n.includes("mexico") || n.includes("mx")) && n.includes("mro");
+};
+
+function calcularSiguienteFecha(fechaUltima: string, frecuencia: string) {
+  let date = new Date(fechaUltima);
+  if (!frecuencia) return null;
+  if (frecuencia.includes("mes")) {
+    const meses = frecuencia.includes("3") ? 3 :
+                  frecuencia.includes("6") ? 6 : 0;
+    return meses ? addMonths(date, meses) : null;
+  }
+  if (frecuencia.includes("año") || frecuencia.includes("Año")) {
+    const años = frecuencia.includes("2") ? 2 :
+                 frecuencia.includes("3") ? 3 : 1;
+    return addYears(date, años);
+  }
+  return null;
+}
 
 // NUEVO: Función para transferir worksheet a Friday
 const transferToFriday = async (formData: any, userId: string, user: any) => {
@@ -331,16 +388,6 @@ export const WorkSheetScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [isCelestica, setIsCelestica] = useState(false);
-  const [fieldsLocked, setFieldsLocked] = useState(false);
-  const [resolucion, setResolucion] = useState("");
-  const [alcance, setAlcance] = useState("");
-  const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
-  // NUEVO: Estado para auto-transferencia
-  const [autoTransferEnabled, setAutoTransferEnabled] = useState(() => 
-    localStorage.getItem('autoTransferWorksheets') === 'true'
-  );
-
-  const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
 
   const [formData, setFormData] = useState({
     lugarCalibracion: "",
@@ -367,6 +414,59 @@ export const WorkSheetScreen: React.FC = () => {
     humedadRelativa: "",
     excepcion: false,
   });
+  
+  const [idBlocked, setIdBlocked] = useState(false);
+  const [idErrorMessage, setIdErrorMessage] = useState("");
+  const [permitirExcepcion, setPermitirExcepcion] = useState(false);
+  const [isMasterData, setIsMasterData] = useState(false);
+  const [fieldsLocked, setFieldsLocked] = useState(false);
+  const [resolucion, setResolucion] = useState("");
+  const [alcance, setAlcance] = useState("");
+  const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
+  // NUEVO: Estado para auto-transferencia
+  const [autoTransferEnabled, setAutoTransferEnabled] = useState(() => 
+    localStorage.getItem('autoTransferWorksheets') === 'true'
+  );
+
+  useEffect(() => {
+  const validarIdEnPeriodo = async () => {
+    setIdBlocked(false);
+    setIdErrorMessage("");
+    if (!formData.id || !formData.cliente || !formData.frecuenciaCalibracion) return;
+
+    const q = query(
+      collection(db, "worksheets"), // Cambia el nombre si tu colección es otra
+      where("id", "==", formData.id),
+      where("cliente", "==", formData.cliente)
+    );
+    const docs = await getDocs(q);
+
+    if (docs.empty) return;
+
+    let maxFecha = null;
+    docs.forEach(doc => {
+      const f = doc.data().fecha;
+      if (f && (!maxFecha || f > maxFecha)) maxFecha = f;
+    });
+    if (!maxFecha) return;
+
+    // OJO: aquí usas 'frecuenciaCalibracion' si así se llama en tu formData
+    const nextAllowed = calcularSiguienteFecha(maxFecha, formData.frecuenciaCalibracion);
+    if (!nextAllowed) return;
+
+    const hoy = new Date();
+    if (isBefore(hoy, nextAllowed)) {
+      setIdBlocked(true);
+      setIdErrorMessage(
+        `Este equipo fue calibrado el ${format(new Date(maxFecha), "dd/MM/yyyy")}. Solo puede calibrarse de nuevo después de ${format(nextAllowed, "dd/MM/yyyy")}. Si requiere calibrar antes, active la excepción.`
+      );
+    }
+  };
+
+  if (!permitirExcepcion) validarIdEnPeriodo();
+}, [formData.id, formData.cliente, formData.frecuenciaCalibracion, permitirExcepcion]);
+
+  const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
 
   const [unidadesSeleccionadas, setUnidadesSeleccionadas] = useState<{ tipo: string, unidad: string }[]>([]);
 
@@ -523,6 +623,49 @@ export const WorkSheetScreen: React.FC = () => {
   }
   return [];
 }, [formData.magnitud, tipoElectrica]);
+
+const handleIdBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+  const newId = String(e.target.value || "").trim();
+  setFormData((prev) => {
+    const clienteVal = (prev.cliente || (prev as any).clienteSeleccionado || "").toString();
+    const updated = { ...prev, id: newId };
+
+    if (clienteVal.toLowerCase().includes("celestica") && newId) {
+      const rec = findCelesticaById(newId);
+      if (rec) {
+        setIsMasterData(true);
+        return {
+          ...updated,
+          equipo: rec.B ?? "",
+          marca: rec.C ?? "",
+          modelo: rec.D ?? "",
+          numeroSerie: rec.E ?? "",
+        };
+      } else {
+        setIsMasterData(false);
+      }
+    }
+
+    if (isMexicoMROClient(clienteVal) && newId) {
+      const rec = findTechopsById(newId);
+      if (rec) {
+        setIsMasterData(true);
+        return {
+          ...updated,
+          equipo: rec.B ?? "",
+          marca: rec.C ?? "",
+          modelo: rec.D ?? "",
+          numeroSerie: rec.E ?? "",
+        };
+      } else {
+        setIsMasterData(false);
+      }
+    }
+
+    setIsMasterData(false);
+    return updated;
+  });
+};
 
   // MODIFICADO: handleSave con integración automática
   const handleSave = useCallback(async () => {
@@ -806,24 +949,22 @@ if (yaExiste) {
                   </label>
                   <input
                     type="text"
-                    value={formData.id}
-                    onChange={(e) => handleIdChange(e.target.value)}
+                    value={formData.id || ""}
+                    onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value }))}
+                    onBlur={handleIdBlur}
                     className="w-full p-4 border rounded-lg"
-                    placeholder=""
+                    placeholder="ID"
                   />
                 </div>
               </div>
 
               {/* Permitir Excepción */}
 <div className="mt-6">
-  <label className="flex items-center space-x-2">
+  <label className="flex items-center gap-2 mt-2">
     <input
       type="checkbox"
-      checked={formData.excepcionAprobada}
-      onChange={(e) =>
-        setFormData({ ...formData, excepcionAprobada: e.target.checked })
-      }
-      className="form-checkbox h-5 w-5 text-blue-600"
+      checked={permitirExcepcion}
+      onChange={(e) => setPermitirExcepcion(e.target.checked)}
     />
     <span className="text-sm text-gray-700">
       Permitir excepción (requiere aprobación)
@@ -841,12 +982,10 @@ if (yaExiste) {
                   </label>
                   <input
                     type="text"
-                    value={formData.equipo}
-                    onChange={(e) => handleInputChange("equipo", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-white-700 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-800" : ""
-                    }`}
+                    value={formData.equipo || ""}
+                    onChange={(e) => setFormData(prev => ({ ...prev, equipo: e.target.value }))}
+                    readOnly={isMasterData}
+                    className="w-full p-4 border rounded-lg"
                     placeholder="Equipo"
                   />
                 </div>
@@ -857,12 +996,10 @@ if (yaExiste) {
                   </label>
                   <input
                     type="text"
-                    value={formData.marca}
-                    onChange={(e) => handleInputChange("marca", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-white-700 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-800" : ""
-                    }`}
+                    value={formData.marca || ""}
+                    onChange={(e) => setFormData(prev => ({ ...prev, marca: e.target.value }))}
+                    readOnly={isMasterData}
+                    className="w-full p-4 border rounded-lg"
                     placeholder="Marca"
                   />
                 </div>
@@ -877,12 +1014,10 @@ if (yaExiste) {
                   </label>
                   <input
                     type="text"
-                    value={formData.modelo}
-                    onChange={(e) => handleInputChange("modelo", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-white-800 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-800" : ""
-                    }`}
+                    value={formData.modelo || ""}
+                    onChange={(e) => setFormData(prev => ({ ...prev, modelo: e.target.value }))}
+                    readOnly={isMasterData}
+                    className="w-full p-4 border rounded-lg"
                     placeholder="Modelo"
                   />
                 </div>
@@ -893,12 +1028,10 @@ if (yaExiste) {
                   </label>
                   <input
                     type="text"
-                    value={formData.numeroSerie}
-                    onChange={(e) => handleInputChange("numeroSerie", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className={`w-full p-4 border rounded-lg text-white-800 ${
-                      fieldsLocked ? "bg-gray-50 cursor-not-allowed text-gray-900" : ""
-                    }`}
+                    value={formData.numeroSerie || ""}
+                    onChange={(e) => setFormData(prev => ({ ...prev, numeroSerie: e.target.value }))}
+                    readOnly={isMasterData}
+                    className="w-full p-4 border rounded-lg"
                     placeholder="Número de Serie"
                   />
                 </div>
@@ -1273,7 +1406,7 @@ if (yaExiste) {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || (idBlocked && !permitirExcepcion)}
             className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg"
           >
             {isSaving ? (

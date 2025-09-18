@@ -1,4 +1,4 @@
-import { db } from "./firebase";
+﻿import { db } from "./firebase";
 import { doc, runTransaction, setDoc, collection, Timestamp } from "firebase/firestore";
 import { getPrefijo } from "./prefijos";
 
@@ -20,7 +20,7 @@ export async function generarConsecutivo(magnitud: string, anio: string, usuario
         const consecutivoStr = `${prefijo}-${String(nuevo).padStart(4, "0")}-${anio}`;
         consecutivoFinal = consecutivoStr;
 
-        // Guarda en consecutivos (hist�rico)
+        // Guarda en consecutivos (histórico)
         const consRef = collection(db, "consecutivos");
         transaction.set(doc(consRef), {
             consecutivo: consecutivoStr,
