@@ -795,7 +795,7 @@ const FridayScreen: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <SidebarFriday />
+      <SidebarFriday onNavigate={handleNavigate} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
