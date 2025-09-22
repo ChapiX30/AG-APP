@@ -624,7 +624,7 @@ export const WorkSheetScreen: React.FC = () => {
   return [];
 }, [formData.magnitud, tipoElectrica]);
 
-const handleIdBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+const handleIdBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
   const newId = String(e.target.value || "").trim();
   setFormData((prev) => {
     const clienteVal = (prev.cliente || (prev as any).clienteSeleccionado || "").toString();
@@ -665,6 +665,7 @@ const handleIdBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     setIsMasterData(false);
     return updated;
   });
+  await validarIdEnPeriodo();
 };
 
   // MODIFICADO: handleSave con integración automática

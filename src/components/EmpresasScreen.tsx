@@ -95,12 +95,12 @@ const EmpresasScreen = () => {
     e.preventDefault();
     try {
       if (editingEmpresa) {
-        await updateDoc(doc(db, "empresas", editingEmpresa.id), {
+        await updateDoc(doc(db, "clientes", editingEmpresa.id), {
           ...formData,
           fechaActualizacion: new Date()
         });
       } else {
-        await addDoc(collection(db, "empresas"), {
+        await addDoc(collection(db, "clientes"), {
           ...formData,
           fechaCreacion: new Date()
         });
