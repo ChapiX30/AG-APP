@@ -1,71 +1,270 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import SidebarFriday from './SidebarFriday';
 import { Document, Page, pdfjs } from 'react-pdf';
-import {
-  ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check,
-  Repeat, Download, Trash2, XCircle, Search, Filter, Eye, Edit3,
-  Zap, Clock, User, CheckCircle2, RotateCcw, Loader2, Maximize, Minimize,
-  ExternalLink, ZoomIn, ZoomOut, RotateCw, ChevronLeft, ChevronRight,
-  Send, MessageCircle, Users, Paperclip, Image, FileSpreadsheet,
-  AlertCircle, CheckCheck, Archive, Star, Tag, Calendar as CalendarIcon,
-  Activity, Briefcase, Settings, MoreVertical, Copy, Share, Pin,
-  Network, Move, Save, Upload
+import { 
+  ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check, Repeat, 
+  Download, Trash2, XCircle, Search, Filter, Eye, Edit3, Zap, Clock, 
+  User, CheckCircle2, RotateCcw, Loader2, Maximize, Minimize, ExternalLink, 
+  ZoomIn, ZoomOut, RotateCw, ChevronLeft, ChevronRight, Send, MessageCircle, 
+  Users, Paperclip, Image, FileSpreadsheet, AlertCircle, CheckCheck, Archive, 
+  Star, Tag, Calendar as CalendarIcon, Activity, Briefcase, Settings, 
+  MoreVertical, Copy, Share, Pin, Network, Move, Save, Upload, MapPin,
+  Building2, Phone, Mail, Timer, UserCheck, ClockIcon, Play, Pause,
+  FileImage, FileVideo, FolderOpen, AlertTriangle, Info, Award, Home, Menu
 } from 'lucide-react';
-import { doc, collection, updateDoc, addDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { 
+  doc, collection, updateDoc, addDoc, deleteDoc, onSnapshot, query, 
+  orderBy, limit, serverTimestamp, where, getDocs, getDoc 
+} from 'firebase/firestore';
 import { db, storage } from '../utils/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Worker de PDF.js
+// Worker de PDF.js con configuración mejorada
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-const CURRENT_USER_ID = localStorage.getItem('usuario_id') || 'usuario_123';
-const CURRENT_USER_NAME = localStorage.getItem('usuario.nombre') || 'Mi Usuario';
+// Configuración para PDFs con problemas de CORS
+const pdfOptions = {
+  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+  cMapPacked: true,
+  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
+  withCredentials: false,
+  httpHeaders: {}
+};
 
-// Estados originales
+// Hook para detectar dispositivos móviles
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+};
+
+// Obtener información del usuario actual
+const CURRENT_USER_ID = localStorage.getItem('usuario_id') || 'usuario_123';
+const getCurrentUserName = () => {
+  return localStorage.getItem('usuario.nombre') || 
+         localStorage.getItem('usuario_nombre') ||
+         localStorage.getItem('user_name') ||
+         localStorage.getItem('nombre') ||
+         sessionStorage.getItem('usuario.nombre') ||
+         sessionStorage.getItem('user_name') ||
+         'Usuario Actual';
+};
+
+const CURRENT_USER_NAME = getCurrentUserName();
+const CURRENT_USER_ROL = localStorage.getItem('usuario.rol') || 'Usuario';
+
+// Estados mejorados
 const estados = [
-  { value: 'programado', label: 'Programado', color: 'text-blue-400', bgColor: 'bg-blue-500/10', border: 'border-blue-500/30', icon: Calendar, gradient: 'from-blue-500/20 to-blue-600/5' },
-  { value: 'en_proceso', label: 'En Proceso', color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: Clock, gradient: 'from-emerald-500/20 to-emerald-600/5' },
-  { value: 'finalizado', label: 'Finalizado', color: 'text-purple-400', bgColor: 'bg-purple-500/10', border: 'border-purple-500/30', icon: CheckCircle2, gradient: 'from-purple-500/20 to-purple-600/5' },
-  { value: 'reprogramacion', label: 'Reprogramación', color: 'text-red-400', bgColor: 'bg-red-500/10', border: 'border-red-500/30', icon: RotateCcw, gradient: 'from-red-500/20 to-red-600/5' }
+  { 
+    value: 'programado', 
+    label: 'Programado', 
+    color: 'text-blue-500', 
+    bgColor: 'bg-blue-50', 
+    border: 'border-blue-200', 
+    icon: Calendar, 
+    gradient: 'from-blue-500/20 to-blue-600/5',
+    description: 'Servicio planificado, pendiente de inicio'
+  },
+  { 
+    value: 'en_proceso', 
+    label: 'En Proceso', 
+    color: 'text-emerald-500', 
+    bgColor: 'bg-emerald-50', 
+    border: 'border-emerald-200', 
+    icon: Play, 
+    gradient: 'from-emerald-500/20 to-emerald-600/5',
+    description: 'Servicio en ejecución activa'
+  },
+  { 
+    value: 'finalizado', 
+    label: 'Finalizado', 
+    color: 'text-purple-500', 
+    bgColor: 'bg-purple-50', 
+    border: 'border-purple-200', 
+    icon: CheckCircle2, 
+    gradient: 'from-purple-500/20 to-purple-600/5',
+    description: 'Servicio completado exitosamente'
+  },
+  { 
+    value: 'reprogramacion', 
+    label: 'Reprogramación', 
+    color: 'text-amber-500', 
+    bgColor: 'bg-amber-50', 
+    border: 'border-amber-200', 
+    icon: RotateCcw, 
+    gradient: 'from-amber-500/20 to-amber-600/5',
+    description: 'Servicio que requiere nueva programación'
+  }
+];
+
+// Prioridades del servicio
+const prioridades = [
+  { value: 'baja', label: 'Baja', color: 'text-gray-500', bgColor: 'bg-gray-100', icon: Info },
+  { value: 'media', label: 'Media', color: 'text-blue-500', bgColor: 'bg-blue-100', icon: Clock },
+  { value: 'alta', label: 'Alta', color: 'text-amber-500', bgColor: 'bg-amber-100', icon: AlertTriangle },
+  { value: 'critica', label: 'Crítica', color: 'text-red-500', bgColor: 'bg-red-100', icon: AlertCircle }
+];
+
+// Tipos de servicios
+const tiposServicio = [
+  { value: 'calibracion', label: 'Calibración', icon: Settings },
+  { value: 'mantenimiento', label: 'Mantenimiento', icon: Briefcase },
+  { value: 'verificacion', label: 'Verificación', icon: CheckCircle2 },
+  { value: 'reparacion', label: 'Reparación', icon: Zap },
+  { value: 'inspeccion', label: 'Inspección', icon: Eye }
 ];
 
 // Tipos de archivos soportados
 const tiposArchivo = {
-  pdf: { icon: FileText, color: 'text-red-500', label: 'PDF' },
-  doc: { icon: FileText, color: 'text-blue-500', label: 'Word' },
-  docx: { icon: FileText, color: 'text-blue-500', label: 'Word' },
-  xls: { icon: FileSpreadsheet, color: 'text-green-500', label: 'Excel' },
-  xlsx: { icon: FileSpreadsheet, color: 'text-green-500', label: 'Excel' },
-  txt: { icon: FileText, color: 'text-gray-500', label: 'Texto' },
-  csv: { icon: FileSpreadsheet, color: 'text-green-600', label: 'CSV' },
-  png: { icon: Image, color: 'text-purple-500', label: 'PNG' },
-  jpg: { icon: Image, color: 'text-purple-500', label: 'JPG' },
-  jpeg: { icon: Image, color: 'text-purple-500', label: 'JPEG' },
-  gif: { icon: Image, color: 'text-purple-500', label: 'GIF' },
-  default: { icon: FileText, color: 'text-gray-500', label: 'Archivo' }
+  pdf: { icon: FileText, color: 'text-red-500', label: 'PDF', category: 'document' },
+  doc: { icon: FileText, color: 'text-blue-500', label: 'Word', category: 'document' },
+  docx: { icon: FileText, color: 'text-blue-500', label: 'Word', category: 'document' },
+  xls: { icon: FileSpreadsheet, color: 'text-green-500', label: 'Excel', category: 'spreadsheet' },
+  xlsx: { icon: FileSpreadsheet, color: 'text-green-500', label: 'Excel', category: 'spreadsheet' },
+  txt: { icon: FileText, color: 'text-gray-500', label: 'Texto', category: 'document' },
+  csv: { icon: FileSpreadsheet, color: 'text-green-600', label: 'CSV', category: 'spreadsheet' },
+  png: { icon: FileImage, color: 'text-purple-500', label: 'PNG', category: 'image' },
+  jpg: { icon: FileImage, color: 'text-purple-500', label: 'JPG', category: 'image' },
+  jpeg: { icon: FileImage, color: 'text-purple-500', label: 'JPEG', category: 'image' },
+  gif: { icon: FileImage, color: 'text-purple-500', label: 'GIF', category: 'image' },
+  webp: { icon: FileImage, color: 'text-purple-500', label: 'WebP', category: 'image' },
+  svg: { icon: FileImage, color: 'text-purple-500', label: 'SVG', category: 'image' },
+  mp4: { icon: FileVideo, color: 'text-indigo-500', label: 'MP4', category: 'video' },
+  avi: { icon: FileVideo, color: 'text-indigo-500', label: 'AVI', category: 'video' },
+  mov: { icon: FileVideo, color: 'text-indigo-500', label: 'MOV', category: 'video' },
+  default: { icon: FileText, color: 'text-gray-500', label: 'Archivo', category: 'other' }
 };
 
-// Componente de vista previa de archivos
-const FilePreview = ({ file, onRemove, onView, showActions = true }: { 
-  file: File | any; 
-  onRemove?: () => void; 
-  onView: () => void;
-  showActions?: boolean;
-}) => {
-  const [ext, setExt] = useState('');
-  
-  useEffect(() => {
-    const fileName = typeof file === 'string' ? file : file.name || file.nombre || '';
-    const extension = fileName.split('.').pop()?.toLowerCase() || '';
-    setExt(extension);
-  }, [file]);
+// Función mejorada para extraer nombre de archivo
+const extraerNombreArchivo = (url: string): string => {
+  try {
+    const decodedUrl = decodeURIComponent(url);
+    const matches = decodedUrl.match(/\/([^\/\?]+)(\?|$)/);
+    if (matches && matches[1]) {
+      let fileName = matches[1];
+      const timestampRegex = /^\d+_/;
+      fileName = fileName.replace(timestampRegex, '');
+      return fileName;
+    }
+    return url.split('/').pop()?.split('?')[0] || 'Archivo';
+  } catch (error) {
+    console.error('Error al extraer nombre de archivo:', error);
+    return 'Archivo';
+  }
+};
 
-  const tipoArchivo = tiposArchivo[ext as keyof typeof tiposArchivo] || tiposArchivo.default;
+// Función para obtener extensión
+const obtenerExtensionArchivo = (fileName: string): string => {
+  return fileName.split('.').pop()?.toLowerCase() || '';
+};
+
+// Función para crear URL con token de acceso válido
+const crearUrlAcceso = async (url: string): Promise<string> => {
+  try {
+    if (url.includes('firebasestorage.googleapis.com')) {
+      const pathMatch = url.match(/\/o\/(.+?)\?/);
+      if (pathMatch) {
+        const filePath = decodeURIComponent(pathMatch[1]);
+        const fileRef = ref(storage, filePath);
+        const newUrl = await getDownloadURL(fileRef);
+        return newUrl;
+      }
+    }
+    return url;
+  } catch (error) {
+    console.error('Error al crear URL de acceso:', error);
+    return url;
+  }
+};
+
+// Componente de estado visual responsive
+const EstadoBadge = ({ estado, compact = false }: { estado: string; compact?: boolean }) => {
+  const estadoInfo = estados.find(e => e.value === estado);
+  if (!estadoInfo) return null;
+  
+  const IconComponent = estadoInfo.icon;
+  
+  if (compact) {
+    return (
+      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${estadoInfo.bgColor} ${estadoInfo.color} border ${estadoInfo.border}`}>
+        <IconComponent className="h-3 w-3" />
+        <span className="hidden sm:inline">{estadoInfo.label}</span>
+      </div>
+    );
+  }
+  
+  return (
+    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${estadoInfo.bgColor} ${estadoInfo.color} border ${estadoInfo.border}`}>
+      <IconComponent className="h-4 w-4" />
+      {estadoInfo.label}
+    </div>
+  );
+};
+
+// Componente de prioridad responsive
+const PrioridadBadge = ({ prioridad, compact = false }: { prioridad: string; compact?: boolean }) => {
+  const prioridadInfo = prioridades.find(p => p.value === prioridad);
+  if (!prioridadInfo) return null;
+  
+  const IconComponent = prioridadInfo.icon;
+  
+  return (
+    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${prioridadInfo.bgColor} ${prioridadInfo.color}`}>
+      <IconComponent className="h-3 w-3" />
+      <span className={compact ? "hidden sm:inline" : ""}>{prioridadInfo.label}</span>
+    </div>
+  );
+};
+
+// Componente de vista previa de archivos responsive
+const FilePreview = ({ 
+  file, 
+  onRemove, 
+  onView, 
+  showActions = true,
+  compact = false,
+  isUrl = false
+}: { 
+  file: File | string; 
+  onRemove?: () => void; 
+  onView: () => void; 
+  showActions?: boolean;
+  compact?: boolean;
+  isUrl?: boolean;
+}) => {
+  const [fileName, setFileName] = useState('');
+  const [extension, setExtension] = useState('');
+
+  useEffect(() => {
+    let name = '';
+    if (isUrl && typeof file === 'string') {
+      name = extraerNombreArchivo(file);
+    } else if (typeof file === 'string') {
+      name = file;
+    } else {
+      name = file.name || 'Archivo';
+    }
+    
+    setFileName(name);
+    setExtension(obtenerExtensionArchivo(name));
+  }, [file, isUrl]);
+
+  const tipoArchivo = tiposArchivo[extension as keyof typeof tiposArchivo] || tiposArchivo.default;
   const IconComponent = tipoArchivo.icon;
-  const fileName = typeof file === 'string' ? file : file.name || file.nombre || 'Archivo';
 
   const formatFileSize = (bytes: number) => {
     if (!bytes) return '0 Bytes';
@@ -75,55 +274,86 @@ const FilePreview = ({ file, onRemove, onView, showActions = true }: {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  return (
-    <div className="group bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 hover:bg-gray-800/60 transition-all duration-200">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center space-x-3 flex-1">
-          <div className={`p-2 rounded-lg bg-gray-800/50 ${tipoArchivo.color} bg-opacity-10`}>
-            <IconComponent className={`h-6 w-6 ${tipoArchivo.color}`} />
-          </div>
-          <div className="flex-1">
-            <h4 className="text-sm font-medium text-gray-200 truncate">
-              {fileName}
-            </h4>
-            <p className="text-xs text-gray-400">
-              {tipoArchivo.label} {file.size && `• ${formatFileSize(file.size)}`}
-            </p>
-          </div>
-        </div>
-        
+  const handleView = async () => {
+    try {
+      onView();
+    } catch (error) {
+      console.error('Error al abrir archivo:', error);
+      toast.error('Error al abrir el archivo');
+    }
+  };
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+        <IconComponent className={`h-4 w-4 ${tipoArchivo.color} flex-shrink-0`} />
+        <span className="text-sm text-gray-700 truncate flex-1" title={fileName}>
+          {fileName}
+        </span>
         {showActions && (
-          <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex gap-1 flex-shrink-0">
             <button
-              onClick={onView}
-              className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors"
+              onClick={handleView}
+              className="p-2 text-blue-500 hover:bg-blue-100 rounded transition-colors"
               title="Ver archivo"
             >
-              <Eye className="h-4 w-4 text-gray-400" />
-            </button>
-            <button
-              onClick={() => {
-                if (file.url || typeof file === 'string') {
-                  const link = document.createElement('a');
-                  link.href = file.url || file;
-                  link.download = fileName;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }
-              }}
-              className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors"
-              title="Descargar"
-            >
-              <Download className="h-4 w-4 text-gray-400" />
+              <Eye className="h-4 w-4" />
             </button>
             {onRemove && (
               <button
                 onClick={onRemove}
-                className="p-1.5 hover:bg-red-600/20 rounded-lg transition-colors"
+                className="p-2 text-red-500 hover:bg-red-100 rounded transition-colors"
                 title="Eliminar archivo"
               >
-                <Trash2 className="h-4 w-4 text-red-400" />
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
+         onClick={handleView}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className={`p-2 rounded-lg ${tipoArchivo.color.replace('text-', 'bg-').replace('-500', '-100')} flex-shrink-0`}>
+            <IconComponent className={`h-5 w-5 ${tipoArchivo.color}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-900 truncate" title={fileName}>
+              {fileName}
+            </p>
+            <p className="text-sm text-gray-500">
+              {tipoArchivo.label}
+              {typeof file !== 'string' && file.size && ` • ${formatFileSize(file.size)}`}
+            </p>
+          </div>
+        </div>
+        {showActions && (
+          <div className="flex gap-2 ml-2 flex-shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleView();
+              }}
+              className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Ver archivo"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+            {onRemove && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="Eliminar archivo"
+              >
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -133,788 +363,823 @@ const FilePreview = ({ file, onRemove, onView, showActions = true }: {
   );
 };
 
-// Chat de actualizaciones por servicio
-const ChatServicio = ({ 
-  servicioId, 
-  isOpen, 
-  onClose 
-}: { 
-  servicioId: string; 
-  isOpen: boolean; 
-  onClose: () => void; 
-}) => {
-  const [mensajes, setMensajes] = useState<any[]>([]);
-  const [nuevoMensaje, setNuevoMensaje] = useState('');
-  const [archivosChat, setArchivosChat] = useState<File[]>([]);
-  const [cargandoMensajes, setCargandoMensajes] = useState(true);
-  const [enviandoMensaje, setEnviandoMensaje] = useState(false);
-  const chatRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Cargar mensajes del chat
-  useEffect(() => {
-    if (!isOpen || !servicioId) return;
-
-    setCargandoMensajes(true);
-    const chatCollection = collection(db, 'servicios', servicioId, 'chat');
-    const q = query(chatCollection, orderBy('timestamp', 'asc'), limit(100));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const mensajesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate() || new Date()
-      }));
-      
-      setMensajes(mensajesData);
-      setCargandoMensajes(false);
-    }, (error) => {
-      console.error('Error al cargar mensajes:', error);
-      setCargandoMensajes(false);
-    });
-
-    return () => unsubscribe();
-  }, [servicioId, isOpen]);
-
-  // Scroll al final cuando hay nuevos mensajes
-  useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
-    }
-  }, [mensajes]);
-
-  // Enviar mensaje
-  const enviarMensaje = async () => {
-    if (!nuevoMensaje.trim() && archivosChat.length === 0) return;
-
-    setEnviandoMensaje(true);
-    try {
-      const adjuntos = [];
-
-      // Subir archivos adjuntos
-      for (const archivo of archivosChat) {
-        const archivoRef = ref(storage, `chat/${servicioId}/${Date.now()}_${archivo.name}`);
-        const snapshot = await uploadBytes(archivoRef, archivo);
-        const url = await getDownloadURL(snapshot.ref);
-        
-        adjuntos.push({
-          nombre: archivo.name,
-          url,
-          tipo: archivo.type,
-          tamaño: archivo.size
-        });
-      }
-
-      // Crear mensaje
-      const mensajeData = {
-        mensaje: nuevoMensaje.trim(),
-        autorId: CURRENT_USER_ID,
-        autorNombre: CURRENT_USER_NAME,
-        timestamp: serverTimestamp(),
-        adjuntos: adjuntos.length > 0 ? adjuntos : null,
-        tipo: 'mensaje'
-      };
-
-      const chatCollection = collection(db, 'servicios', servicioId, 'chat');
-      await addDoc(chatCollection, mensajeData);
-
-      // Limpiar formulario
-      setNuevoMensaje('');
-      setArchivosChat([]);
-      
-      toast.success('Mensaje enviado');
-    } catch (error) {
-      console.error('Error al enviar mensaje:', error);
-      toast.error('Error al enviar el mensaje');
-    } finally {
-      setEnviandoMensaje(false);
-    }
-  };
-
-  // Manejar archivos del chat
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setArchivosChat(prev => [...prev, ...files].slice(0, 5)); // Límite de 5 archivos
-  };
-
-  const removeFileFromChat = (index: number) => {
-    setArchivosChat(prev => prev.filter((_, i) => i !== index));
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl h-[600px] flex flex-col border border-gray-700">
-        {/* Header del chat */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <MessageCircle className="h-5 w-5 text-blue-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-white">Chat de Actualizaciones</h3>
-              <p className="text-sm text-gray-400">Comentarios y actualizaciones del servicio</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            <X className="h-5 w-5 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Mensajes */}
-        <div 
-          ref={chatRef}
-          className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-900/50"
-        >
-          {cargandoMensajes ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-              <span className="ml-2 text-gray-400">Cargando mensajes...</span>
-            </div>
-          ) : mensajes.length === 0 ? (
-            <div className="text-center py-8">
-              <MessageCircle className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400">No hay mensajes aún</p>
-              <p className="text-sm text-gray-500">Sé el primero en comentar</p>
-            </div>
-          ) : (
-            mensajes.map((mensaje) => (
-              <div
-                key={mensaje.id}
-                className={`flex ${mensaje.autorId === CURRENT_USER_ID ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-xs lg:max-w-md ${mensaje.autorId === CURRENT_USER_ID ? 'order-2' : 'order-1'}`}>
-                  {mensaje.autorId !== CURRENT_USER_ID && (
-                    <div className="flex items-center space-x-2 mb-1">
-                      <div className="h-6 w-6 rounded-full bg-gray-600 flex items-center justify-center">
-                        <User className="h-3 w-3 text-gray-300" />
-                      </div>
-                      <span className="text-xs text-gray-400">{mensaje.autorNombre || 'Usuario'}</span>
-                    </div>
-                  )}
-                  
-                  <div className={`p-3 rounded-2xl ${
-                    mensaje.autorId === CURRENT_USER_ID
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-gray-100'
-                  }`}>
-                    {mensaje.mensaje && (
-                      <p className="text-sm whitespace-pre-wrap">{mensaje.mensaje}</p>
-                    )}
-                    
-                    {mensaje.adjuntos && mensaje.adjuntos.length > 0 && (
-                      <div className="mt-2 space-y-2">
-                        {mensaje.adjuntos.map((adjunto: any, index: number) => (
-                          <div
-                            key={index}
-                            className="flex items-center space-x-2 p-2 bg-black/20 rounded-lg"
-                          >
-                            <Paperclip className="h-4 w-4" />
-                            <span className="text-xs flex-1">{adjunto.nombre}</span>
-                            <button
-                              onClick={() => window.open(adjunto.url, '_blank')}
-                              className="text-xs hover:underline"
-                            >
-                              Ver
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="mt-1 text-xs text-gray-500 text-right">
-                    {mensaje.timestamp?.toLocaleTimeString('es-ES', { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Input de mensaje */}
-        <div className="p-4 border-t border-gray-700 bg-gray-900/80">
-          {/* Preview de archivos seleccionados */}
-          {archivosChat.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {archivosChat.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center space-x-2 bg-gray-800 rounded-lg px-3 py-2"
-                >
-                  <FileText className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm text-gray-300">{file.name}</span>
-                  <button
-                    onClick={() => removeFileFromChat(index)}
-                    className="text-red-400 hover:text-red-300"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center space-x-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.png,.jpg,.jpeg,.gif"
-            />
-            
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-              title="Adjuntar archivo"
-            >
-              <Paperclip className="h-5 w-5 text-gray-400" />
-            </button>
-
-            <div className="flex-1 relative">
-              <textarea
-                value={nuevoMensaje}
-                onChange={(e) => setNuevoMensaje(e.target.value)}
-                placeholder="Escribe una actualización..."
-                rows={1}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    enviarMensaje();
-                  }
-                }}
-              />
-            </div>
-
-            <button
-              onClick={enviarMensaje}
-              disabled={(!nuevoMensaje.trim() && archivosChat.length === 0) || enviandoMensaje}
-              className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 rounded-xl transition-colors disabled:cursor-not-allowed"
-            >
-              {enviandoMensaje ? (
-                <Loader2 className="h-5 w-5 animate-spin text-white" />
-              ) : (
-                <Send className="h-5 w-5 text-white" />
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Componente principal
-const FridayServiciosScreen = () => {
+// Componente principal responsive
+const FridayServiciosScreen: React.FC = () => {
+  const { navigateTo } = useNavigation();
+  const isMobile = useIsMobile();
+  
   // Estados principales
   const [servicios, setServicios] = useState<any[]>([]);
-  const [servicioSeleccionado, setServicioSeleccionado] = useState<any>(null);
-  const [modoEdicion, setModoEdicion] = useState(false);
-  const [mostrarFormulario, setMostrarFormulario] = useState(false);
-  const [chatAbierto, setChatAbierto] = useState(false);
-  const [servicioChat, setServicioChat] = useState<string>('');
-  
-  // Estados de filtros y búsqueda
+  const [usuarios, setUsuarios] = useState<any[]>([]);
+  const [metrologos, setMetrologos] = useState<any[]>([]);
+  const [clientes, setClientes] = useState<any[]>([]);
+  const [currentUserInfo, setCurrentUserInfo] = useState<any>(null);
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
-  const [busqueda, setBusqueda] = useState('');
-  const [vistaActiva, setVistaActiva] = useState<'grid' | 'kanban' | 'lista'>('grid');
+  const [filtroPrioridad, setFiltroPrioridad] = useState<string>('todos');
+  const [filtroTipo, setFiltroTipo] = useState<string>('todos');
+  const [busqueda, setBusqueda] = useState<string>('');
+  const [vistaActual, setVistaActual] = useState<'lista' | 'kanban' | 'calendario'>(isMobile ? 'lista' : 'kanban');
+  const [mostrarFormulario, setMostrarFormulario] = useState<boolean>(false);
+  const [modoEdicion, setModoEdicion] = useState<boolean>(false);
+  const [servicioSeleccionado, setServicioSeleccionado] = useState<any | null>(null);
+  const [cargando, setCargando] = useState<boolean>(true);
+  const [sidebarAbierto, setSidebarAbierto] = useState<boolean>(!isMobile);
+  const [mostrarFiltros, setMostrarFiltros] = useState<boolean>(false);
 
-  // Estados del formulario de edición
-  const [formularioEdicion, setFormularioEdicion] = useState({
-    elemento: '',
+  // Estados del formulario
+  const [nuevoServicio, setNuevoServicio] = useState({
+    titulo: '',
     descripcion: '',
+    tipo: 'calibracion',
+    prioridad: 'media',
     estado: 'programado',
     fecha: '',
+    horaInicio: '',
+    horaFin: '',
+    ubicacion: '',
+    clienteId: '',
+    cliente: '',
+    contacto: '',
+    telefono: '',
+    email: '',
     personas: [] as string[],
-    documentos: [] as any[]
+    archivos: [] as File[],
+    notas: ''
   });
 
-  // Estados para archivos
-  const [archivosSubir, setArchivosSubir] = useState<File[]>([]);
-  const [subiendoArchivos, setSubiendoArchivos] = useState(false);
-  const [guardando, setGuardando] = useState(false);
-
   // Estados de UI
-  const [cargando, setCargando] = useState(true);
-  const [mostrarVisorPDF, setMostrarVisorPDF] = useState(false);
-  const [archivoVisor, setArchivoVisor] = useState<any>(null);
+  const [archivosSubiendo, setArchivosSubiendo] = useState<boolean>(false);
+  const [archivoViendose, setArchivoViendose] = useState<string | null>(null);
+  const [escalaZoom, setEscalaZoom] = useState<number>(isMobile ? 0.5 : 1);
+  const [paginaPDF, setPaginaPDF] = useState<number>(1);
+  const [totalPaginasPDF, setTotalPaginasPDF] = useState<number>(0);
+  const [rotacionPDF, setRotacionPDF] = useState<number>(0);
+  const [mensajeNuevo, setMensajeNuevo] = useState<string>('');
+  const [mensajes, setMensajes] = useState<any[]>([]);
+  const [cargandoArchivo, setCargandoArchivo] = useState<boolean>(false);
+  const [errorArchivo, setErrorArchivo] = useState<string>('');
 
-  // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { goBack } = useNavigation();
 
-  // Cargar servicios desde Firebase (lógica original)
+  // Cambiar vista automáticamente según el dispositivo
   useEffect(() => {
-    setCargando(true);
-    const serviciosCollection = collection(db, 'servicios');
-    
-    const unsubscribe = onSnapshot(serviciosCollection, (snapshot) => {
-      const serviciosData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      setServicios(serviciosData);
-      setCargando(false);
-    }, (error) => {
-      console.error('Error al cargar servicios:', error);
-      toast.error('Error al cargar los servicios');
-      setCargando(false);
-    });
+    if (isMobile && vistaActual === 'kanban') {
+      setVistaActual('lista');
+    }
+    setSidebarAbierto(!isMobile);
+    if (isMobile) {
+      setEscalaZoom(0.5);
+    }
+  }, [isMobile]);
 
-    return () => unsubscribe();
+  // Cargar información del usuario actual
+  useEffect(() => {
+    const cargarUsuarioActual = async () => {
+      try {
+        if (CURRENT_USER_ID !== 'usuario_123') {
+          const userDoc = await getDoc(doc(db, 'usuarios', CURRENT_USER_ID));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setCurrentUserInfo(userData);
+          }
+        }
+      } catch (error) {
+        console.error('Error al cargar usuario actual:', error);
+      }
+    };
+
+    cargarUsuarioActual();
   }, []);
 
-  // Filtrar servicios
+  // Obtener nombre del usuario actual
+  const getNombreUsuarioActual = useCallback(() => {
+    if (currentUserInfo) {
+      return currentUserInfo.name || 
+             currentUserInfo.nombre || 
+             currentUserInfo.correo || 
+             currentUserInfo.email || 
+             'Usuario Actual';
+    }
+    return CURRENT_USER_NAME;
+  }, [currentUserInfo]);
+
+  // Cargar datos iniciales
+  useEffect(() => {
+    const cargarDatos = async () => {
+      setCargando(true);
+      
+      try {
+        // Cargar servicios
+        const serviciosQuery = query(
+          collection(db, 'servicios'),
+          orderBy('fechaCreacion', 'desc')
+        );
+        
+        const unsubscribeServicios = onSnapshot(serviciosQuery, (snapshot) => {
+          const serviciosData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setServicios(serviciosData);
+          setCargando(false);
+        });
+
+        // Cargar usuarios
+        const usuariosQuery = query(collection(db, 'usuarios'));
+        const usuariosSnapshot = await getDocs(usuariosQuery);
+        const usuariosData = usuariosSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setUsuarios(usuariosData);
+
+        // Filtrar metrólogos
+        const metrologosData = usuariosData.filter(usuario => {
+          const position = usuario.position?.toLowerCase();
+          const puesto = usuario.puesto?.toLowerCase();
+          
+          return position === 'metrologo' || 
+                 position === 'metrólogo' || 
+                 puesto === 'metrologo' || 
+                 puesto === 'metrólogo';
+        });
+        setMetrologos(metrologosData);
+
+        // Cargar clientes
+        const clientesQuery = query(collection(db, 'clientes'));
+        const clientesSnapshot = await getDocs(clientesQuery);
+        const clientesData = clientesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setClientes(clientesData);
+
+        return () => {
+          unsubscribeServicios();
+        };
+      } catch (error) {
+        console.error('Error al cargar datos:', error);
+        toast.error('Error al cargar los datos');
+        setCargando(false);
+      }
+    };
+
+    cargarDatos();
+  }, []);
+
+  // Cargar comentarios para un servicio específico
+  useEffect(() => {
+    if (servicioSeleccionado) {
+      const comentariosQuery = query(
+        collection(db, 'comentarios'),
+        where('servicioId', '==', servicioSeleccionado.id),
+        orderBy('fecha', 'desc')
+      );
+      
+      const unsubscribe = onSnapshot(comentariosQuery, (snapshot) => {
+        const comentariosData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setMensajes(comentariosData);
+      });
+
+      return () => unsubscribe();
+    }
+  }, [servicioSeleccionado]);
+
+  // Servicios filtrados
   const serviciosFiltrados = useMemo(() => {
     return servicios.filter(servicio => {
-      const matchBusqueda = busqueda === '' || 
-        (servicio.elemento && servicio.elemento.toLowerCase().includes(busqueda.toLowerCase())) ||
-        (servicio.descripcion && servicio.descripcion.toLowerCase().includes(busqueda.toLowerCase()));
-
-      const matchEstado = filtroEstado === 'todos' || servicio.estado === filtroEstado;
-
-      return matchBusqueda && matchEstado;
+      const coincideBusqueda = !busqueda || 
+        servicio.titulo?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        servicio.descripcion?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        servicio.cliente?.toLowerCase().includes(busqueda.toLowerCase());
+      
+      const coincideEstado = filtroEstado === 'todos' || servicio.estado === filtroEstado;
+      const coincidePrioridad = filtroPrioridad === 'todos' || servicio.prioridad === filtroPrioridad;
+      const coincideTipo = filtroTipo === 'todos' || servicio.tipo === filtroTipo;
+      
+      return coincideBusqueda && coincideEstado && coincidePrioridad && coincideTipo;
     });
-  }, [servicios, busqueda, filtroEstado]);
+  }, [servicios, busqueda, filtroEstado, filtroPrioridad, filtroTipo]);
 
-  // Abrir modal de edición
-  const editarServicio = (servicio: any) => {
-    setFormularioEdicion({
-      elemento: servicio.elemento || '',
-      descripcion: servicio.descripcion || '',
-      estado: servicio.estado || 'programado',
-      fecha: servicio.fecha || '',
-      personas: servicio.personas || [],
-      documentos: servicio.documentos || []
-    });
-    setServicioSeleccionado(servicio);
-    setModoEdicion(true);
-    setMostrarFormulario(true);
+  // Estadísticas
+  const estadisticas = useMemo(() => {
+    const total = servicios.length;
+    const programados = servicios.filter(s => s.estado === 'programado').length;
+    const enProceso = servicios.filter(s => s.estado === 'en_proceso').length;
+    const finalizados = servicios.filter(s => s.estado === 'finalizado').length;
+    const reprogramados = servicios.filter(s => s.estado === 'reprogramacion').length;
+    
+    return { total, programados, enProceso, finalizados, reprogramados };
+  }, [servicios]);
+
+  // Funciones de manejo de archivos
+  const manejarSubidaArchivos = useCallback(async (files: FileList) => {
+    setArchivosSubiendo(true);
+    const nuevosArchivos: File[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size <= 10 * 1024 * 1024) { // Límite de 10MB
+        nuevosArchivos.push(file);
+      } else {
+        toast.error(`El archivo ${file.name} es demasiado grande (máximo 10MB)`);
+      }
+    }
+    
+    setNuevoServicio(prev => ({
+      ...prev,
+      archivos: [...prev.archivos, ...nuevosArchivos]
+    }));
+    
+    setArchivosSubiendo(false);
+  }, []);
+
+  // Manejar selección de cliente
+  const manejarSeleccionCliente = (clienteId: string) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (cliente) {
+      setNuevoServicio(prev => ({
+        ...prev,
+        clienteId: clienteId,
+        cliente: cliente.nombre || cliente.razonSocial || '',
+        contacto: cliente.contactoPrincipal || '',
+        telefono: cliente.telefono || '',
+        email: cliente.email || cliente.correo || '',
+        ubicacion: cliente.direccion || ''
+      }));
+    } else {
+      setNuevoServicio(prev => ({
+        ...prev,
+        clienteId: '',
+        cliente: '',
+        contacto: '',
+        telefono: '',
+        email: '',
+        ubicacion: ''
+      }));
+    }
   };
 
-  // Crear nuevo servicio
-  const crearNuevoServicio = () => {
-    setFormularioEdicion({
-      elemento: '',
-      descripcion: '',
-      estado: 'programado',
-      fecha: '',
-      personas: [],
-      documentos: []
-    });
-    setServicioSeleccionado(null);
-    setModoEdicion(false);
-    setMostrarFormulario(true);
-  };
+  // Función mejorada para ver archivos con mejor manejo de errores
+  const verArchivo = useCallback(async (archivoUrl: string) => {
+    setCargandoArchivo(true);
+    setErrorArchivo('');
+    
+    try {
+      if (!archivoUrl || typeof archivoUrl !== 'string') {
+        throw new Error('URL del archivo no válida');
+      }
 
-  // Guardar servicio (crear o editar)
-  const guardarServicio = async () => {
-    if (!formularioEdicion.elemento.trim()) {
-      toast.error('El elemento es obligatorio');
+      const urlAcceso = await crearUrlAcceso(archivoUrl);
+      setArchivoViendose(urlAcceso);
+      setPaginaPDF(1);
+      setEscalaZoom(isMobile ? 0.5 : 1);
+      setRotacionPDF(0);
+      
+    } catch (error) {
+      console.error('Error al cargar archivo:', error);
+      setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
+      toast.error('Error al cargar el archivo');
+      setArchivoViendose(archivoUrl);
+    } finally {
+      setCargandoArchivo(false);
+    }
+  }, [isMobile]);
+
+  // Crear servicio
+  const crearServicio = async () => {
+    if (!nuevoServicio.titulo.trim()) {
+      toast.error('El título es requerido');
       return;
     }
 
-    setGuardando(true);
-    try {
-      let documentosActualizados = [...formularioEdicion.documentos];
+    if (nuevoServicio.personas.length === 0) {
+      toast.error('Debe asignar al menos un metrólogo');
+      return;
+    }
 
-      // Subir archivos nuevos
-      if (archivosSubir.length > 0) {
-        setSubiendoArchivos(true);
-        
-        for (const archivo of archivosSubir) {
-          const archivoRef = ref(storage, `servicios/${Date.now()}_${archivo.name}`);
-          const snapshot = await uploadBytes(archivoRef, archivo);
+    setCargando(true);
+
+    try {
+      const urlsArchivos: string[] = [];
+      for (const archivo of nuevoServicio.archivos) {
+        try {
+          const timestamp = Date.now();
+          const fileName = `${timestamp}_${archivo.name}`;
+          const storageRef = ref(storage, `servicios/${fileName}`);
+          const snapshot = await uploadBytes(storageRef, archivo);
           const url = await getDownloadURL(snapshot.ref);
-          
-          documentosActualizados.push({
-            nombre: archivo.name,
-            url,
-            tipo: archivo.type,
-            tamaño: archivo.size,
-            fechaSubida: serverTimestamp(),
-            subidoPor: CURRENT_USER_NAME
-          });
+          urlsArchivos.push(url);
+        } catch (error) {
+          console.error(`Error al subir archivo ${archivo.name}:`, error);
+          toast.error(`Error al subir archivo ${archivo.name}`);
         }
       }
 
+      const metrologosAsignados = metrologos.filter(m => 
+        nuevoServicio.personas.includes(m.id)
+      );
+
       const servicioData = {
-        elemento: formularioEdicion.elemento.trim(),
-        descripcion: formularioEdicion.descripcion.trim(),
-        estado: formularioEdicion.estado,
-        fecha: formularioEdicion.fecha,
-        personas: formularioEdicion.personas,
-        documentos: documentosActualizados,
-        timestamp: serverTimestamp(),
+        ...nuevoServicio,
+        archivos: urlsArchivos,
+        fechaCreacion: serverTimestamp(),
         creadoPor: CURRENT_USER_ID,
-        creadoPorNombre: CURRENT_USER_NAME
+        creadoPorNombre: getNombreUsuarioActual(),
+        personasNombres: metrologosAsignados.map(m => 
+          m.name || m.nombre || m.correo || m.email || 'Metrólogo'
+        ),
+        ultimaActualizacion: serverTimestamp(),
+        actualizadoPor: CURRENT_USER_ID
       };
 
       if (modoEdicion && servicioSeleccionado) {
-        // Actualizar servicio existente
-        const servicioRef = doc(db, 'servicios', servicioSeleccionado.id);
-        await updateDoc(servicioRef, servicioData);
-        
-        // Agregar mensaje de actualización al chat
-        const chatCollection = collection(db, 'servicios', servicioSeleccionado.id, 'chat');
-        await addDoc(chatCollection, {
-          mensaje: `Servicio actualizado: ${formularioEdicion.elemento}`,
-          autorId: 'sistema',
-          autorNombre: 'Sistema',
-          timestamp: serverTimestamp(),
-          tipo: 'sistema'
+        await updateDoc(doc(db, 'servicios', servicioSeleccionado.id), {
+          ...servicioData,
+          fechaCreacion: servicioSeleccionado.fechaCreacion
         });
-        
-        toast.success('Servicio actualizado correctamente');
+        toast.success('Servicio actualizado exitosamente');
       } else {
-        // Crear nuevo servicio
-        const serviciosCollection = collection(db, 'servicios');
-        const docRef = await addDoc(serviciosCollection, servicioData);
-        
-        // Agregar mensaje inicial al chat
-        const chatCollection = collection(db, 'servicios', docRef.id, 'chat');
-        await addDoc(chatCollection, {
-          mensaje: `Servicio creado: ${formularioEdicion.elemento}`,
-          autorId: 'sistema',
-          autorNombre: 'Sistema',
-          timestamp: serverTimestamp(),
-          tipo: 'sistema'
-        });
-        
-        toast.success('Servicio creado correctamente');
+        await addDoc(collection(db, 'servicios'), servicioData);
+        toast.success('Servicio creado exitosamente');
       }
 
-      // Limpiar formulario y cerrar
+      // Resetear formulario
+      setNuevoServicio({
+        titulo: '',
+        descripcion: '',
+        tipo: 'calibracion',
+        prioridad: 'media',
+        estado: 'programado',
+        fecha: '',
+        horaInicio: '',
+        horaFin: '',
+        ubicacion: '',
+        clienteId: '',
+        cliente: '',
+        contacto: '',
+        telefono: '',
+        email: '',
+        personas: [],
+        archivos: [],
+        notas: ''
+      });
+      
       setMostrarFormulario(false);
       setModoEdicion(false);
       setServicioSeleccionado(null);
-      setArchivosSubir([]);
       
     } catch (error) {
-      console.error('Error al guardar servicio:', error);
-      toast.error('Error al guardar el servicio');
+      console.error('Error al crear/actualizar servicio:', error);
+      toast.error('Error al procesar el servicio');
     } finally {
-      setGuardando(false);
-      setSubiendoArchivos(false);
+      setCargando(false);
+    }
+  };
+
+  // Agregar comentario
+  const agregarComentario = async () => {
+    if (!mensajeNuevo.trim() || !servicioSeleccionado) return;
+
+    try {
+      const nombreAutor = getNombreUsuarioActual();
+      
+      await addDoc(collection(db, 'comentarios'), {
+        servicioId: servicioSeleccionado.id,
+        mensaje: mensajeNuevo.trim(),
+        autor: nombreAutor,
+        autorId: CURRENT_USER_ID,
+        fecha: serverTimestamp()
+      });
+      
+      setMensajeNuevo('');
+      toast.success('Comentario agregado');
+    } catch (error) {
+      console.error('Error al agregar comentario:', error);
+      toast.error('Error al agregar comentario');
+    }
+  };
+
+  // Actualizar estado del servicio
+  const actualizarEstado = async (servicioId: string, nuevoEstado: string) => {
+    try {
+      await updateDoc(doc(db, 'servicios', servicioId), {
+        estado: nuevoEstado,
+        ultimaActualizacion: serverTimestamp(),
+        actualizadoPor: CURRENT_USER_ID
+      });
+      toast.success('Estado actualizado');
+    } catch (error) {
+      console.error('Error al actualizar estado:', error);
+      toast.error('Error al actualizar estado');
     }
   };
 
   // Eliminar servicio
   const eliminarServicio = async (servicioId: string) => {
-    if (!window.confirm('¿Estás seguro de que quieres eliminar este servicio?')) {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este servicio?')) {
       return;
     }
 
     try {
       await deleteDoc(doc(db, 'servicios', servicioId));
       toast.success('Servicio eliminado');
+      setServicioSeleccionado(null);
     } catch (error) {
       console.error('Error al eliminar servicio:', error);
-      toast.error('Error al eliminar el servicio');
+      toast.error('Error al eliminar servicio');
     }
   };
 
-  // Abrir chat
-  const abrirChat = (servicioId: string) => {
-    setServicioChat(servicioId);
-    setChatAbierto(true);
+  // Editar servicio
+  const editarServicio = (servicio: any) => {
+    setNuevoServicio({
+      titulo: servicio.titulo || '',
+      descripcion: servicio.descripcion || '',
+      tipo: servicio.tipo || 'calibracion',
+      prioridad: servicio.prioridad || 'media',
+      estado: servicio.estado || 'programado',
+      fecha: servicio.fecha || '',
+      horaInicio: servicio.horaInicio || '',
+      horaFin: servicio.horaFin || '',
+      ubicacion: servicio.ubicacion || '',
+      clienteId: servicio.clienteId || '',
+      cliente: servicio.cliente || '',
+      contacto: servicio.contacto || '',
+      telefono: servicio.telefono || '',
+      email: servicio.email || '',
+      personas: servicio.personas || [],
+      archivos: [],
+      notas: servicio.notas || ''
+    });
+    setModoEdicion(true);
+    setMostrarFormulario(true);
   };
 
-  // Ver archivo
-  const verArchivo = (archivo: any) => {
-    setArchivoVisor(archivo);
-    setMostrarVisorPDF(true);
-  };
-
-  // Manejar selección de archivos
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setArchivosSubir(prev => [...prev, ...files]);
-  };
-
-  // Remover archivo de la lista
-  const removeFile = (index: number) => {
-    setArchivosSubir(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Renderizar vistas
-  const renderVistaServicios = () => {
-    if (vistaActiva === 'kanban') {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {estados.map(estado => {
-            const serviciosEstado = serviciosFiltrados.filter(s => s.estado === estado.value);
+  // Vista Kanban responsive (para desktop)
+  const VistaKanban = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
+      {estados.map((estado) => {
+        const serviciosDelEstado = serviciosFiltrados.filter(s => s.estado === estado.value);
+        const IconComponent = estado.icon;
+        
+        return (
+          <div key={estado.value} className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className={`p-3 lg:p-4 border-b border-gray-200 ${estado.bgColor}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <IconComponent className={`h-4 w-4 lg:h-5 lg:w-5 ${estado.color}`} />
+                  <h3 className={`font-semibold text-sm lg:text-base ${estado.color}`}>{estado.label}</h3>
+                </div>
+                <span className={`px-2 py-1 text-xs font-medium rounded-full ${estado.bgColor} ${estado.color}`}>
+                  {serviciosDelEstado.length}
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 mt-1 hidden lg:block">{estado.description}</p>
+            </div>
             
-            return (
-              <div key={estado.value} className="flex flex-col">
-                <div className={`${estado.bgColor} ${estado.border} border rounded-xl p-4 mb-4`}>
-                  <div className="flex items-center space-x-2">
-                    <estado.icon className={`h-5 w-5 ${estado.color}`} />
-                    <h3 className={`font-semibold ${estado.color}`}>{estado.label}</h3>
-                    <span className="bg-gray-700 text-gray-300 px-2 py-1 rounded-full text-xs">
-                      {serviciosEstado.length}
+            <div className="p-2 space-y-2 max-h-96 overflow-y-auto">
+              {serviciosDelEstado.map((servicio) => (
+                <div
+                  key={servicio.id}
+                  onClick={() => setServicioSeleccionado(servicio)}
+                  className="p-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors border border-gray-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 truncate">
+                        {servicio.titulo}
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                        {servicio.descripcion}
+                      </p>
+                    </div>
+                    <PrioridadBadge prioridad={servicio.prioridad} compact />
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-3">
+                    <div className="flex items-center gap-2">
+                      {servicio.personas && servicio.personas.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          <Users className="h-3 w-3 text-gray-400" />
+                          <span className="text-xs text-gray-500">
+                            {servicio.personas.length}
+                          </span>
+                        </div>
+                      )}
+                      {servicio.archivos && servicio.archivos.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          <Paperclip className="h-3 w-3 text-gray-400" />
+                          <span className="text-xs text-gray-500">
+                            {servicio.archivos.length}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {servicio.fecha}
                     </span>
                   </div>
                 </div>
-                
-                <div className="space-y-3 flex-1">
-                  {serviciosEstado.map(servicio => (
-                    <div
-                      key={servicio.id}
-                      className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 hover:bg-gray-800/70 transition-all duration-200 cursor-pointer group"
-                      onClick={() => setServicioSeleccionado(servicio)}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-semibold text-white text-sm line-clamp-2 group-hover:text-blue-300 transition-colors">
-                          {servicio.elemento || 'Sin título'}
-                        </h4>
-                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              abrirChat(servicio.id);
-                            }}
-                            className="p-1 hover:bg-gray-700 rounded"
-                            title="Abrir chat"
-                          >
-                            <MessageCircle className="h-3 w-3 text-blue-400" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              editarServicio(servicio);
-                            }}
-                            className="p-1 hover:bg-gray-700 rounded"
-                            title="Editar servicio"
-                          >
-                            <Edit3 className="h-3 w-3 text-gray-400" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <p className="text-xs text-gray-400 line-clamp-2">
-                        {servicio.descripcion || 'Sin descripción'}
-                      </p>
-                      
-                      <div className="flex items-center justify-between mt-3">
-                        {servicio.fecha && (
-                          <div className="flex items-center text-xs text-gray-500">
-                            <Calendar className="h-3 w-3 mr-1" />
-                            {servicio.fecha}
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center space-x-2">
-                          {servicio.documentos && servicio.documentos.length > 0 && (
-                            <div className="flex items-center space-x-1">
-                              <Paperclip className="h-3 w-3 text-gray-500" />
-                              <span className="text-xs text-gray-400">{servicio.documentos.length}</span>
-                            </div>
-                          )}
-                          {servicio.personas && servicio.personas.length > 0 && (
-                            <div className="flex items-center space-x-1">
-                              <Users className="h-3 w-3 text-gray-500" />
-                              <span className="text-xs text-gray-400">{servicio.personas.length}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-
-    // Vista grid (mejorada)
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {serviciosFiltrados.map(servicio => {
-          const estadoInfo = estados.find(e => e.value === servicio.estado);
-          
-          return (
-            <div
-              key={servicio.id}
-              className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:bg-gray-800/60 transition-all duration-200 cursor-pointer group"
-              onClick={() => setServicioSeleccionado(servicio)}
-            >
-              {/* Header de la tarjeta */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white mb-2 line-clamp-2 group-hover:text-blue-300 transition-colors">
-                    {servicio.elemento || 'Sin título'}
-                  </h3>
-                  <p className="text-sm text-gray-400 line-clamp-3">
-                    {servicio.descripcion || 'Sin descripción'}
-                  </p>
-                </div>
-                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      abrirChat(servicio.id);
-                    }}
-                    className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                    title="Abrir chat"
-                  >
-                    <MessageCircle className="h-4 w-4 text-blue-400" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      editarServicio(servicio);
-                    }}
-                    className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                    title="Editar servicio"
-                  >
-                    <Edit3 className="h-4 w-4 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Estado */}
-              {estadoInfo && (
-                <div className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs mb-3 ${estadoInfo.bgColor} ${estadoInfo.color}`}>
-                  <estadoInfo.icon className="h-3 w-3" />
-                  <span>{estadoInfo.label}</span>
+              ))}
+              
+              {serviciosDelEstado.length === 0 && (
+                <div className="text-center py-6 lg:py-8 text-gray-500">
+                  <div className={`inline-flex items-center justify-center w-10 h-10 lg:w-12 lg:h-12 rounded-full ${estado.bgColor} mb-3`}>
+                    <IconComponent className={`h-5 w-5 lg:h-6 lg:w-6 ${estado.color}`} />
+                  </div>
+                  <p className="text-sm">No hay servicios</p>
                 </div>
               )}
-
-              {/* Información adicional */}
-              <div className="space-y-3">
-                {servicio.fecha && (
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm text-gray-300">{servicio.fecha}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-2 border-t border-gray-700/50">
-                  <div className="flex items-center space-x-4">
-                    {servicio.documentos && servicio.documentos.length > 0 && (
-                      <div className="flex items-center space-x-1">
-                        <Paperclip className="h-4 w-4 text-gray-500" />
-                        <span className="text-xs text-gray-400">{servicio.documentos.length} archivos</span>
-                      </div>
-                    )}
-                    {servicio.personas && servicio.personas.length > 0 && (
-                      <div className="flex items-center space-x-1">
-                        <Users className="h-4 w-4 text-gray-500" />
-                        <span className="text-xs text-gray-400">{servicio.personas.length} personas</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <span className="text-xs text-gray-500">
-                    {servicio.creadoPorNombre || 'Usuario'}
-                  </span>
-                </div>
-              </div>
             </div>
-          );
-        })}
-      </div>
-    );
-  };
+          </div>
+        );
+      })}
+    </div>
+  );
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <SidebarFriday />
-      
-      <div className="lg:ml-64">
-        {/* Header */}
-        <header className="bg-gray-900/80 backdrop-blur-sm border-b border-gray-700/50 p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={goBack}
-                className="p-2 hover:bg-gray-800 rounded-xl transition-colors"
-              >
-                <ArrowLeft className="h-5 w-5 text-gray-400" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Servicios</h1>
-                <p className="text-gray-400">Gestiona servicios con chat y archivos</p>
-              </div>
+  // Vista Lista optimizada para mobile
+  const VistaLista = () => (
+    <div className="space-y-3">
+      {serviciosFiltrados.map((servicio) => (
+        <div
+          key={servicio.id}
+          onClick={() => setServicioSeleccionado(servicio)}
+          className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-gray-900 truncate mb-1">
+                {servicio.titulo}
+              </h3>
+              <p className="text-sm text-gray-500 line-clamp-2">
+                {servicio.descripcion}
+              </p>
             </div>
-
-            <div className="flex items-center space-x-3">
-              {/* Selector de vista */}
-              <div className="flex bg-gray-800 rounded-xl p-1">
-                <button
-                  onClick={() => setVistaActiva('grid')}
-                  className={`p-2 rounded-lg transition-colors ${
-                    vistaActiva === 'grid' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                  title="Vista de tarjetas"
-                >
-                  <div className="grid grid-cols-2 gap-1 h-4 w-4">
-                    {[...Array(4)].map((_, i) => (
-                      <div key={i} className="bg-current rounded-sm" />
-                    ))}
-                  </div>
-                </button>
-                <button
-                  onClick={() => setVistaActiva('kanban')}
-                  className={`p-2 rounded-lg transition-colors ${
-                    vistaActiva === 'kanban' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                  title="Vista Kanban"
-                >
-                  <Activity className="h-4 w-4" />
-                </button>
-              </div>
-
+            <div className="ml-3 flex-shrink-0">
               <button
-                onClick={crearNuevoServicio}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl flex items-center space-x-2 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  editarServicio(servicio);
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
               >
-                <Plus className="h-4 w-4" />
-                <span>Nuevo Servicio</span>
+                <MoreVertical className="h-4 w-4" />
               </button>
             </div>
           </div>
-        </header>
+          
+          <div className="flex items-center justify-between mb-3">
+            <EstadoBadge estado={servicio.estado} compact />
+            <PrioridadBadge prioridad={servicio.prioridad} compact />
+          </div>
+          
+          {servicio.cliente && (
+            <div className="flex items-center gap-2 mb-2">
+              <Building2 className="h-4 w-4 text-gray-400" />
+              <span className="text-sm text-gray-600 truncate">{servicio.cliente}</span>
+            </div>
+          )}
+          
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center gap-3">
+              {servicio.personas && servicio.personas.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <Users className="h-3 w-3" />
+                  <span>{servicio.personas.length}</span>
+                </div>
+              )}
+              {servicio.archivos && servicio.archivos.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <Paperclip className="h-3 w-3" />
+                  <span>{servicio.archivos.length}</span>
+                </div>
+              )}
+            </div>
+            <span>{servicio.fecha || 'Sin fecha'}</span>
+          </div>
+        </div>
+      ))}
+      
+      {serviciosFiltrados.length === 0 && (
+        <div className="text-center py-12">
+          <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No se encontraron servicios</h3>
+          <p className="text-gray-500">Intenta cambiar los filtros o crea un nuevo servicio</p>
+        </div>
+      )}
+    </div>
+  );
 
-        {/* Barra de búsqueda y filtros */}
-        <div className="p-6 border-b border-gray-700/50">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            <div className="flex-1 max-w-md">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar servicios..."
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+  if (cargando && servicios.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600">Cargando servicios...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Sidebar condicional para desktop */}
+      {!isMobile && <SidebarFriday />}
+      
+      {/* Backdrop para sidebar móvil */}
+      {isMobile && sidebarAbierto && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setSidebarAbierto(false)}
+        />
+      )}
+      
+      {/* Sidebar móvil */}
+      {isMobile && (
+        <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform ${
+          sidebarAbierto ? 'translate-x-0' : '-translate-x-full'
+        }`}>
+          <SidebarFriday />
+        </div>
+      )}
+      
+      <div className={`${!isMobile ? 'ml-64' : ''} p-4 lg:p-8`}>
+        {/* Header móvil con menú hamburguesa */}
+        {isMobile && (
+          <div className="flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm">
+            <button
+              onClick={() => setSidebarAbierto(true)}
+              className="p-2 text-gray-600 hover:text-gray-900 rounded-lg"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            <h1 className="font-bold text-lg text-gray-900">Servicios</h1>
+            <button
+              onClick={() => {
+                setNuevoServicio({
+                  titulo: '',
+                  descripcion: '',
+                  tipo: 'calibracion',
+                  prioridad: 'media',
+                  estado: 'programado',
+                  fecha: '',
+                  horaInicio: '',
+                  horaFin: '',
+                  ubicacion: '',
+                  clienteId: '',
+                  cliente: '',
+                  contacto: '',
+                  telefono: '',
+                  email: '',
+                  personas: [],
+                  archivos: [],
+                  notas: ''
+                });
+                setModoEdicion(false);
+                setMostrarFormulario(true);
+              }}
+              className="p-2 bg-blue-600 text-white rounded-lg"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Header desktop */}
+        {!isMobile && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => navigateTo('dashboard')}
+                  className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Regresar al menú principal"
+                >
+                  <Home className="h-6 w-6" />
+                </button>
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">Gestión de Servicios</h1>
+                  <p className="text-gray-600 mt-1">Organiza y supervisa todos los servicios de calibración</p>
+                </div>
               </div>
+              <button
+                onClick={() => {
+                  setNuevoServicio({
+                    titulo: '',
+                    descripcion: '',
+                    tipo: 'calibracion',
+                    prioridad: 'media',
+                    estado: 'programado',
+                    fecha: '',
+                    horaInicio: '',
+                    horaFin: '',
+                    ubicacion: '',
+                    clienteId: '',
+                    cliente: '',
+                    contacto: '',
+                    telefono: '',
+                    email: '',
+                    personas: [],
+                    archivos: [],
+                    notas: ''
+                  });
+                  setModoEdicion(false);
+                  setMostrarFormulario(true);
+                }}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl"
+              >
+                <Plus className="h-5 w-5" />
+                Nuevo Servicio
+              </button>
             </div>
 
-            <div className="flex items-center space-x-3">
+            {/* Estadísticas rápidas para desktop */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-100 rounded-lg">
+                    <Briefcase className="h-5 w-5 text-gray-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Total</p>
+                    <p className="text-2xl font-bold text-gray-900">{estadisticas.total}</p>
+                  </div>
+                </div>
+              </div>
+              
+              {estados.map((estado) => {
+                const count = estadisticas[estado.value as keyof typeof estadisticas] || 0;
+                const IconComponent = estado.icon;
+                
+                return (
+                  <div key={estado.value} className={`bg-white p-4 rounded-xl border border-gray-200 shadow-sm`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${estado.bgColor}`}>
+                        <IconComponent className={`h-5 w-5 ${estado.color}`} />
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">{estado.label}</p>
+                        <p className={`text-2xl font-bold ${estado.color}`}>{count}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Estadísticas móviles compactas */}
+        {isMobile && (
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-white p-3 rounded-lg shadow-sm text-center">
+              <p className="text-lg font-bold text-gray-900">{estadisticas.total}</p>
+              <p className="text-xs text-gray-600">Total</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg shadow-sm text-center">
+              <p className="text-lg font-bold text-emerald-600">{estadisticas.enProceso}</p>
+              <p className="text-xs text-gray-600">En Proceso</p>
+            </div>
+          </div>
+        )}
+
+        {/* Controles y filtros responsive */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-4 lg:mb-6">
+          <div className="p-4 lg:p-6">
+            {/* Búsqueda */}
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar servicios..."
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Botón de filtros móvil */}
+            {isMobile && (
+              <button
+                onClick={() => setMostrarFiltros(!mostrarFiltros)}
+                className="w-full flex items-center justify-center gap-2 p-3 border border-gray-300 rounded-lg text-gray-700 mb-4"
+              >
+                <Filter className="h-4 w-4" />
+                Filtros
+                <ChevronLeft className={`h-4 w-4 transform transition-transform ${mostrarFiltros ? 'rotate-90' : '-rotate-90'}`} />
+              </button>
+            )}
+
+            {/* Filtros */}
+            <div className={`${isMobile && !mostrarFiltros ? 'hidden' : 'flex'} flex-col lg:flex-row gap-3 mb-4 lg:mb-0`}>
               <select
                 value={filtroEstado}
                 onChange={(e) => setFiltroEstado(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="todos">Todos los estados</option>
                 {estados.map(estado => (
@@ -923,460 +1188,967 @@ const FridayServiciosScreen = () => {
                   </option>
                 ))}
               </select>
+
+              <select
+                value={filtroPrioridad}
+                onChange={(e) => setFiltroPrioridad(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="todos">Todas las prioridades</option>
+                {prioridades.map(prioridad => (
+                  <option key={prioridad.value} value={prioridad.value}>
+                    {prioridad.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filtroTipo}
+                onChange={(e) => setFiltroTipo(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="todos">Todos los tipos</option>
+                {tiposServicio.map(tipo => (
+                  <option key={tipo.value} value={tipo.value}>
+                    {tipo.label}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {/* Selector de vista para desktop */}
+            {!isMobile && (
+              <div className="flex bg-gray-100 rounded-lg p-1 w-fit">
+                <button
+                  onClick={() => setVistaActual('kanban')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    vistaActual === 'kanban' 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Kanban
+                </button>
+                <button
+                  onClick={() => setVistaActual('lista')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    vistaActual === 'lista' 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Lista
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Contenido principal */}
-        <main className="p-6">
-          {cargando ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-              <span className="ml-3 text-gray-400">Cargando servicios...</span>
-            </div>
-          ) : serviciosFiltrados.length === 0 ? (
-            <div className="text-center py-12">
-              <Briefcase className="h-16 w-16 text-gray-600 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-300 mb-2">
-                No se encontraron servicios
-              </h3>
-              <p className="text-gray-400 mb-6">
-                Intenta cambiar los filtros o crea un nuevo servicio
-              </p>
-              <button
-                onClick={crearNuevoServicio}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center space-x-2 mx-auto transition-colors"
-              >
-                <Plus className="h-5 w-5" />
-                <span>Crear Servicio</span>
-              </button>
-            </div>
-          ) : (
-            renderVistaServicios()
-          )}
-        </main>
+        {/* Vista principal responsive */}
+        {!isMobile && vistaActual === 'kanban' ? <VistaKanban /> : <VistaLista />}
 
-        {/* Modal de formulario (crear/editar) */}
+        {/* Modal de formulario responsive */}
         {mostrarFormulario && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden border border-gray-700">
-              {/* Header del modal */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-700">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    {modoEdicion ? 'Editar Servicio' : 'Nuevo Servicio'}
-                  </h2>
-                  <p className="text-gray-400">
-                    {modoEdicion ? 'Modifica los detalles del servicio' : 'Completa la información del servicio'}
-                  </p>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 lg:p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 lg:px-6 py-4 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl lg:text-2xl font-bold text-gray-900">
+                      {modoEdicion ? 'Editar Servicio' : 'Nuevo Servicio'}
+                    </h2>
+                    <p className="text-gray-600 mt-1 text-sm lg:text-base">
+                      {modoEdicion ? 'Modifica los detalles del servicio' : 'Completa la información del servicio'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMostrarFormulario(false);
+                      setModoEdicion(false);
+                      setServicioSeleccionado(null);
+                    }}
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <X className="h-5 w-5 lg:h-6 lg:w-6" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    setMostrarFormulario(false);
-                    setModoEdicion(false);
-                    setServicioSeleccionado(null);
-                    setArchivosSubir([]);
-                  }}
-                  className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-                >
-                  <X className="h-6 w-6 text-gray-400" />
-                </button>
               </div>
 
-              {/* Contenido del modal */}
-              <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
-                <div className="p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Columna izquierda */}
-                    <div className="space-y-6">
-                      {/* Información básica */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-white">Información Básica</h3>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Elemento *
-                          </label>
-                          <input
-                            type="text"
-                            value={formularioEdicion.elemento}
-                            onChange={(e) => setFormularioEdicion(prev => ({ ...prev, elemento: e.target.value }))}
-                            placeholder="Ingresa el nombre del servicio"
-                            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
+              <div className="p-4 lg:p-6 space-y-6">
+                {/* Información básica */}
+                <div className="grid grid-cols-1 gap-4 lg:gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Título del servicio *
+                    </label>
+                    <input
+                      type="text"
+                      value={nuevoServicio.titulo}
+                      onChange={(e) => setNuevoServicio(prev => ({ ...prev, titulo: e.target.value }))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Ej: Calibración de balanza analítica"
+                    />
+                  </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Descripción
-                          </label>
-                          <textarea
-                            value={formularioEdicion.descripcion}
-                            onChange={(e) => setFormularioEdicion(prev => ({ ...prev, descripcion: e.target.value }))}
-                            placeholder="Describe el servicio en detalle"
-                            rows={4}
-                            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                          />
-                        </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Descripción
+                    </label>
+                    <textarea
+                      value={nuevoServicio.descripcion}
+                      onChange={(e) => setNuevoServicio(prev => ({ ...prev, descripcion: e.target.value }))}
+                      rows={3}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Describe los detalles del servicio..."
+                    />
+                  </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                              Estado
-                            </label>
-                            <select
-                              value={formularioEdicion.estado}
-                              onChange={(e) => setFormularioEdicion(prev => ({ ...prev, estado: e.target.value }))}
-                              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              {estados.map(estado => (
-                                <option key={estado.value} value={estado.value}>
-                                  {estado.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                              Fecha
-                            </label>
-                            <input
-                              type="date"
-                              value={formularioEdicion.fecha}
-                              onChange={(e) => setFormularioEdicion(prev => ({ ...prev, fecha: e.target.value }))}
-                              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Tipo de servicio
+                      </label>
+                      <select
+                        value={nuevoServicio.tipo}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, tipo: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {tiposServicio.map(tipo => (
+                          <option key={tipo.value} value={tipo.value}>
+                            {tipo.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
-                    {/* Columna derecha - Archivos */}
-                    <div className="space-y-6">
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-white">Archivos y Documentos</h3>
-                        
-                        {/* Subir nuevos archivos */}
-                        <div className="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center">
-                          <Upload className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-                          <p className="text-gray-300 mb-2">
-                            Arrastra archivos aquí o haz clic para seleccionar
-                          </p>
-                          <p className="text-sm text-gray-500 mb-4">
-                            Soporta PDF, Word, Excel, imágenes y más
-                          </p>
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            multiple
-                            onChange={handleFileSelect}
-                            className="hidden"
-                            accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.png,.jpg,.jpeg,.gif"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
-                          >
-                            Seleccionar Archivos
-                          </button>
-                        </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Prioridad
+                      </label>
+                      <select
+                        value={nuevoServicio.prioridad}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, prioridad: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {prioridades.map(prioridad => (
+                          <option key={prioridad.value} value={prioridad.value}>
+                            {prioridad.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
-                        {/* Preview de archivos nuevos */}
-                        {archivosSubir.length > 0 && (
-                          <div className="space-y-3">
-                            <h4 className="text-sm font-medium text-gray-300">
-                              Archivos nuevos ({archivosSubir.length})
-                            </h4>
-                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                              {archivosSubir.map((file, index) => (
-                                <FilePreview
-                                  key={index}
-                                  file={file}
-                                  onRemove={() => removeFile(index)}
-                                  onView={() => {}}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Estado
+                      </label>
+                      <select
+                        value={nuevoServicio.estado}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, estado: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {estados.map(estado => (
+                          <option key={estado.value} value={estado.value}>
+                            {estado.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                        {/* Archivos existentes en modo edición */}
-                        {modoEdicion && formularioEdicion.documentos.length > 0 && (
-                          <div className="space-y-3">
-                            <h4 className="text-sm font-medium text-gray-300">
-                              Archivos existentes ({formularioEdicion.documentos.length})
-                            </h4>
-                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                              {formularioEdicion.documentos.map((archivo, index) => (
-                                <FilePreview
-                                  key={index}
-                                  file={archivo}
-                                  onView={() => verArchivo(archivo)}
-                                  showActions={false}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Fecha programada
+                      </label>
+                      <input
+                        type="date"
+                        value={nuevoServicio.fecha}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, fecha: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Hora de inicio
+                      </label>
+                      <input
+                        type="time"
+                        value={nuevoServicio.horaInicio}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, horaInicio: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Hora de fin
+                      </label>
+                      <input
+                        type="time"
+                        value={nuevoServicio.horaFin}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, horaFin: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Footer del modal */}
-              <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-700 bg-gray-900/80">
-                <button
-                  onClick={() => {
-                    setMostrarFormulario(false);
-                    setModoEdicion(false);
-                    setServicioSeleccionado(null);
-                    setArchivosSubir([]);
-                  }}
-                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={guardarServicio}
-                  disabled={guardando || subiendoArchivos || !formularioEdicion.elemento.trim()}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed flex items-center space-x-2"
-                >
-                  {(guardando || subiendoArchivos) && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
-                  <span>
-                    {guardando 
-                      ? 'Guardando...' 
-                      : subiendoArchivos 
-                        ? 'Subiendo archivos...' 
-                        : modoEdicion 
-                          ? 'Actualizar Servicio' 
-                          : 'Crear Servicio'
-                    }
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal de detalles del servicio */}
-        {servicioSeleccionado && !mostrarFormulario && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden border border-gray-700">
-              {/* Header del modal */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-700">
-                <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-white mb-2">
-                    {servicioSeleccionado.elemento || 'Servicio'}
-                  </h2>
-                  <p className="text-gray-400">{servicioSeleccionado.descripcion}</p>
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => abrirChat(servicioSeleccionado.id)}
-                    className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                    title="Abrir chat"
-                  >
-                    <MessageCircle className="h-5 w-5 text-white" />
-                  </button>
+                {/* Información del cliente */}
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Información del Cliente</h3>
                   
-                  <button
-                    onClick={() => editarServicio(servicioSeleccionado)}
-                    className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                    title="Editar servicio"
-                  >
-                    <Edit3 className="h-5 w-5 text-white" />
-                  </button>
-                  
-                  <button
-                    onClick={() => setServicioSeleccionado(null)}
-                    className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-                  >
-                    <X className="h-6 w-6 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Contenido del modal */}
-              <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
-                <div className="p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Información principal */}
-                    <div className="lg:col-span-2 space-y-6">
-                      <div className="bg-gray-800/30 rounded-xl p-6 border border-gray-700/50">
-                        <h3 className="text-lg font-semibold text-white mb-4">Detalles del Servicio</h3>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-xs text-gray-500">Estado</p>
-                            <p className="text-sm text-white">{servicioSeleccionado.estado}</p>
-                          </div>
-                          
-                          <div>
-                            <p className="text-xs text-gray-500">Fecha</p>
-                            <p className="text-sm text-white">{servicioSeleccionado.fecha || 'No especificada'}</p>
-                          </div>
-                          
-                          <div>
-                            <p className="text-xs text-gray-500">Creado por</p>
-                            <p className="text-sm text-white">{servicioSeleccionado.creadoPorNombre || 'Usuario'}</p>
-                          </div>
-                          
-                          <div>
-                            <p className="text-xs text-gray-500">Personas asignadas</p>
-                            <p className="text-sm text-white">
-                              {servicioSeleccionado.personas?.length || 0} personas
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Archivos */}
-                      {servicioSeleccionado.documentos && servicioSeleccionado.documentos.length > 0 && (
-                        <div className="bg-gray-800/30 rounded-xl p-6 border border-gray-700/50">
-                          <h3 className="text-lg font-semibold text-white mb-4">
-                            Archivos Adjuntos ({servicioSeleccionado.documentos.length})
-                          </h3>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {servicioSeleccionado.documentos.map((archivo: any, index: number) => (
-                              <FilePreview
-                                key={index}
-                                file={archivo}
-                                onView={() => verArchivo(archivo)}
-                                showActions={true}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Cliente/Empresa *
+                      </label>
+                      <select
+                        value={nuevoServicio.clienteId}
+                        onChange={(e) => manejarSeleccionCliente(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Seleccionar cliente...</option>
+                        {clientes.map(cliente => (
+                          <option key={cliente.id} value={cliente.id}>
+                            {cliente.nombre || cliente.razonSocial || 'Sin nombre'}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
-                    {/* Sidebar con acciones */}
-                    <div className="space-y-6">
-                      <div className="bg-gray-800/30 rounded-xl p-6 border border-gray-700/50">
-                        <h3 className="text-lg font-semibold text-white mb-4">Acciones Rápidas</h3>
-                        
-                        <div className="space-y-3">
-                          <button
-                            onClick={() => abrirChat(servicioSeleccionado.id)}
-                            className="w-full flex items-center space-x-3 p-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                          >
-                            <MessageCircle className="h-5 w-5 text-white" />
-                            <span className="text-white font-medium">Abrir Chat</span>
-                          </button>
-                          
-                          <button
-                            onClick={() => editarServicio(servicioSeleccionado)}
-                            className="w-full flex items-center space-x-3 p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                          >
-                            <Edit3 className="h-5 w-5 text-white" />
-                            <span className="text-white font-medium">Editar Servicio</span>
-                          </button>
-                          
-                          <button
-                            onClick={() => {
-                              if (window.confirm('¿Estás seguro de que quieres eliminar este servicio?')) {
-                                eliminarServicio(servicioSeleccionado.id);
-                                setServicioSeleccionado(null);
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Persona de contacto
+                        </label>
+                        <input
+                          type="text"
+                          value={nuevoServicio.contacto}
+                          onChange={(e) => setNuevoServicio(prev => ({ ...prev, contacto: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Nombre del contacto"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Teléfono
+                        </label>
+                        <input
+                          type="tel"
+                          value={nuevoServicio.telefono}
+                          onChange={(e) => setNuevoServicio(prev => ({ ...prev, telefono: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Número de teléfono"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        value={nuevoServicio.email}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, email: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="correo@ejemplo.com"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Ubicación
+                      </label>
+                      <input
+                        type="text"
+                        value={nuevoServicio.ubicacion}
+                        onChange={(e) => setNuevoServicio(prev => ({ ...prev, ubicacion: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Dirección donde se realizará el servicio"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Asignación de metrólogos */}
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Asignación de Metrólogos *
+                  </h3>
+                  
+                  {metrologos.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <UserCheck className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                      <p className="font-medium">No hay metrólogos disponibles</p>
+                      <p className="text-sm">Verifica que existan usuarios con rol de Metrólogo</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {metrologos.map((metrologo) => (
+                        <label
+                          key={metrologo.id}
+                          className="flex items-center p-4 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={nuevoServicio.personas.includes(metrologo.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setNuevoServicio(prev => ({
+                                  ...prev,
+                                  personas: [...prev.personas, metrologo.id]
+                                }));
+                              } else {
+                                setNuevoServicio(prev => ({
+                                  ...prev,
+                                  personas: prev.personas.filter(id => id !== metrologo.id)
+                                }));
                               }
                             }}
-                            className="w-full flex items-center space-x-3 p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="h-5 w-5 text-white" />
-                            <span className="text-white font-medium">Eliminar</span>
-                          </button>
-                        </div>
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <div className="ml-3">
+                            <p className="text-sm font-medium text-gray-900">
+                              {metrologo.name || metrologo.nombre || metrologo.correo || metrologo.email}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {metrologo.position || metrologo.puesto || 'Metrólogo'}
+                            </p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notas */}
+                <div className="border-t border-gray-200 pt-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notas adicionales
+                  </label>
+                  <textarea
+                    value={nuevoServicio.notas}
+                    onChange={(e) => setNuevoServicio(prev => ({ ...prev, notas: e.target.value }))}
+                    rows={3}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Observaciones importantes..."
+                  />
+                </div>
+
+                {/* Archivos adjuntos */}
+                <div className="border-t border-gray-200 pt-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Archivos Adjuntos</h3>
+                  
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 lg:p-8 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files.length > 0) {
+                        manejarSubidaArchivos(e.dataTransfer.files);
+                      }
+                    }}
+                  >
+                    <Upload className="h-10 w-10 lg:h-12 lg:w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-base lg:text-lg font-medium text-gray-900 mb-2">
+                      {isMobile ? 'Seleccionar archivos' : 'Arrastra archivos aquí o haz clic para seleccionar'}
+                    </p>
+                    <p className="text-gray-500 text-sm lg:text-base">
+                      Soporta PDF, Word, Excel, imágenes y más (máximo 10MB por archivo)
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          manejarSubidaArchivos(e.target.files);
+                        }
+                      }}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.png,.jpg,.jpeg,.gif,.webp,.svg"
+                    />
+                  </div>
+
+                  {nuevoServicio.archivos.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <h4 className="font-medium text-gray-900">Archivos seleccionados:</h4>
+                      <div className="space-y-2">
+                        {nuevoServicio.archivos.map((archivo, index) => (
+                          <FilePreview
+                            key={index}
+                            file={archivo}
+                            onView={() => {}}
+                            onRemove={() => {
+                              setNuevoServicio(prev => ({
+                                ...prev,
+                                archivos: prev.archivos.filter((_, i) => i !== index)
+                              }));
+                            }}
+                            compact
+                          />
+                        ))}
                       </div>
                     </div>
-                  </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer con botones */}
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 lg:px-6 py-4 rounded-b-2xl">
+                <div className="flex flex-col-reverse lg:flex-row justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setMostrarFormulario(false);
+                      setModoEdicion(false);
+                      setServicioSeleccionado(null);
+                    }}
+                    className="w-full lg:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={crearServicio}
+                    disabled={cargando || archivosSubiendo}
+                    className="w-full lg:w-auto px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {cargando || archivosSubiendo ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Procesando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        {modoEdicion ? 'Actualizar Servicio' : 'Crear Servicio'}
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Chat del servicio */}
-        <ChatServicio
-          servicioId={servicioChat}
-          isOpen={chatAbierto}
-          onClose={() => {
-            setChatAbierto(false);
-            setServicioChat('');
-          }}
-        />
-
-        {/* Visor de archivos */}
-        {mostrarVisorPDF && archivoVisor && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] overflow-hidden border border-gray-700">
-              {/* Header del visor */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-700">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">{archivoVisor.nombre}</h3>
-                  <p className="text-sm text-gray-400">Vista previa del archivo</p>
+        {/* Modal de detalles del servicio responsive */}
+        {servicioSeleccionado && !mostrarFormulario && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 lg:p-4">
+            <div className={`bg-white rounded-2xl shadow-2xl w-full max-h-[95vh] ${
+              isMobile ? 'flex flex-col' : 'max-w-6xl flex overflow-hidden'
+            }`}>
+              {/* Panel principal de detalles */}
+              <div className="flex-1 flex flex-col">
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-lg lg:text-2xl font-bold text-gray-900 mb-2 truncate">
+                        {servicioSeleccionado.titulo}
+                      </h2>
+                      <div className="flex items-center gap-2 lg:gap-4">
+                        <EstadoBadge estado={servicioSeleccionado.estado} compact={isMobile} />
+                        <PrioridadBadge prioridad={servicioSeleccionado.prioridad} compact={isMobile} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <button
+                        onClick={() => editarServicio(servicioSeleccionado)}
+                        className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
+                        title="Editar servicio"
+                      >
+                        <Edit3 className="h-4 w-4 lg:h-5 lg:w-5" />
+                      </button>
+                      <button
+                        onClick={() => eliminarServicio(servicioSeleccionado.id)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Eliminar servicio"
+                      >
+                        <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
+                      </button>
+                      <button
+                        onClick={() => setServicioSeleccionado(null)}
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        <X className="h-5 w-5 lg:h-6 lg:w-6" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
+
+                {/* Contenido principal scrolleable */}
+                <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
+                  {/* Descripción */}
+                  <div className="bg-gray-50 rounded-xl p-4 lg:p-6">
+                    <h3 className="font-semibold text-gray-900 mb-3">Descripción</h3>
+                    <p className="text-gray-700 leading-relaxed text-sm lg:text-base">
+                      {servicioSeleccionado.descripcion || 'Sin descripción proporcionada'}
+                    </p>
+                  </div>
+
+                  {/* Información del servicio y cliente */}
+                  <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6">
+                    {/* Información del servicio */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6">
+                      <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <Settings className="h-4 w-4 lg:h-5 lg:w-5 text-blue-500" />
+                        <span className="text-sm lg:text-base">Información del Servicio</span>
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-500 text-sm lg:text-base">Tipo:</span>
+                          <span className="font-medium text-gray-900 text-sm lg:text-base">
+                            {tiposServicio.find(t => t.value === servicioSeleccionado.tipo)?.label || servicioSeleccionado.tipo}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-500 text-sm lg:text-base">Fecha:</span>
+                          <span className="font-medium text-gray-900 text-sm lg:text-base">
+                            {servicioSeleccionado.fecha || 'No especificada'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-500 text-sm lg:text-base">Horario:</span>
+                          <span className="font-medium text-gray-900 text-sm lg:text-base">
+                            {servicioSeleccionado.horaInicio && servicioSeleccionado.horaFin
+                              ? `${servicioSeleccionado.horaInicio} - ${servicioSeleccionado.horaFin}`
+                              : 'No especificado'
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Información del cliente */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6">
+                      <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <Building2 className="h-4 w-4 lg:h-5 lg:w-5 text-green-500" />
+                        <span className="text-sm lg:text-base">Información del Cliente</span>
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-500 text-sm lg:text-base">Cliente:</span>
+                          <span className="font-medium text-gray-900 text-sm lg:text-base">
+                            {servicioSeleccionado.cliente || 'No especificado'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-500 text-sm lg:text-base">Contacto:</span>
+                          <span className="font-medium text-gray-900 text-sm lg:text-base">
+                            {servicioSeleccionado.contacto || 'No especificado'}
+                          </span>
+                        </div>
+                        {servicioSeleccionado.telefono && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-500 text-sm lg:text-base">Teléfono:</span>
+                            <a 
+                              href={`tel:${servicioSeleccionado.telefono}`}
+                              className="font-medium text-blue-600 hover:underline flex items-center gap-1 text-sm lg:text-base"
+                            >
+                              <Phone className="h-3 w-3 lg:h-4 lg:w-4" />
+                              {servicioSeleccionado.telefono}
+                            </a>
+                          </div>
+                        )}
+                        {servicioSeleccionado.email && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-500 text-sm lg:text-base">Email:</span>
+                            <a 
+                              href={`mailto:${servicioSeleccionado.email}`}
+                              className="font-medium text-blue-600 hover:underline flex items-center gap-1 text-sm lg:text-base"
+                            >
+                              <Mail className="h-3 w-3 lg:h-4 lg:w-4" />
+                              {servicioSeleccionado.email}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Metrólogos asignados */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6">
+                    <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <Users className="h-4 w-4 lg:h-5 lg:w-5 text-purple-500" />
+                      <span className="text-sm lg:text-base">Metrólogos Asignados</span>
+                    </h3>
+                    {servicioSeleccionado.personas && servicioSeleccionado.personas.length > 0 ? (
+                      <div className="space-y-3">
+                        {servicioSeleccionado.personas.map((personaId: string, index: number) => {
+                          const metrologo = metrologos.find(m => m.id === personaId);
+                          return (
+                            <div key={personaId} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                              <div className="w-8 h-8 lg:w-10 lg:h-10 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <User className="h-4 w-4 lg:h-5 lg:w-5 text-purple-600" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 text-sm lg:text-base truncate">
+                                  {metrologo?.name || metrologo?.nombre || 
+                                   servicioSeleccionado.personasNombres?.[index] || 
+                                   metrologo?.correo || metrologo?.email || 
+                                   `Metrólogo ${index + 1}`}
+                                </p>
+                                <p className="text-xs lg:text-sm text-gray-500">
+                                  {metrologo?.position || metrologo?.puesto || 'Metrólogo'}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-gray-500">
+                        <Users className="h-10 w-10 lg:h-12 lg:w-12 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm lg:text-base">No hay metrólogos asignados</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Archivos adjuntos */}
+                  {servicioSeleccionado.archivos && servicioSeleccionado.archivos.length > 0 && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6">
+                      <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <Paperclip className="h-4 w-4 lg:h-5 lg:w-5 text-gray-500" />
+                        <span className="text-sm lg:text-base">Archivos Adjuntos ({servicioSeleccionado.archivos.length})</span>
+                      </h3>
+                      <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
+                        {servicioSeleccionado.archivos.map((archivo: string, index: number) => (
+                          <FilePreview
+                            key={index}
+                            file={archivo}
+                            onView={() => verArchivo(archivo)}
+                            showActions={true}
+                            isUrl={true}
+                            compact={isMobile}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notas adicionales */}
+                  {servicioSeleccionado.notas && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6">
+                      <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <Info className="h-4 w-4 lg:h-5 lg:w-5 text-blue-500" />
+                        <span className="text-sm lg:text-base">Notas Adicionales</span>
+                      </h3>
+                      <p className="text-gray-900 text-sm lg:text-base">{servicioSeleccionado.notas}</p>
+                      <div className="pt-4 border-t border-gray-100 mt-4">
+                        <p className="text-xs text-gray-500">
+                          Creado por {servicioSeleccionado.creadoPorNombre || 'Usuario'} el {' '}
+                          {servicioSeleccionado.fechaCreacion?.toDate?.()?.toLocaleDateString() || 'Fecha no disponible'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Acciones rápidas */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6">
+                    <h3 className="font-semibold text-gray-900 mb-4 text-sm lg:text-base">Acciones Rápidas</h3>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-3">
+                      {estados.map((estado) => {
+                        if (estado.value === servicioSeleccionado.estado) return null;
+                        const IconComponent = estado.icon;
+                        
+                        return (
+                          <button
+                            key={estado.value}
+                            onClick={() => actualizarEstado(servicioSeleccionado.id, estado.value)}
+                            className={`p-2 lg:p-3 rounded-lg border-2 border-dashed transition-all hover:scale-105 ${estado.border} hover:${estado.bgColor} flex flex-col lg:flex-row items-center gap-1 lg:gap-2 text-xs lg:text-sm font-medium ${estado.color}`}
+                          >
+                            <IconComponent className="h-3 w-3 lg:h-4 lg:w-4" />
+                            <span className="text-center lg:text-left">{estado.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Panel lateral de comentarios para desktop - en mobile se omite para ahorrar espacio */}
+              {!isMobile && (
+                <div className="w-96 bg-gray-50 border-l border-gray-200 flex flex-col">
+                  <div className="p-4 border-b border-gray-200">
+                    <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                      <MessageCircle className="h-5 w-5 text-blue-500" />
+                      Comentarios y Seguimiento
+                    </h3>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {mensajes.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                        <p className="font-medium">No hay comentarios aún</p>
+                        <p className="text-sm">Sé el primero en comentar</p>
+                      </div>
+                    ) : (
+                      mensajes.map((mensaje) => (
+                        <div key={mensaje.id} className="bg-white rounded-lg p-4 shadow-sm">
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                              <User className="h-4 w-4 text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="font-medium text-gray-900">{mensaje.autor}</p>
+                                <span className="text-xs text-gray-500">
+                                  {mensaje.fecha?.toDate?.()?.toLocaleString() || 'Ahora'}
+                                </span>
+                              </div>
+                              <p className="text-gray-700 text-sm">{mensaje.mensaje}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  
+                  <div className="p-4 border-t border-gray-200">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={mensajeNuevo}
+                        onChange={(e) => setMensajeNuevo(e.target.value)}
+                        placeholder="Agregar un comentario..."
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && mensajeNuevo.trim()) {
+                            agregarComentario();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={agregarComentario}
+                        disabled={!mensajeNuevo.trim()}
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Visor de archivos optimizado para móviles */}
+        {archivoViendose && (
+          <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col m-2 lg:m-4">
+              <div className="flex items-center justify-between p-3 lg:p-4 border-b border-gray-200">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base lg:text-lg font-semibold text-gray-900 truncate">Vista previa del archivo</h3>
+                  <p className="text-xs lg:text-sm text-gray-500 truncate">{extraerNombreArchivo(archivoViendose)}</p>
+                </div>
+                <div className="flex items-center gap-1 lg:gap-2 ml-2">
+                  {cargandoArchivo && (
+                    <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded-lg">
+                      <Loader2 className="h-3 w-3 lg:h-4 lg:w-4 animate-spin text-blue-500" />
+                      <span className="text-xs lg:text-sm text-blue-600 hidden lg:inline">Cargando...</span>
+                    </div>
+                  )}
+                  
+                  {!isMobile && (
+                    <>
+                      <button
+                        onClick={() => setEscalaZoom(prev => Math.max(0.5, prev - 0.25))}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                        title="Alejar"
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </button>
+                      <span className="text-sm text-gray-600 px-2 min-w-[60px] text-center">
+                        {Math.round(escalaZoom * 100)}%
+                      </span>
+                      <button
+                        onClick={() => setEscalaZoom(prev => Math.min(3, prev + 0.25))}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                        title="Acercar"
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setRotacionPDF(prev => (prev + 90) % 360)}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                        title="Rotar"
+                      >
+                        <RotateCw className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
+                  
                   <button
-                    onClick={() => {
-                      const link = document.createElement('a');
-                      link.href = archivoVisor.url;
-                      link.download = archivoVisor.nombre;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    }}
-                    className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                    title="Descargar archivo"
+                    onClick={() => window.open(archivoViendose, '_blank')}
+                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"
+                    title="Abrir en nueva pestaña"
                   >
-                    <Download className="h-5 w-5 text-white" />
+                    <ExternalLink className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      setMostrarVisorPDF(false);
-                      setArchivoVisor(null);
-                    }}
-                    className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                    onClick={() => setArchivoViendose(null)}
+                    className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                    title="Cerrar"
                   >
-                    <X className="h-5 w-5 text-gray-400" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Contenido del visor */}
-              <div className="h-[calc(90vh-80px)] bg-gray-800/50 flex items-center justify-center">
-                {archivoVisor.nombre?.toLowerCase().endsWith('.pdf') ? (
-                  <Document
-                    file={archivoVisor.url}
-                    loading={
-                      <div className="flex items-center justify-center">
-                        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                        <span className="ml-3 text-gray-400">Cargando PDF...</span>
+              <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-2 lg:p-4">
+                {errorArchivo ? (
+                  <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-md">
+                    <AlertCircle className="h-12 w-12 lg:h-16 lg:w-16 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-2">Error al cargar el PDF</h3>
+                    <p className="text-gray-500 mb-4 lg:mb-6 text-sm lg:text-base">
+                      {errorArchivo}
+                    </p>
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => window.open(archivoViendose, '_blank')}
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Abrir en nueva pestaña
+                      </button>
+                      <button
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = archivoViendose;
+                          link.download = extraerNombreArchivo(archivoViendose);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Descargar archivo
+                      </button>
+                    </div>
+                  </div>
+                ) : obtenerExtensionArchivo(archivoViendose).includes('pdf') ? (
+                  <div className="bg-white shadow-lg rounded-lg overflow-hidden max-w-full">
+                    <Document
+                      file={archivoViendose}
+                      options={pdfOptions}
+                      onLoadSuccess={({ numPages }) => setTotalPaginasPDF(numPages)}
+                      onLoadError={(error) => {
+                        console.error('Error al cargar PDF:', error);
+                        setErrorArchivo('No se pudo cargar el archivo PDF. Verifica los permisos de acceso.');
+                      }}
+                      loading={
+                        <div className="flex items-center justify-center py-8 lg:py-12 px-4 lg:px-8">
+                          <Loader2 className="h-6 w-6 lg:h-8 lg:w-8 animate-spin text-blue-500 mr-3" />
+                          <span className="text-sm lg:text-base">Cargando PDF...</span>
+                        </div>
+                      }
+                    >
+                      <Page
+                        pageNumber={paginaPDF}
+                        scale={escalaZoom}
+                        rotate={rotacionPDF}
+                        loading={
+                          <div className="flex items-center justify-center p-4 lg:p-8">
+                            <Loader2 className="h-4 w-4 lg:h-6 lg:w-6 animate-spin text-blue-500" />
+                          </div>
+                        }
+                      />
+                    </Document>
+
+                    {totalPaginasPDF > 1 && (
+                      <div className="flex items-center justify-center gap-2 lg:gap-4 p-3 lg:p-4 bg-white border-t">
+                        <button
+                          onClick={() => setPaginaPDF(prev => Math.max(1, prev - 1))}
+                          disabled={paginaPDF <= 1}
+                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
+                        </button>
+                        <span className="text-sm text-gray-600 px-2 lg:px-3">
+                          Página {paginaPDF} de {totalPaginasPDF}
+                        </span>
+                        <button
+                          onClick={() => setPaginaPDF(prev => Math.min(totalPaginasPDF, prev + 1))}
+                          disabled={paginaPDF >= totalPaginasPDF}
+                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
+                        </button>
                       </div>
-                    }
-                    error={
-                      <div className="text-center">
-                        <FileText className="h-16 w-16 text-red-400 mx-auto mb-4" />
-                        <p className="text-gray-400">Error al cargar el PDF</p>
-                      </div>
-                    }
-                  >
-                    <Page pageNumber={1} />
-                  </Document>
+                    )}
+                  </div>
+                ) : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(obtenerExtensionArchivo(archivoViendose)) ? (
+                  <img
+                    src={archivoViendose}
+                    alt="Vista previa"
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                    style={{ transform: `scale(${escalaZoom}) rotate(${rotacionPDF}deg)` }}
+                    onError={(e) => {
+                      console.error('Error al cargar imagen');
+                      setErrorArchivo('No se pudo cargar la imagen. Verifica los permisos de acceso.');
+                    }}
+                  />
                 ) : (
-                  <div className="text-center">
-                    <FileText className="h-16 w-16 text-gray-500 mx-auto mb-4" />
-                    <p className="text-gray-400 mb-2">Vista previa no disponible</p>
-                    <p className="text-sm text-gray-500">Descarga el archivo para verlo</p>
+                  <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-sm">
+                    <FileText className="h-16 w-16 lg:h-24 lg:w-24 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-2">Vista previa no disponible</h3>
+                    <p className="text-gray-500 mb-4 text-sm lg:text-base">
+                      Este tipo de archivo ({obtenerExtensionArchivo(archivoViendose).toUpperCase()}) no puede ser previsuralizado en el navegador
+                    </p>
+                    <button
+                      onClick={() => window.open(archivoViendose, '_blank')}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto text-sm lg:text-base"
+                    >
+                      <Download className="h-4 w-4" />
+                      Descargar archivo
+                    </button>
                   </div>
                 )}
               </div>
             </div>
           </div>
+        )}
+
+        {/* Botón flotante para agregar servicio en móvil */}
+        {isMobile && (
+          <button
+            onClick={() => {
+              setNuevoServicio({
+                titulo: '',
+                descripcion: '',
+                tipo: 'calibracion',
+                prioridad: 'media',
+                estado: 'programado',
+                fecha: '',
+                horaInicio: '',
+                horaFin: '',
+                ubicacion: '',
+                clienteId: '',
+                cliente: '',
+                contacto: '',
+                telefono: '',
+                email: '',
+                personas: [],
+                archivos: [],
+                notas: ''
+              });
+              setModoEdicion(false);
+              setMostrarFormulario(true);
+            }}
+            className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 flex items-center justify-center z-40"
+          >
+            <Plus className="h-6 w-6" />
+          </button>
         )}
       </div>
     </div>

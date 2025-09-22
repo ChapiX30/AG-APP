@@ -44,6 +44,7 @@
     "react-firebase-hooks": "^5.1.1",
     "react-hot-toast": "^2.5.2",
     "react-native-calendars": "^1.1313.0",
+    "react-native-vector-icons": "^10.3.0",
     "react-pdf": "^10.0.1",
     "react-router-dom": "^7.7.1",
     "react-select": "^5.10.1",
