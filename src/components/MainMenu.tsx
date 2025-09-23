@@ -26,13 +26,33 @@ const menuItems = [
   { id: 'drive', title: 'DRIVE', icon: FolderKanban, color: 'from-[#d7d2cc] to-[#304352]', available: true },
   { id: 'procedimientos', title: 'PROCEDIMIENTOS', icon: Settings, color: 'from-[#314755] to-[#26a0da]', available: false },
   { id: 'programa-calibracion', title: 'PROGRAMA DE CALIBRACION', icon: Settings, color: 'from-[#232526] to-[#485563]', available: false },
+  { id: 'calibration-stats', title: 'ESTADISTICAS METROLOGOS', icon: Settings, color: 'from-[#232526] to-[#485563]', available: true },
   { id: 'calibration-manager', title: 'CALIBRACION MANAGER', icon: Settings, color: 'from-[#232526] to-[#3a6073]', available: false },
   { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'from-[#36475c] to-[#232526]', available: false },
 ];
 
+
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
+
+  console.log("🟦 user?.puesto =", user?.puesto, "user?.position =", user?.position, "user=", user);
+
+// Evalúa el rol del usuario para mostrar el menú especial:
+  const isJefe =
+    ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
+    ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
+    ((user?.role ?? "").trim().toLowerCase() === "administrativo");
+
+  // Filtra el menú:
+  const menuItemsFiltered = menuItems.filter(item => {
+    if (item.id === "calibration-stats") {
+      return isJefe;
+    }
+    return true;
+  });
+  
+
   const uid = useMemo(() => (user as any)?.uid || (user as any)?.id || localStorage.getItem('usuario_id') || '', [user]);
   const email = useMemo(() => (user as any)?.email || localStorage.getItem('usuario.email') || '', [user]);
 
@@ -287,6 +307,7 @@ export const MainMenu: React.FC = () => {
     else if (item.id === 'calibration-manager') navigateTo('calibration-manager');
     else if (item.id === 'hoja-servicio') navigateTo('hoja-servicio');
     else if (item.id === 'normas') navigateTo('normas');
+    else if (item.id === 'calibration-stats') navigateTo('calibration-stats');
     else if (item.id === 'check-list') navigateTo('check-list');
     else if (item.id === 'drive') navigateTo('drive');
   };
@@ -327,6 +348,9 @@ export const MainMenu: React.FC = () => {
       </div>
     </div>
   );
+
+console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
+
 
   // ================= RENDER =====================
   return (
@@ -567,7 +591,7 @@ export const MainMenu: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 py-8">
           <h2 className="text-2xl font-bold text-white mb-8">Menú Principal</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {menuItems.map((item) => (
+            {menuItemsFiltered.map((item) => (
               <div
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
@@ -611,7 +635,7 @@ export const MainMenu: React.FC = () => {
         <div className="px-4 py-6">
           <h2 className="text-xl font-bold text-white mb-6">Menú</h2>
           <div className="grid grid-cols-2 gap-4">
-            {menuItems.map((item) => (
+            {menuItemsFiltered.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleMenuClick(item)}

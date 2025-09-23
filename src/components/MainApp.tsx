@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { LoginScreen } from './LoginScreen';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
@@ -10,12 +11,14 @@ import  FridayScreen  from './FridayScreen';
 import FridayServiciosScreen from './FridayServiciosScreen';
 import  DriveScreen   from './DriveScreen';
 import SplashScreen from "./SplashScreen";
+
 import ProgramaCalibracionScreen from './ProgramaCalibracionScreen';
 import HojaDeServicioScreen from './HojaDeServicioScreen';
-import  CalibrationManager  from './CalibrationManager';
+import  CalibrationManager   from './CalibrationManager';
 import  EmpresasScreen  from './EmpresasScreen';
 import NormasScreen from './NormasScreen';
 import TablerosScreen from './TablerosScreen';
+import  CalibrationStatsScreen from './CalibrationStatsScreen';
 import  InventoryProScreen   from './InventoryProScreen'; // 👈 AGREGA ESTA LÍNEA
 import { CalendarScreen }   from './CalendarScreen';
 import { RegisterScreen } from './RegisterScreen'; // 👈 AGREGA ESTA LÍNEA
@@ -23,10 +26,16 @@ import { RegisterScreen } from './RegisterScreen'; // 👈 AGREGA ESTA LÍNEA
 import { AnimatePresence, motion } from 'framer-motion'; // 👈 AGREGA ESTO
 
 export const MainApp: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
 
   const [loading, setLoading] = useState(true); // 👈 ASEGÚRATE DE TENER navigate
+
+// 🔔 Hook de notificaciones push
+usePushNotifications(
+    user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
+    user?.email || localStorage.getItem('usuario.email') || ''
+  );
 
 // Muestra el SplashScreen durante 2.2 segundos
   useEffect(() => {
@@ -93,6 +102,17 @@ export const MainApp: React.FC = () => {
       return <DriveScreen />;
     case 'tableros':
       return <TablerosScreen />;
+    case 'calibration-stats':
+      if (
+    ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
+    ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
+    ((user?.role ?? "").trim().toLowerCase() === "administrativo")
+  ) {
+    return <CalibrationStatsScreen />;
+  } else {
+    // Puedes regresar MainMenu o un mensaje de "No autorizado"
+    return <MainMenu />;
+  }
     case 'programa-calibracion':
       return <ProgramaCalibracionScreen />;  
     case 'friday-servicios':
