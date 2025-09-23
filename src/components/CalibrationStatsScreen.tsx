@@ -22,8 +22,8 @@ import { useNavigation } from "../hooks/useNavigation";
 const METROLOGOS_ORDER_COLOR = [
   { name: "Abraham Ginez", color: "#aa0000ff" },
   { name: "Dante Hernández", color: "#1411cfff" },
-  { name: "Edgar Amador", color: "#028019ff" },
-  { name: "Angel Amador", color: "#ffe042ff" },
+  { name: "Edgar Amador", color: "#2a9600ff" },
+  { name: "Angel Amador", color: "#11db9eff" },
   { name: "Ricardo Domínguez", color: "#cc08d6ff" },
 ];
 const FALLBACK_COLORS = ["#dbd0d0ff", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
@@ -56,7 +56,7 @@ function getContrastText(bgColor: string) {
   return luminance > 0.55 ? "#1a202c" : "#fff";
 }
 
-// -------- PieChart PRO --------
+// -------- PieChart PRO (Iron Man Glow) --------
 const renderActiveShape = (props: any) => {
   const RADIAN = Math.PI / 180;
   const {
@@ -75,11 +75,10 @@ const renderActiveShape = (props: any) => {
 
   return (
     <g>
-      {/* Sombra + efecto 3D */}
       <defs>
         <radialGradient id={`grad-${payload.name}`} cx="50%" cy="50%" r="100%">
-          <stop offset="0%" stopColor={fill} stopOpacity={0.9} />
-          <stop offset="100%" stopColor="#000" stopOpacity={0.25} />
+          <stop offset="0%" stopColor={fill} stopOpacity={0.95} />
+          <stop offset="100%" stopColor="#0ff" stopOpacity={0.22} />
         </radialGradient>
       </defs>
       <Sector
@@ -90,17 +89,16 @@ const renderActiveShape = (props: any) => {
         startAngle={startAngle}
         endAngle={endAngle}
         fill={`url(#grad-${payload.name})`}
-        stroke="#333"
+        stroke="#0ff"
         strokeWidth={2}
         style={{
-          filter: "drop-shadow(0px 8px 15px rgba(0,0,0,0.4))",
-          transition: "all 0.3s ease",
+          filter: "drop-shadow(0 0 16px #0ff)",
+          transition: "all 0.3s cubic-bezier(.22,1,.36,1)",
         }}
       />
-      {/* Líneas y texto */}
       <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={fill} fill="none" />
       <circle cx={ex} cy={ey} r={3} fill={fill} />
-      <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey - 4} textAnchor={textAnchor} fill="#333" fontWeight={700}>
+      <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey - 4} textAnchor={textAnchor} fill="#0ff" fontWeight={700}>
         {`${payload.name}: ${value}`}
       </text>
       <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey + 18} textAnchor={textAnchor} fill="#666" fontSize={13}>
@@ -132,8 +130,12 @@ const CalibrationStatsScreen: React.FC = () => {
   const [todasLasHojas, setTodasLasHojas] = useState<HojaTrabajo[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [soloMesActual, setSoloMesActual] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("order");
+
+  // Fecha actual
+  const now = new Date();
+  const mesActual = now.toLocaleString("es-MX", { month: "short", year: "numeric" });
+  const [year, month] = [now.getFullYear(), now.getMonth() + 1];
 
   // -------- Fetch Usuarios --------
   useEffect(() => {
@@ -185,65 +187,19 @@ const CalibrationStatsScreen: React.FC = () => {
     fetchTodas();
   }, []);
 
-  const now = new Date();
-  const mesActual = now.toLocaleString("es-MX", { month: "short", year: "numeric" });
-  const [year, month] = [now.getFullYear(), now.getMonth() + 1];
-
-  // -------- Filtrar por mes --------
-  const hojasFiltradas = soloMesActual
-    ? hojas.filter((hoja) => {
-        if (!hoja.fecha) return false;
-        try {
-          const [y, m] = hoja.fecha.split("-").map(Number);
-          return y === year && m === month;
-        } catch {
-          return false;
-        }
-      })
-    : hojas;
-
-  // -------- Datos por Magnitud --------
-  const hojasPorMagnitud = hojasFiltradas.reduce((acc: any, hoja) => {
-    if (!MAGNITUDES_ORDEN.includes(hoja.magnitud)) return acc;
-    acc[hoja.magnitud] = (acc[hoja.magnitud] || 0) + 1;
-    return acc;
-  }, {});
-  const dataMagnitudes = MAGNITUDES_ORDEN.map((magnitud) => ({
-    name: magnitud,
-    value: hojasPorMagnitud[magnitud] || 0,
-  }));
-
-  // -------- Barra por Mes --------
-  const hojasPorMes = hojasFiltradas.reduce((acc: any, hoja) => {
-    let mes = "";
+  // ----------- SOLO MES ACTUAL PARA GLOBAL -----------
+  const hojasGlobalesMes = todasLasHojas.filter((hoja) => {
+    if (!hoja.fecha) return false;
     try {
-      mes = new Date(hoja.fecha).toLocaleString("es-MX", { month: "short", year: "numeric" });
+      const [y, m] = hoja.fecha.split("-").map(Number);
+      return y === year && m === month;
     } catch {
-      mes = hoja.fecha;
+      return false;
     }
-    acc[mes] = (acc[mes] || 0) + 1;
-    return acc;
-  }, {});
-  const dataMeses = Object.entries(hojasPorMes).map(([mes, total]) => ({
-    mes,
-    total,
-  }));
-
-  // -------- Barra GLOBAL --------
-  const hojasGlobalesFiltradas = soloMesActual
-    ? todasLasHojas.filter((hoja) => {
-        if (!hoja.fecha) return false;
-        try {
-          const [y, m] = hoja.fecha.split("-").map(Number);
-          return y === year && m === month;
-        } catch {
-          return false;
-        }
-      })
-    : todasLasHojas;
+  });
 
   const calibracionesPorMetrologo: Record<string, number> = {};
-  hojasGlobalesFiltradas.forEach((hoja) => {
+  hojasGlobalesMes.forEach((hoja) => {
     if (!hoja.nombre) return;
     calibracionesPorMetrologo[hoja.nombre] = (calibracionesPorMetrologo[hoja.nombre] || 0) + 1;
   });
@@ -270,9 +226,42 @@ const CalibrationStatsScreen: React.FC = () => {
     metrologosTotales = [...metrologosTotales].sort((a, b) => b.total - a.total);
   }
 
+  // -------- Top 3 PRO del mes actual
+  const top3 = [...metrologosTotales].sort((a, b) => b.total - a.total).slice(0, 3);
+
+  // ----------- POR METROLOGO -----------
+
+  // Meses del metrologo
+  const hojasPorMes = hojas.reduce((acc: any, hoja) => {
+    let mes = "";
+    try {
+      mes = new Date(hoja.fecha).toLocaleString("es-MX", { month: "short", year: "numeric" });
+    } catch {
+      mes = hoja.fecha;
+    }
+    acc[mes] = (acc[mes] || 0) + 1;
+    return acc;
+  }, {});
+  const dataMeses = Object.entries(hojasPorMes).map(([mes, total]) => ({
+    mes,
+    total,
+  }));
+
+  // Magnitudes del metrologo
+  const hojasPorMagnitud = hojas.reduce((acc: any, hoja) => {
+    if (!MAGNITUDES_ORDEN.includes(hoja.magnitud)) return acc;
+    acc[hoja.magnitud] = (acc[hoja.magnitud] || 0) + 1;
+    return acc;
+  }, {});
+  const dataMagnitudes = MAGNITUDES_ORDEN.map((magnitud) => ({
+    name: magnitud,
+    value: hojasPorMagnitud[magnitud] || 0,
+  }));
+
   // -------- UI --------
   return (
     <div className="relative p-4 md:p-8 min-h-screen bg-gradient-to-br from-blue-50 to-purple-100 overflow-x-hidden">
+
       {/* Botón regreso */}
       <motion.button
         onClick={() => navigateTo("mainmenu")}
@@ -294,7 +283,7 @@ const CalibrationStatsScreen: React.FC = () => {
         📊 Estadísticas de Calibración
       </motion.h1>
 
-      {/* Select & filtros */}
+      {/* Select metrologo */}
       <div className="mb-4 flex flex-col md:flex-row items-center justify-center gap-4">
         <select
           className="p-3 border rounded-xl shadow-md min-w-[220px] bg-white text-gray-900"
@@ -311,21 +300,9 @@ const CalibrationStatsScreen: React.FC = () => {
             </option>
           ))}
         </select>
-
-        <label className="flex items-center gap-2 select-none cursor-pointer">
-          <input
-            type="checkbox"
-            className="form-checkbox rounded accent-blue-600"
-            checked={soloMesActual}
-            onChange={(e) => setSoloMesActual(e.target.checked)}
-          />
-          <span className="font-medium text-blue-700">
-            Solo mostrar calibrados del <span className="underline">{mesActual}</span>
-          </span>
-        </label>
       </div>
 
-      {/* Gráficas del metrologo */}
+      {/* Estadísticas del metrologo */}
       {metrologoSeleccionado && !loading && (
         <motion.div
           className="grid grid-cols-1 md:grid-cols-2 gap-8"
@@ -349,7 +326,7 @@ const CalibrationStatsScreen: React.FC = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* PieChart 3D */}
+          {/* PieChart con efecto Glow */}
           <div className="bg-white p-4 rounded-xl shadow-lg">
             <h2 className="text-lg font-semibold mb-4 text-center text-gray-700">
               Por Magnitud <span className="text-blue-400">({metrologoSeleccionado.name})</span>
@@ -376,7 +353,6 @@ const CalibrationStatsScreen: React.FC = () => {
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-
             {/* Leyenda manual */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
               {MAGNITUDES_ORDEN.map((mag) => (
@@ -390,7 +366,27 @@ const CalibrationStatsScreen: React.FC = () => {
         </motion.div>
       )}
 
-      {/* Barra GLOBAL */}
+      {/* --- Ranking Top 3 del mes actual --- */}
+      <div className="max-w-3xl mx-auto mt-6 mb-10 text-center">
+        <h2 className="text-xl font-bold text-blue-600 mb-4">🏆 Top 3 Metrólogos ({mesActual})</h2>
+        <div className="flex justify-center gap-6">
+          {top3.map((m, i) => (
+            <motion.div
+              key={m.name}
+              className="bg-white border-2 border-blue-400 rounded-xl px-4 py-3 shadow-md"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.2 }}
+            >
+              <span className="text-2xl">{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}</span>
+              <p className="text-blue-700 font-bold">{m.name}</p>
+              <p className="text-sm text-gray-500">{m.total} calibraciones</p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      {/* Barra GLOBAL SOLO mes actual */}
       <motion.div
         className="max-w-4xl mx-auto mt-16 mb-8 bg-white rounded-2xl shadow-2xl p-6"
         initial={{ opacity: 0, y: 60 }}
@@ -399,7 +395,7 @@ const CalibrationStatsScreen: React.FC = () => {
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-1">
           <h2 className="text-2xl font-bold text-center text-gray-800">
-            TOTAL GENERAL - Calibraciones por Metrologo {soloMesActual && `(Mes: ${mesActual})`}
+            TOTAL GENERAL - Calibraciones por Metrologo (Mes: {mesActual})
           </h2>
           <div className="flex items-center gap-2">
             <button
@@ -426,7 +422,6 @@ const CalibrationStatsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Fix de etiquetas del eje X */}
         <ResponsiveContainer width="100%" height={340}>
           <BarChart data={metrologosTotales}>
             <XAxis
