@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../utils/firebase"; // Ajusta la ruta si es necesario
+import { db } from "../utils/firebase";
 import {
   BarChart,
   Bar,
@@ -18,26 +18,23 @@ import { motion } from "framer-motion";
 import { ArrowLeft, SortDesc, SortAsc } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 
-// ----------- MAPEA AQUÍ EL COLOR Y ORDEN DE CADA METRÓLOGO -----------
-// Puedes personalizar colores y orden SOLO CAMBIA este array:
+// -------- CONFIGURACIÓN --------
 const METROLOGOS_ORDER_COLOR = [
-  { name: "Abraham Ginez", color: "#D32EF2" },
-  { name: "Dante Hernández", color: "#11CFC3" },
-  { name: "Edgar Amador", color: "#FFC300" },
-  { name: "Angel Amador", color: "#FF8C42" },
-  { name: "Ricardo Domínguez", color: "#2096F3" },
-  // Agrega aquí más metrólogos (usa color HEX válido)
+  { name: "Abraham Ginez", color: "#aa0000ff" },
+  { name: "Dante Hernández", color: "#1411cfff" },
+  { name: "Edgar Amador", color: "#028019ff" },
+  { name: "Angel Amador", color: "#ffe042ff" },
+  { name: "Ricardo Domínguez", color: "#cc08d6ff" },
 ];
-// Colores de respaldo si faltan metrólogos nuevos:
-const FALLBACK_COLORS = ["#388E3C", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
+const FALLBACK_COLORS = ["#dbd0d0ff", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
 
 const MAGNITUDES_COLORS: Record<string, string> = {
-  Dimensional: "#FF8C42",
-  Electrica: "#11CFC3",
-  Flujo: "#B620E0",
-  Presión: "#FFC300",
-  Temperatura: "#EC53EC",
-  Tiempo: "#2096F3",
+  Dimensional: "#001e78ff",
+  Electrica: "#ffee00ff",
+  Flujo: "#20cde0ff",
+  Presión: "#afafbaff",
+  Temperatura: "#c87705ff",
+  Tiempo: "#f33220ff",
 };
 const MAGNITUDES_ORDEN = [
   "Dimensional",
@@ -48,68 +45,76 @@ const MAGNITUDES_ORDEN = [
   "Tiempo",
 ];
 
-// Detecta si el color es "claro" para poner letra negra, si no blanca:
 function getContrastText(bgColor: string) {
   if (!bgColor) return "#222";
   let hex = bgColor.replace("#", "");
-  if (hex.length === 3)
-    hex = hex.split("").map((c) => c + c).join("");
-  const r = parseInt(hex.substr(0,2),16);
-  const g = parseInt(hex.substr(2,2),16);
-  const b = parseInt(hex.substr(4,2),16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b)/255;
+  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.55 ? "#1a202c" : "#fff";
 }
 
+// -------- PieChart PRO --------
 const renderActiveShape = (props: any) => {
   const RADIAN = Math.PI / 180;
   const {
-    cx, cy, midAngle, innerRadius, outerRadius, startAngle, endAngle,
-    fill, payload, percent, value,
+    cx, cy, midAngle, innerRadius, outerRadius,
+    startAngle, endAngle, fill, payload, percent, value,
   } = props;
   const sin = Math.sin(-RADIAN * midAngle);
   const cos = Math.cos(-RADIAN * midAngle);
-  const sx = cx + (outerRadius + 10) * cos;
-  const sy = cy + (outerRadius + 10) * sin;
+  const sx = cx + (outerRadius + 12) * cos;
+  const sy = cy + (outerRadius + 12) * sin;
   const mx = cx + (outerRadius + 30) * cos;
   const my = cy + (outerRadius + 30) * sin;
   const ex = mx + (cos >= 0 ? 1 : -1) * 22;
   const ey = my;
   const textAnchor = cos >= 0 ? "start" : "end";
+
   return (
     <g>
+      {/* Sombra + efecto 3D */}
+      <defs>
+        <radialGradient id={`grad-${payload.name}`} cx="50%" cy="50%" r="100%">
+          <stop offset="0%" stopColor={fill} stopOpacity={0.9} />
+          <stop offset="100%" stopColor="#000" stopOpacity={0.25} />
+        </radialGradient>
+      </defs>
       <Sector
         cx={cx}
         cy={cy}
         innerRadius={innerRadius}
-        outerRadius={outerRadius + 10}
+        outerRadius={outerRadius + 12}
         startAngle={startAngle}
         endAngle={endAngle}
-        fill={fill}
+        fill={`url(#grad-${payload.name})`}
         stroke="#333"
         strokeWidth={2}
         style={{
-          filter: "drop-shadow(0px 6px 15px rgba(0,0,0,0.28))",
-          transition: "all 0.25s cubic-bezier(.41,1.35,.65,1.03)",
+          filter: "drop-shadow(0px 8px 15px rgba(0,0,0,0.4))",
+          transition: "all 0.3s ease",
         }}
       />
+      {/* Líneas y texto */}
       <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={fill} fill="none" />
-      <circle cx={ex} cy={ey} r={3} fill={fill} stroke="none" />
-      <text x={ex + (cos >= 0 ? 1 : -1) * 10} y={ey - 4} textAnchor={textAnchor} fill="#333" fontWeight={700}>
+      <circle cx={ex} cy={ey} r={3} fill={fill} />
+      <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey - 4} textAnchor={textAnchor} fill="#333" fontWeight={700}>
         {`${payload.name}: ${value}`}
       </text>
-      <text x={ex + (cos >= 0 ? 1 : -1) * 10} y={ey + 18} textAnchor={textAnchor} fill="#888" fontSize={13}>
+      <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey + 18} textAnchor={textAnchor} fill="#666" fontSize={13}>
         {`${(percent * 100).toFixed(1)}%`}
       </text>
     </g>
   );
 };
 
+// -------- Interfaces --------
 interface Usuario {
   id: string;
   name: string;
   puesto: string;
-  position?: string;
 }
 interface HojaTrabajo {
   id: string;
@@ -117,12 +122,10 @@ interface HojaTrabajo {
   fecha: string;
   magnitud: string;
 }
-
 type SortMode = "order" | "asc" | "desc";
 
 const CalibrationStatsScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
-
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [metrologoSeleccionado, setMetrologoSeleccionado] = useState<Usuario | null>(null);
   const [hojas, setHojas] = useState<HojaTrabajo[]>([]);
@@ -132,6 +135,7 @@ const CalibrationStatsScreen: React.FC = () => {
   const [soloMesActual, setSoloMesActual] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("order");
 
+  // -------- Fetch Usuarios --------
   useEffect(() => {
     const fetchUsuarios = async () => {
       const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
@@ -145,6 +149,7 @@ const CalibrationStatsScreen: React.FC = () => {
     fetchUsuarios();
   }, []);
 
+  // -------- Fetch Hojas de Metrologo --------
   useEffect(() => {
     if (!metrologoSeleccionado) {
       setHojas([]);
@@ -167,6 +172,7 @@ const CalibrationStatsScreen: React.FC = () => {
     fetchHojas();
   }, [metrologoSeleccionado]);
 
+  // -------- Fetch Todas las Hojas --------
   useEffect(() => {
     const fetchTodas = async () => {
       const snap = await getDocs(collection(db, "hojasDeTrabajo"));
@@ -183,7 +189,7 @@ const CalibrationStatsScreen: React.FC = () => {
   const mesActual = now.toLocaleString("es-MX", { month: "short", year: "numeric" });
   const [year, month] = [now.getFullYear(), now.getMonth() + 1];
 
-  // === Pie por magnitud (del metrologo seleccionado) ===
+  // -------- Filtrar por mes --------
   const hojasFiltradas = soloMesActual
     ? hojas.filter((hoja) => {
         if (!hoja.fecha) return false;
@@ -196,6 +202,7 @@ const CalibrationStatsScreen: React.FC = () => {
       })
     : hojas;
 
+  // -------- Datos por Magnitud --------
   const hojasPorMagnitud = hojasFiltradas.reduce((acc: any, hoja) => {
     if (!MAGNITUDES_ORDEN.includes(hoja.magnitud)) return acc;
     acc[hoja.magnitud] = (acc[hoja.magnitud] || 0) + 1;
@@ -206,7 +213,7 @@ const CalibrationStatsScreen: React.FC = () => {
     value: hojasPorMagnitud[magnitud] || 0,
   }));
 
-  // === Barra: del metrologo seleccionado (por mes) ===
+  // -------- Barra por Mes --------
   const hojasPorMes = hojasFiltradas.reduce((acc: any, hoja) => {
     let mes = "";
     try {
@@ -222,7 +229,7 @@ const CalibrationStatsScreen: React.FC = () => {
     total,
   }));
 
-  // === Barra FIJA GLOBAL: metrologo por color y orden personalizado ===
+  // -------- Barra GLOBAL --------
   const hojasGlobalesFiltradas = soloMesActual
     ? todasLasHojas.filter((hoja) => {
         if (!hoja.fecha) return false;
@@ -235,21 +242,18 @@ const CalibrationStatsScreen: React.FC = () => {
       })
     : todasLasHojas;
 
-  // Agrupar por metrologo (nombre)
   const calibracionesPorMetrologo: Record<string, number> = {};
   hojasGlobalesFiltradas.forEach((hoja) => {
     if (!hoja.nombre) return;
     calibracionesPorMetrologo[hoja.nombre] = (calibracionesPorMetrologo[hoja.nombre] || 0) + 1;
   });
 
-  // Construye la lista en el orden y color que TÚ defines
   let metrologosTotales = METROLOGOS_ORDER_COLOR.map((item, idx) => ({
     name: item.name,
     total: calibracionesPorMetrologo[item.name] || 0,
     color: item.color,
   }));
 
-  // Agrega metrólogos extras nuevos (que no están en tu lista)
   Object.keys(calibracionesPorMetrologo).forEach((n, i) => {
     if (!metrologosTotales.find((x) => x.name === n)) {
       metrologosTotales.push({
@@ -260,14 +264,13 @@ const CalibrationStatsScreen: React.FC = () => {
     }
   });
 
-  // Ordenar según sortMode
   if (sortMode === "asc") {
     metrologosTotales = [...metrologosTotales].sort((a, b) => a.total - b.total);
   } else if (sortMode === "desc") {
     metrologosTotales = [...metrologosTotales].sort((a, b) => b.total - a.total);
-  } // else, por tu orden
+  }
 
-  // --------- UI ------------
+  // -------- UI --------
   return (
     <div className="relative p-4 md:p-8 min-h-screen bg-gradient-to-br from-blue-50 to-purple-100 overflow-x-hidden">
       {/* Botón regreso */}
@@ -291,10 +294,10 @@ const CalibrationStatsScreen: React.FC = () => {
         📊 Estadísticas de Calibración
       </motion.h1>
 
-      {/* Filtros */}
+      {/* Select & filtros */}
       <div className="mb-4 flex flex-col md:flex-row items-center justify-center gap-4">
         <select
-          className="p-3 border rounded-xl shadow-md min-w-[220px] bg-white"
+          className="p-3 border rounded-xl shadow-md min-w-[220px] bg-white text-gray-900"
           onChange={(e) =>
             setMetrologoSeleccionado(
               usuarios.find((u) => u.id === e.target.value) || null
@@ -330,7 +333,7 @@ const CalibrationStatsScreen: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: "anticipate" }}
         >
-          {/* Gráfico de barras por mes */}
+          {/* Barras por mes */}
           <div className="bg-white p-4 rounded-xl shadow-lg">
             <h2 className="text-lg font-semibold mb-4 text-center text-gray-700">
               Total por Mes <span className="text-blue-400">({metrologoSeleccionado.name})</span>
@@ -346,7 +349,7 @@ const CalibrationStatsScreen: React.FC = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* PieChart 3D Efecto */}
+          {/* PieChart 3D */}
           <div className="bg-white p-4 rounded-xl shadow-lg">
             <h2 className="text-lg font-semibold mb-4 text-center text-gray-700">
               Por Magnitud <span className="text-blue-400">({metrologoSeleccionado.name})</span>
@@ -361,7 +364,6 @@ const CalibrationStatsScreen: React.FC = () => {
                   cy="50%"
                   innerRadius={70}
                   outerRadius={100}
-                  fill="#8884d8"
                   dataKey="value"
                   onMouseEnter={(_, index) => setActiveIndex(index)}
                   onMouseLeave={() => setActiveIndex(-1)}
@@ -375,9 +377,9 @@ const CalibrationStatsScreen: React.FC = () => {
               </PieChart>
             </ResponsiveContainer>
 
-            {/* Leyenda manual con colores igual a tu imagen */}
+            {/* Leyenda manual */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-              {MAGNITUDES_ORDEN.map((mag, i) => (
+              {MAGNITUDES_ORDEN.map((mag) => (
                 <span key={mag} className="flex items-center gap-1 text-sm font-medium" style={{ color: MAGNITUDES_COLORS[mag] }}>
                   <span className="w-4 h-4 rounded-sm mr-1 inline-block" style={{ background: MAGNITUDES_COLORS[mag] }}></span>
                   {mag}
@@ -388,7 +390,7 @@ const CalibrationStatsScreen: React.FC = () => {
         </motion.div>
       )}
 
-      {/* Barra GLOBAL: metrologos, color y orden personalizado */}
+      {/* Barra GLOBAL */}
       <motion.div
         className="max-w-4xl mx-auto mt-16 mb-8 bg-white rounded-2xl shadow-2xl p-6"
         initial={{ opacity: 0, y: 60 }}
@@ -401,21 +403,21 @@ const CalibrationStatsScreen: React.FC = () => {
           </h2>
           <div className="flex items-center gap-2">
             <button
-              title="Ordenar personalizado"
+              title="Orden personalizado"
               className={`p-2 rounded-full hover:bg-blue-100 ${sortMode==="order" ? "bg-blue-200" : ""}`}
               onClick={()=>setSortMode("order")}
             >
               <SortDesc className="w-4 h-4 text-blue-500" />
             </button>
             <button
-              title="Ordenar por más calibrados"
+              title="Orden descendente"
               className={`p-2 rounded-full hover:bg-blue-100 ${sortMode==="desc" ? "bg-blue-200" : ""}`}
               onClick={()=>setSortMode("desc")}
             >
               <SortDesc className="w-4 h-4 rotate-180 text-blue-500" />
             </button>
             <button
-              title="Ordenar por menos calibrados"
+              title="Orden ascendente"
               className={`p-2 rounded-full hover:bg-blue-100 ${sortMode==="asc" ? "bg-blue-200" : ""}`}
               onClick={()=>setSortMode("asc")}
             >
@@ -423,60 +425,40 @@ const CalibrationStatsScreen: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Fix de etiquetas del eje X */}
         <ResponsiveContainer width="100%" height={340}>
           <BarChart data={metrologosTotales}>
             <XAxis
               dataKey="name"
-              tick={({x, y, payload, index})=>{
-                const entry = metrologosTotales[index];
-                const color = entry ? entry.color : "#1a202c";
-                const contrast = getContrastText(color);
-                return (
-                  <g transform={`translate(${x},${y+12})`}>
-                    <rect
-                      x={-40}
-                      y={-18}
-                      width={80}
-                      height={20}
-                      rx={8}
-                      fill={color}
-                      opacity={0.75}
-                    />
-                    <text
-                      x={0}
-                      y={0}
-                      textAnchor="middle"
-                      fill={contrast}
-                      fontWeight={700}
-                      fontSize={13}
-                    >
-                      {payload.value}
-                    </text>
-                  </g>
-                );
-              }}
+              tick={{ fontSize: 12, fontWeight: 600, angle: -25, dy: 10, fill: "#333" }}
+              interval={0}
+              height={60}
             />
             <YAxis />
-            <Tooltip
-              formatter={(value, name, props) => [`${value} calibraciones`, "Total"]}
-              labelFormatter={(label) => `Metrologo: ${label}`}
-            />
+            <Tooltip formatter={(value) => [`${value} calibraciones`, "Total"]} />
             <Bar dataKey="total">
-              {metrologosTotales.map((entry, i) => (
+              {metrologosTotales.map((entry) => (
                 <Cell key={entry.name} fill={entry.color} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+
+        {/* Leyenda personalizada */}
         <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6">
-          {metrologosTotales.map((met, i) => (
-            <span key={met.name} className="flex items-center gap-1 text-sm font-semibold" style={{
-              color: getContrastText(met.color),
-              background: met.color,
-              padding: "2px 12px",
-              borderRadius: "0.6em",
-              opacity: 0.95
-            }}>
+          {metrologosTotales.map((met) => (
+            <span
+              key={met.name}
+              className="flex items-center gap-1 text-sm font-semibold"
+              style={{
+                color: getContrastText(met.color),
+                background: met.color,
+                padding: "2px 12px",
+                borderRadius: "0.6em",
+                opacity: 0.95,
+              }}
+            >
               <span className="w-3 h-3 rounded-sm mr-1 inline-block" style={{ background: met.color, border: "1.5px solid #fff" }}></span>
               {met.name}
             </span>
