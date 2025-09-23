@@ -90,7 +90,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
             </motion.div>
             <h1 className="text-5xl md:text-6xl font-extrabold text-white drop-shadow-2xl text-center mb-2">ESE-AG</h1>
             <span className="block bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent font-bold text-3xl text-center mb-3">
-              ¡Bienvenido al futuro!
+              ¡Bienvenido!
             </span>
             <p className="text-xl text-white/80 text-center max-w-xl mb-4">
               Gestiona, consulta y administra todos tus equipos y servicios del laboratorio con tecnología de vanguardia.
