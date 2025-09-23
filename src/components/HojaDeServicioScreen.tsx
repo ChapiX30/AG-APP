@@ -442,6 +442,14 @@ async function generarPDFFormal({
   const pieY = 272;
   doc.setFillColor(...azulPrimario);
   doc.rect(10, pieY, 190, 8, 'F');
+
+  // Código identificador Hoja de Servicio (AG-CAL-F10-00) en la esquina inferior izquierda
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(52, 60, 130); // azul discreto
+  doc.text('AG-CAL-F10-00', 12, 285); // Esquina inferior izquierda
+ 
+  // Texto Central en blanco
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);

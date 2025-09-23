@@ -31,14 +31,11 @@ const menuItems = [
   { id: 'check-list', title: 'CHECK LIST HERRAMIENTA', icon: Settings, color: 'from-[#36475c] to-[#232526]', available: false },
 ];
 
-
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { user, logout } = useAuth();
 
-  console.log("🟦 user?.puesto =", user?.puesto, "user?.position =", user?.position, "user=", user);
-
-// Evalúa el rol del usuario para mostrar el menú especial:
+  // Evalúa el rol del usuario para mostrar el menú especial:
   const isJefe =
     ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
     ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
@@ -51,7 +48,6 @@ export const MainMenu: React.FC = () => {
     }
     return true;
   });
-  
 
   const uid = useMemo(() => (user as any)?.uid || (user as any)?.id || localStorage.getItem('usuario_id') || '', [user]);
   const email = useMemo(() => (user as any)?.email || localStorage.getItem('usuario.email') || '', [user]);
@@ -69,7 +65,7 @@ export const MainMenu: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const inputFileRef = useRef(null);
 
-  // Estados para contador de equipos calibrados
+  // =================== CONTADOR DE CALIBRACIONES ===================
   const [equipmentCount, setEquipmentCount] = useState(0);
   const [showEquipmentCounter, setShowEquipmentCounter] = useState(true);
 
@@ -89,70 +85,36 @@ export const MainMenu: React.FC = () => {
     return () => unsub();
   }, [uid]);
 
-  // CONTADOR DE EQUIPOS CALIBRADOS - LÓGICA CORREGIDA
+  // === CONTADOR IGUAL QUE LAS GRÁFICAS (solo calibraciones del mes actual) ===
   useEffect(() => {
     if (!uid || !editName) return;
 
     const now = new Date();
-    const currentMonth = now.getMonth() + 1; // getMonth() devuelve 0-11, necesitamos 1-12
+    const currentMonth = now.getMonth() + 1;
     const currentYear = now.getFullYear();
-    
-    console.log(`🔍 Buscando calibraciones para: ${editName} en ${currentMonth}/${currentYear}`);
-    
+
     const unsub = onSnapshot(collection(db, 'hojasDeTrabajo'), (snap) => {
       const hojas = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-      
-      console.log(`📊 Total hojas de trabajo encontradas: ${hojas.length}`);
-      
-      // Filtrar solo las del usuario actual y mes actual
       const hojasDelUsuario = hojas.filter(hoja => {
-        // Verificación exacta del nombre
-        const nombreCoincide = hoja.nombre && 
-                               hoja.nombre.trim().toLowerCase() === editName.trim().toLowerCase();
-        
+        const nombreCoincide = hoja.nombre &&
+          hoja.nombre.trim().toLowerCase() === editName.trim().toLowerCase();
         if (!nombreCoincide) return false;
-        
-        // Verificar fecha del mes actual
         if (!hoja.fecha) return false;
-        
         try {
           const [year, month] = hoja.fecha.split('-').map(Number);
           return month === currentMonth && year === currentYear;
-        } catch (e) {
-          console.warn('Error parseando fecha:', hoja.fecha);
+        } catch {
           return false;
         }
       });
-      
-      console.log(`✅ Hojas del usuario ${editName} en ${currentMonth}/${currentYear}: ${hojasDelUsuario.length}`);
-      
-      // Crear identificadores únicos de equipos para evitar duplicados
-      const equiposUnicos = new Set();
-      
-      hojasDelUsuario.forEach((hoja, index) => {
-        // Crear un identificador más robusto
-        const marca = (hoja.marca || '').trim();
-        const modelo = (hoja.modelo || '').trim();
-        const numeroSerie = (hoja.numeroSerie || '').trim();
-        
-        // Solo crear ID si tenemos al menos marca o modelo
-        if (marca || modelo || numeroSerie) {
-          const equipoId = `${marca}|${modelo}|${numeroSerie}`.toLowerCase();
-          equiposUnicos.add(equipoId);
-          console.log(`🔧 Equipo ${index + 1}: ${marca} ${modelo} (${numeroSerie}) - ID: ${equipoId}`);
-        }
-      });
-      
-      const totalEquipos = equiposUnicos.size;
-      console.log(`🎯 Total equipos únicos calibrados: ${totalEquipos}`);
-      
-      setEquipmentCount(totalEquipos);
+      setEquipmentCount(hojasDelUsuario.length);
     }, (err) => {
       console.error('❌ Error obteniendo hojas de trabajo:', err);
     });
 
     return () => unsub();
   }, [uid, editName]);
+  // ===============================================================
 
   // Subir foto y guardar perfil
   const handleProfileSave = async () => {
@@ -325,7 +287,7 @@ export const MainMenu: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          <div className="text-xs text-gray-300">Calibrados</div>
+          <div className="text-xs text-gray-300">Calibraciones</div>
         </div>
         <button
           onClick={() => setShowEquipmentCounter(false)}
@@ -334,23 +296,17 @@ export const MainMenu: React.FC = () => {
           ×
         </button>
       </div>
-      
       <div className="flex items-center justify-between mt-1">
         <div className="text-lg font-bold text-green-400">{equipmentCount}</div>
         <div className="text-xs text-white/60">
-          Sep 2025
+          {new Date().toLocaleString('es-MX', { month: 'short', year: 'numeric' })}
         </div>
       </div>
-      
-      {/* Debug info - se puede quitar en producción */}
       <div className="text-xs text-white/40 mt-1">
         {editName ? `Usuario: ${editName.substring(0, 10)}...` : 'Sin usuario'}
       </div>
     </div>
   );
-
-console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
-
 
   // ================= RENDER =====================
   return (
@@ -392,7 +348,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                   JPG, PNG o WebP (max 2MB)
                 </p>
               </div>
-
               {/* Campos del formulario */}
               <div className="space-y-4">
                 <div>
@@ -406,7 +361,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                     placeholder="Tu nombre"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Correo</label>
                   <input
@@ -418,7 +372,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                     placeholder="tucorreo@empresa.com"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Teléfono</label>
                   <input
@@ -429,7 +382,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                     placeholder="Ej. 222-123-4567"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Puesto / Cargo</label>
                   <input
@@ -440,7 +392,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                     placeholder="Ej. Metrologo, Calidad, Técnico"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Ubicación</label>
                   <input
@@ -451,7 +402,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                     placeholder="Ej. Puebla, México"
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Descripción breve</label>
                   <textarea
@@ -463,7 +413,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                   />
                 </div>
               </div>
-
               {/* Botones */}
               <div className="flex justify-end space-x-3 mt-6">
                 <button
@@ -498,7 +447,7 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
         </div>
       )}
 
-      {/* CONTADOR DE EQUIPOS CALIBRADOS */}
+      {/* CONTADOR DE CALIBRACIONES */}
       <EquipmentCounter />
 
       {/* ===== Desktop header ===== */}
@@ -513,7 +462,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                   <p className="text-sm text-gray-400">Sistema de Gestión</p>
                 </div>
               </div>
-              
               <div className="flex items-center space-x-6">
                 <div className="flex items-center space-x-2">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#2563eb] to-[#3b82f6] flex items-center justify-center">
@@ -534,7 +482,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                     </button>
                   </div>
                 </div>
-                
                 <div className="text-right">
                   <p className="text-xs text-gray-400">{editEmail}</p>
                   <button
@@ -563,7 +510,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                   <p className="text-xs text-gray-400">Sistema de Gestión</p>
                 </div>
               </div>
-              
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#2563eb] to-[#3b82f6] flex items-center justify-center">
                   {photoUrl ? (
@@ -609,7 +555,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                 `}>
                   <item.icon className="w-8 h-8 mb-2" />
                   <span className="text-sm font-medium text-center px-2">{item.title}</span>
-                  
                   {!item.available && (
                     <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center">
                       <span className="text-xs text-white/80 bg-black/60 px-2 py-1 rounded">
@@ -617,7 +562,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                       </span>
                     </div>
                   )}
-                  
                   {item.available && (
                     <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="w-2 h-2 bg-green-400 rounded-full"></div>
@@ -649,13 +593,11 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
                 <div className="flex flex-col items-center text-center space-y-2">
                   <item.icon className="w-6 h-6 text-white" />
                   <span className="text-xs font-medium text-white">{item.title}</span>
-                  
                   {!item.available && (
                     <span className="text-xs text-gray-400">
                       Próximamente
                     </span>
                   )}
-                  
                   {item.available && (
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
@@ -667,7 +609,6 @@ console.log("🎯 menuItemsFiltered:", menuItemsFiltered);
           </div>
         </div>
       </div>
-
       {/* Animaciones mágicas */}
       <style jsx>{`
         .shadow-voldemortcard {
