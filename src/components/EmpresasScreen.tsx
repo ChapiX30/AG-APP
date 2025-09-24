@@ -125,7 +125,7 @@ const EmpresasScreen = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm("¿Estás seguro que deseas eliminar esta empresa?")) {
       try {
-        await deleteDoc(doc(db, "empresas", id));
+        await deleteDoc(doc(db, "clientes", id));
         loadEmpresas();
       } catch (error) {
         console.error("Error deleting empresa:", error);
