@@ -14,8 +14,8 @@ import {
   ResponsiveContainer,
   Sector,
 } from "recharts";
-import { motion } from "framer-motion";
-import { ArrowLeft, SortDesc, SortAsc } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, SortDesc, SortAsc, X } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 
 // -------- CONFIGURACIÓN --------
@@ -26,6 +26,7 @@ const METROLOGOS_ORDER_COLOR = [
   { name: "Angel Amador", color: "#ffe042ff" },
   { name: "Ricardo Domínguez", color: "#cc08d6ff" },
 ];
+
 const FALLBACK_COLORS = ["#dbd0d0ff", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
 
 const MAGNITUDES_COLORS: Record<string, string> = {
@@ -52,13 +53,303 @@ function getContrastText(bgColor: string) {
   return luminance > 0.55 ? "#1a202c" : "#fff";
 }
 
-// -------- PieChart PRO (Iron Man Glow) --------
+// -------- COMPONENTE HOLOGRAMA TONY STARK --------
+const HologramMagnitudPopup = ({ 
+  magnitud, 
+  valor, 
+  color, 
+  onClose, 
+  position 
+}: {
+  magnitud: string;
+  valor: number;
+  color: string;
+  onClose: () => void;
+  position: { x: number; y: number };
+}) => {
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      >
+        {/* Efecto de Escaneo/Grid Holográfico */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px)
+            `,
+            backgroundSize: '50px 50px',
+            animation: 'holographic-grid 2s linear infinite',
+          }}
+        />
+
+        {/* Holograma Principal */}
+        <motion.div
+          className="relative"
+          initial={{ 
+            scale: 0, 
+            rotateY: -180, 
+            opacity: 0,
+            z: -1000
+          }}
+          animate={{ 
+            scale: 1, 
+            rotateY: 0, 
+            opacity: 1,
+            z: 0
+          }}
+          exit={{ 
+            scale: 0, 
+            rotateY: 180, 
+            opacity: 0,
+            z: -1000
+          }}
+          transition={{ 
+            type: "spring", 
+            stiffness: 300, 
+            damping: 20,
+            duration: 0.8
+          }}
+          style={{ 
+            transformStyle: 'preserve-3d',
+            perspective: '1000px'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Container del Holograma */}
+          <div
+            className="relative bg-black/90 border-2 rounded-2xl p-8 min-w-[400px] min-h-[300px] overflow-hidden"
+            style={{
+              borderColor: color,
+              boxShadow: `
+                0 0 20px ${color}40,
+                0 0 40px ${color}20,
+                0 0 60px ${color}10,
+                inset 0 0 20px ${color}10
+              `,
+              transform: 'translateZ(50px)',
+            }}
+          >
+            {/* Líneas de Escaneo Animadas */}
+            <div 
+              className="absolute top-0 left-0 w-full h-1 opacity-80"
+              style={{
+                background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
+                animation: 'scan-line 3s ease-in-out infinite',
+              }}
+            />
+            <div 
+              className="absolute bottom-0 left-0 w-full h-1 opacity-60"
+              style={{
+                background: `linear-gradient(90deg, transparent, ${color}80, transparent)`,
+                animation: 'scan-line 3s ease-in-out infinite reverse',
+              }}
+            />
+
+            {/* Efecto de Distorsión Holográfica */}
+            <div 
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: `
+                  repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    ${color}05 2px,
+                    ${color}05 4px
+                  )
+                `,
+                animation: 'holographic-distortion 4s ease-in-out infinite',
+              }}
+            />
+
+            {/* Botón Cerrar */}
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 rounded-full bg-red-500/20 border border-red-400 hover:bg-red-500/40 transition-all duration-300"
+              style={{
+                boxShadow: `0 0 10px #ff000040`,
+              }}
+            >
+              <X className="w-6 h-6 text-red-400" />
+            </button>
+
+            {/* Contenido Principal */}
+            <div className="relative z-10 text-center">
+              {/* Título con Efecto Glow */}
+              <motion.h2
+                className="text-4xl font-bold mb-6"
+                style={{ 
+                  color: color,
+                  textShadow: `
+                    0 0 10px ${color},
+                    0 0 20px ${color}80,
+                    0 0 30px ${color}60
+                  `,
+                }}
+                initial={{ y: -20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                {magnitud}
+              </motion.h2>
+
+              {/* Círculo Central con Datos */}
+              <motion.div
+                className="relative mx-auto mb-8"
+                style={{ 
+                  width: '200px', 
+                  height: '200px',
+                }}
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
+              >
+                {/* Círculos Concéntricos */}
+                <div 
+                  className="absolute inset-0 rounded-full border-2 animate-spin"
+                  style={{ 
+                    borderColor: `${color}60`,
+                    animation: 'slow-spin 10s linear infinite',
+                  }}
+                />
+                <div 
+                  className="absolute inset-4 rounded-full border border-dashed"
+                  style={{ 
+                    borderColor: `${color}40`,
+                    animation: 'slow-spin-reverse 15s linear infinite',
+                  }}
+                />
+
+                {/* Centro con Datos */}
+                <div className="absolute inset-8 rounded-full bg-black/60 border flex flex-col items-center justify-center"
+                     style={{ borderColor: color }}>
+                  <motion.div
+                    className="text-5xl font-bold"
+                    style={{ color: color }}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.8, type: "spring" }}
+                  >
+                    {valor}
+                  </motion.div>
+                  <motion.div
+                    className="text-sm opacity-80 mt-2"
+                    style={{ color: color }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.8 }}
+                    transition={{ delay: 1 }}
+                  >
+                    CALIBRACIONES
+                  </motion.div>
+                </div>
+              </motion.div>
+
+              {/* Datos Adicionales */}
+              <motion.div
+                className="grid grid-cols-2 gap-4 text-sm"
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 1.2 }}
+              >
+                <div className="border rounded-lg p-3 bg-black/40"
+                     style={{ borderColor: `${color}40` }}>
+                  <div style={{ color: color }} className="font-semibold">TIPO</div>
+                  <div className="text-white/80">Magnitud</div>
+                </div>
+                <div className="border rounded-lg p-3 bg-black/40"
+                     style={{ borderColor: `${color}40` }}>
+                  <div style={{ color: color }} className="font-semibold">ESTADO</div>
+                  <div className="text-green-400">ACTIVO</div>
+                </div>
+              </motion.div>
+
+              {/* Mensaje Inferior */}
+              <motion.div
+                className="mt-6 text-xs opacity-60 text-center"
+                style={{ color: color }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.6 }}
+                transition={{ delay: 1.5 }}
+              >
+                ⚡ SISTEMA DE CALIBRACIÓN HOLOGRÁFICO ⚡
+              </motion.div>
+            </div>
+
+            {/* Partículas Flotantes */}
+            {[...Array(8)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute w-1 h-1 rounded-full"
+                style={{
+                  backgroundColor: color,
+                  boxShadow: `0 0 4px ${color}`,
+                  left: `${20 + (i * 10)}%`,
+                  top: `${30 + (i % 3) * 20}%`,
+                }}
+                animate={{
+                  y: [0, -20, 0],
+                  opacity: [0.3, 1, 0.3],
+                }}
+                transition={{
+                  duration: 2 + (i * 0.5),
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+            ))}
+          </div>
+        </motion.div>
+
+        {/* CSS personalizado para animaciones */}
+        <style jsx>{`
+          @keyframes holographic-grid {
+            0%, 100% { transform: translate(0, 0); opacity: 0.3; }
+            50% { transform: translate(25px, 25px); opacity: 0.1; }
+          }
+
+          @keyframes scan-line {
+            0% { transform: translateY(0) scaleX(0); }
+            50% { transform: translateY(0) scaleX(1); }
+            100% { transform: translateY(300px) scaleX(0); }
+          }
+
+          @keyframes holographic-distortion {
+            0%, 100% { opacity: 0.05; }
+            25% { opacity: 0.1; transform: translateX(1px); }
+            50% { opacity: 0.15; transform: translateX(-1px); }
+            75% { opacity: 0.1; transform: translateX(0.5px); }
+          }
+
+          @keyframes slow-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+
+          @keyframes slow-spin-reverse {
+            from { transform: rotate(360deg); }
+            to { transform: rotate(0deg); }
+          }
+        `}</style>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
+// -------- PieChart PRO con Hover Holográfico --------
 const renderActiveShape = (props: any) => {
   const RADIAN = Math.PI / 180;
   const {
     cx, cy, midAngle, innerRadius, outerRadius,
     startAngle, endAngle, fill, payload, percent, value,
   } = props;
+
   const sin = Math.sin(-RADIAN * midAngle);
   const cos = Math.cos(-RADIAN * midAngle);
   const sx = cx + (outerRadius + 12) * cos;
@@ -71,33 +362,57 @@ const renderActiveShape = (props: any) => {
 
   return (
     <g>
-      <defs>
-        <radialGradient id={`grad-${payload.name}`} cx="50%" cy="50%" r="100%">
-          <stop offset="0%" stopColor={fill} stopOpacity={0.95} />
-          <stop offset="100%" stopColor="#0ff" stopOpacity={0.22} />
-        </radialGradient>
-      </defs>
       <Sector
         cx={cx}
         cy={cy}
         innerRadius={innerRadius}
-        outerRadius={outerRadius + 12}
+        outerRadius={outerRadius + 6}
         startAngle={startAngle}
         endAngle={endAngle}
-        fill={`url(#grad-${payload.name})`}
-        stroke="#0ff"
-        strokeWidth={2}
+        fill={fill}
+        filter="url(#glow)"
         style={{
-          filter: "drop-shadow(0 0 16px #0ff)",
-          transition: "all 0.3s cubic-bezier(.22,1,.36,1)",
+          filter: `drop-shadow(0 0 10px ${fill}) drop-shadow(0 0 20px ${fill}60)`,
         }}
       />
-      <path d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`} stroke={fill} fill="none" />
-      <circle cx={ex} cy={ey} r={3} fill={fill} />
-      <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey - 4} textAnchor={textAnchor} fill="#0ff" fontWeight={700}>
+      <Sector
+        cx={cx}
+        cy={cy}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        innerRadius={outerRadius + 6}
+        outerRadius={outerRadius + 10}
+        fill={fill}
+        opacity={0.6}
+      />
+      <path
+        d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`}
+        stroke={fill}
+        fill="none"
+        strokeWidth={2}
+        filter="url(#glow)"
+      />
+      <circle cx={ex} cy={ey} r={2} fill={fill} stroke={fill} strokeWidth={2} />
+      <text
+        x={ex + (cos >= 0 ? 1 : -1) * 12}
+        y={ey - 4}
+        textAnchor={textAnchor}
+        fill={fill}
+        fontWeight={700}
+        style={{
+          filter: `drop-shadow(0 0 6px ${fill})`,
+          fontSize: '14px'
+        }}
+      >
         {`${payload.name}: ${value}`}
       </text>
-      <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey + 18} textAnchor={textAnchor} fill="#666" fontSize={13}>
+      <text
+        x={ex + (cos >= 0 ? 1 : -1) * 12}
+        y={ey + 18}
+        textAnchor={textAnchor}
+        fill="#666"
+        fontSize={13}
+      >
         {`${(percent * 100).toFixed(1)}%`}
       </text>
     </g>
@@ -110,12 +425,14 @@ interface Usuario {
   name: string;
   puesto: string;
 }
+
 interface HojaTrabajo {
   id: string;
   nombre: string;
   fecha: string;
   magnitud: string;
 }
+
 type SortMode = "order" | "asc" | "desc";
 
 const CalibrationStatsScreen: React.FC = () => {
@@ -127,6 +444,15 @@ const CalibrationStatsScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [sortMode, setSortMode] = useState<SortMode>("order");
+
+  // Estados para el holograma
+  const [hologramVisible, setHologramVisible] = useState(false);
+  const [selectedMagnitud, setSelectedMagnitud] = useState<{
+    name: string;
+    value: number;
+    color: string;
+    position: { x: number; y: number };
+  } | null>(null);
 
   // Nuevo: estado para el mes seleccionado
   const today = new Date();
@@ -158,6 +484,7 @@ const CalibrationStatsScreen: React.FC = () => {
       setHojas([]);
       return;
     }
+
     const fetchHojas = async () => {
       setLoading(true);
       const q = query(
@@ -244,6 +571,7 @@ const CalibrationStatsScreen: React.FC = () => {
       acc[mes] = (acc[mes] || 0) + 1;
       return acc;
     }, {});
+
   const dataMeses = Object.entries(hojasPorMes).map(([mes, total]) => ({
     mes,
     total,
@@ -271,6 +599,7 @@ const CalibrationStatsScreen: React.FC = () => {
       return h.magnitud === magnitud && y === year && m === month;
     }).length,
   }));
+
   function getColorForMagnitud(magnitud: string, i: number) {
     return MAGNITUDES_COLORS[magnitud] || [
       "#FFD600", "#009688", "#FF3D00", "#283593", "#00E676", "#F44336", "#00B8D4"
@@ -285,10 +614,26 @@ const CalibrationStatsScreen: React.FC = () => {
       )
     : "#2096F3";
 
+  // Función para manejar click en magnitud del PieChart
+  const handlePieClick = (data: any, index: number, event: any) => {
+    const color = getColorForMagnitud(data.name, index);
+    setSelectedMagnitud({
+      name: data.name,
+      value: data.value,
+      color: color,
+      position: { x: event.clientX, y: event.clientY }
+    });
+    setHologramVisible(true);
+  };
+
+  const closeHologram = () => {
+    setHologramVisible(false);
+    setSelectedMagnitud(null);
+  };
+
   // -------- UI --------
   return (
-    <div className="relative p-4 md:p-8 min-h-screen bg-gradient-to-br from-blue-50 to-purple-100 overflow-x-hidden">
-
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800 p-4 relative">
       {/* Botón regreso */}
       <motion.button
         onClick={() => navigateTo("mainmenu")}
@@ -297,35 +642,30 @@ const CalibrationStatsScreen: React.FC = () => {
         whileHover={{ scale: 1.1, x: -5 }}
         className="absolute top-4 left-4 z-50 flex items-center px-4 py-2 bg-white/80 rounded-full shadow-md border border-gray-200 hover:bg-blue-100 transition"
       >
-        <ArrowLeft className="w-5 h-5 mr-2 text-blue-600" />
-        <span className="font-semibold text-blue-700">Regresar</span>
+        <ArrowLeft className="mr-2 h-5 w-5" />
+        Regresar
       </motion.button>
 
       {/* Título */}
-      <motion.h1
-        className="text-3xl font-black mb-6 text-center text-gray-800 drop-shadow"
-        initial={{ opacity: 0, y: -30 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <h1 className="text-4xl font-bold text-center text-white mb-8 mt-16">
         📊 Estadísticas de Calibración
-      </motion.h1>
+      </h1>
 
       {/* Selector de mes */}
-      <div className="flex justify-center gap-4 mb-4">
-        <label className="font-bold text-blue-700 flex items-center gap-2">
-          Selecciona mes:&nbsp;
-          <input
-            type="month"
-            className="p-2 rounded border border-blue-300"
-            value={mesSeleccionado}
-            max={`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`}
-            onChange={e => setMesSeleccionado(e.target.value)}
-          />
-        </label>
+      <div className="flex items-center justify-center mb-8">
+        <label className="text-white mr-4 font-semibold">Selecciona mes:</label>
+        <input
+          type="month"
+          value={mesSeleccionado}
+          onChange={(e) => setMesSeleccionado(e.target.value)}
+          className="px-4 py-2 rounded-lg border border-gray-300 bg-white"
+        />
         <button
-          onClick={()=>setMesSeleccionado(
-            `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`
-          )}
+          onClick={() =>
+            setMesSeleccionado(
+              `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`
+            )
+          }
           className="ml-2 px-4 py-2 bg-blue-200 rounded font-semibold hover:bg-blue-300"
         >
           Mes Actual
@@ -333,14 +673,15 @@ const CalibrationStatsScreen: React.FC = () => {
       </div>
 
       {/* Select metrologo */}
-      <div className="mb-4 flex flex-col md:flex-row items-center justify-center gap-4">
+      <div className="max-w-md mx-auto mb-8">
         <select
-          className="p-3 border rounded-xl shadow-md min-w-[220px] bg-white text-gray-900"
+          value={metrologoSeleccionado?.id || ""}
           onChange={(e) =>
             setMetrologoSeleccionado(
               usuarios.find((u) => u.id === e.target.value) || null
             )
           }
+          className="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-700 font-semibold text-center"
         >
           <option value="">Selecciona un Metrologo</option>
           {usuarios.map((u) => (
@@ -353,164 +694,204 @@ const CalibrationStatsScreen: React.FC = () => {
 
       {/* Estadísticas del metrologo */}
       {metrologoSeleccionado && !loading && (
-        <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 gap-8"
-          initial={{ opacity: 0, y: 60 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: "anticipate" }}
-        >
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 max-w-7xl mx-auto mb-12">
           {/* Barras por mes */}
-          <div className="bg-white p-4 rounded-xl shadow-lg">
-            <h2 className="text-lg font-semibold mb-4 text-center text-gray-700">
-              Total por Mes <span className="text-blue-400">({metrologoSeleccionado.name})</span>
-            </h2>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6"
+          >
+            <h3 className="text-xl font-bold text-gray-800 mb-6 text-center">
+              Total por Mes ({metrologoSeleccionado.name})
+            </h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={dataMeses}>
                 <XAxis dataKey="mes" />
                 <YAxis />
                 <Tooltip />
-                <Legend />
-                <Bar dataKey="total" fill={colorBarra} />
+                <Bar dataKey="total" fill={colorBarra} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </motion.div>
 
-          {/* PieChart con efecto Glow SOLO magnitudes presentes */}
-          <div className="bg-white p-4 rounded-xl shadow-lg">
-            <h2 className="text-lg font-semibold mb-4 text-center text-gray-700">
-              Por Magnitud <span className="text-blue-400">
-                ({metrologoSeleccionado.name}, {mesActualTxt})
-              </span>
-            </h2>
+          {/* PieChart con efecto Holograma TONY STARK */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 relative overflow-hidden"
+          >
+            {/* Efectos de fondo futuristas */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 pointer-events-none" />
+            
+            <h3 className="text-xl font-bold text-gray-800 mb-2 text-center">
+              Por Magnitud
+            </h3>
+            <p className="text-sm text-gray-600 mb-6 text-center">
+              ({metrologoSeleccionado.name}, {mesActualTxt}) - Toca para ver holograma
+            </p>
+
+            {/* SVG Filter para efectos glow */}
+            <svg width="0" height="0">
+              <defs>
+                <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+              </defs>
+            </svg>
+
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  activeIndex={activeIndex}
-                  activeShape={renderActiveShape}
                   data={dataMagnitudes}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
-                  outerRadius={100}
+                  labelLine={false}
+                  outerRadius={80}
+                  fill="#8884d8"
                   dataKey="value"
+                  activeIndex={activeIndex}
+                  activeShape={renderActiveShape}
                   onMouseEnter={(_, index) => setActiveIndex(index)}
                   onMouseLeave={() => setActiveIndex(-1)}
+                  onClick={handlePieClick}
+                  style={{ cursor: 'pointer' }}
                   isAnimationActive
                 >
                   {dataMagnitudes.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={getColorForMagnitud(entry.name, index)} />
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={getColorForMagnitud(entry.name, index)}
+                      stroke={getColorForMagnitud(entry.name, index)}
+                      strokeWidth={2}
+                      style={{
+                        filter: `drop-shadow(0 0 6px ${getColorForMagnitud(entry.name, index)}60)`,
+                        transition: 'all 0.3s ease',
+                      }}
+                    />
                   ))}
                 </Pie>
-                <Tooltip />
               </PieChart>
             </ResponsiveContainer>
+
             {/* Leyenda SOLO de las presentes, ordenada alfa */}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            <div className="grid grid-cols-2 gap-2 mt-4">
               {magnitudesPresentes.map((mag, i) => (
-                <span key={mag} className="flex items-center gap-1 text-sm font-medium" style={{ color: getColorForMagnitud(mag, i) }}>
-                  <span className="w-4 h-4 rounded-sm mr-1 inline-block" style={{ background: getColorForMagnitud(mag, i) }}></span>
-                  {mag}
-                </span>
+                <div key={mag} className="flex items-center text-sm">
+                  <div
+                    className="w-4 h-4 rounded mr-2"
+                    style={{ backgroundColor: getColorForMagnitud(mag, i) }}
+                  />
+                  <span className="text-gray-700">{mag}</span>
+                </div>
               ))}
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        </div>
       )}
 
       {/* --- Ranking Top 3 del mes seleccionado --- */}
-      <div className="max-w-3xl mx-auto mt-6 mb-10 text-center">
-        <h2 className="text-xl font-bold text-blue-600 mb-4">🏆 Top 3 Metrólogos ({mesActualTxt})</h2>
-        <div className="flex justify-center gap-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 max-w-4xl mx-auto mb-12"
+      >
+        <h3 className="text-2xl font-bold text-center text-gray-800 mb-6">
+          🏆 Top 3 Metrólogos ({mesActualTxt})
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {top3.map((m, i) => (
-            <motion.div
+            <div
               key={m.name}
-              className="bg-white border-2 border-blue-400 rounded-xl px-4 py-3 shadow-md"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.2 }}
+              className="text-center p-6 rounded-xl border-2 bg-gradient-to-br from-white to-gray-50"
+              style={{ borderColor: m.color }}
             >
-              <span className="text-2xl">{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}</span>
-              <p className="text-blue-700 font-bold">{m.name}</p>
-              <p className="text-sm text-gray-500">{m.total} calibraciones</p>
-            </motion.div>
+              <div className="text-4xl mb-2">
+                {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
+              </div>
+              <h4 className="font-bold text-lg text-gray-800">{m.name}</h4>
+              <p className="text-gray-600">{m.total} calibraciones</p>
+            </div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* Barra GLOBAL SOLO mes seleccionado */}
       <motion.div
-        className="max-w-4xl mx-auto mt-16 mb-8 bg-white rounded-2xl shadow-2xl p-6"
-        initial={{ opacity: 0, y: 60 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.8, ease: "anticipate" }}
+        className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 max-w-6xl mx-auto"
       >
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-1">
-          <h2 className="text-2xl font-bold text-center text-gray-800">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-gray-800">
             TOTAL GENERAL - Calibraciones por Metrologo (Mes: {mesActualTxt})
-          </h2>
-          <div className="flex items-center gap-2">
+          </h3>
+          <div className="flex gap-2">
             <button
-              title="Orden personalizado"
-              className={`p-2 rounded-full hover:bg-blue-100 ${sortMode==="order" ? "bg-blue-200" : ""}`}
-              onClick={()=>setSortMode("order")}
+              onClick={() => setSortMode("order")}
+              className={`p-2 rounded ${sortMode === "order" ? "bg-blue-500 text-white" : "bg-gray-200"}`}
             >
-              <SortDesc className="w-4 h-4 text-blue-500" />
+              📝
             </button>
             <button
-              title="Orden descendente"
-              className={`p-2 rounded-full hover:bg-blue-100 ${sortMode==="desc" ? "bg-blue-200" : ""}`}
-              onClick={()=>setSortMode("desc")}
+              onClick={() => setSortMode("desc")}
+              className={`p-2 rounded ${sortMode === "desc" ? "bg-blue-500 text-white" : "bg-gray-200"}`}
             >
-              <SortDesc className="w-4 h-4 rotate-180 text-blue-500" />
+              <SortDesc size={20} />
             </button>
             <button
-              title="Orden ascendente"
-              className={`p-2 rounded-full hover:bg-blue-100 ${sortMode==="asc" ? "bg-blue-200" : ""}`}
-              onClick={()=>setSortMode("asc")}
+              onClick={() => setSortMode("asc")}
+              className={`p-2 rounded ${sortMode === "asc" ? "bg-blue-500 text-white" : "bg-gray-200"}`}
             >
-              <SortAsc className="w-4 h-4 text-blue-500" />
+              <SortAsc size={20} />
             </button>
           </div>
         </div>
 
-        <ResponsiveContainer width="100%" height={340}>
-          <BarChart data={metrologosTotales}>
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 12, fontWeight: 600, angle: -25, dy: 10, fill: "#333" }}
-              interval={0}
-              height={60}
-            />
+        <ResponsiveContainer width="100%" height={400}>
+          <BarChart data={metrologosTotales} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
             <YAxis />
-            <Tooltip formatter={(value) => [`${value} calibraciones`, "Total"]} />
-            <Bar dataKey="total">
-              {metrologosTotales.map((entry) => (
-                <Cell key={entry.name} fill={entry.color} />
-              ))}
-            </Bar>
+            <Tooltip labelFormatter={(value) => [`${value} calibraciones`, "Total"]} />
+            {metrologosTotales.map((entry) => (
+              <Bar
+                key={entry.name}
+                dataKey="total"
+                fill={entry.color}
+                radius={[4, 4, 0, 0]}
+                name={entry.name}
+              />
+            ))}
           </BarChart>
         </ResponsiveContainer>
 
         {/* Leyenda personalizada */}
-        <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
           {metrologosTotales.map((met) => (
-            <span
-              key={met.name}
-              className="flex items-center gap-1 text-sm font-semibold"
-              style={{
-                color: getContrastText(met.color),
-                background: met.color,
-                padding: "2px 12px",
-                borderRadius: "0.6em",
-                opacity: 0.95,
-              }}
-            >
-              <span className="w-3 h-3 rounded-sm mr-1 inline-block" style={{ background: met.color, border: "1.5px solid #fff" }}></span>
-              {met.name}
-            </span>
+            <div key={met.name} className="flex items-center text-sm">
+              <div
+                className="w-4 h-4 rounded mr-3"
+                style={{ backgroundColor: met.color }}
+              />
+              <span className="text-gray-700 font-medium">{met.name}</span>
+            </div>
           ))}
         </div>
       </motion.div>
+
+      {/* Holograma Popup */}
+      {hologramVisible && selectedMagnitud && (
+        <HologramMagnitudPopup
+          magnitud={selectedMagnitud.name}
+          valor={selectedMagnitud.value}
+          color={selectedMagnitud.color}
+          onClose={closeHologram}
+          position={selectedMagnitud.position}
+        />
+      )}
     </div>
   );
 };
