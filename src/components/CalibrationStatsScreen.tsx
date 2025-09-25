@@ -10,7 +10,6 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  Legend,
   ResponsiveContainer,
   Sector,
 } from "recharts";
@@ -18,17 +17,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, SortDesc, SortAsc, X } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 
-// -------- CONFIGURACIÓN --------
+// -------- COLORES --------
 const METROLOGOS_ORDER_COLOR = [
-  { name: "Abraham Ginez", color: "#aa0000ff" },
-  { name: "Dante Hernández", color: "#1411cfff" },
-  { name: "Edgar Amador", color: "#028019ff" },
+  { name: "Abraham Ginez", color: "#aa0000" },
+  { name: "Dante Hernández", color: "#060476ff" },
+  { name: "Edgar Amador", color: "#028019" },
   { name: "Angel Amador", color: "#ffe042ff" },
   { name: "Ricardo Domínguez", color: "#cc08d6ff" },
 ];
-
-const FALLBACK_COLORS = ["#dbd0d0ff", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
-
+const FALLBACK_COLORS = ["#ff9100", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
 const MAGNITUDES_COLORS: Record<string, string> = {
   "Acustica": "#00e6bf",
   "Dimensional": "#001e78ff",
@@ -40,306 +37,6 @@ const MAGNITUDES_COLORS: Record<string, string> = {
   "Presión": "#afafbaff",
   "Temperatura": "#c87705ff",
   "Tiempo": "#f33220ff",
-};
-
-function getContrastText(bgColor: string) {
-  if (!bgColor) return "#222";
-  let hex = bgColor.replace("#", "");
-  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
-  const r = parseInt(hex.substr(0, 2), 16);
-  const g = parseInt(hex.substr(2, 2), 16);
-  const b = parseInt(hex.substr(4, 2), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.55 ? "#1a202c" : "#fff";
-}
-
-// -------- COMPONENTE HOLOGRAMA TONY STARK --------
-const HologramMagnitudPopup = ({ 
-  magnitud, 
-  valor, 
-  color, 
-  onClose, 
-  position 
-}: {
-  magnitud: string;
-  valor: number;
-  color: string;
-  onClose: () => void;
-  position: { x: number; y: number };
-}) => {
-  return (
-    <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-      >
-        {/* Efecto de Escaneo/Grid Holográfico */}
-        <div 
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: `
-              linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '50px 50px',
-            animation: 'holographic-grid 2s linear infinite',
-          }}
-        />
-
-        {/* Holograma Principal */}
-        <motion.div
-          className="relative"
-          initial={{ 
-            scale: 0, 
-            rotateY: -180, 
-            opacity: 0,
-            z: -1000
-          }}
-          animate={{ 
-            scale: 1, 
-            rotateY: 0, 
-            opacity: 1,
-            z: 0
-          }}
-          exit={{ 
-            scale: 0, 
-            rotateY: 180, 
-            opacity: 0,
-            z: -1000
-          }}
-          transition={{ 
-            type: "spring", 
-            stiffness: 300, 
-            damping: 20,
-            duration: 0.8
-          }}
-          style={{ 
-            transformStyle: 'preserve-3d',
-            perspective: '1000px'
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Container del Holograma */}
-          <div
-            className="relative bg-black/90 border-2 rounded-2xl p-8 min-w-[400px] min-h-[300px] overflow-hidden"
-            style={{
-              borderColor: color,
-              boxShadow: `
-                0 0 20px ${color}40,
-                0 0 40px ${color}20,
-                0 0 60px ${color}10,
-                inset 0 0 20px ${color}10
-              `,
-              transform: 'translateZ(50px)',
-            }}
-          >
-            {/* Líneas de Escaneo Animadas */}
-            <div 
-              className="absolute top-0 left-0 w-full h-1 opacity-80"
-              style={{
-                background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
-                animation: 'scan-line 3s ease-in-out infinite',
-              }}
-            />
-            <div 
-              className="absolute bottom-0 left-0 w-full h-1 opacity-60"
-              style={{
-                background: `linear-gradient(90deg, transparent, ${color}80, transparent)`,
-                animation: 'scan-line 3s ease-in-out infinite reverse',
-              }}
-            />
-
-            {/* Efecto de Distorsión Holográfica */}
-            <div 
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: `
-                  repeating-linear-gradient(
-                    0deg,
-                    transparent,
-                    transparent 2px,
-                    ${color}05 2px,
-                    ${color}05 4px
-                  )
-                `,
-                animation: 'holographic-distortion 4s ease-in-out infinite',
-              }}
-            />
-
-            {/* Botón Cerrar */}
-            <button
-              onClick={onClose}
-              className="absolute top-4 right-4 p-2 rounded-full bg-red-500/20 border border-red-400 hover:bg-red-500/40 transition-all duration-300"
-              style={{
-                boxShadow: `0 0 10px #ff000040`,
-              }}
-            >
-              <X className="w-6 h-6 text-red-400" />
-            </button>
-
-            {/* Contenido Principal */}
-            <div className="relative z-10 text-center">
-              {/* Título con Efecto Glow */}
-              <motion.h2
-                className="text-4xl font-bold mb-6"
-                style={{ 
-                  color: color,
-                  textShadow: `
-                    0 0 10px ${color},
-                    0 0 20px ${color}80,
-                    0 0 30px ${color}60
-                  `,
-                }}
-                initial={{ y: -20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-              >
-                {magnitud}
-              </motion.h2>
-
-              {/* Círculo Central con Datos */}
-              <motion.div
-                className="relative mx-auto mb-8"
-                style={{ 
-                  width: '200px', 
-                  height: '200px',
-                }}
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
-              >
-                {/* Círculos Concéntricos */}
-                <div 
-                  className="absolute inset-0 rounded-full border-2 animate-spin"
-                  style={{ 
-                    borderColor: `${color}60`,
-                    animation: 'slow-spin 10s linear infinite',
-                  }}
-                />
-                <div 
-                  className="absolute inset-4 rounded-full border border-dashed"
-                  style={{ 
-                    borderColor: `${color}40`,
-                    animation: 'slow-spin-reverse 15s linear infinite',
-                  }}
-                />
-
-                {/* Centro con Datos */}
-                <div className="absolute inset-8 rounded-full bg-black/60 border flex flex-col items-center justify-center"
-                     style={{ borderColor: color }}>
-                  <motion.div
-                    className="text-5xl font-bold"
-                    style={{ color: color }}
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.8, type: "spring" }}
-                  >
-                    {valor}
-                  </motion.div>
-                  <motion.div
-                    className="text-sm opacity-80 mt-2"
-                    style={{ color: color }}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 0.8 }}
-                    transition={{ delay: 1 }}
-                  >
-                    CALIBRACIONES
-                  </motion.div>
-                </div>
-              </motion.div>
-
-              {/* Datos Adicionales */}
-              <motion.div
-                className="grid grid-cols-2 gap-4 text-sm"
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 1.2 }}
-              >
-                <div className="border rounded-lg p-3 bg-black/40"
-                     style={{ borderColor: `${color}40` }}>
-                  <div style={{ color: color }} className="font-semibold">TIPO</div>
-                  <div className="text-white/80">Magnitud</div>
-                </div>
-                <div className="border rounded-lg p-3 bg-black/40"
-                     style={{ borderColor: `${color}40` }}>
-                  <div style={{ color: color }} className="font-semibold">ESTADO</div>
-                  <div className="text-green-400">ACTIVO</div>
-                </div>
-              </motion.div>
-
-              {/* Mensaje Inferior */}
-              <motion.div
-                className="mt-6 text-xs opacity-60 text-center"
-                style={{ color: color }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.6 }}
-                transition={{ delay: 1.5 }}
-              >
-                ⚡ SISTEMA DE CALIBRACIÓN HOLOGRÁFICO ⚡
-              </motion.div>
-            </div>
-
-            {/* Partículas Flotantes */}
-            {[...Array(8)].map((_, i) => (
-              <motion.div
-                key={i}
-                className="absolute w-1 h-1 rounded-full"
-                style={{
-                  backgroundColor: color,
-                  boxShadow: `0 0 4px ${color}`,
-                  left: `${20 + (i * 10)}%`,
-                  top: `${30 + (i % 3) * 20}%`,
-                }}
-                animate={{
-                  y: [0, -20, 0],
-                  opacity: [0.3, 1, 0.3],
-                }}
-                transition={{
-                  duration: 2 + (i * 0.5),
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-              />
-            ))}
-          </div>
-        </motion.div>
-
-        {/* CSS personalizado para animaciones */}
-        <style jsx>{`
-          @keyframes holographic-grid {
-            0%, 100% { transform: translate(0, 0); opacity: 0.3; }
-            50% { transform: translate(25px, 25px); opacity: 0.1; }
-          }
-
-          @keyframes scan-line {
-            0% { transform: translateY(0) scaleX(0); }
-            50% { transform: translateY(0) scaleX(1); }
-            100% { transform: translateY(300px) scaleX(0); }
-          }
-
-          @keyframes holographic-distortion {
-            0%, 100% { opacity: 0.05; }
-            25% { opacity: 0.1; transform: translateX(1px); }
-            50% { opacity: 0.15; transform: translateX(-1px); }
-            75% { opacity: 0.1; transform: translateX(0.5px); }
-          }
-
-          @keyframes slow-spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-
-          @keyframes slow-spin-reverse {
-            from { transform: rotate(360deg); }
-            to { transform: rotate(0deg); }
-          }
-        `}</style>
-      </motion.div>
-    </AnimatePresence>
-  );
 };
 
 // -------- PieChart PRO con Hover Holográfico --------
@@ -419,22 +116,184 @@ const renderActiveShape = (props: any) => {
   );
 };
 
-// -------- Interfaces --------
-interface Usuario {
-  id: string;
-  name: string;
-  puesto: string;
-}
-
-interface HojaTrabajo {
-  id: string;
-  nombre: string;
-  fecha: string;
+// -------- COMPONENTE HOLOGRAMA (no cambies esto) --------
+const HologramMagnitudPopup = ({
+  magnitud,
+  valor,
+  color,
+  onClose,
+  position
+}: {
   magnitud: string;
-}
+  valor: number;
+  color: string;
+  onClose: () => void;
+  position: { x: number; y: number };
+}) => (
+  <AnimatePresence>
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="relative"
+        initial={{
+          scale: 0,
+          rotateY: -180,
+          opacity: 0,
+          z: -1000
+        }}
+        animate={{
+          scale: 1,
+          rotateY: 0,
+          opacity: 1,
+          z: 0
+        }}
+        exit={{
+          scale: 0,
+          rotateY: 180,
+          opacity: 0,
+          z: -1000
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 300,
+          damping: 20,
+          duration: 0.8
+        }}
+        style={{
+          transformStyle: 'preserve-3d',
+          perspective: '1000px'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="relative bg-black/90 border-2 rounded-2xl p-8 min-w-[400px] min-h-[300px] overflow-hidden"
+          style={{
+            borderColor: color,
+            boxShadow: `
+              0 0 20px ${color}40,
+              0 0 40px ${color}20,
+              0 0 60px ${color}10,
+              inset 0 0 20px ${color}10
+            `,
+            transform: 'translateZ(50px)',
+          }}
+        >
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full bg-red-500/20 border border-red-400 hover:bg-red-500/40 transition-all duration-300"
+            style={{
+              boxShadow: `0 0 10px #ff000040`,
+            }}
+          >
+            <X className="w-6 h-6 text-red-400" />
+          </button>
+          <div className="relative z-10 text-center">
+            <motion.h2
+              className="text-4xl font-bold mb-6"
+              style={{
+                color: color,
+                textShadow: `
+                  0 0 10px ${color},
+                  0 0 20px ${color}80,
+                  0 0 30px ${color}60
+                `,
+              }}
+              initial={{ y: -20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+            >
+              {magnitud}
+            </motion.h2>
+            <motion.div
+              className="relative mx-auto mb-8"
+              style={{
+                width: '200px',
+                height: '200px',
+              }}
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
+            >
+              <div
+                className="absolute inset-0 rounded-full border-2 animate-spin"
+                style={{
+                  borderColor: `${color}60`,
+                  animation: 'slow-spin 10s linear infinite',
+                }}
+              />
+              <div
+                className="absolute inset-4 rounded-full border border-dashed"
+                style={{
+                  borderColor: `${color}40`,
+                  animation: 'slow-spin-reverse 15s linear infinite',
+                }}
+              />
+              <div className="absolute inset-8 rounded-full bg-black/60 border flex flex-col items-center justify-center"
+                style={{ borderColor: color }}>
+                <motion.div
+                  className="text-5xl font-bold"
+                  style={{ color: color }}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.8, type: "spring" }}
+                >
+                  {valor}
+                </motion.div>
+                <motion.div
+                  className="text-sm opacity-80 mt-2"
+                  style={{ color: color }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.8 }}
+                  transition={{ delay: 1 }}
+                >
+                  CALIBRACIONES
+                </motion.div>
+              </div>
+            </motion.div>
+            <motion.div
+              className="grid grid-cols-2 gap-4 text-sm"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 1.2 }}
+            >
+              <div className="border rounded-lg p-3 bg-black/40"
+                style={{ borderColor: `${color}40` }}>
+                <div style={{ color: color }} className="font-semibold">TIPO</div>
+                <div className="text-white/80">Magnitud</div>
+              </div>
+              <div className="border rounded-lg p-3 bg-black/40"
+                style={{ borderColor: `${color}40` }}>
+                <div style={{ color: color }} className="font-semibold">ESTADO</div>
+                <div className="text-green-400">ACTIVO</div>
+              </div>
+            </motion.div>
+            <motion.div
+              className="mt-6 text-xs opacity-60 text-center"
+              style={{ color: color }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              transition={{ delay: 1.5 }}
+            >
+              ⚡ SISTEMA DE CALIBRACIÓN HOLOGRÁFICO ⚡
+            </motion.div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  </AnimatePresence>
+);
 
+// ----------- INTERFACES ---------
+interface Usuario { id: string; name: string; puesto: string; }
+interface HojaTrabajo { id: string; nombre: string; fecha: string; magnitud: string; }
 type SortMode = "order" | "asc" | "desc";
 
+// ----------- COMPONENTE PRINCIPAL -----------
 const CalibrationStatsScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -444,27 +303,18 @@ const CalibrationStatsScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [sortMode, setSortMode] = useState<SortMode>("order");
-
-  // Estados para el holograma
   const [hologramVisible, setHologramVisible] = useState(false);
-  const [selectedMagnitud, setSelectedMagnitud] = useState<{
-    name: string;
-    value: number;
-    color: string;
-    position: { x: number; y: number };
-  } | null>(null);
+  const [selectedMagnitud, setSelectedMagnitud] = useState<any>(null);
 
-  // Nuevo: estado para el mes seleccionado
+  // Mes seleccionado
   const today = new Date();
   const [mesSeleccionado, setMesSeleccionado] = useState(
     `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`
   );
-
-  // Desglose año/mes
   const [year, month] = mesSeleccionado.split("-").map(Number);
   const mesActualTxt = new Date(year, month-1).toLocaleString("es-MX", { month: "short", year: "numeric" });
 
-  // -------- Fetch Usuarios --------
+  // Usuarios
   useEffect(() => {
     const fetchUsuarios = async () => {
       const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
@@ -478,13 +328,12 @@ const CalibrationStatsScreen: React.FC = () => {
     fetchUsuarios();
   }, []);
 
-  // -------- Fetch Hojas de Metrologo --------
+  // Hojas de metrologo seleccionado
   useEffect(() => {
     if (!metrologoSeleccionado) {
       setHojas([]);
       return;
     }
-
     const fetchHojas = async () => {
       setLoading(true);
       const q = query(
@@ -502,7 +351,7 @@ const CalibrationStatsScreen: React.FC = () => {
     fetchHojas();
   }, [metrologoSeleccionado]);
 
-  // -------- Fetch Todas las Hojas --------
+  // Todas las hojas de trabajo
   useEffect(() => {
     const fetchTodas = async () => {
       const snap = await getDocs(collection(db, "hojasDeTrabajo"));
@@ -515,7 +364,7 @@ const CalibrationStatsScreen: React.FC = () => {
     fetchTodas();
   }, []);
 
-  // ----------- SOLO MES SELECCIONADO PARA GLOBAL -----------
+  // ---- SOLO MES SELECCIONADO PARA GLOBAL ----
   const hojasGlobalesMes = todasLasHojas.filter((hoja) => {
     if (!hoja.fecha) return false;
     try {
@@ -537,7 +386,6 @@ const CalibrationStatsScreen: React.FC = () => {
     total: calibracionesPorMetrologo[item.name] || 0,
     color: item.color,
   }));
-
   Object.keys(calibracionesPorMetrologo).forEach((n, i) => {
     if (!metrologosTotales.find((x) => x.name === n)) {
       metrologosTotales.push({
@@ -547,18 +395,16 @@ const CalibrationStatsScreen: React.FC = () => {
       });
     }
   });
-
   if (sortMode === "asc") {
     metrologosTotales = [...metrologosTotales].sort((a, b) => a.total - b.total);
   } else if (sortMode === "desc") {
     metrologosTotales = [...metrologosTotales].sort((a, b) => b.total - a.total);
   }
 
-  // -------- Top 3 PRO del mes seleccionado
+  // Top 3
   const top3 = [...metrologosTotales].sort((a, b) => b.total - a.total).slice(0, 3);
 
-  // ----------- POR METROLOGO (filtrando solo por mes seleccionado) -----------
-  // Barras por mes: solo del año del selector (para vista historial por mes)
+  // Por mes seleccionado para metrólogo individual
   const hojasPorMes = hojas
     .filter(h => h.fecha && h.fecha.startsWith(`${year}-`))
     .reduce((acc: any, hoja) => {
@@ -571,13 +417,9 @@ const CalibrationStatsScreen: React.FC = () => {
       acc[mes] = (acc[mes] || 0) + 1;
       return acc;
     }, {});
+  const dataMeses = Object.entries(hojasPorMes).map(([mes, total]) => ({ mes, total }));
 
-  const dataMeses = Object.entries(hojasPorMes).map(([mes, total]) => ({
-    mes,
-    total,
-  }));
-
-  // --------- MAGNITUDES PRESENTES EN DATA FILTRADA (PieChart + leyenda), ORDENADAS ALFABÉTICO ---------
+  // Magnitudes PieChart
   const magnitudesPresentes: string[] = Array.from(
     new Set(
       hojas
@@ -590,7 +432,6 @@ const CalibrationStatsScreen: React.FC = () => {
         .filter(Boolean)
     )
   ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-
   const dataMagnitudes = magnitudesPresentes.map((magnitud) => ({
     name: magnitud,
     value: hojas.filter((h) => {
@@ -599,22 +440,21 @@ const CalibrationStatsScreen: React.FC = () => {
       return h.magnitud === magnitud && y === year && m === month;
     }).length,
   }));
-
   function getColorForMagnitud(magnitud: string, i: number) {
     return MAGNITUDES_COLORS[magnitud] || [
       "#FFD600", "#009688", "#FF3D00", "#283593", "#00E676", "#F44336", "#00B8D4"
     ][i % 7];
   }
 
-  // ---- Color barra por metrologo
+  // Color barra por metrologo (solo para metrologo individual)
   const colorBarra = metrologoSeleccionado
     ? (
-        METROLOGOS_ORDER_COLOR.find(m => m.name === metrologoSeleccionado.name)?.color ||
-        FALLBACK_COLORS[0]
-      )
+      METROLOGOS_ORDER_COLOR.find(m => m.name === metrologoSeleccionado.name)?.color ||
+      FALLBACK_COLORS[0]
+    )
     : "#2096F3";
 
-  // Función para manejar click en magnitud del PieChart
+  // Función para holograma PieChart
   const handlePieClick = (data: any, index: number, event: any) => {
     const color = getColorForMagnitud(data.name, index);
     setSelectedMagnitud({
@@ -625,13 +465,12 @@ const CalibrationStatsScreen: React.FC = () => {
     });
     setHologramVisible(true);
   };
-
   const closeHologram = () => {
     setHologramVisible(false);
     setSelectedMagnitud(null);
   };
 
-  // -------- UI --------
+  // --------- RENDER UI -----------
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800 p-4 relative">
       {/* Botón regreso */}
@@ -646,7 +485,6 @@ const CalibrationStatsScreen: React.FC = () => {
         Regresar
       </motion.button>
 
-      {/* Título */}
       <h1 className="text-4xl font-bold text-center text-white mb-8 mt-16">
         📊 Estadísticas de Calibración
       </h1>
@@ -714,23 +552,19 @@ const CalibrationStatsScreen: React.FC = () => {
             </ResponsiveContainer>
           </motion.div>
 
-          {/* PieChart con efecto Holograma TONY STARK */}
+          {/* PieChart por magnitud */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 relative overflow-hidden"
           >
-            {/* Efectos de fondo futuristas */}
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 pointer-events-none" />
-            
             <h3 className="text-xl font-bold text-gray-800 mb-2 text-center">
               Por Magnitud
             </h3>
             <p className="text-sm text-gray-600 mb-6 text-center">
               ({metrologoSeleccionado.name}, {mesActualTxt}) - Toca para ver holograma
             </p>
-
-            {/* SVG Filter para efectos glow */}
             <svg width="0" height="0">
               <defs>
                 <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -742,7 +576,6 @@ const CalibrationStatsScreen: React.FC = () => {
                 </filter>
               </defs>
             </svg>
-
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -776,8 +609,6 @@ const CalibrationStatsScreen: React.FC = () => {
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-
-            {/* Leyenda SOLO de las presentes, ordenada alfa */}
             <div className="grid grid-cols-2 gap-2 mt-4">
               {magnitudesPresentes.map((mag, i) => (
                 <div key={mag} className="flex items-center text-sm">
@@ -793,7 +624,7 @@ const CalibrationStatsScreen: React.FC = () => {
         </div>
       )}
 
-      {/* --- Ranking Top 3 del mes seleccionado --- */}
+      {/* --- Ranking Top 3 --- */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -819,7 +650,7 @@ const CalibrationStatsScreen: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Barra GLOBAL SOLO mes seleccionado */}
+      {/* --------- SECCIÓN MEJORADA: Barra GLOBAL --------- */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -850,24 +681,29 @@ const CalibrationStatsScreen: React.FC = () => {
             </button>
           </div>
         </div>
-
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={metrologosTotales} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+        <ResponsiveContainer width="100%" height={540}>
+          <BarChart 
+            data={metrologosTotales} 
+            margin={{ top: 40, right: 40, left: 40, bottom: 30 }}
+          >
+            <XAxis dataKey="name" tick={{ fontSize: 15 }} />
             <YAxis />
-            <Tooltip labelFormatter={(value) => [`${value} calibraciones`, "Total"]} />
-            {metrologosTotales.map((entry) => (
-              <Bar
-                key={entry.name}
-                dataKey="total"
-                fill={entry.color}
-                radius={[4, 4, 0, 0]}
-                name={entry.name}
-              />
-            ))}
+            <Tooltip formatter={(value: any) => [`${value} calibraciones`, "Total"]} />
+            <Bar dataKey="total" radius={[8, 8, 0, 0]}>
+              {metrologosTotales.map((entry, idx) => (
+                <Cell 
+                  key={`cell-bar-${entry.name}`}
+                  fill={entry.color}
+                  stroke={entry.color}
+                  style={{
+                    filter: `drop-shadow(0 0 8px ${entry.color}90)`,
+                    transition: 'all 0.3s'
+                  }}
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
-
         {/* Leyenda personalizada */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
           {metrologosTotales.map((met) => (
