@@ -329,6 +329,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
 
+  // NUEVOS ESTADOS: Para mover archivos múltiples
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
+
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
@@ -749,6 +753,84 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
+  // FUNCIÓN CORREGIDA: Mover archivos múltiples
+  const handleBulkMove = async (targetPathArr: string[]) => {
+    if (!userIsQuality || selectedFiles.length === 0) return;
+    const fromPath = selectedPath.join('/') || 'root';
+    const toPath = targetPathArr.join('/') || 'root';
+    setBulkMoveOpen(false);
+    
+    try {
+      setBulkMoveLoading(true);
+      
+      // Obtener userName una sola vez al inicio
+      const userName = user ? await getUserDisplayName(user) : null;
+      
+      for (const filePath of selectedFiles) {
+        // Obtener información del archivo original
+        const fileName = filePath.split('/').pop()!;
+        const fileRef = ref(storage, filePath);
+        
+        // Descargar el archivo
+
+        const url = await getDownloadURL(fileRef);
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.responseType = 'blob';
+          xhr.timeout = 60000;
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              resolve(xhr.response);
+            } else {
+              reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.ontimeout = () => reject(new Error('Request timeout'));
+          xhr.open('GET', url);
+          xhr.send();
+        });
+
+        // Subir a la nueva ubicación
+        const newPath = [ROOT_PATH, ...targetPathArr, fileName].join("/");
+        const newRef = ref(storage, newPath);
+        await uploadBytes(newRef, blob);
+
+        // Mover metadata
+        const oldMetadataId = filePath.replace(/\//g, '_');
+        const newMetadataId = newPath.replace(/\//g, '_');
+        try {
+          const oldMetadata = await getDoc(doc(db, 'fileMetadata', oldMetadataId));
+          if (oldMetadata.exists()) {
+            await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+              ...oldMetadata.data(),
+              filePath: newPath,
+              movedBy: user?.email,
+              movedByName: userName,
+              movedAt: new Date().toISOString()
+            });
+            await deleteDoc(doc(db, 'fileMetadata', oldMetadataId));
+          }
+        } catch (metaError) {
+          console.log("No metadata to move for:", filePath);
+        }
+
+        // Eliminar archivo original
+        await deleteObject(fileRef);
+      }
+
+      await logActivity('move', `${selectedFiles.length} archivos`, undefined, fromPath, toPath, 'Movimiento múltiple');
+      setSelectedFiles([]);
+      setSelectionMode(false);
+      setMoveSuccess(true);
+      setTimeout(() => reloadTree(), 600);
+    } catch (error) {
+      console.error("Error moving files:", error);
+      setMoveError("Error al mover los archivos: " + (error as Error).message);
+    }
+    setBulkMoveLoading(false);
+  };
+
   // Eliminar archivo
   const handleDeleteFile = async () => {
     if (!deleteFile) return;
@@ -771,7 +853,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLoading(false);
   };
 
-  // Mover archivo
+  // FUNCIÓN CORREGIDA: Mover archivo individual
   async function handleMoveFile(targetPathArr: string[]) {
     if (!moveFile) return;
     const fileToMove = moveFile;
@@ -780,6 +862,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setMoveFile(null);
     try {
       setMoveLoading(true);
+      
+      // Obtener userName al inicio
+      const userName = user ? await getUserDisplayName(user) : null;
+      
       const blob = await new Promise<Blob>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.responseType = 'blob';
@@ -796,15 +882,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         xhr.open('GET', fileToMove.url);
         xhr.send();
       });
+      
       const newPath = [ROOT_PATH, ...targetPathArr, fileToMove.name].join("/");
       const newRef = ref(storage, newPath);
       await uploadBytes(newRef, blob);
+      
       const oldMetadataId = fileToMove.fullPath.replace(/\//g, '_');
       const newMetadataId = newPath.replace(/\//g, '_');
       try {
         const oldMetadata = await getDoc(doc(db, 'fileMetadata', oldMetadataId));
         if (oldMetadata.exists()) {
-          const userName = user ? await getUserDisplayName(user) : null;
           await setDoc(doc(db, 'fileMetadata', newMetadataId), {
             ...oldMetadata.data(),
             filePath: newPath,
@@ -817,6 +904,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       } catch (metaError) {
         console.log("No metadata to move");
       }
+      
       await deleteObject(ref(storage, fileToMove.fullPath));
       await logActivity('move', fileToMove.name, undefined, fromPath, toPath);
       setMoveSuccess(true);
@@ -1596,7 +1684,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         )}
       </Container>
 
-      {/* Menú flotante para selección múltiple */}
+      {/* Menú flotante para selección múltiple - ACTUALIZADO CON MOVER */}
       <Slide direction="up" in={selectionMode && selectedFiles.length > 0}>
         <Paper
           sx={{
@@ -1610,7 +1698,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             borderRadius: 3,
             boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
             bgcolor: '#fff',
-            zIndex: 1000
+            zIndex: 1000,
+            maxWidth: 'calc(100vw - 40px)',
+            flexWrap: 'wrap',
+            justifyContent: 'center'
           }}
         >
           {userIsQuality && (
@@ -1620,6 +1711,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 onClick={handleBulkDelete}
                 color="error"
                 variant="outlined"
+                disabled={bulkMoveLoading}
               >
                 Eliminar ({selectedFiles.length})
               </Button>
@@ -1627,6 +1719,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <Button
                 startIcon={<CheckCircleIcon />}
                 onClick={handleBulkMarkReviewed}
+                disabled={bulkMoveLoading}
                 sx={{
                   bgcolor: '#34a853',
                   color: '#fff',
@@ -1636,6 +1729,22 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 }}
               >
                 Marcar como Revisado ({selectedFiles.length})
+              </Button>
+
+              {/* NUEVO BOTÓN: Mover archivos múltiples */}
+              <Button
+                startIcon={<DriveFileMoveIcon />}
+                onClick={() => setBulkMoveOpen(true)}
+                disabled={bulkMoveLoading}
+                sx={{
+                  bgcolor: '#1976d2',
+                  color: '#fff',
+                  '&:hover': {
+                    bgcolor: '#1565c0'
+                  }
+                }}
+              >
+                Mover ({selectedFiles.length})
               </Button>
             </>
           )}
@@ -1647,6 +1756,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               setSelectionMode(false);
             }}
             variant="outlined"
+            disabled={bulkMoveLoading}
           >
             Cancelar
           </Button>
@@ -1914,15 +2024,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </DialogActions>
       </Dialog>
 
-      {/* Diálogo para mover archivo (solo calidad) */}
+      {/* Diálogo para mover archivo individual (solo calidad) */}
       <Dialog
         open={Boolean(moveFile)}
         onClose={() => !moveLoading && setMoveFile(null)}
         maxWidth="sm"
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
-      >
-        <DialogTitle>
+      > 
+              <DialogTitle>
           Mover "{moveFile?.name}"
         </DialogTitle>
         <DialogContent>
@@ -1954,6 +2064,49 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </DialogActions>
       </Dialog>
 
+      {/* NUEVO DIÁLOGO: Para mover archivos múltiples */}
+      <Dialog
+        open={bulkMoveOpen}
+        onClose={() => !bulkMoveLoading && setBulkMoveOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle>
+          Mover {selectedFiles.length} archivos
+        </DialogTitle>
+        <DialogContent>
+          {moveError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setMoveError(null)}>
+              {moveError}
+            </Alert>
+          )}
+          <Typography sx={{ mb: 2 }}>
+            Selecciona la carpeta de destino para los {selectedFiles.length} archivos seleccionados:
+          </Typography>
+          <FolderMoveTree
+            tree={tree}
+            onSelect={handleBulkMove}
+            excludePath={selectedPath}
+            disabled={bulkMoveLoading}
+          />
+          {bulkMoveLoading && (
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <CircularProgress />
+              <Typography sx={{ mt: 1 }}>Moviendo archivos...</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Esto puede tomar unos momentos...
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkMoveOpen(false)} disabled={bulkMoveLoading}>
+            Cancelar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Snackbar para éxito */}
       <Snackbar
         open={moveSuccess}
@@ -1965,7 +2118,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           severity="success"
           sx={{ borderRadius: 2 }}
         >
-          Archivo movido exitosamente
+          Archivo(s) movido(s) exitosamente
         </Alert>
       </Snackbar>
     </Box>
@@ -2028,3 +2181,4 @@ function FolderMoveTree({
     </Box>
   );
 }
+
