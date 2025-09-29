@@ -17,26 +17,36 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, SortDesc, SortAsc, X } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 
+// ----------- FUNCIÓN UTIL PARA GLOW BLANCO+COLOR ---------
+function blendColorWithWhite(hex: string, amount: number = 0.7) {
+  let c = hex.replace("#", "").substring(0, 6);
+  let r = parseInt(c.substring(0,2),16), g = parseInt(c.substring(2,4),16), b = parseInt(c.substring(4,6),16);
+  r = Math.round(r + (255 - r) * amount);
+  g = Math.round(g + (255 - g) * amount);
+  b = Math.round(b + (255 - b) * amount);
+  return `rgba(${r},${g},${b},0.8)`;
+}
+
 // -------- COLORES --------
 const METROLOGOS_ORDER_COLOR = [
   { name: "Abraham Ginez", color: "#aa0000" },
-  { name: "Dante Hernández", color: "#060476ff" },
+  { name: "Dante Hernández", color: "#060476" },
   { name: "Edgar Amador", color: "#028019" },
-  { name: "Angel Amador", color: "#ffe042ff" },
-  { name: "Ricardo Domínguez", color: "#cc08d6ff" },
+  { name: "Angel Amador", color: "#ffe042" },
+  { name: "Ricardo Domínguez", color: "#cc08d6" },
 ];
 const FALLBACK_COLORS = ["#ff9100", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
 const MAGNITUDES_COLORS: Record<string, string> = {
   "Acustica": "#00e6bf",
-  "Dimensional": "#001e78ff",
-  "Electrica": "#ffee00ff",
-  "Flujo": "#20cde0ff",
-  "Fuerza": "#00e676ff",
-  "Masa": "#028019ff",
+  "Dimensional": "#001e78",
+  "Electrica": "#ffee00",
+  "Flujo": "#20cde0",
+  "Fuerza": "#00e676",
+  "Masa": "#028019",
   "Par Torsional": "#30306D",
-  "Presión": "#afafbaff",
-  "Temperatura": "#c87705ff",
-  "Tiempo": "#f33220ff",
+  "Presión": "#afafba",
+  "Temperatura": "#c87705",
+  "Tiempo": "#f33220",
 };
 
 // -------- PieChart PRO con Hover Holográfico --------
@@ -454,6 +464,11 @@ const CalibrationStatsScreen: React.FC = () => {
     )
     : "#2096F3";
 
+  // Color animado para el selector
+  const colorSelector = metrologoSeleccionado
+    ? (METROLOGOS_ORDER_COLOR.find(m => m.name === metrologoSeleccionado.name)?.color || "#2096F3")
+    : "#1e40af";
+
   // Función para holograma PieChart
   const handlePieClick = (data: any, index: number, event: any) => {
     const color = getColorForMagnitud(data.name, index);
@@ -510,25 +525,122 @@ const CalibrationStatsScreen: React.FC = () => {
         </button>
       </div>
 
-      {/* Select metrologo */}
-      <div className="max-w-md mx-auto mb-8">
-        <select
+      {/* ------ SELECTOR DE METROLOGO CON FONDO ANIMADO PRO ------ */}
+      <motion.div
+        className="max-w-md mx-auto mb-8 relative"
+        style={{
+          borderRadius: 24,
+          overflow: "visible",
+        }}
+        animate={{
+          boxShadow: [
+            `0 0 0px ${colorSelector}00, 0 0 16px ${colorSelector}66`,
+            `0 0 12px ${colorSelector}80, 0 0 40px ${colorSelector}50`
+          ],
+        }}
+        transition={{
+          duration: 0.8,
+          type: "spring"
+        }}
+      >
+        {/* Fondo degradado animado tipo aurora */}
+        <motion.div
+          className="absolute inset-0 -z-10"
+          style={{
+            borderRadius: 24,
+            pointerEvents: "none",
+            filter: "blur(16px)",
+          }}
+          animate={{
+            background: [
+              `linear-gradient(120deg, ${colorSelector}44 20%, #09f 80%)`,
+              `linear-gradient(90deg, #fff0 30%, ${colorSelector}80 100%)`,
+              `linear-gradient(100deg, #d1d5db88 0%, ${colorSelector}66 80%)`,
+              `linear-gradient(120deg, #6366f144 40%, ${colorSelector}cc 100%)`
+            ],
+            backgroundPosition: [
+              "0% 50%", "100% 60%", "60% 100%", "0% 0%"
+            ]
+          }}
+          transition={{
+            repeat: Infinity,
+            duration: 8,
+            ease: "linear"
+          }}
+        />
+        {/* Halo Glow */}
+        <motion.div
+          className="absolute inset-0 -z-20"
+          style={{
+            borderRadius: 24,
+            pointerEvents: "none",
+            background: `radial-gradient(circle at 70% 40%, ${colorSelector}50 0%, #fff0 80%)`,
+            filter: `blur(36px)`,
+          }}
+          animate={{
+            opacity: [0.6, 0.8, 1, 0.7],
+            scale: [1, 1.04, 0.96, 1],
+          }}
+          transition={{
+            repeat: Infinity,
+            duration: 6,
+            ease: "easeInOut"
+          }}
+        />
+        {/* El SELECT */}
+        <motion.select
           value={metrologoSeleccionado?.id || ""}
           onChange={(e) =>
             setMetrologoSeleccionado(
               usuarios.find((u) => u.id === e.target.value) || null
             )
           }
-          className="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-700 font-semibold text-center"
+          className="w-full px-6 py-4 rounded-2xl border-2 font-semibold text-lg text-center backdrop-blur-xl
+           shadow-xl transition-all duration-500 cursor-pointer relative z-10"
+          style={{
+            borderColor: colorSelector,
+            background: "rgba(255,255,255,0.72)",
+            boxShadow: `0 0 24px 0 ${colorSelector}44, 0 0 0px 0 #fff0`,
+            color: "#222",
+            textShadow: `0 1px 0 #fff, 0 0 6px ${colorSelector}44`,
+            transition: "border-color 0.5s, box-shadow 0.5s, background 0.7s"
+          }}
+          animate={{
+            borderColor: colorSelector,
+            boxShadow: [
+              `0 0 0px ${colorSelector}00, 0 0 8px ${colorSelector}44`,
+              `0 0 8px ${colorSelector}80, 0 0 32px ${colorSelector}33`
+            ]
+          }}
         >
-          <option value="">Selecciona un Metrologo</option>
+          <option value="">Selecciona un Metrólogo</option>
           {usuarios.map((u) => (
             <option key={u.id} value={u.id}>
               {u.name}
             </option>
           ))}
-        </select>
-      </div>
+        </motion.select>
+        {/* Overlay frame */}
+        <motion.div
+          className="absolute inset-0 rounded-2xl border-2 pointer-events-none"
+          style={{
+            borderColor: colorSelector,
+            borderWidth: 2,
+            transition: "border-color 0.5s"
+          }}
+          animate={{
+            opacity: [0.7, 1, 0.9, 1],
+            borderColor: colorSelector,
+            scale: [1, 1.01, 0.99, 1],
+          }}
+          transition={{
+            repeat: Infinity,
+            duration: 4,
+            ease: "easeInOut"
+          }}
+        />
+      </motion.div>
+      {/* ------ FIN SELECTOR ANIMADO ------ */}
 
       {/* Estadísticas del metrologo */}
       {metrologoSeleccionado && !loading && (
@@ -576,14 +688,14 @@ const CalibrationStatsScreen: React.FC = () => {
                 </filter>
               </defs>
             </svg>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={380}>
               <PieChart>
                 <Pie
                   data={dataMagnitudes}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  outerRadius={80}
+                  outerRadius={125}
                   fill="#8884d8"
                   dataKey="value"
                   activeIndex={activeIndex}
@@ -624,7 +736,7 @@ const CalibrationStatsScreen: React.FC = () => {
         </div>
       )}
 
-      {/* --- Ranking Top 3 --- */}
+      {/* --- Ranking Top 3 con border y glow SIEMPRE VISIBLE --- */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -635,17 +747,67 @@ const CalibrationStatsScreen: React.FC = () => {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {top3.map((m, i) => (
-            <div
+            <motion.div
               key={m.name}
-              className="text-center p-6 rounded-xl border-2 bg-gradient-to-br from-white to-gray-50"
-              style={{ borderColor: m.color }}
+              className="relative text-center p-6 rounded-xl bg-gradient-to-br from-white to-gray-50 overflow-hidden"
+              style={{
+                border: `2.5px solid ${m.color}`,
+                zIndex: 1,
+              }}
+              initial={{ boxShadow: `0 0 0px ${m.color}00` }}
+              animate={{
+                boxShadow: [
+                  `0 0 0px ${m.color}00, 0 0 24px ${blendColorWithWhite(m.color,0.7)}`,
+                  `0 0 24px ${blendColorWithWhite(m.color,0.7)}, 0 0 48px ${blendColorWithWhite(m.color,0.5)}`,
+                  `0 0 0px ${m.color}00, 0 0 32px ${blendColorWithWhite(m.color,0.7)}`
+                ],
+                borderColor: [m.color, "#fff", m.color],
+                scale: [1, 1.025, 1],
+                filter: [
+                  `drop-shadow(0 0 0px ${blendColorWithWhite(m.color,0.7)})`,
+                  `drop-shadow(0 0 16px ${blendColorWithWhite(m.color,0.7)})`,
+                  `drop-shadow(0 0 0px ${blendColorWithWhite(m.color,0.7)})`
+                ],
+              }}
+              transition={{
+                repeat: Infinity,
+                duration: 4,
+                ease: "easeInOut",
+              }}
             >
-              <div className="text-4xl mb-2">
-                {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
+              {/* Glow mezclado con blanco para que siempre se note */}
+              <motion.div
+                className="absolute inset-0 rounded-xl pointer-events-none"
+                style={{
+                  zIndex: 0,
+                  border: "2.5px solid transparent",
+                  background: `radial-gradient(ellipse at 60% 30%, ${blendColorWithWhite(m.color, 0.7)} 0%, #fff0 80%)`,
+                  filter: `blur(18px)`,
+                }}
+                animate={{
+                  opacity: [0.8, 1, 0.8, 1],
+                  scale: [1, 1.08, 1, 0.97, 1],
+                  background: [
+                    `radial-gradient(ellipse at 60% 30%, ${blendColorWithWhite(m.color, 0.8)} 0%, #fff0 80%)`,
+                    `radial-gradient(ellipse at 20% 80%, ${blendColorWithWhite(m.color, 0.6)} 0%, #fff0 90%)`,
+                    `radial-gradient(ellipse at 60% 60%, #fff 0%, ${blendColorWithWhite(m.color, 0.7)} 55%, #fff0 90%)`,
+                    `radial-gradient(ellipse at 50% 40%, ${blendColorWithWhite(m.color, 0.7)} 0%, #fff0 90%)`
+                  ]
+                }}
+                transition={{
+                  repeat: Infinity,
+                  duration: 7,
+                  ease: "easeInOut"
+                }}
+              />
+              <div className="relative z-10">
+                <div className="text-4xl mb-2">
+                  {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
+                </div>
+                <h4 className="font-bold text-lg text-gray-800">{m.name}</h4>
+                <p className="text-gray-600">{m.total} calibraciones</p>
               </div>
-              <h4 className="font-bold text-lg text-gray-800">{m.name}</h4>
-              <p className="text-gray-600">{m.total} calibraciones</p>
-            </div>
+            </motion.div>
           ))}
         </div>
       </motion.div>
