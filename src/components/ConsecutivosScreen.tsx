@@ -22,10 +22,10 @@ const magnitudesAcreditadas = [
 ];
 
 const magnitudesTrazables = [
-  { id: 'acustica Trazable', name: 'Acústica Trazable', icon: '🔊', description: 'Medición de sonido y vibraciones' },
-  { id: 'dimensional Trazable', name: 'Dimensional Trazable', icon: '📏', description: 'Mediciones de longitud y dimensiones' },
+  { id: 'acustica Trazable', name: 'AcusticaTrazable', icon: '🔊', description: 'Medición de sonido y vibraciones' },
+  { id: 'dimensional Trazable', name: 'DimensionalTrazable', icon: '📏', description: 'Mediciones de longitud y dimensiones' },
   { id: 'dureza Trazable', name: 'Dureza Trazable', icon: '🪨', description: 'Mediciones de dureza' },
-  { id: 'electrica Trazable', name: 'Eléctrica Trazable', icon: '⚡', description: 'Mediciones eléctricas y electrónicas' },
+  { id: 'electrica Trazable', name: 'Electrica Trazable', icon: '⚡', description: 'Mediciones eléctricas y electrónicas' },
   { id: 'flujo Trazable', name: 'Flujo Trazable', icon: '🌊', description: 'Medición de fluidos y caudales' },
   { id: 'frecuencia Trazable', name: 'Frecuencia Trazable', icon: '📡', description: 'Mediciones de frecuencia y tiempo' },
   { id: 'masa Trazable', name: 'Masa Trazable', icon: '⚖️', description: 'Mediciones de masa y peso' },
@@ -60,7 +60,7 @@ export const ConsecutivosScreen: React.FC = () => {
           {/* Logo + animación */}
           <div className="w-12 h-12 rounded-2xl shadow-lg bg-gradient-to-tr from-blue-600 via-blue-400 to-blue-300 dark:from-blue-800 dark:to-blue-400 flex items-center justify-center animate-pulse-slow">
             {/* <img src={labLogo} alt="Logo" className="w-10 h-10 object-contain drop-shadow" /> */}
-            <span className="text-white text-2xl font-bold tracking-tight select-none animate-glow">#</span>
+             <img src={labLogo} alt="Logo" className="w-10 h-10 object-contain drop-shadow" /> 
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-blue-900 dark:text-blue-100 tracking-tight">

@@ -6,6 +6,7 @@ import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
 import { doc, getDoc, updateDoc, collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
 import clsx from "clsx";
+import { useNavigation } from '../hooks/useNavigation';
 
 // --- TIPOS ---
 interface WorksheetData {
@@ -168,33 +169,27 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // --- NAVEGACIÓN CORREGIDA CON BOTÓN DE REGRESO ---
+const { navigateTo } = useNavigation();
+
   const manejarNavegacion = useCallback((destino: string) => {
-    console.log('Navegando a:', destino);
     
-    if (isMobile) {
-      setSidebarAbierto(false);
+     if (
+    destino === 'servicios' ||
+    destino === 'servicios-sitio' ||
+    destino === 'friday-servicios'
+  ) {
+      navigateTo('friday-servicios');
+  } else if (
+    destino === 'dashboard' ||
+    destino === 'menu' ||
+    destino === 'inicio' ||
+    destino === 'mainmenu'
+  ) {
+      navigateTo('menu');
+  } else {
+      navigateTo(destino);
     }
-    
-    // Usar navigate prop si está disponible, sino usar window.location
-    try {
-      if (navigate) {
-        navigate(destino);
-      } else {
-        // Fallback usando window.location o history API
-        if (destino === 'dashboard' || destino === 'menu' || destino === 'inicio' || destino === 'mainmenu') {
-          window.location.href = '/dashboard';
-        } else if (destino === 'servicios' || destino === 'servicios-sitio') {
-          window.location.href = '/servicios';
-        } else {
-          window.location.href = `/${destino}`;
-        }
-      }
-    } catch (error) {
-      console.error('Error de navegación:', error);
-      // Último recurso
-      window.location.href = '/dashboard';
-    }
-  }, [navigate, isMobile]);
+  }, [navigateTo]);
 
   // Cambiar vista automáticamente según el dispositivo
   useEffect(() => {
