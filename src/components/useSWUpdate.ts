@@ -33,10 +33,13 @@ export function useSWUpdate() {
     }
   }, []);
 
-  const reloadPage = () => {
-    if (waitingWorker) {
-      waitingWorker.postMessage({ type: "SKIP_WAITING" });
-    }
+    const reloadPage = () => {
+        if (waitingWorker) {
+            waitingWorker.postMessage({ type: "SKIP_WAITING" });
+            // Espera a que el SW nuevo tome el control antes de recargar
+            navigator.serviceWorker.addEventListener("controllerchange", () => {
+                window.location.reload();
+            });
     setShowReload(false); // oculta el banner
   };
 
