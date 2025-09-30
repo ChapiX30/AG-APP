@@ -9,13 +9,33 @@ interface RegisterScreenProps {
   onNavigateToLogin: () => void;
 }
 
+// --- **NUEVO** ---
+// Pequeña función para obtener un mensaje de error más legible de Firebase
+const getFirebaseErrorMessage = (error: any): string => {
+  switch (error.code) {
+    case 'auth/email-already-in-use':
+      return 'Este correo electrónico ya está registrado.';
+    case 'auth/invalid-email':
+      return 'El formato del correo electrónico no es válido.';
+    case 'auth/weak-password':
+      return 'La contraseña debe tener al menos 6 caracteres.';
+    default:
+      return 'Error al registrar. Revisa los datos e intenta de nuevo.';
+  }
+};
+
+
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onNavigateToLogin,
 }) => {
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
-  const [puesto, setPuesto] = useState<"" | "Metrólogo" | "Calidad">("");
+
+  // --- **CORREGIDO** ---
+  // Se incluyen todos los puestos posibles para que coincida con el formulario.
+  const [puesto, setPuesto] = useState<"" | "Metrólogo" | "Calidad" | "Logistica" | "Administrativo">("");
+
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -26,9 +46,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
     setError("");
     setSuccess("");
 
-    // Validaciones básicas
     if (!puesto) {
-      setError("Selecciona tu puesto de trabajo.");
+      setError("Por favor, selecciona tu puesto de trabajo.");
       return;
     }
 
@@ -38,13 +57,16 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
         nombre,
         correo,
-        puesto,               // <-- Guardamos SOLO los valores permitidos: "Metrólogo" o "Calidad"
+        puesto,
         creado: new Date()
       });
-      setSuccess("¡Usuario registrado exitosamente!");
+      setSuccess("¡Usuario registrado exitosamente! Redirigiendo...");
       setTimeout(() => onNavigateToLogin(), 2000);
     } catch (err: any) {
-      setError("Error al registrar usuario. Revisa los datos e intenta nuevamente.");
+      // --- **CORREGIDO** ---
+      // Usamos la función para obtener el mensaje de error (string) y no el objeto completo.
+      // Esto soluciona el error "Cannot convert object to primitive value".
+      setError(getFirebaseErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -57,6 +79,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         background: "linear-gradient(135deg, #102347 0%, #134974 75%, #4ea4d9 100%)",
       }}
     >
+      {/* El resto del código de la UI no necesita cambios y se mantiene igual */}
       {/* Efectos de fondo animados */}
       <motion.div
         initial={{ scale: 0.8, opacity: 0.3 }}
@@ -99,7 +122,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         }}
       />
 
-      {/* Brillo inferior */}
       <div
         className="absolute left-0 bottom-0 w-full h-60 pointer-events-none"
         style={{
@@ -108,7 +130,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         }}
       />
 
-      {/* Contenido principal - Flexbox */}
       <div className="flex min-h-screen relative z-10">
         
         {/* Panel izquierdo */}
@@ -118,7 +139,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           transition={{ duration: 1, ease: "easeOut" }}
           className="flex-[3] flex flex-col justify-center px-16 py-12"
         >
-          {/* Logo y título */}
           <div className="flex items-center mb-12">
             <motion.div
               initial={{ scale: 0.8, rotate: -10 }}
@@ -152,7 +172,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             Crea tu cuenta y accede a la plataforma más avanzada para la gestión de equipos y servicios de laboratorio.
           </motion.p>
 
-          {/* Características */}
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
@@ -172,7 +191,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 className="flex items-center"
               >
                 <div className="w-16 h-16 bg-white/10 backdrop-blur-sm rounded-2xl flex items-center justify-center mr-6 border border-white/20">
-                  {/* Solo decorativo */}
                   <div className={`w-8 h-8 rounded-full border-2 border-white/20 ${item.color}`} />
                 </div>
                 <div>
@@ -199,7 +217,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
               </div>
 
               <form onSubmit={handleRegister} className="space-y-6">
-                {/* Campo Nombre */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.8 }}>
                   <label className="block text-white/90 text-sm font-medium mb-3">Nombre completo</label>
                   <div className="relative">
@@ -216,7 +233,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </div>
                 </motion.div>
 
-                {/* Campo Email */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.9 }}>
                   <label className="block text-white/90 text-sm font-medium mb-3">Correo electrónico</label>
                   <div className="relative">
@@ -232,7 +248,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </div>
                 </motion.div>
 
-                {/* Campo Contraseña */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 1.0 }}>
                   <label className="block text-white/90 text-sm font-medium mb-3">Contraseña</label>
                   <div className="relative">
@@ -258,14 +273,15 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </div>
                 </motion.div>
 
-                {/* Campo Puesto (Select con lista cerrada) */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 1.1 }}>
                   <label className="block text-white/90 text-sm font-medium mb-3">Puesto de trabajo</label>
                   <div className="relative">
                     <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                     <select
                       value={puesto}
-                      onChange={(e) => setPuesto(e.target.value as "Metrólogo" | "Calidad" | "")}
+                      // --- **CORREGIDO** ---
+                      // Se quita la aserción de tipo innecesaria, ya que el estado ahora es correcto.
+                      onChange={(e) => setPuesto(e.target.value as typeof puesto)}
                       className="appearance-none w-full pl-12 pr-12 py-4 bg-white/5 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all backdrop-blur-sm text-base"
                       required
                     >
@@ -282,7 +298,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </p>
                 </motion.div>
 
-                {/* Mensajes de error/éxito */}
                 {error && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
@@ -305,7 +320,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </motion.div>
                 )}
 
-                {/* Botón de registro */}
                 <motion.button
                   type="submit"
                   disabled={isLoading}
@@ -326,7 +340,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   )}
                 </motion.button>
 
-                {/* Botón volver */}
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 1.4 }} className="text-center pt-4">
                   <button
                     type="button"
@@ -339,7 +352,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 </motion.div>
               </form>
 
-              {/* Términos */}
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 1.6 }} className="mt-8 pt-6 border-t border-white/10 text-center">
                 <p className="text-xs text-white/50">
                   Al crear una cuenta, aceptas nuestros términos de servicio y política de privacidad

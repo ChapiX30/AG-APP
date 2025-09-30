@@ -1,11 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
-import { Eye, EyeOff, Lock, User, ArrowRight, CheckCircle } from 'lucide-react';
-import { motion, useCycle } from "framer-motion";
+import { Eye, EyeOff, Lock, User, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from "framer-motion";
 
 // IMPORTA TU LOGO (ajusta la ruta si tu archivo es diferente)
 import labLogo from '../assets/lab_logo.png';
+
+// --- SIMULACIÓN DE BÚSQUEDA EN BASE DE DATOS ---
+// En una app real, aquí harías una llamada a tu backend.
+const fetchUserName = async (email: string): Promise<{ name: string; initial: string } | null> => {
+  if (email.toLowerCase() === 'admin@ese-ag.mx') {
+    // Simulamos un retraso de red
+    return new Promise(resolve => setTimeout(() => resolve({ name: 'Admin', initial: 'A' }), 700));
+  }
+  return null;
+};
+
 
 export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ onNavigateToRegister }) => {
   const [email, setEmail] = useState('');
@@ -13,180 +24,225 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // --- ESTADOS PARA LA PERSONALIZACIÓN PRO ---
+  const [userName, setUserName] = useState('');
+  const [userInitial, setUserInitial] = useState('');
+  const [isFetchingName, setIsFetchingName] = useState(false);
+
+  // --- ESTADO PARA EL EFECTO "AURORA" ---
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
   const { login } = useAuth();
   const { navigateTo } = useNavigation();
+
+  // --- EFECTO PARA BUSCAR EL NOMBRE DEL USUARIO CON "DEBOUNCE" ---
+  useEffect(() => {
+    if (!email) {
+      setUserName('');
+      setUserInitial('');
+      return;
+    }
+    const debounceTimer = setTimeout(async () => {
+      setIsFetchingName(true);
+      const userData = await fetchUserName(email);
+      if (userData) {
+        setUserName(userData.name);
+        setUserInitial(userData.initial);
+      } else {
+        setUserName('');
+        setUserInitial('');
+      }
+      setIsFetchingName(false);
+    }, 500);
+    return () => clearTimeout(debounceTimer);
+  }, [email]);
+
+  // --- EFECTO PARA EL MOVIMIENTO DEL RATÓN ---
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
     const ok = await login(email, password);
-    if (ok) navigateTo('menu');
-    else setError('Credenciales inválidas. Usa admin@ese-ag.mx / admin123');
+    if (ok) {
+      navigateTo('menu');
+    } else {
+      setError('Credenciales inválidas.');
+    }
     setIsLoading(false);
   };
 
-  // Animación 3D giro infinito
-  const [hovered, cycleHovered] = useCycle(false, true);
-
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#0f172a]">
-      {/* Fondo mágico, puedes quitar o ajustar si gustas */}
+    <div className="fixed inset-0 flex items-center justify-center bg-slate-900 overflow-y-auto p-4 font-sans">
+      {/* --- EFECTO AURORA INTERACTIVO --- */}
       <motion.div
-        initial={{ opacity: 0.3, scale: 0.8 }}
-        animate={{ opacity: 0.6, scale: 1.1 }}
-        transition={{ duration: 3, repeat: Infinity, repeatType: "reverse" }}
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-0"
+        className="pointer-events-none absolute -inset-px transition duration-300"
         style={{
-          width: 600,
-          height: 600,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, #8b5cf6aa 10%, #6366f122 70%, transparent 100%)",
-          filter: "blur(12px)",
+          background: `radial-gradient(600px at ${mousePosition.x}px ${mousePosition.y}px, rgba(167, 139, 250, 0.15), transparent 80%)`,
         }}
       />
+
       {/* CONTENIDO PRINCIPAL */}
       <div className="relative z-10 w-full flex flex-col items-center justify-center">
-        {/* Branding + Formulario juntos en el centro */}
-        <div className="w-full flex flex-col lg:flex-row items-center justify-center gap-0 lg:gap-12 px-2 md:px-0">
-          {/* Branding */}
-          <div className="flex flex-col items-center mb-10 lg:mb-0">
-            {/* Logo gigante con animación 3D */}
-            <motion.div
-              animate={{
-                rotateY: [0, 360],
-                scale: hovered ? 1.09 : 1,
-                filter: hovered
-                  ? "drop-shadow(0 0 120px #a78bfa) drop-shadow(0 0 50px #8b5cf6)"
-                  : "drop-shadow(0 0 65px #a78bfa88)",
-              }}
-              transition={{
-                repeat: Infinity,
-                duration: 8,
-                ease: "linear",
-              }}
-              onMouseEnter={() => cycleHovered()}
-              onMouseLeave={() => cycleHovered()}
-              className="cursor-pointer flex items-center justify-center select-none"
-              style={{
-                width: 150, height: 150,
-                perspective: 800,
-                marginBottom: 24,
-              }}
-            >
-              <img
-                src={labLogo}
-                alt="Lab Logo"
-                className="object-contain w-[140px] h-[140px] rounded-xl pointer-events-none"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  boxShadow: "0 0 0px transparent",
-                  willChange: "transform",
-                  userSelect: "none"
-                }}
-                draggable={false}
-              />
-            </motion.div>
-            <h1 className="text-5xl md:text-6xl font-extrabold text-white drop-shadow-2xl text-center mb-2">ESE-AG</h1>
-            <span className="block bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent font-bold text-3xl text-center mb-3">
-              ¡Bienvenido!
-            </span>
-            <p className="text-xl text-white/80 text-center max-w-xl mb-4">
-              Gestiona, consulta y administra todos tus equipos y servicios del laboratorio con tecnología de vanguardia.
+        <div className="w-full flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16">
+          
+          {/* --- SECCIÓN DE BRANDING (IZQUIERDA) --- */}
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left mb-8 lg:mb-0 max-w-lg">
+            <div className="relative flex items-center justify-center w-[150px] h-[150px] mb-6">
+              <AnimatePresence mode="popLayout">
+                {(userInitial && !isFetchingName) ? (
+                  <motion.div
+                    key="initial"
+                    initial={{ opacity: 0, scale: 0.5, rotateY: -90 }}
+                    animate={{ opacity: 1, scale: 1, rotateY: 0 }}
+                    exit={{ opacity: 0, scale: 0.5, rotateY: 90 }}
+                    transition={{ duration: 0.4, ease: "circOut" }}
+                    className="flex items-center justify-center w-full h-full bg-slate-800/80 border border-white/10 rounded-3xl shadow-lg"
+                  >
+                    <span className="text-8xl font-black bg-gradient-to-br from-purple-400 to-blue-400 bg-clip-text text-transparent select-none">
+                      {userInitial}
+                    </span>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="logo"
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.5 }}
+                    className="w-full h-full flex items-center justify-center"
+                  >
+                     {isFetchingName ? (
+                      <div className="w-full h-full bg-slate-800/80 border border-white/10 rounded-3xl animate-pulse"></div>
+                     ) : (
+                      <img
+                        src={labLogo}
+                        alt="Lab Logo"
+                        className="object-contain w-[140px] h-[140px] rounded-xl pointer-events-none drop-shadow-2xl"
+                        draggable={false}
+                      />
+                     )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white drop-shadow-2xl mb-2">ESE-AG</h1>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={userName || 'default'}
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ duration: 0.3 }}
+              >
+                <span className="block bg-gradient-to-r from-purple-300 to-blue-300 bg-clip-text text-transparent font-bold text-2xl sm:text-3xl mb-4">
+                  {userName ? `¡Hola de nuevo, ${userName}!` : '¡Bienvenido!'}
+                </span>
+              </motion.div>
+            </AnimatePresence>
+            <p className="text-lg sm:text-xl text-slate-400">
+              Gestiona, consulta y administra tus equipos y servicios del laboratorio.
             </p>
           </div>
 
-          {/* FORMULARIO - Más grande y al centro */}
+          {/* --- FORMULARIO (DERECHA) --- */}
           <motion.div
-            initial={{ opacity: 0, y: 70, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.15 }}
-            className="w-full max-w-md bg-gradient-to-br from-slate-800/90 to-slate-700/80 border border-white/10 rounded-3xl p-10 shadow-2xl flex flex-col justify-center items-center"
-            style={{
-              minWidth: 380,
-              boxShadow: "0 6px 64px #6366f140, 0 0px 1.5px #fff2"
-            }}
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.1 }}
+            className="w-full max-w-md bg-slate-800/50 backdrop-blur-sm border border-white/10 rounded-3xl p-8 sm:p-10 shadow-2xl"
           >
-            <div className="text-center mb-10">
-              <h3 className="text-4xl font-extrabold text-white mb-3">Iniciar Sesión</h3>
-              <p className="text-white/70 text-lg">Sistema Equipos y Servicios AG</p>
+            <div className="text-center mb-8">
+              <h3 className="text-3xl sm:text-4xl font-extrabold text-white mb-2">Iniciar Sesión</h3>
+              <p className="text-slate-400 text-base sm:text-lg">Accede a tu panel de control</p>
             </div>
-            <form onSubmit={handleSubmit} className="w-full space-y-7">
+            <form onSubmit={handleSubmit} className="w-full space-y-6">
               <div>
-                <label className="block text-white/90 text-base font-semibold mb-2">Correo electrónico</label>
+                <label className="block text-slate-200 text-sm font-semibold mb-2 ml-1">Correo electrónico</label>
                 <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-white/50" />
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-14 pr-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all backdrop-blur-sm text-lg"
-                    placeholder="ejemplo@ese-ag.com"
+                    className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-base sm:text-lg"
+                    placeholder="tu@correo.com"
                     required
                     autoFocus
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-white/90 text-base font-semibold mb-2">Contraseña</label>
+                 <div className="flex justify-between items-center mb-2 ml-1">
+                    <label className="block text-slate-200 text-sm font-semibold">Contraseña</label>
+                    <a href="#" className="text-sm text-purple-400 hover:text-purple-300 transition-colors">
+                      ¿Olvidaste tu contraseña?
+                    </a>
+                  </div>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-white/50" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-14 pr-14 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all backdrop-blur-sm text-lg"
-                    placeholder="Tu contraseña"
+                    className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-base sm:text-lg"
+                    placeholder="••••••••"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
                     tabIndex={-1}
                   >
-                    {showPassword ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
               {error && (
-                <div className="bg-red-500/20 border border-red-400/30 text-red-200 rounded-xl p-4 text-center backdrop-blur-sm text-base">
+                <div className="bg-red-500/20 border border-red-400/30 text-red-200 rounded-xl p-3 text-center text-sm">
                   {error}
                 </div>
               )}
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg text-xl"
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200 text-white font-semibold py-3.5 px-6 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg text-lg"
               >
                 {isLoading ? (
                   <span className="flex items-center">
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
                     Entrando...
                   </span>
-                ) : (
-                  'Entrar'
-                )}
+                ) : ( 'Entrar' )}
               </button>
-              <div className="text-center pt-4">
+              <div className="text-center pt-4 border-t border-slate-700/50">
+                {/* --- AQUÍ ESTÁ LA NAVEGACIÓN A REGISTRO --- */}
+                {/* Este botón ejecuta la función 'onNavigateToRegister' que viene desde el componente padre */}
                 <button
                   type="button"
                   onClick={onNavigateToRegister}
-                  className="text-purple-300 hover:text-purple-200 font-medium transition-colors flex items-center justify-center mx-auto text-base"
+                  className="text-slate-400 hover:text-white font-medium transition-colors flex items-center justify-center mx-auto text-sm sm:text-base"
                 >
-                  ¿No tienes cuenta? Regístrate
-                  <ArrowRight className="w-4 h-4 ml-1" />
+                  ¿No tienes cuenta? <span className="text-purple-400 hover:text-purple-300 ml-1.5 font-semibold">Regístrate</span>
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
                 </button>
               </div>
             </form>
-            <div className="mt-8 pt-6 border-t border-white/10 text-center">
-              <p className="text-xs text-white/50 select-text">
-                {/* Puedes poner demo aquí si quieres */}
-              </p>
-            </div>
           </motion.div>
         </div>
+        <footer className="text-center mt-12">
+            <p className="text-slate-600 text-xs">&copy; {new Date().getFullYear()} ESE-AG. Todos los derechos reservados.</p>
+        </footer>
       </div>
     </div>
   );

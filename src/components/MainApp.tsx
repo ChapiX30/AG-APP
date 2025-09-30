@@ -4,12 +4,17 @@ import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { AnimatePresence, motion } from 'framer-motion';
 
-// Screens "ligeras" (login, menu, consecutivos, magnitude-detail)
+// Screens "ligeras"
 import { LoginScreen } from './LoginScreen';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
 import SplashScreen from "./SplashScreen";
+
+// --- **CORRECCIÓN PRINCIPAL** ---
+// Ajustamos React.lazy para que funcione con "named exports" (export const RegisterScreen)
+// Esto soluciona el error "Cannot convert object to primitive value".
+const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
 
 // Screens GRANDES en lazy loading
 const WorkSheetScreen = lazy(() => import('./WorkSheetScreen'));
@@ -24,7 +29,12 @@ const NormasScreen = lazy(() => import('./NormasScreen'));
 const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
-const RegisterScreen = lazy(() => import('./RegisterScreen'));
+
+// --- **NOTA** --- 
+// El componente TablerosScreen no estaba importado, lo comenté para evitar un error.
+// Deberás importarlo de forma similar a los demás si lo vas a usar.
+// const TablerosScreen = lazy(() => import('./TablerosScreen'));
+
 
 // Loader visual PRO
 const Loader = () => (
@@ -60,7 +70,7 @@ export const MainApp: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    // Pantalla de Login/Register con animaciones
+    // La lógica de navegación aquí está bien, el problema era cómo se cargaba el componente.
     return (
       <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
         <AnimatePresence mode="wait">
@@ -71,7 +81,7 @@ export const MainApp: React.FC = () => {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 500, opacity: 0 }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="w-full max-w-md"
+              className="w-full" // Ajustado para ocupar el ancho completo
             >
               <Suspense fallback={<Loader />}>
                 <RegisterScreen onNavigateToLogin={() => navigateTo('login')} />
@@ -80,11 +90,11 @@ export const MainApp: React.FC = () => {
           ) : (
             <motion.div
               key="login"
-              initial={{ x: -500, opacity: 0 }}
+              initial={{ x: 0, opacity: 0 }} // Ajustado para un fade-in centrado
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -500, opacity: 0 }}
+              exit={{ x: 0, opacity: 0 }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="w-full max-w-xl sm:max-w-2xl md:max-w-3xl"
+              className="w-full"
             >
               <LoginScreen onNavigateToRegister={() => navigateTo('register')} />
             </motion.div>
@@ -139,11 +149,13 @@ export const MainApp: React.FC = () => {
         </Suspense>
       );
     case 'tableros':
-      return (
-        <Suspense fallback={<Loader />}>
-          <TablerosScreen />
-        </Suspense>
-      );
+      // Asegúrate de importar TablerosScreen si lo vas a usar.
+      // return (
+      //   <Suspense fallback={<Loader />}>
+      //     <TablerosScreen />
+      //   </Suspense>
+      // );
+      return <MainMenu />; // Temporalmente redirige a menu
     case 'calibration-stats':
       if (
         ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
