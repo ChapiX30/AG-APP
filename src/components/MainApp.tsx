@@ -1,60 +1,72 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { AnimatePresence, motion } from 'framer-motion';
+
+// Screens "ligeras" (login, menu, consecutivos, magnitude-detail)
 import { LoginScreen } from './LoginScreen';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
-import  WorkSheetScreen  from './WorkSheetScreen';
-import  FridayScreen  from './FridayScreen';
-import FridayServiciosScreen from './FridayServiciosScreen';
-import  DriveScreen   from './DriveScreen';
 import SplashScreen from "./SplashScreen";
 
-import ProgramaCalibracionScreen from './ProgramaCalibracionScreen';
-import HojaDeServicioScreen from './HojaDeServicioScreen';
-import  CalibrationManager   from './CalibrationManager';
-import  EmpresasScreen  from './EmpresasScreen';
-import NormasScreen from './NormasScreen';
-import TablerosScreen from './TablerosScreen';
-import  CalibrationStatsScreen from './CalibrationStatsScreen';
-import  InventoryProScreen   from './InventoryProScreen'; // 👈 AGREGA ESTA LÍNEA
-import { CalendarScreen }   from './CalendarScreen';
-import { RegisterScreen } from './RegisterScreen'; // 👈 AGREGA ESTA LÍNEA
+// Screens GRANDES en lazy loading
+const WorkSheetScreen = lazy(() => import('./WorkSheetScreen'));
+const FridayScreen = lazy(() => import('./FridayScreen'));
+const FridayServiciosScreen = lazy(() => import('./FridayServiciosScreen'));
+const DriveScreen = lazy(() => import('./DriveScreen'));
+const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen'));
+const HojaDeServicioScreen = lazy(() => import('./HojaDeServicioScreen'));
+const CalibrationManager = lazy(() => import('./CalibrationManager'));
+const EmpresasScreen = lazy(() => import('./EmpresasScreen'));
+const NormasScreen = lazy(() => import('./NormasScreen'));
+const TablerosScreen = lazy(() => import('./TablerosScreen'));
+const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
+const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
+const CalendarScreen = lazy(() => import('./CalendarScreen'));
+const RegisterScreen = lazy(() => import('./RegisterScreen'));
 
-import { AnimatePresence, motion } from 'framer-motion'; // 👈 AGREGA ESTO
+// Loader visual PRO
+const Loader = () => (
+  <div className="w-full h-screen flex flex-col items-center justify-center bg-white/80 z-50 fixed top-0 left-0">
+    <svg className="animate-spin h-10 w-10 text-blue-700" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+    </svg>
+    <span className="mt-4 text-blue-700 text-xl font-semibold">Cargando módulo...</span>
+  </div>
+);
 
 export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
 
-  const [loading, setLoading] = useState(true); // 👈 ASEGÚRATE DE TENER navigate
+  const [loading, setLoading] = useState(true);
 
-// 🔔 Hook de notificaciones push
-usePushNotifications(
+  // Notificaciones push
+  usePushNotifications(
     user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
     user?.email || localStorage.getItem('usuario.email') || ''
   );
 
-// Muestra el SplashScreen durante 2.2 segundos
+  // SplashScreen de arranque
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 3200);
     return () => clearTimeout(timeout);
   }, []);
 
-  // Muestra pantalla de carga al iniciar
   if (loading) {
     return <SplashScreen />;
   }
 
   if (!isAuthenticated) {
-    // Aquí pasamos la función para ir a 'register'
+    // Pantalla de Login/Register con animaciones
     return (
       <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
         <AnimatePresence mode="wait">
-     {currentScreen === 'register' ? (
-        <motion.div
+          {currentScreen === 'register' ? (
+            <motion.div
               key="register"
               initial={{ x: 500, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -62,10 +74,12 @@ usePushNotifications(
               transition={{ duration: 0.5, ease: "easeInOut" }}
               className="w-full max-w-md"
             >
-        <RegisterScreen onNavigateToLogin={() => navigateTo('login')} />
-          </motion.div>
-      ) : (
-        <motion.div
+              <Suspense fallback={<Loader />}>
+                <RegisterScreen onNavigateToLogin={() => navigateTo('login')} />
+              </Suspense>
+            </motion.div>
+          ) : (
+            <motion.div
               key="login"
               initial={{ x: -500, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -73,14 +87,15 @@ usePushNotifications(
               transition={{ duration: 0.5, ease: "easeInOut" }}
               className="w-full max-w-xl sm:max-w-2xl md:max-w-3xl"
             >
-        <LoginScreen onNavigateToRegister={() => navigateTo('register')} />
-     </motion.div>
+              <LoginScreen onNavigateToRegister={() => navigateTo('register')} />
+            </motion.div>
           )}
         </AnimatePresence>
       </div>
     );
   }
 
+  // Screens autenticadas
   switch (currentScreen) {
     case 'menu':
       return <MainMenu />;
@@ -89,40 +104,91 @@ usePushNotifications(
     case 'magnitude-detail':
       return <MagnitudeDetailScreen />;
     case 'work-sheet':
-      return <WorkSheetScreen />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <WorkSheetScreen />
+        </Suspense>
+      );
     case 'empresas':
-      return <EmpresasScreen />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <EmpresasScreen />
+        </Suspense>
+      );
     case 'calendario':
-      return <CalendarScreen />; 
+      return (
+        <Suspense fallback={<Loader />}>
+          <CalendarScreen />
+        </Suspense>
+      );
     case 'hoja-servicio':
-      return <HojaDeServicioScreen />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <HojaDeServicioScreen />
+        </Suspense>
+      );
     case 'calibration-manager':
-      return <CalibrationManager />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <CalibrationManager />
+        </Suspense>
+      );
     case 'drive':
-      return <DriveScreen />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <DriveScreen />
+        </Suspense>
+      );
     case 'tableros':
-      return <TablerosScreen />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <TablerosScreen />
+        </Suspense>
+      );
     case 'calibration-stats':
       if (
-    ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
-    ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
-    ((user?.role ?? "").trim().toLowerCase() === "administrativo")
-  ) {
-    return <CalibrationStatsScreen />;
-  } else {
-    // Puedes regresar MainMenu o un mensaje de "No autorizado"
-    return <MainMenu />;
-  }
+        ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
+        ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
+        ((user?.role ?? "").trim().toLowerCase() === "administrativo")
+      ) {
+        return (
+          <Suspense fallback={<Loader />}>
+            <CalibrationStatsScreen />
+          </Suspense>
+        );
+      } else {
+        return <MainMenu />;
+      }
     case 'programa-calibracion':
-      return <ProgramaCalibracionScreen />;  
+      return (
+        <Suspense fallback={<Loader />}>
+          <ProgramaCalibracionScreen />
+        </Suspense>
+      );
     case 'friday-servicios':
-      return <FridayServiciosScreen />;  
+      return (
+        <Suspense fallback={<Loader />}>
+          <FridayServiciosScreen />
+        </Suspense>
+      );
     case 'normas':
-      return <NormasScreen />;  
+      return (
+        <Suspense fallback={<Loader />}>
+          <NormasScreen />
+        </Suspense>
+      );
     case 'check-list':
-      return <InventoryProScreen />;  
+      return (
+        <Suspense fallback={<Loader />}>
+          <InventoryProScreen />
+        </Suspense>
+      );
     case 'friday':
-      return <FridayScreen />;
+      return (
+        <Suspense fallback={<Loader />}>
+          <FridayScreen />
+        </Suspense>
+      );
     default:
       return <MainMenu />;
   }
