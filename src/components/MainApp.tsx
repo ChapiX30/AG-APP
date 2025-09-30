@@ -21,7 +21,6 @@ const HojaDeServicioScreen = lazy(() => import('./HojaDeServicioScreen'));
 const CalibrationManager = lazy(() => import('./CalibrationManager'));
 const EmpresasScreen = lazy(() => import('./EmpresasScreen'));
 const NormasScreen = lazy(() => import('./NormasScreen'));
-const TablerosScreen = lazy(() => import('./TablerosScreen'));
 const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
