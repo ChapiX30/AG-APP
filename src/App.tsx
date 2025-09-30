@@ -10,7 +10,6 @@ function App() {
     <AuthProvider>
       <NavigationProvider>
         <MainApp />
-        <UpdateBanner />
       </NavigationProvider>
     </AuthProvider>
   );
