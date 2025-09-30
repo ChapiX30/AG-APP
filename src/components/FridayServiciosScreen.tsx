@@ -418,8 +418,15 @@ const FridayServiciosScreen: React.FC = () => {
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [cargandoArchivo, setCargandoArchivo] = useState<boolean>(false);
   const [errorArchivo, setErrorArchivo] = useState<string>('');
+  
+  // **MEJORA: Estado para contenido de texto**
+  const [contenidoTexto, setContenidoTexto] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // **MEJORA: Ref para el contenedor de comentarios**
+  const comentariosContainerRef = useRef<HTMLDivElement>(null);
+
 
   // Función para manejar navegación mejorada
   const manejarNavegacion = useCallback((destino: string) => {
@@ -576,13 +583,13 @@ const FridayServiciosScreen: React.FC = () => {
     cargarDatos();
   }, []);
 
-  // Cargar comentarios para un servicio específico
+  // **MEJORA: Cargar comentarios y hacer scroll automático**
   useEffect(() => {
     if (servicioSeleccionado) {
       const comentariosQuery = query(
         collection(db, 'comentarios'),
         where('servicioId', '==', servicioSeleccionado.id),
-        orderBy('fecha', 'desc')
+        orderBy('fecha', 'asc') // Orden ascendente para estilo chat
       );
       
       const unsubscribe = onSnapshot(comentariosQuery, (snapshot) => {
@@ -596,6 +603,14 @@ const FridayServiciosScreen: React.FC = () => {
       return () => unsubscribe();
     }
   }, [servicioSeleccionado]);
+
+  // **MEJORA: Scroll automático al final de los comentarios**
+  useEffect(() => {
+      if (comentariosContainerRef.current) {
+          comentariosContainerRef.current.scrollTop = comentariosContainerRef.current.scrollHeight;
+      }
+  }, [mensajes]);
+
 
   // Servicios filtrados
   const serviciosFiltrados = useMemo(() => {
@@ -672,33 +687,45 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
-  // Función mejorada para ver archivos con mejor manejo de errores
+  // **MEJORA: Función para ver archivos con soporte extendido**
   const verArchivo = useCallback(async (archivoUrl: string) => {
     setCargandoArchivo(true);
     setErrorArchivo('');
-    
-    try {
-      if (!archivoUrl || typeof archivoUrl !== 'string') {
-        throw new Error('URL del archivo no válida');
-      }
+    setContenidoTexto(null);
+    setArchivoViendose(null);
 
-      const urlAcceso = await crearUrlAcceso(archivoUrl);
-      setArchivoViendose(urlAcceso);
-      setPaginaPDF(1);
-      setEscalaZoom(isMobile ? 0.5 : 1);
-      setRotacionPDF(0);
-      
+    try {
+        if (!archivoUrl || typeof archivoUrl !== 'string') {
+            throw new Error('URL del archivo no válida');
+        }
+
+        const urlAcceso = await crearUrlAcceso(archivoUrl);
+        setArchivoViendose(urlAcceso);
+        setPaginaPDF(1);
+        setEscalaZoom(isMobile ? 0.5 : 1);
+        setRotacionPDF(0);
+
+        const extension = obtenerExtensionArchivo(urlAcceso);
+        const textExtensions = ['txt', 'csv', 'log', 'md'];
+
+        if (textExtensions.includes(extension)) {
+            const response = await fetch(urlAcceso);
+            if (!response.ok) throw new Error('No se pudo cargar el contenido del archivo.');
+            const textContent = await response.text();
+            setContenidoTexto(textContent);
+        }
+
     } catch (error) {
-      console.error('Error al cargar archivo:', error);
-      setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
-      toast.error('Error al cargar el archivo');
-      setArchivoViendose(archivoUrl);
+        console.error('Error al cargar archivo:', error);
+        setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
+        toast.error('Error al cargar el archivo');
+        setArchivoViendose(archivoUrl);
     } finally {
-      setCargandoArchivo(false);
+        setCargandoArchivo(false);
     }
   }, [isMobile]);
 
-  // Crear servicio
+  // Crear servicio (sin cambios)
   const crearServicio = async () => {
     if (!nuevoServicio.titulo.trim()) {
       toast.error('El título es requerido');
@@ -789,7 +816,7 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
-  // Agregar comentario
+  // Agregar comentario (sin cambios)
   const agregarComentario = async () => {
     if (!mensajeNuevo.trim() || !servicioSeleccionado) return;
 
@@ -812,6 +839,9 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
+  // Resto del código... (actualizarEstado, eliminarServicio, editarServicio, y los componentes de renderizado)
+  // ... sin cambios en la lógica de estas funciones ...
+  
   // Actualizar estado del servicio
   const actualizarEstado = async (servicioId: string, nuevoEstado: string) => {
     try {
@@ -867,8 +897,8 @@ const FridayServiciosScreen: React.FC = () => {
     setModoEdicion(true);
     setMostrarFormulario(true);
   };
-
-  // Vista Kanban responsive (para desktop)
+  
+    // Vista Kanban responsive (para desktop)
   const VistaKanban = () => (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
       {estados.map((estado) => {
@@ -1699,8 +1729,9 @@ const FridayServiciosScreen: React.FC = () => {
         {/* Modal de detalles del servicio responsive */}
         {servicioSeleccionado && !mostrarFormulario && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 lg:p-4">
+            {/* **MEJORA: Contenedor más ancho para evitar recorte** */}
             <div className={`bg-white rounded-2xl shadow-2xl w-full max-h-[95vh] ${
-              isMobile ? 'flex flex-col' : 'max-w-6xl flex overflow-hidden'
+              isMobile ? 'flex flex-col' : 'max-w-screen-xl flex overflow-hidden'
             }`}>
               {/* Panel principal de detalles */}
               <div className="flex-1 flex flex-col">
@@ -1942,7 +1973,7 @@ const FridayServiciosScreen: React.FC = () => {
                     </h3>
                   </div>
                   
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  <div ref={comentariosContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                     {mensajes.length === 0 ? (
                       <div className="text-center py-8 text-gray-500">
                         <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -2000,182 +2031,57 @@ const FridayServiciosScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Visor de archivos optimizado para móviles */}
+        {/* **MEJORA: Visor de archivos optimizado y con más capacidades** */}
         {archivoViendose && (
-          <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col m-2 lg:m-4">
-              <div className="flex items-center justify-between p-3 lg:p-4 border-b border-gray-200">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-base lg:text-lg font-semibold text-gray-900 truncate">Vista previa del archivo</h3>
-                  <p className="text-xs lg:text-sm text-gray-500 truncate">{extraerNombreArchivo(archivoViendose)}</p>
-                </div>
-                <div className="flex items-center gap-1 lg:gap-2 ml-2">
-                  {cargandoArchivo && (
-                    <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded-lg">
-                      <Loader2 className="h-3 w-3 lg:h-4 lg:w-4 animate-spin text-blue-500" />
-                      <span className="text-xs lg:text-sm text-blue-600 hidden lg:inline">Cargando...</span>
-                    </div>
-                  )}
-                  
-                  {!isMobile && (
-                    <>
-                      <button
-                        onClick={() => setEscalaZoom(prev => Math.max(0.5, prev - 0.25))}
-                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                        title="Alejar"
-                      >
-                        <ZoomOut className="h-4 w-4" />
-                      </button>
-                      <span className="text-sm text-gray-600 px-2 min-w-[60px] text-center">
-                        {Math.round(escalaZoom * 100)}%
-                      </span>
-                      <button
-                        onClick={() => setEscalaZoom(prev => Math.min(3, prev + 0.25))}
-                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                        title="Acercar"
-                      >
-                        <ZoomIn className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setRotacionPDF(prev => (prev + 90) % 360)}
-                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                        title="Rotar"
-                      >
-                        <RotateCw className="h-4 w-4" />
-                      </button>
-                    </>
-                  )}
-                  
-                  <button
-                    onClick={() => window.open(archivoViendose, '_blank')}
-                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"
-                    title="Abrir en nueva pestaña"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setArchivoViendose(null)}
-                    className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                    title="Cerrar"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-2 lg:p-4">
-                {errorArchivo ? (
-                  <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-md">
-                    <AlertCircle className="h-12 w-12 lg:h-16 lg:w-16 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-2">Error al cargar el PDF</h3>
-                    <p className="text-gray-500 mb-4 lg:mb-6 text-sm lg:text-base">
-                      {errorArchivo}
-                    </p>
-                    <div className="space-y-3">
-                      <button
-                        onClick={() => window.open(archivoViendose, '_blank')}
-                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        Abrir en nueva pestaña
-                      </button>
-                      <button
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = archivoViendose;
-                          link.download = extraerNombreArchivo(archivoViendose);
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }}
-                        className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <Download className="h-4 w-4" />
-                        Descargar archivo
-                      </button>
-                    </div>
-                  </div>
-                ) : obtenerExtensionArchivo(archivoViendose).includes('pdf') ? (
-                  <div className="bg-white shadow-lg rounded-lg overflow-hidden max-w-full">
-                    <Document
-                      file={archivoViendose}
-                      options={pdfOptions}
-                      onLoadSuccess={({ numPages }) => setTotalPaginasPDF(numPages)}
-                      onLoadError={(error) => {
-                        console.error('Error al cargar PDF:', error);
-                        setErrorArchivo('No se pudo cargar el archivo PDF. Verifica los permisos de acceso.');
-                      }}
-                      loading={
-                        <div className="flex items-center justify-center py-8 lg:py-12 px-4 lg:px-8">
-                          <Loader2 className="h-6 w-6 lg:h-8 lg:w-8 animate-spin text-blue-500 mr-3" />
-                          <span className="text-sm lg:text-base">Cargando PDF...</span>
+            <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-2 lg:p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+                    <header className="flex items-center justify-between p-3 lg:p-4 border-b border-gray-200">
+                        <div className="flex-1 min-w-0">
+                            <h3 className="text-base lg:text-lg font-semibold text-gray-900 truncate">Vista previa del archivo</h3>
+                            <p className="text-xs lg:text-sm text-gray-500 truncate">{extraerNombreArchivo(archivoViendose)}</p>
                         </div>
-                      }
-                    >
-                      <Page
-                        pageNumber={paginaPDF}
-                        scale={escalaZoom}
-                        rotate={rotacionPDF}
-                        loading={
-                          <div className="flex items-center justify-center p-4 lg:p-8">
-                            <Loader2 className="h-4 w-4 lg:h-6 lg:w-6 animate-spin text-blue-500" />
-                          </div>
-                        }
-                      />
-                    </Document>
+                        <div className="flex items-center gap-1 lg:gap-2 ml-2">
+                            <a href={archivoViendose} target="_blank" rel="noopener noreferrer" className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg" title="Abrir en nueva pestaña"><ExternalLink className="h-4 w-4" /></a>
+                            <button onClick={() => setArchivoViendose(null)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="Cerrar"><X className="h-4 w-4" /></button>
+                        </div>
+                    </header>
+                    <main className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center">
+                        {cargandoArchivo ? (
+                            <div className="text-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
+                        ) : errorArchivo ? (
+                            <div className="text-center text-red-500 p-8">{errorArchivo}</div>
+                        ) : (() => {
+                            const extension = obtenerExtensionArchivo(archivoViendose);
+                            const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+                            const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 
-                    {totalPaginasPDF > 1 && (
-                      <div className="flex items-center justify-center gap-2 lg:gap-4 p-3 lg:p-4 bg-white border-t">
-                        <button
-                          onClick={() => setPaginaPDF(prev => Math.max(1, prev - 1))}
-                          disabled={paginaPDF <= 1}
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
-                        </button>
-                        <span className="text-sm text-gray-600 px-2 lg:px-3">
-                          Página {paginaPDF} de {totalPaginasPDF}
-                        </span>
-                        <button
-                          onClick={() => setPaginaPDF(prev => Math.min(totalPaginasPDF, prev + 1))}
-                          disabled={paginaPDF >= totalPaginasPDF}
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(obtenerExtensionArchivo(archivoViendose)) ? (
-                  <img
-                    src={archivoViendose}
-                    alt="Vista previa"
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                    style={{ transform: `scale(${escalaZoom}) rotate(${rotacionPDF}deg)` }}
-                    onError={(e) => {
-                      console.error('Error al cargar imagen');
-                      setErrorArchivo('No se pudo cargar la imagen. Verifica los permisos de acceso.');
-                    }}
-                  />
-                ) : (
-                  <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-sm">
-                    <FileText className="h-16 w-16 lg:h-24 lg:w-24 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-2">Vista previa no disponible</h3>
-                    <p className="text-gray-500 mb-4 text-sm lg:text-base">
-                      Este tipo de archivo ({obtenerExtensionArchivo(archivoViendose).toUpperCase()}) no puede ser previsuralizado en el navegador
-                    </p>
-                    <button
-                      onClick={() => window.open(archivoViendose, '_blank')}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto text-sm lg:text-base"
-                    >
-                      <Download className="h-4 w-4" />
-                      Descargar archivo
-                    </button>
-                  </div>
-                )}
-              </div>
+                            if (extension === 'pdf') {
+                                return <Document file={archivoViendose} options={pdfOptions}><Page pageNumber={paginaPDF} scale={1.5} /></Document>;
+                            }
+                            if (imageExtensions.includes(extension)) {
+                                return <img src={archivoViendose} alt="Vista previa" className="max-w-full max-h-full object-contain" />;
+                            }
+                            if (contenidoTexto !== null) {
+                                return <pre className="whitespace-pre-wrap text-sm p-4 bg-white rounded-md w-full h-full overflow-auto">{contenidoTexto}</pre>;
+                            }
+                            if (officeExtensions.includes(extension)) {
+                                return <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(archivoViendose)}`} width='100%' height='100%' frameBorder='0'></iframe>;
+                            }
+                            return (
+                                <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-sm">
+                                    <FileText className="h-16 w-16 lg:h-24 lg:w-24 text-gray-400 mx-auto mb-4" />
+                                    <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-2">Vista previa no disponible</h3>
+                                    <p className="text-gray-500 mb-4 text-sm lg:text-base">Este tipo de archivo ({extension.toUpperCase()}) no se puede previsualizar.</p>
+                                    <a href={archivoViendose} download className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto text-sm lg:text-base">
+                                        <Download className="h-4 w-4" />
+                                        Descargar archivo
+                                    </a>
+                                </div>
+                            );
+                        })()}
+                    </main>
+                </div>
             </div>
-          </div>
         )}
 
         {/* Botón flotante para agregar servicio en móvil */}
