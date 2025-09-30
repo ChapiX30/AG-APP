@@ -68,6 +68,7 @@ interface DriveFile {
   url: string;
   fullPath: string;
   updated: string;
+  originalUpdated?: string; // <-- CAMBIO: Añadido para preservar la fecha original
   reviewed?: boolean;
   reviewedBy?: string;
   reviewedByName?: string;
@@ -108,10 +109,15 @@ interface UserData {
   [key: string]: any;
 }
 
-const extractFileInfo = (fileName: string, updatedDate?: string) => {
+// --- CAMBIO: Función modificada para priorizar la fecha original ---
+const extractFileInfo = (fileName: string, updatedDate?: string, originalDate?: string) => {
   const baseName = fileName.replace(/\.pdf$/i, "").replace(/_/g, " ");
-  const displayDate = updatedDate
-    ? new Date(updatedDate).toLocaleDateString('es-ES', {
+  
+  // Usar la fecha original si está disponible, de lo contrario, usar la fecha de modificación actual
+  const effectiveDate = originalDate || updatedDate;
+
+  const displayDate = effectiveDate
+    ? new Date(effectiveDate).toLocaleDateString('es-ES', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -441,10 +447,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setActivityLoading(false);
   };
 
-  // FUNCIÓN MEJORADA: Cargar metadatos con nombres reales
+  // --- CAMBIO: Función totalmente modificada para manejar la fecha original ---
   const loadFileMetadata = async (file: DriveFile): Promise<DriveFile> => {
     try {
-      const metadataDoc = await getDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')));
+      const metadataId = file.fullPath.replace(/\//g, '_');
+      const metadataRef = doc(db, 'fileMetadata', metadataId);
+      const metadataDoc = await getDoc(metadataRef);
+
       if (metadataDoc.exists()) {
         const metadata = metadataDoc.data();
         let reviewedByName = metadata.reviewedByName;
@@ -452,27 +461,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         
         if (metadata.reviewed && metadata.reviewedBy && !reviewedByName) {
           reviewedByName = await getUserNameByEmail(metadata.reviewedBy);
-          try {
-            await updateDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')), {
-              reviewedByName: reviewedByName
-            });
-          } catch (updateError) {
-            console.log('No se pudo actualizar el nombre del revisor');
-          }
         }
 
         if (metadata.completed && metadata.completedBy && !completedByName) {
           completedByName = await getUserNameByEmail(metadata.completedBy);
-          try {
-            await updateDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')), {
-              completedByName: completedByName
-            });
-          } catch (updateError) {
-            console.log('No se pudo actualizar el nombre del completador');
-          }
         }
 
-        return {
+        const finalMetadata: DriveFile = {
           ...file,
           reviewed: metadata.reviewed || false,
           reviewedBy: metadata.reviewedBy,
@@ -482,15 +477,39 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           completedBy: metadata.completedBy,
           completedByName: completedByName,
           completedAt: metadata.completedAt,
-          folderPath: getFileParentPath(file.fullPath).join('/') // NUEVA PROPIEDAD
+          folderPath: getFileParentPath(file.fullPath).join('/'),
+          originalUpdated: metadata.originalUpdated || file.updated, // Usar la fecha guardada, si no existe, usar la actual
         };
+
+        // Si no existe 'originalUpdated' en Firestore, lo guardamos para el futuro.
+        if (!metadata.originalUpdated) {
+          try {
+            await updateDoc(metadataRef, {
+              originalUpdated: file.updated
+            });
+          } catch (updateError) {
+            console.log('No se pudo guardar la fecha original.');
+          }
+        }
+        return finalMetadata;
+      } else {
+        // Si el documento de metadatos NO existe, lo creamos con la fecha original
+        try {
+          await setDoc(metadataRef, {
+            filePath: file.fullPath,
+            originalUpdated: file.updated // Guardamos la fecha de Storage como la original
+          });
+        } catch (e) {
+          console.error("Error creating initial metadata:", e);
+        }
       }
     } catch (error) {
       console.error("Error loading file metadata:", error);
     }
     return {
       ...file,
-      folderPath: getFileParentPath(file.fullPath).join('/') // NUEVA PROPIEDAD
+      originalUpdated: file.updated, // Aseguramos que el campo siempre exista
+      folderPath: getFileParentPath(file.fullPath).join('/')
     };
   };
 
@@ -753,7 +772,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
-  // FUNCIÓN CORREGIDA: Mover archivos múltiples
+  // --- CAMBIO: Función de mover múltiples archivos actualizada ---
   const handleBulkMove = async (targetPathArr: string[]) => {
     if (!userIsQuality || selectedFiles.length === 0) return;
     const fromPath = selectedPath.join('/') || 'root';
@@ -762,48 +781,39 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     
     try {
       setBulkMoveLoading(true);
-      
-      // Obtener userName una sola vez al inicio
       const userName = user ? await getUserDisplayName(user) : null;
       
       for (const filePath of selectedFiles) {
-        // Obtener información del archivo original
         const fileName = filePath.split('/').pop()!;
         const fileRef = ref(storage, filePath);
-        
-        // Descargar el archivo
-
         const url = await getDownloadURL(fileRef);
         const blob = await new Promise<Blob>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.responseType = 'blob';
           xhr.timeout = 60000;
-          xhr.onload = () => {
-            if (xhr.status === 200) {
-              resolve(xhr.response);
-            } else {
-              reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
-            }
-          };
+          xhr.onload = () => resolve(xhr.response);
           xhr.onerror = () => reject(new Error('Network error'));
-          xhr.ontimeout = () => reject(new Error('Request timeout'));
           xhr.open('GET', url);
           xhr.send();
         });
 
-        // Subir a la nueva ubicación
         const newPath = [ROOT_PATH, ...targetPathArr, fileName].join("/");
         const newRef = ref(storage, newPath);
         await uploadBytes(newRef, blob);
 
-        // Mover metadata
         const oldMetadataId = filePath.replace(/\//g, '_');
         const newMetadataId = newPath.replace(/\//g, '_');
         try {
           const oldMetadata = await getDoc(doc(db, 'fileMetadata', oldMetadataId));
           if (oldMetadata.exists()) {
+            const metadataToMove = oldMetadata.data();
+            const originalFile = getAllFiles(tree!).find(f => f.fullPath === filePath);
+            if (!metadataToMove.originalUpdated && originalFile) {
+                metadataToMove.originalUpdated = originalFile.updated;
+            }
+
             await setDoc(doc(db, 'fileMetadata', newMetadataId), {
-              ...oldMetadata.data(),
+              ...metadataToMove,
               filePath: newPath,
               movedBy: user?.email,
               movedByName: userName,
@@ -815,7 +825,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           console.log("No metadata to move for:", filePath);
         }
 
-        // Eliminar archivo original
         await deleteObject(fileRef);
       }
 
@@ -853,7 +862,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLoading(false);
   };
 
-  // FUNCIÓN CORREGIDA: Mover archivo individual
+  // --- CAMBIO: Función de mover archivo individual actualizada ---
   async function handleMoveFile(targetPathArr: string[]) {
     if (!moveFile) return;
     const fileToMove = moveFile;
@@ -862,23 +871,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setMoveFile(null);
     try {
       setMoveLoading(true);
-      
-      // Obtener userName al inicio
       const userName = user ? await getUserDisplayName(user) : null;
       
       const blob = await new Promise<Blob>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.responseType = 'blob';
         xhr.timeout = 60000;
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            resolve(xhr.response);
-          } else {
-            reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
-          }
-        };
+        xhr.onload = () => resolve(xhr.response);
         xhr.onerror = () => reject(new Error('Network error'));
-        xhr.ontimeout = () => reject(new Error('Request timeout'));
         xhr.open('GET', fileToMove.url);
         xhr.send();
       });
@@ -892,8 +892,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       try {
         const oldMetadata = await getDoc(doc(db, 'fileMetadata', oldMetadataId));
         if (oldMetadata.exists()) {
+          const metadataToMove = oldMetadata.data();
+          if (!metadataToMove.originalUpdated) {
+              metadataToMove.originalUpdated = fileToMove.updated;
+          }
+
           await setDoc(doc(db, 'fileMetadata', newMetadataId), {
-            ...oldMetadata.data(),
+            ...metadataToMove,
             filePath: newPath,
             movedBy: user?.email,
             movedByName: userName,
@@ -935,7 +940,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const nameB = extractFileInfo(b.name).displayName.toLowerCase();
         comparison = nameA.localeCompare(nameB);
       } else if (sortBy === 'date') {
-        comparison = new Date(a.updated).getTime() - new Date(b.updated).getTime();
+        // --- CAMBIO: Ordenar por la fecha preservada ---
+        const dateA = a.originalUpdated || a.updated;
+        const dateB = b.originalUpdated || b.updated;
+        comparison = new Date(dateA).getTime() - new Date(dateB).getTime();
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
@@ -1394,7 +1402,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 
                 {/* Archivos */}
                 {filteredFiles.map((file, idx) => {
-                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated);
+                  // --- CAMBIO: Pasar la fecha original a la función de formato ---
+                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
                   const isSelected = selectedFiles.includes(file.fullPath);
                   
                   return (
@@ -1554,7 +1563,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
                 {/* Archivos en lista */}
                 {filteredFiles.map((file, idx) => {
-                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated);
+                  // --- CAMBIO: Pasar la fecha original a la función de formato ---
+                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
                   const isSelected = selectedFiles.includes(file.fullPath);
                   
                   return (
@@ -2181,4 +2191,3 @@ function FolderMoveTree({
     </Box>
   );
 }
-

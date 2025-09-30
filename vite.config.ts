@@ -17,7 +17,7 @@ export default defineConfig({
                 theme_color: '#0050d8',
                 icons: [
                     {
-                        src: '/logo192.png',
+                        src: '/lab_logo.png',
                         sizes: '192x192',
                         type: 'image/png'
                     },

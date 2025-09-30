@@ -217,6 +217,14 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
     }
     const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId);
 
+    const getLocalDateString = () => {
+  const hoy = new Date();
+  const year = hoy.getFullYear();
+  const month = String(hoy.getMonth() + 1).padStart(2, "0");
+  const day = String(hoy.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
     // 4. Genera el objeto newRow con los CAMPOS CORRECTOS para FridayScreen
     const newRow = {
       certificado: formData.certificado || "",
@@ -230,9 +238,9 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
       status: "pending",
       priority: "medium",
       assignedTo: user?.uid || "unknown",
-      dueDate: formData.fecha || new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toISOString(),
-      lastUpdated: new Date().toISOString(),
+      dueDate: formData.fecha || getLocalDateString(),
+      createdAt: getLocalDateString(),
+      lastUpdated: getLocalDateString(),
     };
 
     // 5. Inserta la fila al grupo correcto
