@@ -25,7 +25,7 @@ const magnitudImages: Record<string, string> = {
   Optica: "/images/optica.png",
   Quimica: "/images/quimica.png",
   Tiempo: "/images/tiempo.png",
-  MasaTrazable: "/images/masa-trazable.png",
+
   ParTorsionalTrazable: "/images/par-torsional-trazable.png",
   AcusticaTrazable: "/images/acustica.png",
   DimensionalTrazable: "/images/dimensional.png",
