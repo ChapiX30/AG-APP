@@ -214,9 +214,7 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'normal');
   doc.text(campos.folio || '__________', 30, currentY + 6);
   doc.text(campos.fecha || '__________', 120, currentY + 6); // Re-posicionado
-  // Se eliminaron las líneas que mostraban al técnico aquí
-  // --- FIN DE LA MODIFICACIÓN ---
-
+  
   currentY += 19;
 
   doc.setFillColor(255, 255, 255);
@@ -711,76 +709,76 @@ export default function HojaDeServicioScreen() {
 
   if (firmando) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-t-xl shadow-lg p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-                <Edit3 className="text-blue-600" size={28} />
-                Firma {firmando === "tecnico" ? "del Técnico" : "del Cliente"}
-              </h2>
-              <button 
-                onClick={() => setFirmando(null)}
-                className="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-all"
-              >
-                <ArrowLeft size={24} />
-              </button>
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-2 sm:p-4 z-50">
+            <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl flex flex-col">
+                <div className="p-4 sm:p-6 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3">
+                            <Edit3 className="text-blue-600" size={28} />
+                            Firma {firmando === "tecnico" ? "del Técnico" : "del Cliente"}
+                        </h2>
+                        <button 
+                            onClick={() => setFirmando(null)}
+                            className="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-all"
+                        >
+                            <ArrowLeft size={24} />
+                        </button>
+                    </div>
+                    <p className="text-gray-600 mt-2 text-sm sm:text-base">Dibuja tu firma en el área blanca de abajo.</p>
+                </div>
+                <div className="p-2 sm:p-4 bg-gray-50">
+                    <canvas
+                        ref={canvasRef}
+                        width={600}
+                        height={300}
+                        className="border-2 border-gray-300 rounded-lg w-full bg-white shadow-inner"
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onTouchStart={handlePointerDown}
+                        onTouchMove={handlePointerMove}
+                        onTouchEnd={handlePointerUp}
+                        style={{ touchAction: 'none' }}
+                    />
+                </div>
+                <div className="p-4 sm:p-6 border-t border-gray-200">
+                    <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
+                        <button 
+                            onClick={limpiarFirma}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all"
+                        >
+                            <RotateCcw size={18} />
+                            Limpiar
+                        </button>
+                        <div className="w-full sm:w-auto flex flex-col-reverse sm:flex-row gap-3">
+                            <button 
+                                onClick={() => setFirmando(null)}
+                                className="w-full sm:w-auto px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={guardarFirma}
+                                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-lg"
+                            >
+                                <Save size={18} />
+                                Guardar Firma
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <p className="text-gray-600 mt-2">Dibuja tu firma en el área blanca de abajo</p>
-          </div>
-          <div className="bg-white shadow-lg p-6">
-            <canvas
-              ref={canvasRef}
-              width={600}
-              height={300}
-              className="border-2 border-gray-300 rounded-lg w-full bg-white shadow-inner"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onTouchStart={handlePointerDown}
-              onTouchMove={handlePointerMove}
-              onTouchEnd={handlePointerUp}
-              style={{ touchAction: 'none' }}
-            />
-          </div>
-          <div className="bg-white rounded-b-xl shadow-lg p-6">
-            <div className="flex justify-between items-center gap-4">
-              <button 
-                onClick={limpiarFirma}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all"
-              >
-                <RotateCcw size={18} />
-                Limpiar
-              </button>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setFirmando(null)}
-                  className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-all"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={guardarFirma}
-                  className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-lg"
-                >
-                  <Save size={18} />
-                  Guardar Firma
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
-      </div>
     );
   }
 
   if (vistaPrevia) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
+      <div className="min-h-screen bg-gray-50 p-2 sm:p-4">
         <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
           {/* Encabezado */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6">
-            <div className="flex items-center gap-4">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row items-center gap-4">
               {logoImage ? (
                 <img src={logoImage} alt="Logo" className="w-16 h-16 object-contain bg-white rounded-full p-2" />
               ) : (
@@ -788,30 +786,30 @@ export default function HojaDeServicioScreen() {
                   ESE
                 </div>
               )}
-              <div className="flex-1">
-                <h1 className="text-xl font-bold mb-1">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h1>
-                <p className="text-sm opacity-90">Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422</p>
-                <p className="text-sm opacity-90">Teléfonos: 8127116538 / 8127116357</p>
+              <div className="flex-1 text-center sm:text-left">
+                <h1 className="text-lg sm:text-xl font-bold mb-1">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h1>
+                <p className="text-xs sm:text-sm opacity-90">Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422</p>
+                <p className="text-xs sm:text-sm opacity-90">Teléfonos: 8127116538 / 8127116357</p>
               </div>
             </div>
           </div>
 
           {/* Título */}
           <div className="bg-blue-700 text-white py-3">
-            <h2 className="text-center text-xl font-bold">HOJA DE SERVICIO TÉCNICO</h2>
+            <h2 className="text-center text-lg sm:text-xl font-bold">HOJA DE SERVICIO TÉCNICO</h2>
           </div>
 
           {/* Información básica */}
-          <div className="p-6 bg-gray-50 border-b">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="p-4 sm:p-6 bg-gray-50 border-b">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div><strong>FOLIO:</strong> {campos.folio || '__________'}</div>
               <div><strong>FECHA:</strong> {campos.fecha || '__________'}</div>
             </div>
           </div>
 
           {/* Información del cliente */}
-          <div className="p-6 border-b">
-            <div className="grid grid-cols-2 gap-6 text-sm">
+          <div className="p-4 sm:p-6 border-b">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
               <div className="space-y-2">
                 <div><strong>Planta:</strong> {truncateText(campos.empresa || 'Sin especificar', 35)}</div>
                 <div><strong>Domicilio:</strong> {truncateText(campos.direccion || 'Sin especificar', 32)}</div>
@@ -825,8 +823,8 @@ export default function HojaDeServicioScreen() {
           </div>
 
           {/* Equipos calibrados */}
-          <div className="p-6 border-b">
-            <h3 className="text-lg font-bold text-blue-700 mb-4">EQUIPOS CALIBRADOS EN SITIO</h3>
+          <div className="p-4 sm:p-6 border-b">
+            <h3 className="text-base sm:text-lg font-bold text-blue-700 mb-4">EQUIPOS CALIBRADOS EN SITIO</h3>
             {loadingEquipos ? (
               <div className="text-center py-4 text-gray-500">Cargando equipos calibrados...</div>
             ) : (
@@ -838,7 +836,7 @@ export default function HojaDeServicioScreen() {
                   return equiposProfesionales.map((grupo, groupIndex) => (
                     <div key={groupIndex} className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
                       <h4 className="font-bold text-blue-700 mb-3">{grupo.tecnico}:</h4>
-                      <div className="grid grid-cols-6 gap-2 text-sm">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 text-sm">
                         {grupo.equipos.map((equipo, equipoIndex) => (
                           <div key={equipoIndex} className="text-gray-700">
                             • {truncateText(equipo, 22)}
@@ -854,7 +852,7 @@ export default function HojaDeServicioScreen() {
 
           {/* Comentarios */}
           {campos.comentarios && campos.comentarios.trim() && (
-            <div className="p-6 border-b bg-gray-50">
+            <div className="p-4 sm:p-6 border-b bg-gray-50">
               <h4 className="font-bold text-blue-700 mb-2">OBSERVACIONES:</h4>
               <p className="text-sm text-gray-700 bg-white p-3 rounded border">
                 {truncateText(campos.comentarios, 200)}
@@ -863,7 +861,7 @@ export default function HojaDeServicioScreen() {
           )}
 
           {/* Calidad del servicio */}
-          <div className="p-6 border-b">
+          <div className="p-4 sm:p-6 border-b">
             <div className="text-sm">
               <strong className="text-blue-700">CALIDAD DEL SERVICIO:</strong>
               <span className="ml-2 font-semibold text-blue-600">{campos.calidadServicio}</span>
@@ -871,8 +869,8 @@ export default function HojaDeServicioScreen() {
           </div>
 
           {/* Firmas */}
-          <div className="p-6 bg-gray-50">
-            <div className="grid grid-cols-2 gap-8">
+          <div className="p-4 sm:p-6 bg-gray-50">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
               <div className="text-center">
                 <div className="border border-gray-300 rounded-lg p-4 mb-2 h-24 flex items-center justify-center bg-white">
                   {firmaTecnico ? (
@@ -909,28 +907,21 @@ export default function HojaDeServicioScreen() {
         </div>
 
         {/* Botones de acción */}
-        <div className="flex justify-center gap-4 mt-6">
-          <button
-            onClick={() => goBack()}
-            className="bg-gray-200 hover:bg-gray-300 px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <Home size={20} />
-            Menú Principal
-          </button>
-          <button onClick={handleDescargarPDF} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors">
-            <Download size={20} />
-            Descargar PDF
-          </button>
-          <button onClick={handleSaveService} disabled={savingService} className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors">
-            {savingService ? <Loader2 size={20} className="animate-spin" /> : <Star size={20} />}
-            {savingService ? 'Guardando...' : 'Guardar Servicio'}
-          </button>
+        <div className="flex flex-col sm:flex-row justify-center gap-4 mt-6">
           <button
             onClick={() => setVistaPrevia(false)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors"
+            className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
           >
             <Edit3 size={20} />
             Editar
+          </button>
+          <button onClick={handleDescargarPDF} className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors">
+            <Download size={20} />
+            Descargar PDF
+          </button>
+          <button onClick={handleSaveService} disabled={savingService} className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors">
+            {savingService ? <Loader2 size={20} className="animate-spin" /> : <Star size={20} />}
+            {savingService ? 'Guardando...' : 'Guardar Servicio'}
           </button>
         </div>
       </div>
@@ -939,46 +930,46 @@ export default function HojaDeServicioScreen() {
 
   // FORMULARIO PRINCIPAL PROFESIONAL
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-2 sm:p-4">
       <div className="max-w-6xl mx-auto">
         {/* Header Profesional */}
-        <div className="bg-white rounded-t-xl shadow-lg p-6 border-b border-gray-200">
-          <div className="flex justify-between items-center">
+        <div className="bg-white rounded-t-xl shadow-lg p-4 sm:p-6 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-4">
               {logoImage && (
                 <img src={logoImage} alt="Logo" className="w-12 h-12 object-contain" />
               )}
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">Hoja de Servicio Técnico</h1>
-                <p className="text-gray-600">Genera documentos profesionales de servicio</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Hoja de Servicio</h1>
+                <p className="text-gray-600 text-sm sm:text-base">Genera documentos profesionales de servicio</p>
               </div>
             </div>
-            <div className="flex gap-3">
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-3">
               <button 
                 onClick={() => goBack()}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-all"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-all"
               >
                 <Home size={20} />
-                Menú Principal
+                <span>Menú</span>
               </button>
               <button 
                 onClick={() => setVistaPrevia(true)} 
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all shadow-lg"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all shadow-lg"
               >
                 <Eye size={20} />
-                Vista Previa
+                <span>Vista Previa</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* Formulario */}
-        <div className="bg-white shadow-lg rounded-b-xl p-8">
+        <div className="bg-white shadow-lg rounded-b-xl p-4 sm:p-8">
           {/* Sección 1: Información Básica */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-              <h2 className="text-xl font-semibold text-gray-800">Información Básica</h2>
+              <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">1</div>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Información Básica</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Folio */}
@@ -1030,7 +1021,7 @@ export default function HojaDeServicioScreen() {
                   onChange={(e) => setCampos({ ...campos, tecnicoResponsable: e.target.value })}
                   rows={2}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none"
-                  placeholder="Nombre(s) de técnico(s), separados por coma"
+                  placeholder="Nombre(s) de técnico(s)..."
                 />
               </div>
             </div>
@@ -1039,8 +1030,8 @@ export default function HojaDeServicioScreen() {
           {/* Sección 2: Información del Cliente */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-              <h2 className="text-xl font-semibold text-gray-800">Información del Cliente</h2>
+              <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">2</div>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Información del Cliente</h2>
             </div>
             
             <div className="space-y-2 mb-6" ref={dropdownRef}>
@@ -1107,64 +1098,33 @@ export default function HojaDeServicioScreen() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Domicilio */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Building size={16} className="text-green-600" />
                   Domicilio
                 </label>
-                <input
-                  type="text"
-                  value={campos.direccion}
-                  onChange={(e) => setCampos({ ...campos, direccion: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
-                  placeholder="Dirección completa"
-                />
+                <input type="text" value={campos.direccion} onChange={(e) => setCampos({ ...campos, direccion: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all" placeholder="Dirección completa" />
               </div>
-
-              {/* Contacto */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <User size={16} className="text-green-600" />
                   Persona de Contacto
                 </label>
-                <input
-                  type="text"
-                  value={campos.contacto}
-                  onChange={(e) => setCampos({ ...campos, contacto: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
-                  placeholder="Nombre del contacto"
-                />
+                <input type="text" value={campos.contacto} onChange={(e) => setCampos({ ...campos, contacto: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all" placeholder="Nombre del contacto" />
               </div>
-
-              {/* Teléfono */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Phone size={16} className="text-green-600" />
                   Teléfono
                 </label>
-                <input
-                  type="text"
-                  value={campos.telefono}
-                  onChange={(e) => setCampos({ ...campos, telefono: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
-                  placeholder="(81) 1234-5678"
-                />
+                <input type="text" value={campos.telefono} onChange={(e) => setCampos({ ...campos, telefono: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all" placeholder="(81) 1234-5678" />
               </div>
-
-              {/* Correo */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Mail size={16} className="text-green-600" />
                   Correo Electrónico
                 </label>
-                <input
-                  type="email"
-                  value={campos.correo}
-                  onChange={(e) => setCampos({ ...campos, correo: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
-                  placeholder="contacto@empresa.com"
-                />
+                <input type="email" value={campos.correo} onChange={(e) => setCampos({ ...campos, correo: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all" placeholder="contacto@empresa.com" />
               </div>
             </div>
           </div>
@@ -1172,37 +1132,23 @@ export default function HojaDeServicioScreen() {
           {/* Sección 3: Observaciones y Calidad */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-              <h2 className="text-xl font-semibold text-gray-800">Observaciones y Calidad</h2>
+              <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">3</div>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Observaciones y Calidad</h2>
             </div>
-            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Comentarios */}
               <div className="md:col-span-2 space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <FileText size={16} className="text-purple-600" />
                   Comentarios / Observaciones
                 </label>
-                <textarea
-                  value={campos.comentarios}
-                  onChange={(e) => setCampos({ ...campos, comentarios: e.target.value })}
-                  rows={4}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none"
-                  placeholder="Observaciones importantes del servicio realizado..."
-                />
+                <textarea value={campos.comentarios} onChange={(e) => setCampos({ ...campos, comentarios: e.target.value })} rows={4} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none" placeholder="Observaciones importantes del servicio..." />
               </div>
-
-              {/* Calidad del Servicio */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Star size={16} className="text-purple-600" />
                   Calidad del Servicio
                 </label>
-                <select
-                  value={campos.calidadServicio}
-                  onChange={(e) => setCampos({ ...campos, calidadServicio: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white"
-                >
+                <select value={campos.calidadServicio} onChange={(e) => setCampos({ ...campos, calidadServicio: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white">
                   <option value="Excelente">⭐⭐⭐⭐⭐ Excelente</option>
                   <option value="Bueno">⭐⭐⭐⭐ Bueno</option>
                   <option value="Regular">⭐⭐⭐ Regular</option>
@@ -1215,11 +1161,10 @@ export default function HojaDeServicioScreen() {
           {/* Sección 4: Equipos Calibrados */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-              <h2 className="text-xl font-semibold text-gray-800">Equipos Calibrados en Sitio</h2>
+              <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">4</div>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Equipos Calibrados en Sitio</h2>
             </div>
-            
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 sm:p-6">
               {loadingEquipos ? (
                 <div className="text-center py-8">
                   <Loader2 className="animate-spin mx-auto mb-4 text-orange-600" size={32} />
@@ -1238,9 +1183,9 @@ export default function HojaDeServicioScreen() {
                     return (
                       <div className="space-y-6">
                         {equiposProfesionales.map((grupo, groupIndex) => (
-                          <div key={groupIndex} className="bg-white rounded-lg border border-orange-300 p-5 shadow-sm">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="font-bold text-orange-800 text-lg flex items-center gap-2">
+                          <div key={groupIndex} className="bg-white rounded-lg border border-orange-300 p-4 shadow-sm">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
+                              <h4 className="font-bold text-orange-800 text-base sm:text-lg flex items-center gap-2">
                                 <User size={20} />
                                 {grupo.tecnico}
                               </h4>
@@ -1250,8 +1195,8 @@ export default function HojaDeServicioScreen() {
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                               {grupo.equipos.map((equipo, equipoIndex) => (
-                                <div key={equipoIndex} className="bg-orange-100 text-orange-800 px-3 py-2 rounded-lg text-sm font-medium text-center">
-                                  {truncateText(equipo, 12)}
+                                <div key={equipoIndex} className="bg-orange-100 text-orange-800 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-center truncate">
+                                  {equipo}
                                 </div>
                               ))}
                             </div>
@@ -1268,10 +1213,9 @@ export default function HojaDeServicioScreen() {
           {/* Sección 5: Firmas */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold">5</div>
-              <h2 className="text-xl font-semibold text-gray-800">Firmas Digitales</h2>
+              <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">5</div>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Firmas Digitales</h2>
             </div>
-            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Firma Técnico */}
               <div className="space-y-4">
@@ -1280,31 +1224,13 @@ export default function HojaDeServicioScreen() {
                   Firma del Técnico
                 </label>
                 <div className="border-2 border-dashed border-indigo-300 rounded-lg p-6 bg-indigo-50 h-40 flex items-center justify-center">
-                  {firmaTecnico ? (
-                    <img src={firmaTecnico} alt="Firma Técnico" className="max-w-full max-h-full object-contain" />
-                  ) : (
-                    <div className="text-center">
-                      <Edit3 className="mx-auto mb-2 text-indigo-400" size={32} />
-                      <p className="text-indigo-600">No hay firma</p>
-                    </div>
-                  )}
+                  {firmaTecnico ? <img src={firmaTecnico} alt="Firma Técnico" className="max-w-full max-h-full object-contain" /> : <div className="text-center"><Edit3 className="mx-auto mb-2 text-indigo-400" size={32} /><p className="text-indigo-600">No hay firma</p></div>}
                 </div>
                 <div className="flex gap-2">
-                  <button 
-                    onClick={() => comenzarFirma('tecnico')} 
-                    className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all"
-                  >
-                    <Edit3 size={16} />
-                    {firmaTecnico ? 'Cambiar Firma' : 'Firmar'}
+                  <button onClick={() => comenzarFirma('tecnico')} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all">
+                    <Edit3 size={16} />{firmaTecnico ? 'Cambiar Firma' : 'Firmar'}
                   </button>
-                  {firmaTecnico && (
-                    <button 
-                      onClick={() => borrarFirma('tecnico')} 
-                      className="flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-all"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  {firmaTecnico && <button onClick={() => borrarFirma('tecnico')} className="flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-all"><Trash2 size={16} /></button>}
                 </div>
               </div>
 
@@ -1315,50 +1241,25 @@ export default function HojaDeServicioScreen() {
                   Firma del Cliente
                 </label>
                 <div className="border-2 border-dashed border-indigo-300 rounded-lg p-6 bg-indigo-50 h-40 flex items-center justify-center">
-                  {firmaCliente ? (
-                    <img src={firmaCliente} alt="Firma Cliente" className="max-w-full max-h-full object-contain" />
-                  ) : (
-                    <div className="text-center">
-                      <Edit3 className="mx-auto mb-2 text-indigo-400" size={32} />
-                      <p className="text-indigo-600">No hay firma</p>
-                    </div>
-                  )}
+                  {firmaCliente ? <img src={firmaCliente} alt="Firma Cliente" className="max-w-full max-h-full object-contain" /> : <div className="text-center"><Edit3 className="mx-auto mb-2 text-indigo-400" size={32} /><p className="text-indigo-600">No hay firma</p></div>}
                 </div>
                 <div className="flex gap-2">
-                  <button 
-                    onClick={() => comenzarFirma('cliente')} 
-                    className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all"
-                  >
-                    <Edit3 size={16} />
-                    {firmaCliente ? 'Cambiar Firma' : 'Firmar'}
+                  <button onClick={() => comenzarFirma('cliente')} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all">
+                    <Edit3 size={16} />{firmaCliente ? 'Cambiar Firma' : 'Firmar'}
                   </button>
-                  {firmaCliente && (
-                    <button 
-                      onClick={() => borrarFirma('cliente')} 
-                      className="flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-all"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  {firmaCliente && <button onClick={() => borrarFirma('cliente')} className="flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-all"><Trash2 size={16} /></button>}
                 </div>
               </div>
             </div>
           </div>
 
           {/* Botones de Acción */}
-          <div className="flex justify-center gap-4 pt-8 border-t border-gray-200">
-            <button 
-              onClick={handleDescargarPDF} 
-              className="flex items-center gap-3 bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg transition-all shadow-lg font-semibold"
-            >
+          <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8 border-t border-gray-200">
+            <button onClick={handleDescargarPDF} className="w-full sm:w-auto flex items-center justify-center gap-3 bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg transition-all shadow-lg font-semibold">
               <Download size={20} />
               Descargar PDF
             </button>
-            <button 
-              onClick={handleSaveService} 
-              disabled={savingService} 
-              className="flex items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-8 py-4 rounded-lg transition-all shadow-lg font-semibold"
-            >
+            <button onClick={handleSaveService} disabled={savingService} className="w-full sm:w-auto flex items-center justify-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-8 py-4 rounded-lg transition-all shadow-lg font-semibold">
               {savingService ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
               {savingService ? 'Guardando...' : 'Guardar Servicio'}
             </button>
