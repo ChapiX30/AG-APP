@@ -247,7 +247,7 @@ const { navigateTo } = useNavigation();
         });
 
         // También escuchar cambios en hojas de trabajo individuales
-        const worksheetRef = collection(db, "hojas-trabajo");
+        const worksheetRef = collection(db, "hojasDeTrabajo");
         const worksheetUnsubscribe = onSnapshot(worksheetRef, (snapshot) => {
           console.log("Cambios detectados en hojas de trabajo");
           snapshot.docChanges().forEach((change) => {
