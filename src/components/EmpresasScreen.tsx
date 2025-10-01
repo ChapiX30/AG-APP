@@ -15,10 +15,13 @@ import {
   FileText,
   Search,
   ArrowDownAZ,
-  ArrowUpZA
+  ArrowUpZA,
+  LayoutGrid, // Ícono para vista de tarjetas
+  List,       // Ícono para vista de lista/tabla
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import labLogo from '../assets/lab_logo.png';
+import toast, { Toaster } from 'react-hot-toast'; // Para notificaciones
 
 const AnimatedLogo = () => (
   <div className="flex items-center justify-center mb-6">
@@ -40,6 +43,109 @@ interface Empresa {
   fechaCreacion: Date;
 }
 
+// --- Componente para la vista de Tarjetas (Grid) ---
+const CardView = ({ empresas, handleEdit, handleDelete }: { empresas: Empresa[], handleEdit: (empresa: Empresa) => void, handleDelete: (id: string) => void }) => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {empresas.map((empresa) => (
+      <div
+        key={empresa.id}
+        className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200 flex flex-col"
+      >
+        <div className="p-6 pb-4 flex-grow">
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex items-center w-0 flex-1 min-w-0">
+              <div className="p-2 bg-blue-100 rounded-lg flex-shrink-0">
+                <Building2 className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="ml-3 min-w-0 w-0 flex-1">
+                <h3
+                  className="text-lg font-semibold text-gray-900 line-clamp-2 break-words"
+                  title={empresa.nombre}
+                >
+                  {empresa.nombre}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {empresa.fechaCreacion.toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center text-sm text-gray-600 overflow-hidden text-ellipsis w-full">
+              <MapPin className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
+              <span className="truncate w-full" title={empresa.direccion}>{empresa.direccion}</span>
+            </div>
+            <div className="flex items-center text-sm text-gray-600">
+              <Mail className="h-4 w-4 mr-2 text-gray-400" />
+              <span className="truncate w-full" title={empresa.email}>{empresa.email}</span>
+            </div>
+            <div className="flex items-center text-sm text-gray-600">
+              <Phone className="h-4 w-4 mr-2 text-gray-400" />
+              <span>{empresa.telefono}</span>
+            </div>
+            <div className="flex items-center text-sm text-gray-600">
+              <User className="h-4 w-4 mr-2 text-gray-400" />
+              <span className="truncate w-full" title={empresa.contacto}>{empresa.contacto}</span>
+            </div>
+            <div className="pt-3 border-t border-gray-100">
+              <div className="flex items-start text-sm text-gray-600">
+                <FileText className="h-4 w-4 mr-2 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-medium text-gray-700 block mb-1">Requerimientos:</span>
+                  <p className="text-gray-600 text-xs leading-relaxed break-words line-clamp-3">
+                    {empresa.requerimientos || "No especificados"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+         <div className="p-4 bg-gray-50 border-t flex justify-end space-x-2">
+            <button onClick={() => handleEdit(empresa)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Editar"><Pencil className="h-4 w-4" /></button>
+            <button onClick={() => handleDelete(empresa.id)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Eliminar"><Trash2 className="h-4 w-4" /></button>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+// --- Componente para la vista de Tabla ---
+const TableView = ({ empresas, handleEdit, handleDelete }: { empresas: Empresa[], handleEdit: (empresa: Empresa) => void, handleDelete: (id: string) => void }) => (
+  <div className="bg-white shadow-sm rounded-lg border overflow-x-auto">
+    <table className="min-w-full divide-y divide-gray-200">
+      <thead className="bg-gray-50">
+        <tr>
+          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empresa</th>
+          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contacto Principal</th>
+          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
+          <th scope="col" className="relative px-6 py-3"><span className="sr-only">Acciones</span></th>
+        </tr>
+      </thead>
+      <tbody className="bg-white divide-y divide-gray-200">
+        {empresas.map((empresa) => (
+          <tr key={empresa.id} className="hover:bg-gray-50 transition-colors">
+            <td className="px-6 py-4 whitespace-nowrap">
+                <div className="font-medium text-gray-900">{empresa.nombre}</div>
+                <div className="text-sm text-gray-500">{empresa.direccion}</div>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{empresa.contacto}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{empresa.email}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{empresa.telefono}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              <div className="flex items-center justify-end space-x-2">
+                <button onClick={() => handleEdit(empresa)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar"><Pencil className="h-4 w-4" /></button>
+                <button onClick={() => handleDelete(empresa.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Eliminar"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+// --- Componente Principal ---
 const EmpresasScreen = () => {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +162,8 @@ const EmpresasScreen = () => {
     requerimientos: ""
   });
 
+  const [view, setView] = useState<'grid' | 'table'>('grid'); // Estado para controlar la vista
+
   const { goBack } = useNavigation();
 
   const loadEmpresas = async () => {
@@ -70,6 +178,7 @@ const EmpresasScreen = () => {
       setEmpresas(empresasData);
     } catch (error) {
       console.error("Error loading empresas:", error);
+      toast.error("No se pudieron cargar las empresas.");
     } finally {
       setLoading(false);
     }
@@ -93,29 +202,21 @@ const EmpresasScreen = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      if (editingEmpresa) {
-        await updateDoc(doc(db, "clientes", editingEmpresa.id), {
-          ...formData,
-          fechaActualizacion: new Date()
-        });
-      } else {
-        await addDoc(collection(db, "clientes"), {
-          ...formData,
-          fechaCreacion: new Date()
-        });
-      }
+    const actionPromise = editingEmpresa
+      ? updateDoc(doc(db, "clientes", editingEmpresa.id), { ...formData, fechaActualizacion: new Date() })
+      : addDoc(collection(db, "clientes"), { ...formData, fechaCreacion: new Date() });
 
-      setFormData({
-        nombre: "",
-        direccion: "",
-        telefono: "",
-        email: "",
-        contacto: "",
-        requerimientos: ""
-      });
+    toast.promise(actionPromise, {
+      loading: 'Guardando...',
+      success: `Empresa ${editingEmpresa ? 'actualizada' : 'guardada'} con éxito.`,
+      error: 'Hubo un error al guardar la empresa.',
+    });
+
+    try {
+      await actionPromise;
       setShowModal(false);
       setEditingEmpresa(null);
+      setFormData({ nombre: "", direccion: "", telefono: "", email: "", contacto: "", requerimientos: "" });
       loadEmpresas();
     } catch (error) {
       console.error("Error saving empresa:", error);
@@ -124,8 +225,15 @@ const EmpresasScreen = () => {
 
   const handleDelete = async (id: string) => {
     if (window.confirm("¿Estás seguro que deseas eliminar esta empresa?")) {
+      const deletePromise = deleteDoc(doc(db, "clientes", id));
+      toast.promise(deletePromise, {
+        loading: 'Eliminando...',
+        success: 'Empresa eliminada.',
+        error: 'No se pudo eliminar la empresa.',
+      });
+      
       try {
-        await deleteDoc(doc(db, "clientes", id));
+        await deletePromise;
         loadEmpresas();
       } catch (error) {
         console.error("Error deleting empresa:", error);
@@ -161,6 +269,8 @@ const EmpresasScreen = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <Toaster position="bottom-right" />
+      
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -175,9 +285,13 @@ const EmpresasScreen = () => {
               <AnimatedLogo />
             </div>
             <div className="flex items-center space-x-2">
+              <div className="flex items-center p-1 bg-gray-100 rounded-lg">
+                <button onClick={() => setView('grid')} className={`p-2 rounded-md transition-colors ${view === 'grid' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`} title="Vista de Tarjetas"><LayoutGrid className="h-5 w-5"/></button>
+                <button onClick={() => setView('table')} className={`p-2 rounded-md transition-colors ${view === 'table' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`} title="Vista de Tabla"><List className="h-5 w-5"/></button>
+              </div>
               <button
                 onClick={() => setSortAsc((asc) => !asc)}
-                className="px-3 py-2 bg-gray-100 hover:bg-blue-100 text-blue-600 rounded transition"
+                className="px-3 py-2 bg-gray-100 hover:bg-blue-100 text-blue-600 rounded-lg transition"
                 title="Ordenar alfabéticamente"
               >
                 {sortAsc ? <ArrowDownAZ className="inline h-5 w-5" /> : <ArrowUpZA className="inline h-5 w-5" />}
@@ -214,93 +328,27 @@ const EmpresasScreen = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedEmpresas.map((empresa) => (
-              <div
-                key={empresa.id}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200"
-              >
-                <div className="p-6 pb-4">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center w-0 flex-1 min-w-0">
-                      <div className="p-2 bg-blue-100 rounded-lg flex-shrink-0">
-                        <Building2 className="h-6 w-6 text-blue-600" />
-                      </div>
-                      <div className="ml-3 min-w-0 w-0 flex-1">
-                        <h3
-                          className="text-lg font-semibold text-gray-900 line-clamp-2 break-words"
-                          title={empresa.nombre}
-                        >
-                          {empresa.nombre}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {empresa.fechaCreacion.toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex space-x-1">
-                      <button
-                        onClick={() => handleEdit(empresa)}
-                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(empresa.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center text-sm text-gray-600 overflow-hidden text-ellipsis w-full">
-                      <MapPin className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
-                      <span className="truncate w-full" title={empresa.direccion}>{empresa.direccion}</span>
-                    </div>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <Mail className="h-4 w-4 mr-2 text-gray-400" />
-                      <span className="truncate w-full" title={empresa.email}>{empresa.email}</span>
-                    </div>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <Phone className="h-4 w-4 mr-2 text-gray-400" />
-                      <span>{empresa.telefono}</span>
-                    </div>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <User className="h-4 w-4 mr-2 text-gray-400" />
-                      <span className="truncate w-full" title={empresa.contacto}>{empresa.contacto}</span>
-                    </div>
-                    <div className="pt-3 border-t border-gray-100">
-                      <div className="flex items-start text-sm text-gray-600">
-                        <FileText className="h-4 w-4 mr-2 text-gray-400 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-gray-700 block mb-1">Requerimientos:</span>
-                          <p className="text-gray-600 text-xs leading-relaxed break-words line-clamp-3">
-                            {empresa.requerimientos || "No especificados"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          <>
+            {sortedEmpresas.length > 0 ? (
+                view === 'grid' 
+                ? <CardView empresas={sortedEmpresas} handleEdit={handleEdit} handleDelete={handleDelete} /> 
+                : <TableView empresas={sortedEmpresas} handleEdit={handleEdit} handleDelete={handleDelete} />
+            ) : (
+              <div className="text-center py-12">
+                <Building2 className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No hay empresas</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  {searchTerm
+                    ? "No se encontraron empresas con ese criterio de búsqueda"
+                    : "Comienza agregando una nueva empresa"}
+                </p>
               </div>
-            ))}
-          </div>
-        )}
-
-        {!loading && sortedEmpresas.length === 0 && (
-          <div className="text-center py-12">
-            <Building2 className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No hay empresas</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              {searchTerm
-                ? "No se encontraron empresas con ese criterio de búsqueda"
-                : "Comienza agregando una nueva empresa"}
-            </p>
-          </div>
+            )}
+          </>
         )}
       </div>
 
+      {/* Modal para Crear/Editar Empresa */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">

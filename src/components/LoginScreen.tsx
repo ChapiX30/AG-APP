@@ -3,12 +3,14 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { Eye, EyeOff, Lock, User, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
+import { getAuth, sendPasswordResetEmail } from "firebase/auth"; // <-- IMPORTADO PARA RESET DE CONTRASEÑA
 
 // IMPORTA TU LOGO (ajusta la ruta si tu archivo es diferente)
 import labLogo from '../assets/lab_logo.png';
 
 // --- SIMULACIÓN DE BÚSQUEDA EN BASE DE DATOS ---
 // En una app real, aquí harías una llamada a tu backend.
+// El email 'admin' debería venir de una variable de entorno (p. ej. process.env.REACT_APP_ADMIN_EMAIL)
 const fetchUserName = async (email: string): Promise<{ name: string; initial: string } | null> => {
   if (email.toLowerCase() === 'admin@ese-ag.mx') {
     // Simulamos un retraso de red
@@ -80,6 +82,29 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
     }
     setIsLoading(false);
   };
+
+  // --- FUNCIÓN PARA RESTABLECER CONTRASEÑA ---
+  const handlePasswordReset = () => {
+    const auth = getAuth();
+    // Usamos el email que ya está en el campo de texto, si no, lo pedimos.
+    const targetEmail = email || prompt("Por favor, ingresa tu correo electrónico para restablecer la contraseña:");
+
+    if (targetEmail) {
+      sendPasswordResetEmail(auth, targetEmail)
+        .then(() => {
+          alert("✅ ¡Excelente! Revisa tu bandeja de entrada. Te hemos enviado un enlace para restablecer tu contraseña.");
+        })
+        .catch((error) => {
+          const errorCode = error.code;
+          if (errorCode === 'auth/user-not-found') {
+            alert("🚨 Error: No se encontró ningún usuario con ese correo electrónico.");
+          } else {
+            alert(`🚨 Ocurrió un error: ${error.message}`);
+          }
+        });
+    }
+  };
+
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-slate-900 overflow-y-auto p-4 font-sans">
@@ -184,9 +209,13 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
               <div>
                  <div className="flex justify-between items-center mb-2 ml-1">
                     <label className="block text-slate-200 text-sm font-semibold">Contraseña</label>
-                    <a href="#" className="text-sm text-purple-400 hover:text-purple-300 transition-colors">
+                    <button 
+                      type="button" 
+                      onClick={handlePasswordReset}
+                      className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
+                    >
                       ¿Olvidaste tu contraseña?
-                    </a>
+                    </button>
                   </div>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
@@ -203,6 +232,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
                     tabIndex={-1}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
@@ -226,8 +256,6 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
                 ) : ( 'Entrar' )}
               </button>
               <div className="text-center pt-4 border-t border-slate-700/50">
-                {/* --- AQUÍ ESTÁ LA NAVEGACIÓN A REGISTRO --- */}
-                {/* Este botón ejecuta la función 'onNavigateToRegister' que viene desde el componente padre */}
                 <button
                   type="button"
                   onClick={onNavigateToRegister}
