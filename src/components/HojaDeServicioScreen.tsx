@@ -187,7 +187,7 @@ async function generarPDFFormal({
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text('Calle Chichen Itza No. 1123, Col. Balcones de Anáhuac, San Nicolás de los Garza, N.L., México, C.P. 66422', 45, 16);
+  doc.text('Tlaquepaque No. 140, Col. Mitras Sur Monterrey, Nuevo Leon, México. C.P.64020', 45, 16);
   doc.text('Teléfonos: 8127116538 / 8127116357', 45, 21);
 
   doc.setFillColor(...azulPrimario);
