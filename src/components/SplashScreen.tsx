@@ -75,7 +75,7 @@ export const SplashScreen: React.FC = () => {
         style={{
           backgroundImage:
             "linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
+          backgroundSize: "30px 30px md:backgroundSize: 40px 40px",
         }}
       />
       
@@ -84,51 +84,50 @@ export const SplashScreen: React.FC = () => {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(circle at center, #0d254c 0%, #051124 60%, #000 100%)",
+            "radial-gradient(circle at center, #0d254c 0%, #051124 70%, #000 100%)",
         }}
         animate={{
-          scale: [1, 1.05, 1],
-          rotate: [0, 5, 0],
-          opacity: [1, 0.95, 1],
+          scale: [1, 1.03, 1, 1.05, 1],
+          opacity: [1, 0.95, 1, 0.98, 1],
         }}
         transition={{
           repeat: Infinity,
-          duration: 12,
+          duration: 15,
           ease: "easeInOut",
         }}
       />
 
-      {/* Efecto de partículas / Briznas de energía */}
+      {/* Efecto de partículas / Briznas de energía (Optimizado para móvil) */}
       <div className="absolute inset-0 z-0 overflow-hidden">
-        {[...Array(15)].map((_, i) => (
+        {[...Array(12)].map((_, i) => (
           <motion.div
             key={i}
             className="absolute rounded-full bg-cyan-400/20"
             style={{
-              width: Math.random() * (120 - 40) + 40,
-              height: Math.random() * (120 - 40) + 40,
+              width: Math.random() * (100 - 30) + 30,
+              height: Math.random() * (100 - 30) + 30,
               left: `${Math.random() * 100}%`,
               top: `${Math.random() * 100}%`,
-              filter: `blur(${Math.random() * (30 - 15) + 15}px)`,
+              filter: `blur(${Math.random() * (25 - 10) + 10}px)`,
             }}
             animate={{
-              x: [0, Math.random() * 200 - 100, 0],
-              y: [0, Math.random() * 200 - 100, 0],
-              scale: [1, 1.2, 1],
-              opacity: [0, 1, 0],
+              x: [0, Math.random() * 150 - 75, 0],
+              y: [0, Math.random() * 150 - 75, 0],
+              scale: [1, 1.25, 1],
+              opacity: [0, 0.8, 0],
             }}
             transition={{
               repeat: Infinity,
-              duration: Math.random() * (25 - 15) + 15,
+              duration: Math.random() * (28 - 18) + 18,
               ease: "easeInOut",
-              delay: Math.random() * 5,
+              delay: Math.random() * 6,
             }}
           />
         ))}
       </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center">
-        {/* LOGO con brillo pulsante */}
+      <div className="relative z-10 flex flex-col items-center justify-center px-4">
+        {/* LOGO con brillo pulsante (Ajustado para móvil) */}
         <motion.div
           className="relative"
           initial={{ scale: 0.6, opacity: 0 }}
@@ -143,7 +142,7 @@ export const SplashScreen: React.FC = () => {
           <motion.img
             src={logo}
             alt="Logo AG"
-            className="rounded-2xl w-36 h-36 object-contain bg-transparent"
+            className="rounded-2xl w-32 h-32 md:w-36 md:h-36 object-contain bg-transparent" // Tamaño ajustado
             animate={{
               rotateY: [0, 6, -6, 0],
               y: [0, -5, 0],
@@ -161,9 +160,9 @@ export const SplashScreen: React.FC = () => {
             }}
             animate={{
               filter: [
-                "drop-shadow(0 0 18px #99ccff)",
-                "drop-shadow(0 0 28px #99ccff)",
-                "drop-shadow(0 0 18px #99ccff)",
+                "drop-shadow(0 0 16px #99ccff)",
+                "drop-shadow(0 0 26px #99ccff)",
+                "drop-shadow(0 0 16px #99ccff)",
               ],
             }}
             transition={{
@@ -174,9 +173,9 @@ export const SplashScreen: React.FC = () => {
           />
         </motion.div>
 
-        {/* NOMBRE DE LA EMPRESA */}
+        {/* NOMBRE DE LA EMPRESA (Ajustado para móvil) */}
         <motion.h1
-          className="mt-8 mb-1 flex flex-wrap justify-center font-extrabold text-white text-3xl md:text-4xl tracking-wide z-10 [text-shadow:0_0_10px_rgba(173,216,230,0.5)]"
+          className="mt-6 mb-2 text-center flex flex-wrap justify-center font-extrabold text-white text-3xl md:text-4xl tracking-wide z-10 [text-shadow:0_0_15px_rgba(173,216,230,0.7)]"
           aria-label={BRAND_NAME}
           initial="hidden"
           animate={controls}
@@ -200,9 +199,9 @@ export const SplashScreen: React.FC = () => {
           ))}
         </motion.h1>
 
-        {/* SUBTÍTULO */}
+        {/* SUBTÍTULO (Ajustado para móvil) */}
         <motion.p
-          className="text-lg text-white/80 tracking-widest z-10 [text-shadow:0_0_5px_rgba(173,216,230,0.5)]"
+          className="text-base md:text-lg text-white/80 tracking-widest z-10 [text-shadow:0_0_8px_rgba(173,216,230,0.6)]"
           initial={{ opacity: 0, y: 16 }}
           animate={controls}
           variants={{
@@ -214,7 +213,7 @@ export const SplashScreen: React.FC = () => {
         </motion.p>
       </div>
 
-      {/* MENSAJE DE CARGA */}
+      {/* MENSAJE DE CARGA (Ajustado para móvil) */}
       <div className="absolute bottom-24 text-center w-full px-4">
         <AnimatePresence mode="wait">
           <motion.div
@@ -223,7 +222,7 @@ export const SplashScreen: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.4, ease: "easeInOut" }}
-            className="inline-block text-white text-sm sm:text-base font-mono bg-blue-950/30 px-6 py-2 rounded-full border border-blue-500/30 shadow-lg backdrop-blur-sm"
+            className="inline-block text-white text-xs sm:text-sm font-mono bg-blue-950/40 px-5 py-2 rounded-full border border-blue-500/30 shadow-lg backdrop-blur-md"
           >
             {LOADING_STEPS[stepIndex]}
           </motion.div>
@@ -243,8 +242,8 @@ export const SplashScreen: React.FC = () => {
         {[...Array(5)].map((_, i) => (
           <motion.div
             key={i}
-            className="rounded-xl bg-gradient-to-b from-cyan-300 to-blue-400 shadow-md"
-            style={{ width: 9, height: 30 }}
+            className="rounded-lg bg-gradient-to-b from-cyan-300 to-blue-400 shadow-md" // Bordes un poco más suaves
+            style={{ width: 8, height: 28 }} // Ligeramente más pequeños
             variants={{
               hidden: { opacity: 0.3, scaleY: 0.5 },
               visible: {

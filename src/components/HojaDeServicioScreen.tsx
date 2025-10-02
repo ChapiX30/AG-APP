@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Download, Star, Edit3, ArrowLeft, Loader2, Home, Trash2, RotateCcw, Save, Eye, User, Building, Calendar, FileText, Phone, Mail, Search, ChevronDown
+  Download, Star, Edit3, ArrowLeft, Loader2, Home, Trash2, RotateCcw, Save, Eye, User, Building, Calendar, FileText, Phone, Mail, Search, ChevronDown, Wrench // <-- Se importa el ícono de la herramienta
 } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
 // IMPORTACIONES ADICIONALES PARA FIREBASE STORAGE
@@ -22,7 +22,7 @@ const camposIniciales = {
   telefono: '',
   correo: '',
   comentarios: '',
-  calidadServicio: 'Excelente',
+  calidadServicio: 'Excelente', // Valor inicial sigue siendo texto
   tecnicoResponsable: '',
 };
 
@@ -36,6 +36,14 @@ type Empresa = {
 };
 
 type EquipoCalibrado = { id?: string; tecnico?: string };
+
+const formatDate = (dateString: string): string => {
+  if (!dateString) return '__________';
+  const date = new Date(`${dateString}T00:00:00`);
+  const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' };
+  return new Intl.DateTimeFormat('es-MX', options).format(date);
+};
+
 
 async function getNextFolio(): Promise<string> {
   const folioPrefix = 'HSDG-';
@@ -164,7 +172,7 @@ async function generarPDFFormal({
     doc.setTextColor(...grisTexto);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.text(`FOLIO: ${campos.folio} | ${campos.fecha} | ${truncateText(campos.empresa, 25)}`, 15, 13);
+    doc.text(`FOLIO: ${campos.folio} | ${formatDate(campos.fecha)} | ${truncateText(campos.empresa, 25)}`, 15, 13);
     return 25;
   }
 
@@ -199,7 +207,6 @@ async function generarPDFFormal({
 
   let currentY = 50;
 
-  // --- SECCIÓN DE INFORMACIÓN BÁSICA MODIFICADA ---
   doc.setFillColor(...grisClaro);
   doc.roundedRect(10, currentY, 190, 15, 2, 2, 'F');
   doc.setDrawColor(...azulSecundario);
@@ -209,11 +216,11 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text('FOLIO:', 15, currentY + 6);
-  doc.text('FECHA:', 105, currentY + 6); // Re-posicionado para mejor distribución
+  doc.text('FECHA:', 105, currentY + 6);
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.text(campos.folio || '__________', 30, currentY + 6);
-  doc.text(campos.fecha || '__________', 120, currentY + 6); // Re-posicionado
+  doc.text(formatDate(campos.fecha), 120, currentY + 6);
   
   currentY += 19;
 
@@ -262,7 +269,7 @@ async function generarPDFFormal({
   } else {
     const margenIzq = 15;
     const anchoTotal = 180;
-    const equiposPorFila = 6;
+    const equiposPorFila = 5;
     const anchoColumna = anchoTotal / equiposPorFila;
     const altoFila = 4.5;
     const altoEncabezado = 7;
@@ -311,8 +318,7 @@ async function generarPDFFormal({
         doc.setTextColor(...grisTexto);
         for (let col = 0; col < equiposPorFila && equipoIndex < grupo.equipos.length; col++) {
           const xPos = margenIzq + (col * anchoColumna) + 2;
-          const equipoTexto = truncateText(grupo.equipos[equipoIndex], 8);
-          
+          const equipoTexto = truncateText(grupo.equipos[equipoIndex], 14);
           doc.text(equipoTexto, xPos, yFila + 2.5);
           equipoIndex++;
         }
@@ -432,6 +438,15 @@ async function generarPDFFormal({
   }
 }
 
+const qualityMap: { [key: string]: number } = {
+  'Deficiente': 1,
+  'Regular': 2,
+  'Bueno': 3,
+  'Muy Bueno': 4,
+  'Excelente': 5,
+};
+const qualityLabels = ['Deficiente', 'Regular', 'Bueno', 'Muy Bueno', 'Excelente'];
+
 
 export default function HojaDeServicioScreen() {
   const [campos, setCampos] = useState(camposIniciales);
@@ -449,6 +464,7 @@ export default function HojaDeServicioScreen() {
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [hoverRating, setHoverRating] = useState(0);
 
   const generarFolioUnico = async () => {
     setAutoFolioLoading(true);
@@ -803,7 +819,7 @@ export default function HojaDeServicioScreen() {
           <div className="p-4 sm:p-6 bg-gray-50 border-b">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div><strong>FOLIO:</strong> {campos.folio || '__________'}</div>
-              <div><strong>FECHA:</strong> {campos.fecha || '__________'}</div>
+              <div><strong>FECHA:</strong> {formatDate(campos.fecha)}</div>
             </div>
           </div>
 
@@ -928,11 +944,11 @@ export default function HojaDeServicioScreen() {
     );
   }
 
-  // FORMULARIO PRINCIPAL PROFESIONAL
+  const currentRating = qualityMap[campos.calidadServicio] || 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-2 sm:p-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header Profesional */}
         <div className="bg-white rounded-t-xl shadow-lg p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-4">
@@ -963,16 +979,13 @@ export default function HojaDeServicioScreen() {
           </div>
         </div>
 
-        {/* Formulario */}
         <div className="bg-white shadow-lg rounded-b-xl p-4 sm:p-8">
-          {/* Sección 1: Información Básica */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">1</div>
               <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Información Básica</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Folio */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <FileText size={16} className="text-blue-600" />
@@ -996,7 +1009,6 @@ export default function HojaDeServicioScreen() {
                 </div>
               </div>
 
-              {/* Fecha */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Calendar size={16} className="text-blue-600" />
@@ -1010,7 +1022,6 @@ export default function HojaDeServicioScreen() {
                 />
               </div>
 
-              {/* Técnico Responsable */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <User size={16} className="text-blue-600" />
@@ -1027,7 +1038,6 @@ export default function HojaDeServicioScreen() {
             </div>
           </div>
 
-          {/* Sección 2: Información del Cliente */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">2</div>
@@ -1129,7 +1139,6 @@ export default function HojaDeServicioScreen() {
             </div>
           </div>
 
-          {/* Sección 3: Observaciones y Calidad */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">3</div>
@@ -1143,22 +1152,42 @@ export default function HojaDeServicioScreen() {
                 </label>
                 <textarea value={campos.comentarios} onChange={(e) => setCampos({ ...campos, comentarios: e.target.value })} rows={4} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none" placeholder="Observaciones importantes del servicio..." />
               </div>
+              {/* ===== INICIO DE LA MODIFICACIÓN ===== */}
+              {/* Se reemplazan las pericas (animal) por pericas (herramienta) */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Star size={16} className="text-purple-600" />
                   Calidad del Servicio
                 </label>
-                <select value={campos.calidadServicio} onChange={(e) => setCampos({ ...campos, calidadServicio: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white">
-                  <option value="Excelente">⭐⭐⭐⭐⭐ Excelente</option>
-                  <option value="Bueno">⭐⭐⭐⭐ Bueno</option>
-                  <option value="Regular">⭐⭐⭐ Regular</option>
-                  <option value="Deficiente">⭐⭐ Deficiente</option>
-                </select>
+                <div className="flex flex-col gap-2 pt-2">
+                    <div 
+                        className="flex items-center gap-2 cursor-pointer"
+                        onMouseLeave={() => setHoverRating(0)}
+                    >
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                            <Wrench
+                                key={rating}
+                                size={32}
+                                className={`transition-all duration-150 ease-in-out hover:scale-110 ${
+                                (hoverRating || currentRating) >= rating ? 'text-purple-600' : 'text-gray-300'
+                                }`}
+                                onMouseEnter={() => setHoverRating(rating)}
+                                onClick={() => {
+                                    const newQuality = qualityLabels[rating - 1];
+                                    setCampos({ ...campos, calidadServicio: newQuality });
+                                }}
+                            />
+                        ))}
+                    </div>
+                    <span className="font-semibold text-purple-700 bg-purple-100 px-3 py-1 rounded-full text-sm text-center w-fit">
+                        { qualityLabels[(hoverRating || currentRating) - 1] || 'Selecciona una calificación' }
+                    </span>
+                </div>
               </div>
+              {/* ===================================== */}
             </div>
           </div>
 
-          {/* Sección 4: Equipos Calibrados */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">4</div>
@@ -1210,14 +1239,12 @@ export default function HojaDeServicioScreen() {
             </div>
           </div>
 
-          {/* Sección 5: Firmas */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">5</div>
               <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Firmas Digitales</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Firma Técnico */}
               <div className="space-y-4">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Edit3 size={16} className="text-indigo-600" />
@@ -1234,7 +1261,6 @@ export default function HojaDeServicioScreen() {
                 </div>
               </div>
 
-              {/* Firma Cliente */}
               <div className="space-y-4">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Edit3 size={16} className="text-indigo-600" />
@@ -1253,7 +1279,6 @@ export default function HojaDeServicioScreen() {
             </div>
           </div>
 
-          {/* Botones de Acción */}
           <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8 border-t border-gray-200">
             <button onClick={handleDescargarPDF} className="w-full sm:w-auto flex items-center justify-center gap-3 bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg transition-all shadow-lg font-semibold">
               <Download size={20} />
