@@ -42,6 +42,7 @@ const magnitudImages: Record<string, string> = {
   OpticaTrazable: "/images/optica-trazable.png",
   Masa: "/images/masa.png",
   ParTorsional: "/images/par-torsional.png",
+  VibracionTrazable: "/images/vibracion-trazable.png",
   // agrega las que uses en selectedMagnitude
 };
 

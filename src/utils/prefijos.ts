@@ -27,6 +27,7 @@ const prefijos: Record<string, string> = {
     "Temperatura Trazable": "AGTT",
     "Tiempo": "AGTI",
     "Quimica": "AGQ",
+    "Vibracion Trazable": "AGVBT",
     // etc.
 };
 

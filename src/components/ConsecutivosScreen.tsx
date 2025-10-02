@@ -35,6 +35,7 @@ const magnitudesTrazables = [
   { id: 'Temperatura Trazable', name: 'Temperatura Trazable', icon: '🌡️', description: 'Mediciones térmicas' },
   { id: 'volumen Trazable', name: 'Volumen Trazable', icon: '📦', description: 'Mediciones volumétricas' },
   { id: 'fuerza Trazable', name: 'Fuerza Trazable', icon: '💪', description: 'Medición de fuerzas y torques' },
+  { id: 'Vibracion Trazable', name: 'Vibracion Trazable', icon: '📊', description: 'Mediciones de vibraciones' },
 ];
 
 export const ConsecutivosScreen: React.FC = () => {
