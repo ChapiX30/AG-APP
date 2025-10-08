@@ -360,7 +360,8 @@ export const MainMenu: React.FC = () => {
                 {menuItemsFiltered.map((item) => (
                     <button key={item.id} onClick={() => handleMenuClick(item)} disabled={!item.available} className={`relative group rounded-2xl p-4 text-left overflow-hidden border border-slate-700 bg-slate-800 transition-transform duration-200 active:scale-[0.97] ${!item.available && 'opacity-60'}`}>
                         <div className="flex flex-col items-center text-center space-y-3">
-                            <div className={`p-3 rounded-full bg-slate-700`}>
+                            {/* ===== CORRECCIÓN AQUÍ ===== */}
+                            <div className={`p-3 rounded-full bg-gradient-to-br ${item.available ? item.color : 'from-gray-700 to-gray-600'}`}>
                                 <item.icon className={`w-6 h-6 text-white`} />
                             </div>
                             <span className="text-xs font-semibold text-white tracking-wider">{item.title}</span>
