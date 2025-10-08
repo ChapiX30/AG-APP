@@ -1,0 +1,1721 @@
+[
+ {
+   "A": "ID",
+   "B": "Nombre",
+   "C": "Marca",
+   "D": "Modelo",
+   "E": "Serie",
+   "F": "Frecc",
+   "G": "Frequency (Unit)"
+ },
+ {
+   "A": "EP-47352",
+   "B": "MANOMETRO",
+   "C": "N/A",
+   "D": "100kPa",
+   "E": "N/A",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-66196",
+   "B": "PIN GAGES SET",
+   "C": "VERMONT GAGE",
+   "D": "102100300",
+   "E": "N/A",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-52862",
+   "B": "Torquimetro 1.4-5.4 Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "501MRMH-CDI",
+   "E": "922904188",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-64711",
+   "B": "Registrador de datos de presión barométrica/humedad/temperatura",
+   "C": "EXTECH",
+   "D": "SD700",
+   "E": "A.127037",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-64379",
+   "B": "Programable DC Power Supply",
+   "C": "KORAD",
+   "D": "KA3005P",
+   "E": "202311157580",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45321",
+   "B": "Torque Wrench",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112862",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45322",
+   "B": "Torque Wrench",
+   "C": "CDI",
+   "D": "752MFRMH",
+   "E": "921121943",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-64452",
+   "B": "MICROMETRO DIGITAL 3-4 in",
+   "C": "mitutoyo",
+   "D": "293-343-30",
+   "E": "76030506",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-64579",
+   "B": "SENSOR DIGITAL GAUGE 30PSI LCD",
+   "C": "Amphenol SSI Technologies",
+   "D": "MGA-30-A-9V-R",
+   "E": "2312190732",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-64670",
+   "B": "Pressure Transmitter",
+   "C": "OMEGA",
+   "D": "PX01C1-050AI",
+   "E": "NA",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-64671",
+   "B": "Pressure Transmitter",
+   "C": "OMEGA",
+   "D": "PX01C1-050AI",
+   "E": "NA",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-64672",
+   "B": "Industrial Pressure Transducer, Absolute, 4 – 20 mA Output Signal Type, 3X Rated Proof Pressure Range, MEAS U5200",
+   "C": "MEAS",
+   "D": "U5254-000002-014BA",
+   "E": "NA",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-64673",
+   "B": "Industrial Pressure Transducer, Absolute, 4 – 20 mA Output Signal Type, 3X Rated Proof Pressure Range, MEAS U5200",
+   "C": "MEAS",
+   "D": "U5254-000002-014BA",
+   "E": "NA",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-64674",
+   "B": "Industrial Pressure Transducer, Absolute, 4 – 20 mA Output Signal Type, 3X Rated Proof Pressure Range, MEAS U5200",
+   "C": "MEAS",
+   "D": "U5254-000002-014BA",
+   "E": "NA",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-65853",
+   "B": "Torque Mountz",
+   "C": "Mountz",
+   "D": "FGA-80",
+   "E": "0112436-0036",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53384",
+   "B": "Manómetro Regulador Neumático",
+   "C": "numatics",
+   "D": "R21R-02",
+   "E": "R21R-02-3",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53424",
+   "B": "CDI TORQUE",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "622906671",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49098",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED",
+   "C": "MOUNTZ",
+   "D": "EC50304",
+   "E": "2210010086",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-64283",
+   "B": "MICROMETRO DIGITAL 3-4 in",
+   "C": "mitutoyo",
+   "D": "293-343-30",
+   "E": "76026949",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48352",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED",
+   "C": "MOUNTZ",
+   "D": "EC50304",
+   "E": "2210010085",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49466",
+   "B": "GEDORE TORQUE MANUAL",
+   "C": "Sturtevant Richmont",
+   "D": "QSN600 FH",
+   "E": "6FW000377",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52865",
+   "B": "Torquimetro 4.0-27.7Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "2502MRMH-CDI",
+   "E": "123900176",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52870",
+   "B": "Torquimetro 10.2-98.3Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "752MFRMH-CDI",
+   "E": "1022123433",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52884",
+   "B": "Torquimetro 34-197Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "1503MFRRH-CDI",
+   "E": "1122115166",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52887",
+   "B": "Torquimetro 34-197Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "1503MFRRH-CDI",
+   "E": "1122115167",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53146",
+   "B": "Torquimetro 2.8 Nm a 16.4 Nm",
+   "C": "CDI Torque Products",
+   "D": "1501MRRH",
+   "E": "123918022",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-59992",
+   "B": "Manometro 0-150PSI",
+   "C": "NORGREN",
+   "D": "B72G-3AK-AE1-RMG",
+   "E": "B72G-3AK-AE1-RMG - 1",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-66356",
+   "B": "Pin 6 Pasador",
+   "C": "Mc Master-Carr",
+   "D": "91595A850",
+   "E": "",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-46637",
+   "B": "Torque Automatico",
+   "C": "MOUNTZ INC",
+   "D": "EC50150",
+   "E": "2204010061",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55979",
+   "B": "Bascula Estacion 2",
+   "C": "WIKA",
+   "D": "F4801",
+   "E": "2109040014",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55980",
+   "B": "Bascula Estacion 3",
+   "C": "WIKA",
+   "D": "F4801",
+   "E": "2109010019",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48913",
+   "B": "Torquímetro",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "722121885",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52663",
+   "B": "Torquimetro de 2Nm a 20Nm",
+   "C": "Sturtevant Richmont",
+   "D": "2SDR 20Nm MG",
+   "E": "1310536",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52664",
+   "B": "Torquimetro de 2Nm a 20Nm",
+   "C": "Sturtevant Richmont",
+   "D": "2SDR 20Nm MG",
+   "E": "1310580",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52866",
+   "B": "Torquimetro 10.2-98.3Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "752MFRMH-CDI",
+   "E": "223122414",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52872",
+   "B": "Torquimetro 10.2-98.3Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "752MFRMH-CDI",
+   "E": "223122402",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-47224",
+   "B": "FILTER",
+   "C": "WILKERSON",
+   "D": "WILKERSON FILTER",
+   "E": "B08-02-FKG0B",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-47225",
+   "B": "REGULATOR",
+   "C": "SMC",
+   "D": "5B1-94C",
+   "E": "ITV1050-31N2N4",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53381",
+   "B": "Manómetro Regulador Neumático",
+   "C": "numatics",
+   "D": "R21R-02",
+   "E": "R21R-02-1",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53382",
+   "B": "Manómetro Regulador Neumático",
+   "C": "numatics",
+   "D": "R21R-02",
+   "E": "R21R-02-2",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52254",
+   "B": "DC Power Supply, 1500 V, 30 A, 15000 W, 208 VAC",
+   "C": "KEYSIGHT TECHNOLOGIES",
+   "D": "N8937A",
+   "E": "DE22046792",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49237",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED TR",
+   "C": "MOUNTZ",
+   "D": "EC50304",
+   "E": "2210010087",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49247",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED",
+   "C": "MOUNTZ",
+   "D": "EC50120-PT",
+   "E": "2210010084",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48762",
+   "B": "Multimetro",
+   "C": "Fluke",
+   "D": "87v",
+   "E": "57630405",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-59991",
+   "B": "kit Medidor de flujo",
+   "C": "Alicat SCIENTIFIC",
+   "D": "MB-250SLPM-D",
+   "E": "446912",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49479",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED",
+   "C": "MOUNTZ CAL ID: 227368",
+   "D": "EC50120-PT",
+   "E": "2210010083",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48411",
+   "B": "PIE DE REY DIGITAL",
+   "C": "MITUTOYO",
+   "D": "HD-18\"AX",
+   "E": "192-631-10",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48869",
+   "B": "Pull Test",
+   "C": "Shimpo",
+   "D": "FGV-100XY",
+   "E": "Y9520G091",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48500",
+   "B": "MICROMETRO DE PUNTAS",
+   "C": "MITUTOYO",
+   "D": "CPM15-1\"",
+   "E": "112-177",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52257",
+   "B": "Unidad de Adquisición de Datos, 80 Canales, 300 V, 1 A, 45 MHz",
+   "C": "KEYSIGHT TECHNOLOGIES",
+   "D": "34980A",
+   "E": "MY62390001",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66351",
+   "B": "Pin 1 Pasador",
+   "C": "Mc Master-Carr",
+   "D": "91595A850",
+   "E": "N/A",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-66352",
+   "B": "Pin 2 Pasador",
+   "C": "Mc Master-Carr",
+   "D": "91595A850",
+   "E": "",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66353",
+   "B": "Pin 3 Pasador",
+   "C": "Mc Master-Carr",
+   "D": "91595A850",
+   "E": "",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66354",
+   "B": "Pin 4 Pasador",
+   "C": "Mc Master-Carr",
+   "D": "91595A850",
+   "E": "",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66355",
+   "B": "Pin 5 Pasador",
+   "C": "Mc Master-Carr",
+   "D": "91595A850",
+   "E": "",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-59993",
+   "B": "Medidor de presion 0-100psi",
+   "C": "Ashcroft",
+   "D": "20w1005ph02b100",
+   "E": "20w1005ph02b100 - 1",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-43858",
+   "B": "Torque manual",
+   "C": "Mountz",
+   "D": "MT120-NFH",
+   "E": "6HV000004",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45088",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111680",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-65852",
+   "B": "Torque Mountz",
+   "C": "Mountz",
+   "D": "FGA-80",
+   "E": "0112436-0035",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48907",
+   "B": "Torquimetro",
+   "C": "STURTEVANT RICHMONT",
+   "D": "869775",
+   "E": "1304485",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48914",
+   "B": "Torquímetro",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "722121889",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-68531",
+   "B": "Torque Ratch",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "1501MRRH",
+   "E": "622908761",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52853",
+   "B": "Torquimetro 1.4-5.4 Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "501MRMH-CDI",
+   "E": "822908583",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52863",
+   "B": "Torquimetro 1.4-5.4 Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "501MRMH-CDI",
+   "E": "822908538",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52877",
+   "B": "Torquimetro 10.2-98.3Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "752MFRMH-CDI",
+   "E": "223122405",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52888",
+   "B": "Torquimetro 34-197Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "1503MFRRH-CDI",
+   "E": "822120782",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52892",
+   "B": "Torquimetro 34-197Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "1503MFRRH-CDI",
+   "E": "822120778",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45263",
+   "B": "Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-8\"AX",
+   "E": "B20048151",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45267",
+   "B": "Digimatic Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-8\"AX",
+   "E": "B20048155",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45273",
+   "B": "Micrometer",
+   "C": "Mitutoyo",
+   "D": "MDE-1\" MX",
+   "E": "71311792",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45277",
+   "B": "Micrometer",
+   "C": "Mitutoyo",
+   "D": "ACM-1\"MJ",
+   "E": "72305100",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-56385",
+   "B": "Fuente de alimentación CC regulada variable tipo lineal programable, 0-30V a 0-5A",
+   "C": "TEKPOWER",
+   "D": "TP3005P",
+   "E": "907306",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-56386",
+   "B": "Fuente de alimentación CC regulada variable tipo lineal programable, 0-30V a 0-5A",
+   "C": "TEKPOWER",
+   "D": "TP3005P",
+   "E": "907307",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55593",
+   "B": "Torquimetro electrico",
+   "C": "Atlas Copco",
+   "D": "ITB-A61-30-10-HMI",
+   "E": "C5582017",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55654",
+   "B": "Fuente de alimentacion variable, 0 ~ 30 VCC (CA a CC), 0 ~ 5A Salida",
+   "C": "TEKPOWER",
+   "D": "TP3005P",
+   "E": "831845",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55731",
+   "B": "Torquimetro electrico 7Nm-35Nm",
+   "C": "Atlas Copco",
+   "D": "ITB-A61-30-10-HMI",
+   "E": "C5562111",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55732",
+   "B": "Torquimetro electrico 30Nm-160Nm",
+   "C": "Atlas Copco",
+   "D": "ITB-A61-150-13-HMI",
+   "E": "B5553384",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55735",
+   "B": "Torquimetro electrico 5Nm-20Nm",
+   "C": "Atlas Copco",
+   "D": "ICB-A21-20-10-HMI",
+   "E": "A5580696",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55428",
+   "B": "Fuente de alimentacion variable, 0 ~ 30 VCC (CA a CC), 0 ~ 5A Salida",
+   "C": "Korad Technology",
+   "D": "KD3005D",
+   "E": "202105061205",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55973",
+   "B": "Torquimetro electrico 1.4-7Nm",
+   "C": "Atlas copco",
+   "D": "ICB-A21-07-06-HMI",
+   "E": "A5690753",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45054",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112864",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45056",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112877",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45057",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112870",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45063",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112874",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45068",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112857",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45071",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112906",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45075",
+   "B": "TORQUE WRENCH 3/8\"",
+   "C": "CDI",
+   "D": "752MFRMH",
+   "E": "921121902",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45076",
+   "B": "TORQUE WRENCH 3/8\"",
+   "C": "CDI",
+   "D": "752MFRMH",
+   "E": "921121949",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45083",
+   "B": "TORQUE WRENCH 3/8\"",
+   "C": "CDI",
+   "D": "752MFRMH",
+   "E": "921121946",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45085",
+   "B": "TORQUE WRENCH 3/8\"",
+   "C": "CDI",
+   "D": "752MFRMH",
+   "E": "921121935",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45089",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111681",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45090",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "101111674",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45092",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111678",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45094",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111677",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45095",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111691",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45096",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111689",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45097",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111676",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45098",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "1021111683",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45099",
+   "B": "TORQUE WRENCH 1/2\"",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "820122145",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45276",
+   "B": "Digimatic Micrometer",
+   "C": "Mitutoyo",
+   "D": "ID-S112TXB",
+   "E": "21124090",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-53369",
+   "B": "Torquimetro de 2.8 a 16.4 Nm de 1/4",
+   "C": "CDI TORQUE",
+   "D": "1501MRRH-CDI",
+   "E": "123918101",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53373",
+   "B": "Torquimetro de 2.8 a 16.4 Nm de 1/4",
+   "C": "CDI TORQUE",
+   "D": "1501MRRH",
+   "E": "622908754",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53378",
+   "B": "Torquimetro de 2.8 a 16.4 Nm de 1/4",
+   "C": "CDI TORQUE",
+   "D": "1501MRRH-CDI",
+   "E": "1122700512",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53425",
+   "B": "CDI TORQUE",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "1122700513",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48871",
+   "B": "Torque Wrench",
+   "C": "Sturtevant Richmont",
+   "D": "869775",
+   "E": "1304418",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48901",
+   "B": "Torquimetro",
+   "C": "CDI Torque Products",
+   "D": "752MFRMH",
+   "E": "822121751",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49062",
+   "B": "DIGIMATIC MICROMETER",
+   "C": "Mitutoyo",
+   "D": "329-350-30",
+   "E": "60026747",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49063",
+   "B": "DIGIMATIC MICROMETER",
+   "C": "Mitutoyo",
+   "D": "329-350-30",
+   "E": "60026748",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49082",
+   "B": "Torquímetro",
+   "C": "CDI",
+   "D": "752MFRMH",
+   "E": "722903893",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-51883",
+   "B": "Torque fijo 1.4Nm",
+   "C": "Seekonk",
+   "D": "LT-M 1.4",
+   "E": "LT-M15",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52878",
+   "B": "Torquimetro 10.2-98.3Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "752MFRMH-CDI",
+   "E": "223121242",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52034",
+   "B": "controlador temperatura y humedad",
+   "C": "TESTO",
+   "D": "Saveris 2",
+   "E": "54742353",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-52035",
+   "B": "controlador temperatura y humedad",
+   "C": "TESTO",
+   "D": "Saveris 2",
+   "E": "54740878",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48438",
+   "B": "INFRARED CAMERA",
+   "C": "AMPROBE",
+   "D": "IRC-110-CN",
+   "E": "180200357",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-68384",
+   "B": "Multimetro, Rango Manual, Auto, 1 kV, 10 A, 5.5 Digitos",
+   "C": "KEYSIGHT TECHNOLOGIES",
+   "D": "34450A",
+   "E": "MY64430007",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45285",
+   "B": "Thickness Gage",
+   "C": "Mitutoyo",
+   "D": "184-303S",
+   "E": "N/A",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-66271",
+   "B": "Lainas",
+   "C": "PROTO",
+   "D": "00MM25",
+   "E": "NA",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53186",
+   "B": "METRIC THICKNESS GAUGE.",
+   "C": "LANG TOOLS",
+   "D": "343A",
+   "E": "NA",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45270",
+   "B": "Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-6\" ASX",
+   "E": "B21192465",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45272",
+   "B": "Digimatic Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-6\"ASX",
+   "E": "B21192451",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-55734",
+   "B": "Torquimetro electrico 30Nm-160Nm",
+   "C": "Atlas Copco",
+   "D": "ITB-A61-150-13-HMI",
+   "E": "C5582028",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55921",
+   "B": "Manometro",
+   "C": "SMC",
+   "D": "AW20-N02-CZ-A",
+   "E": "SN",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48911",
+   "B": "Digital angle gauge with level",
+   "C": "Wixey",
+   "D": "WR365",
+   "E": "N/A",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48944",
+   "B": "RELOJ INDICADOR ELECTRONICO",
+   "C": "FOWLER",
+   "D": "54-520-250",
+   "E": "G12961",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49028",
+   "B": "Digimatic Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-24'C",
+   "E": "74801",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49236",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED TR",
+   "C": "MOUNTZ CAL ID: 226453",
+   "D": "EC50150",
+   "E": "2011010100",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-57060",
+   "B": "Torquimetro Electrico 7-35NM",
+   "C": "Atlas Copco",
+   "D": "ITB-A61-30-10-HMI",
+   "E": "C5581047",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-57723",
+   "B": "Torque Screwdriver Electric",
+   "C": "Mountz",
+   "D": "NF450",
+   "E": "2309080080",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49478",
+   "B": "TORQUE SCREWDRIVER DC CONTROLLED",
+   "C": "MOUNTZ CAL ID: 227306",
+   "D": "EC50120-PT",
+   "E": "2210010082",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49480",
+   "B": "TORQUE SCREWDRTORQUE SCREWDRIVER DC TRANSDUCERIZEDIVER DC TRANSDUCERIZED",
+   "C": "MOUNTZ CAL ID: 228407",
+   "D": "EPT50200-RA",
+   "E": "2209190042",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45284",
+   "B": "Thickness Gage",
+   "C": "Mitutoyo",
+   "D": "184-303S",
+   "E": "N/A",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-46714",
+   "B": "JUEGO DE LAINA",
+   "C": "MITUTOYO",
+   "D": "184-313S",
+   "E": "N/A",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55982",
+   "B": "Power Supply",
+   "C": "EA Elektro Automatik",
+   "D": "PSB 10360-30",
+   "E": "2333290003",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48912",
+   "B": "TORQUE",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "722121872",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52882",
+   "B": "Torquimetro 34-197Nm",
+   "C": "CDI TORQUE PRODUCT",
+   "D": "1503MFRRH-CDI",
+   "E": "822120774",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53069",
+   "B": "Lainas",
+   "C": "LANG",
+   "D": "343A",
+   "E": "NA",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-57957",
+   "B": "Wifi Data Logger/ Transmisor de temperatura y humedad",
+   "C": "Testo",
+   "D": "Saveris 2 H1",
+   "E": "54816112",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53188",
+   "B": "METRIC THICKNESS GAUGE,",
+   "C": "LANG TOOLS",
+   "D": "343A",
+   "E": "NA",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-53190",
+   "B": "METRIC THICKNESS GAUGE,,",
+   "C": "LANG TOOLS",
+   "D": "343A",
+   "E": "NA",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-47199",
+   "B": "TORQUE DISPLAY",
+   "C": "AWS",
+   "D": "QCI-100",
+   "E": "25817-4",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66608",
+   "B": "Torque Electrico 10 - 30 Nm",
+   "C": "Atlas copco",
+   "D": "8436006130 (ITB-A61-30-10-HMI)",
+   "E": "D6522190",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-66489",
+   "B": "Torque Electrico 3 - 7 Nm",
+   "C": "Atlas copco",
+   "D": "8436002107 (ICB-A21-07-06-HMI)",
+   "E": "A6630049",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-08286",
+   "B": "Torquimetro",
+   "C": "CDI Torque Products",
+   "D": "2003NMRMHSS",
+   "E": "316027698",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-68012",
+   "B": "Set 3 Pin Gauge 20.50mm - 20.96mm",
+   "C": "MCMASTER",
+   "D": "20.50mm - 20.96mm",
+   "E": "Set 3 Pin Gauge 20.50mm - 20.96mm",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-68013",
+   "B": "Set 4 Pin Gauge 19.44mm - 19.88mm",
+   "C": "MCMASTER",
+   "D": "19.44mm - 19.88mm",
+   "E": "Set 4 Pin Gauge 19.44mm - 19.88mm",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-68014",
+   "B": "Set 5 Pin Gauge 20.50mm - 20.96mm",
+   "C": "MCMASTER",
+   "D": "20.50mm - 20.96mm",
+   "E": "Set 5 Pin Gauge 20.50mm - 20.96mm",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-67853",
+   "B": "Set Pin Gauge 20.50mm - 20.96mm",
+   "C": "MCMASTER",
+   "D": "20.50mm - 20.96mm",
+   "E": "SET 1",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-67854",
+   "B": "Set Pin Gauge 19.44mm - 19.88mm",
+   "C": "MCMASTER",
+   "D": "19.44mm - 19.88mm",
+   "E": "SET 2",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-66882",
+   "B": "Carga Electrónica CD, EL30000A Series, 350 W, Programmable, 0 V, 150 V, 60 A",
+   "C": "KEYSIGHT",
+   "D": "EL34143A",
+   "E": "MY61001564",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66945",
+   "B": "Fuente de Poder de Mesa, Programmable, 2 Salidas, 0 V, 30 V, 0 A, 20 A",
+   "C": "KEYSIGHT",
+   "D": "E36233A",
+   "E": "MY61003535",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66946",
+   "B": "Fuente de alimentación de Corriente Continua Lineal programable, 3 Canales, Potencia Total de 195 W, Rango máximo de Salida 30 V/3 A || 30 V/3 A, 5 V/3 A",
+   "C": "RIGOL",
+   "D": "DP832A",
+   "E": "DP8B265M00044",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66984",
+   "B": "Fuente de Poder de Mesa, Sencillo, Adjustable, 1 Salida, 1 V, 32 V, 0 A, 30 A",
+   "C": "BK PRECISION",
+   "D": "1901B",
+   "E": "475I23350",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66985",
+   "B": "Fuente de Poder de Mesa, Sencillo, Adjustable, 1 Salida, 1 V, 32 V, 0 A, 30 A",
+   "C": "BK PRECISION",
+   "D": "1901B",
+   "E": "475I23349",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66986",
+   "B": "Fuente de poder de DC Multi-rango 60V/5A 100W",
+   "C": "BK PRECISION",
+   "D": "9110",
+   "E": "183G23253",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66989",
+   "B": "Fuente de poder de DC Multi-rango 60V/5A 100W",
+   "C": "BK PRECISION",
+   "D": "9110",
+   "E": "183G23257",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-66494",
+   "B": "Torque Electrico 10 - 30 Nm",
+   "C": "Atlas copco",
+   "D": "8436006130 (ITB-A61-30-10-HMI)",
+   "E": "D6620390",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45304",
+   "B": "Torque Wrench",
+   "C": "Sturtevant Richmont",
+   "D": "LTC 150I",
+   "E": "1285841",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-69460",
+   "B": "Torque Sturtevant Richmont",
+   "C": "Sturtevant Richmont",
+   "D": "LTCR",
+   "E": "24052766021",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-69461",
+   "B": "Torque Sturtevant Richmont",
+   "C": "Sturtevant Richmont",
+   "D": "LTCR 17-B5NM",
+   "E": "24052766042",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-51942",
+   "B": "Torque Wrench",
+   "C": "Sturtevant Richmont",
+   "D": "869785",
+   "E": "1304783",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48980",
+   "B": "TORQUE WRENCH",
+   "C": "Sturtevant Richmont",
+   "D": "LTC 150I",
+   "E": "22105925025",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-68802",
+   "B": "Regulador de Aire",
+   "C": "WILKERSON",
+   "D": "60115K42",
+   "E": "N/A",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-52466",
+   "B": "DUMMY ALUMINUM FRONT RING",
+   "C": "Mainspring",
+   "D": "E01584000MS",
+   "E": "E0158400",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48872",
+   "B": "TORQUE WRENCH",
+   "C": "PRECISION INSTRUMENTS",
+   "D": "D1F15CHNMC",
+   "E": "1201",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48873",
+   "B": "Torque Wrench",
+   "C": "Sturtevant Richmont",
+   "D": "869775",
+   "E": "1304770",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48906",
+   "B": "TORQUE WRENCH",
+   "C": "PRECISION INSTRUMENTS",
+   "D": "D1F30CHNMC",
+   "E": "1325",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49064",
+   "B": "Torquimetro",
+   "C": "STURTEVANT RICHMONT",
+   "D": "869775",
+   "E": "1304707",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49067",
+   "B": "Torquimetro",
+   "C": "STURTEVANT RICHMONT",
+   "D": "869775",
+   "E": "1304465",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49081",
+   "B": "Torquímetro",
+   "C": "CDI",
+   "D": "1503MFRRH",
+   "E": "722121891",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45055",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112879",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45059",
+   "B": "TORQUE WRENCH 1/4\"",
+   "C": "CDI",
+   "D": "1501MRRH",
+   "E": "821112873",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-51893",
+   "B": "Torque fijo 1.4Nm",
+   "C": "Seekonk",
+   "D": "LT-M 1.4",
+   "E": "LT-M11",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-48981",
+   "B": "TORQUE WRENCH",
+   "C": "Sturtevant Richmont",
+   "D": "LTC 150I",
+   "E": "22105925061",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49219",
+   "B": "Torquimetro",
+   "C": "STURTEVANT RICHMONT",
+   "D": "810011",
+   "E": "22116122078",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55020",
+   "B": "Torque Wrench 1.35-2.37",
+   "C": "Mountz Torque",
+   "D": "TBIH RED 12-21",
+   "E": "TB-22-12-263",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49073",
+   "B": "ELECTRONIC TORQUE WRENCH",
+   "C": "PROTO",
+   "D": "J6345A",
+   "E": "5220147",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-49075",
+   "B": "ELECTRONIC TORQUE WRENCH",
+   "C": "PROTO",
+   "D": "J6346",
+   "E": "3220203",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-47821",
+   "B": "40ft Self-Leveling Cross Line Laser Level",
+   "C": "Bauer",
+   "D": "57529",
+   "E": "376232112",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-51889",
+   "B": "Torque fijo 1.4Nm",
+   "C": "Seekonk",
+   "D": "LT-M 1.4",
+   "E": "LT-M06",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-59789",
+   "B": "Lainas",
+   "C": "PROTO",
+   "D": "J00MM25",
+   "E": "J00MM25 #1",
+   "F": "3",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-44923",
+   "B": "CALIB DIGIMATIC 24\"/600MM",
+   "C": "mitutoyo",
+   "D": "CD-24\"C",
+   "E": "68681",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45292",
+   "B": "Digimatic Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-6\"ASX",
+   "E": "B21192423",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48834",
+   "B": "Medidor de flujo de aire",
+   "C": "PCE Instruments",
+   "D": "PCE-HVAC 2",
+   "E": "211253582",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-48835",
+   "B": "Medidor de flujo de aire",
+   "C": "PCE Instruments",
+   "D": "PCE-HVAC 2",
+   "E": "211253594",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45265",
+   "B": "Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-8\" AX",
+   "E": "B20048162",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-45266",
+   "B": "Caliper",
+   "C": "Mitutoyo",
+   "D": "CD-8\"AX",
+   "E": "B20048128",
+   "F": "1",
+   "G": "Year(s)"
+ },
+ {
+   "A": "EP-49066",
+   "B": "TORQUE WRENCH",
+   "C": "CDI TORQUE PRODUCTS",
+   "D": "752MFRMH",
+   "E": "722903888",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-45472",
+   "B": "DC Power Supply",
+   "C": "RIGOL",
+   "D": "DP832A",
+   "E": "DP8B231500538",
+   "F": "12",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55017",
+   "B": "Torquimetro 0.45-4.52",
+   "C": "Mountz Torque",
+   "D": "FGA-40",
+   "E": "0112241-0101",
+   "F": "6",
+   "G": "Month(s)"
+ },
+ {
+   "A": "EP-55022",
+   "B": "Torquimetro 0.45-4.52",
+   "C": "Mountz Torque",
+   "D": "FGA-40",
+   "E": "0112241-0071",
+   "F": "6",
+   "G": "Month(s)"
+ }
+]
