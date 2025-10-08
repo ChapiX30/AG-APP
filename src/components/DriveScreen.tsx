@@ -14,10 +14,10 @@ import {
   List, ListItem, ListItemAvatar, ListItemButton, Collapse, Tab, Tabs,
   Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent,
   TimelineDot, TimelineOppositeContent, Switch, FormControlLabel, Checkbox,
-  Slide, BottomNavigation, BottomNavigationAction, Skeleton, SpeedDial, SpeedDialIcon, SpeedDialAction
+  Slide, BottomNavigation, BottomNavigationAction, Skeleton // <-- NUEVO: Importar Skeleton
 } from "@mui/material";
 
-// Iconos (con adiciones para nuevas funcionalidades)
+// Iconos (sin cambios)
 import FolderIcon from '@mui/icons-material/Folder';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -34,19 +34,35 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import DownloadIcon from '@mui/icons-material/Download';
 import VisibilityIcon from '@mui/icons-material/Visibility';
-import LaunchIcon from '@mui/icons-material/Launch';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import SearchOffIcon from '@mui/icons-material/SearchOff';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import ShareIcon from '@mui/icons-material/Share';
+import StarIcon from '@mui/icons-material/Star';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import GridViewIcon from '@mui/icons-material/GridView';
+import SortIcon from '@mui/icons-material/Sort';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import InfoIcon from '@mui/icons-material/Info';
+import HistoryIcon from '@mui/icons-material/History';
+import PersonIcon from '@mui/icons-material/Person';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import CloseIcon from '@mui/icons-material/Close';
-import InfoIcon from '@mui/icons-material/Info';
-import HistoryIcon from '@mui/icons-material/History';
-import SecurityIcon from '@mui/icons-material/Security';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import WorkIcon from '@mui/icons-material/Work';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import FolderSharedIcon from '@mui/icons-material/FolderShared';
+import EditIcon from '@mui/icons-material/Edit';
+import CheckIcon from '@mui/icons-material/Check';
+import SecurityIcon from '@mui/icons-material/Security';
+import LockIcon from '@mui/icons-material/Lock';
+import LaunchIcon from '@mui/icons-material/Launch';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 
-// Interfaces (sin cambios a tu estructura original)
+// Interfaces (sin cambios)
 interface DriveFile {
   name: string;
   url: string;
@@ -55,7 +71,6 @@ interface DriveFile {
   originalUpdated?: string;
   reviewed?: boolean;
   reviewedBy?: string;
-
   reviewedByName?: string;
   reviewedAt?: string;
   completed?: boolean;
@@ -93,35 +108,30 @@ interface UserData {
   [key: string]: any;
 }
 
-// --- NUEVO: Componentes Skeleton para la Carga Visual ---
+// --- Componentes Skeleton para la Carga ---
 const CardSkeleton = () => (
   <Grid item xs={12} sm={6} md={4} lg={3}>
     <Card sx={{ borderRadius: 3, border: '1px solid #dadce0' }}>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Skeleton variant="circular" width={24} height={24} sx={{ mr: 1.5 }}/>
-          <Skeleton variant="text" sx={{ fontSize: '1.2rem' }} width="80%" />
-        </Box>
-        <Skeleton variant="text" sx={{ fontSize: '0.9rem' }} width="50%" />
+        <Skeleton variant="rectangular" width="100%" height={40} sx={{ borderRadius: 2 }}/>
+        <Skeleton variant="text" sx={{ fontSize: '1.2rem', mt: 2, mb: 1 }} width="80%" />
+        <Skeleton variant="text" width="50%" />
       </CardContent>
     </Card>
   </Grid>
 );
 
 const ListSkeleton = () => (
-  <ListItem sx={{ p: 2, borderBottom: '1px solid #f1f3f4' }}>
-    <ListItemIcon>
-       <Skeleton variant="circular" width={24} height={24} />
-    </ListItemIcon>
-    <ListItemText
-      primary={<Skeleton variant="text" width="40%" />}
-      secondary={<Skeleton variant="text" width="20%" />}
-    />
-  </ListItem>
+  <Box sx={{ display: 'flex', alignItems: 'center', p: 2, borderBottom: '1px solid #f1f3f4' }}>
+    <Skeleton variant="circular" width={24} height={24} sx={{ mr: 2 }} />
+    <Box sx={{ flexGrow: 1 }}>
+      <Skeleton variant="text" width="40%" sx={{ fontSize: '1rem' }} />
+      <Skeleton variant="text" width="20%" />
+    </Box>
+  </Box>
 );
 
-
-// --- Funciones de ayuda (Tu lógica original sin cambios) ---
+// Funciones de ayuda (sin cambios)
 const extractFileInfo = (fileName: string, updatedDate?: string, originalDate?: string) => {
   const baseName = fileName.replace(/\.pdf$/i, "").replace(/_/g, " ");
   const effectiveDate = originalDate || updatedDate;
@@ -141,8 +151,8 @@ const extractFileInfo = (fileName: string, updatedDate?: string, originalDate?: 
 };
 
 const getFileIcon = (fileName: string) => {
-  if (fileName.toLowerCase().includes('.pdf')) return <PictureAsPdfIcon sx={{ color: '#db4437' }} />;
-  return <InsertDriveFileIcon color="action" />;
+  if (fileName.toLowerCase().includes('.pdf')) return <PictureAsPdfIcon />;
+  return <InsertDriveFileIcon />;
 };
 
 const getActivityIcon = (action: string) => {
@@ -162,61 +172,70 @@ const getActivityIcon = (action: string) => {
 };
 
 const getActivityDescription = (activity: ActivityLog) => {
-    // Lógica original...
-    switch (activity.action) {
-        case 'create': return `subió el archivo "${activity.fileName}"`;
-        case 'delete': return `eliminó el archivo "${activity.fileName}"`;
-        case 'move': return `movió "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
-        case 'review': return `marcó como revisado "${activity.fileName}"`;
-        case 'unreview': return `marcó como no revisado "${activity.fileName}"`;
-        case 'complete': return `marcó como realizado "${activity.fileName}"`;
-        case 'uncomplete': return `marcó como no realizado "${activity.fileName}"`;
-        case 'view': return `abrió el archivo "${activity.fileName}"`;
-        case 'download': return `descargó el archivo "${activity.fileName}"`;
-        case 'create_folder': return `creó la carpeta "${activity.folderName}"`;
-        default: return `realizó una acción en "${activity.fileName || activity.folderName}"`;
-    }
+  switch (activity.action) {
+    case 'create':
+      return `subió el archivo "${activity.fileName}"`;
+    case 'delete':
+      return `eliminó el archivo "${activity.fileName}"`;
+    case 'move':
+      return `movió "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
+    case 'review':
+      return `marcó como revisado "${activity.fileName}"`;
+    case 'unreview':
+      return `marcó como no revisado "${activity.fileName}"`;
+    case 'complete':
+      return `marcó como realizado "${activity.fileName}"`;
+    case 'uncomplete':
+      return `marcó como no realizado "${activity.fileName}"`;
+    case 'view':
+      return `abrió el archivo "${activity.fileName}"`;
+    case 'download':
+      return `descargó el archivo "${activity.fileName}"`;
+    case 'create_folder':
+      return `creó la carpeta "${activity.folderName}"`;
+    default:
+      return `realizó una acción en "${activity.fileName || activity.folderName}"`;
+  }
 };
 
 const getFileParentPath = (filePath: string): string[] => {
-    // Lógica original...
-    const pathParts = filePath.replace('worksheets/', '').split('/');
-    pathParts.pop(); 
-    return pathParts.filter(part => part && part !== '.keep');
+  const pathParts = filePath.replace('worksheets/', '').split('/');
+  pathParts.pop(); 
+  return pathParts.filter(part => part && part !== '.keep');
 };
 
 const getCurrentUserData = async (email: string): Promise<UserData | null> => {
-    // Lógica original...
-    if (!email) return null;
-    try {
-        const usuariosQuery = query(collection(db, 'usuarios'), where('correo', '==', email), limit(1));
-        const querySnapshot = await getDocs(usuariosQuery);
-        if (!querySnapshot.empty) {
-            return querySnapshot.docs[0].data() as UserData;
-        }
-        return null;
-    } catch (error) {
-        console.error('Error obteniendo datos del usuario:', error);
-        return null;
+  if (!email) return null;
+  try {
+    const usuariosQuery = query(
+      collection(db, 'usuarios'),
+      where('correo', '==', email),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(usuariosQuery);
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data() as UserData;
     }
+    return null;
+  } catch (error) {
+    console.error('Error obteniendo datos del usuario:', error);
+    return null;
+  }
 };
 
 const isQualityUser = (userData: UserData | null): boolean => {
-    // Lógica original...
-    if (!userData) return false;
-    const puesto = userData.puesto?.toLowerCase();
-    return puesto === 'calidad' || puesto === 'quality';
+  if (!userData) return false;
+  const puesto = userData.puesto?.toLowerCase();
+  return puesto === 'calidad' || puesto === 'quality';
 };
 
 const isMetrologistUser = (userData: UserData | null): boolean => {
-    // Lógica original...
-    if (!userData) return false;
-    const puesto = userData.puesto?.toLowerCase();
-    return puesto === 'metrólogo' || puesto === 'metrologist' || puesto === 'metrologo';
+  if (!userData) return false;
+  const puesto = userData.puesto?.toLowerCase();
+  return puesto === 'metrólogo' || puesto === 'metrologist' || puesto === 'metrologo';
 };
 
 const getUserNameByEmail = async (email: string): Promise<string> => {
-    // Lógica original...
     if (!email) return 'Usuario desconocido';
     try {
         const usuariosQuery = query(collection(db, 'usuarios'), where('correo', '==', email), limit(1));
@@ -233,27 +252,24 @@ const getUserNameByEmail = async (email: string): Promise<string> => {
 };
 
 const getUserDisplayName = async (user: any): Promise<string> => {
-    // Lógica original...
-    if (!user) return 'Usuario desconocido';
-    if (user.displayName && user.displayName.trim()) return user.displayName.trim();
-    if (user.email) return await getUserNameByEmail(user.email);
-    return 'Usuario desconocido';
+  if (!user) return 'Usuario desconocido';
+  if (user.displayName && user.displayName.trim()) return user.displayName.trim();
+  if (user.email) return await getUserNameByEmail(user.email);
+  return 'Usuario desconocido';
 };
 
 const filterFoldersByPermissions = (folders: DriveFolder[], userIsQuality: boolean, userName: string): DriveFolder[] => {
-    // Lógica original...
-    if (userIsQuality) return folders;
-    const userNameLower = userName.toLowerCase();
-    return folders.filter(folder => {
-        const folderNameLower = folder.name.toLowerCase();
-        return folderNameLower.includes(userNameLower) || userNameLower.includes(folderNameLower) || folder.name === userName;
-    });
+  if (userIsQuality) return folders;
+  const userNameLower = userName.toLowerCase();
+  return folders.filter(folder => {
+    const folderNameLower = folder.name.toLowerCase();
+    return folderNameLower.includes(userNameLower) || userNameLower.includes(folderNameLower) || folder.name === userName;
+  });
 };
 
 const ROOT_PATH = "worksheets";
 
 export default function DriveScreen({ onBack }: { onBack?: () => void }) {
-  // --- ESTADOS (Tu lógica de estado original) ---
   const [user] = useAuthState(auth);
   const [tree, setTree] = useState<DriveFolder | null>(null);
   const [loading, setLoading] = useState(true);
@@ -271,10 +287,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveLoading, setMoveLoading] = useState(false);
   const [moveSuccess, setMoveSuccess] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
-  
-  // --- ESTADO MODIFICADO: Se elimina actionMenuAnchor y selectedFile, se reemplaza por contextMenu ---
-  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; file: DriveFile } | null>(null);
-
+  const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
+  const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
   const [activityPanelOpen, setActivityPanelOpen] = useState(false);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -291,11 +305,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
   const { goBack, navigateTo } = useNavigation();
   
-  // --- Tus funciones de lógica y efectos (sin cambios) ---
   const navigateToFileFolder = (file: DriveFile) => {
-    // ...
     const folderPath = getFileParentPath(file.fullPath);
     setSelectedPath(folderPath);
     setSearchQuery("");
@@ -303,7 +316,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
   
   useEffect(() => {
-    // ...
     const loadUserPermissions = async () => {
       if (!user?.email) {
         setAccessLoading(false);
@@ -327,7 +339,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, [user]);
 
   const logActivity = async (
-    // ...
     action: ActivityLog['action'],
     fileName?: string,
     folderName?: string,
@@ -358,7 +369,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const loadActivities = async () => {
-    // ...
     setActivityLoading(true);
     try {
       let q = query(
@@ -379,7 +389,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const loadFileMetadata = async (file: DriveFile): Promise<DriveFile> => {
-    // ...
     try {
       const metadataId = file.fullPath.replace(/\//g, '_');
       const metadataRef = doc(db, 'fileMetadata', metadataId);
@@ -429,7 +438,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   async function fetchFolder(pathArr: string[]): Promise<DriveFolder> {
-    // ...
     const fullPath = [ROOT_PATH, ...pathArr].join("/");
     const dirRef = ref(storage, fullPath);
     const res = await listAll(dirRef);
@@ -459,7 +467,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }
 
   async function reloadTree() {
-    // ...
     setLoading(true);
     setError(null);
     try {
@@ -473,21 +480,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }
 
   useEffect(() => {
-    // ...
     if (!accessLoading && currentUserData !== null) {
       reloadTree();
     }
   }, [accessLoading, currentUserData]);
 
   useEffect(() => {
-    // ...
     if (activityPanelOpen) {
       loadActivities();
     }
   }, [activityPanelOpen, showMyActivityOnly]);
 
   function getCurrentFolder(): DriveFolder | null {
-    // ...
     if (!tree) return null;
     let folder: DriveFolder = tree;
     for (const seg of selectedPath) {
@@ -499,13 +503,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }
 
   const handleOpenFile = async (file: DriveFile) => {
-    // ...
     await logActivity('view', file.name);
     window.open(file.url, '_blank', 'noopener,noreferrer');
   };
 
   const handleDownloadFile = async (file: DriveFile) => {
-    // ...
     const { displayName } = extractFileInfo(file.name);
     const link = document.createElement('a');
     link.href = file.url;
@@ -518,12 +520,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const getAllFiles = (folder: DriveFolder): DriveFile[] => {
-    // ...
     return folder.files.concat(...folder.folders.map(getAllFiles));
   };
   
   const handleMarkReviewed = async (file: DriveFile) => {
-    // ...
     if (!user) return;
     try {
       const metadataId = file.fullPath.replace(/\//g, '_');
@@ -549,7 +549,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleMarkCompleted = async (file: DriveFile) => {
-    // ...
     if (!user) return;
     try {
       const metadataId = file.fullPath.replace(/\//g, '_');
@@ -575,7 +574,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleFileSelection = (filePath: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    // ...
     event.stopPropagation();
     const newSelectedFiles = event.target.checked
       ? [...selectedFiles, filePath]
@@ -586,7 +584,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleSelectAll = () => {
-    // ...
     if (selectedFiles.length === filteredFiles.length) {
       setSelectedFiles([]);
       setSelectionMode(false);
@@ -597,7 +594,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleBulkDelete = async () => {
-    // ...
     if (!userIsQuality || selectedFiles.length === 0) return;
     setLoading(true);
     try {
@@ -618,7 +614,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
   
   const handleBulkMarkReviewed = async () => {
-    // ...
     if (!userIsQuality || !user || selectedFiles.length === 0) return;
     try {
       const userName = await getUserDisplayName(user);
@@ -643,8 +638,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
+  // --- NUEVA FUNCIÓN DE AYUDA REFACTORIZADA PARA MOVER ARCHIVOS ---
   const _moveFile = async (filePath: string, targetPathArr: string[]): Promise<void> => {
-    // ...
       if (!user) throw new Error("Usuario no autenticado");
 
       const fileName = filePath.split('/').pop()!;
@@ -692,8 +687,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       await deleteObject(fileRef);
   };
   
+  // --- FUNCIÓN DE MOVER INDIVIDUAL ACTUALIZADA ---
   async function handleMoveFile(targetPathArr: string[]) {
-    // ...
       if (!moveFile) return;
       const fileToMove = moveFile;
       const fromPath = getFileParentPath(fileToMove.fullPath).join('/') || 'root';
@@ -715,8 +710,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
   }
 
+  // --- FUNCIÓN DE MOVER MÚLTIPLE ACTUALIZADA ---
   const handleBulkMove = async (targetPathArr: string[]) => {
-    // ...
       if (!userIsQuality || selectedFiles.length === 0) return;
       const fromPath = selectedPath.join('/') || 'root';
       const toPath = targetPathArr.join('/') || 'root';
@@ -743,7 +738,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleDeleteFile = async () => {
-    // ...
     if (!deleteFile) return;
     setLoading(true);
     try {
@@ -761,7 +755,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   async function handleCreateFolder() {
-    // ...
     if (!newFolderName.trim()) return;
     setCreateFolderOpen(false);
     const pathArr = [...selectedPath, newFolderName.trim()];
@@ -772,7 +765,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     reloadTree();
   }
 
-  // --- Lógica de ordenado (sin cambios) ---
   const sortFiles = (files: DriveFile[]) => {
     return [...files].sort((a, b) => {
       let comparison = 0;
@@ -794,30 +786,20 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     });
   };
 
-  // --- NUEVO: Manejadores para el Menú Contextual ---
-  const handleContextMenu = (event: React.MouseEvent, file: DriveFile) => {
-    event.preventDefault();
+  const handleActionMenuOpen = (event: React.MouseEvent<HTMLElement>, file: DriveFile) => {
     event.stopPropagation();
-    setContextMenu(
-      contextMenu === null
-        ? {
-            mouseX: event.clientX + 2,
-            mouseY: event.clientY - 6,
-            file: file,
-          }
-        : null
-    );
-  };
-  
-  const handleCloseContextMenu = () => {
-    setContextMenu(null);
+    setActionMenuAnchor(event.currentTarget);
+    setSelectedFile(file);
   };
 
+  const handleActionMenuClose = () => {
+    setActionMenuAnchor(null);
+    setSelectedFile(null);
+  };
 
   const currentFolder = getCurrentFolder();
   
   const filteredFolders = useMemo(() => {
-    // Lógica de filtrado original...
     if (!currentFolder || (globalSearch && searchQuery)) return [];
     let folders = currentFolder.folders;
     if (selectedPath.length === 0 && currentUserData) {
@@ -831,7 +813,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, [currentFolder, searchQuery, globalSearch, sortOrder, currentUserData, userIsQuality, selectedPath]);
 
   const filteredFiles = useMemo(() => {
-    // Lógica de filtrado original...
     if (!tree) return [];
     let files = (globalSearch && searchQuery) ? getAllFiles(tree) : (currentFolder?.files || []);
     if (searchQuery) {
@@ -844,7 +825,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, [currentFolder, searchQuery, globalSearch, tree, sortBy, sortOrder]);
 
   const filteredActivities = useMemo(() => {
-    // Lógica de filtrado original...
     if (!activities) return [];
     if (selectedPath.length > 0 && activityTab === 1) {
       const currentPathStr = selectedPath.join('/');
@@ -852,8 +832,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     return activities;
   }, [activities, selectedPath, activityTab]);
-
-  // --- Renderizado principal (con mejoras visuales) ---
 
   if (accessLoading) {
     return (
@@ -882,7 +860,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     <Box sx={{ minHeight: '100vh', bgcolor: '#f8f9fa' }}>
       <Container maxWidth="xl" sx={{ py: 2 }}>
         <Paper sx={{ mb: 3, borderRadius: 3, border: '1px solid #dadce0' }}>
-          {/* Header y Barra de acciones (Tu lógica original) */}
+          {/* Header y Barra de acciones (sin cambios) */}
           <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f3f4' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <IconButton onClick={() => selectedPath.length ? setSelectedPath(selectedPath.slice(0, -1)) : (onBack ? onBack() : goBack())}>
@@ -957,7 +935,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           )}
         </Paper>
 
-        {/* === CAMBIO: Lógica de carga ahora muestra SKELETONS === */}
+        {/* --- CAMBIO: Lógica de carga modificada para mostrar Skeletons --- */}
         {loading ? (
           view === "grid" ? (
             <Grid container spacing={2}>
@@ -965,7 +943,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             </Grid>
           ) : (
             <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
-              <List sx={{ p:0 }}>{Array.from(new Array(5)).map((_, index) => <ListSkeleton key={index} />)}</List>
+              {Array.from(new Array(5)).map((_, index) => <ListSkeleton key={index} />)}
             </Paper>
           )
         ) : error ? (
@@ -982,47 +960,38 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
             {view === "grid" ? (
               <Grid container spacing={2}>
-                {/* --- Carpetas con Estilo Mejorado --- */}
+                {/* Carpetas y Archivos (renderizado sin cambios) */}
                 {filteredFolders.map((folder, idx) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={idx}>
-                    <Card onClick={() => setSelectedPath([...selectedPath, folder.name])} sx={{ cursor: "pointer", borderRadius: 3, '&:hover': { bgcolor: alpha(theme.palette.action.hover, 0.5), boxShadow: 2 } }}>
-                      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <FolderIcon color="primary" /> <Typography variant="subtitle1" noWrap>{folder.name}</Typography>
+                    <Card onClick={() => setSelectedPath([...selectedPath, folder.name])} sx={{ cursor: "pointer", borderRadius: 3, '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' } }}>
+                      <CardContent>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}><FolderIcon sx={{ color: '#1a73e8', mr: 1 }} /> <Typography variant="subtitle1">{folder.name}</Typography></Box>
+                          <Typography variant="body2" color="text.secondary">{folder.files.length} elementos</Typography>
                       </CardContent>
                     </Card>
                   </Grid>
                 ))}
-                {/* --- Archivos con Estilo Mejorado y Menú Contextual --- */}
                 {filteredFiles.map((file, idx) => {
-                  const { displayName } = extractFileInfo(file.name, file.updated, file.originalUpdated);
+                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
                   const isSelected = selectedFiles.includes(file.fullPath);
                   return (
                     <Grid item xs={12} sm={6} md={4} lg={3} key={idx}>
-                      <Card 
-                        onContextMenu={(e) => handleContextMenu(e, file)}
-                        sx={{ 
-                          cursor: 'pointer', 
-                          position: 'relative', 
-                          borderRadius: 3, 
-                          border: isSelected ? `2px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`, 
-                          '&:hover': { bgcolor: alpha(theme.palette.action.hover, 0.5), boxShadow: 2 } 
-                        }}
-                      >
-                        <CardContent onClick={() => handleOpenFile(file)}>
+                      <Card onClick={() => handleOpenFile(file)} sx={{ cursor: 'pointer', position: 'relative', borderRadius: 3, border: isSelected ? '2px solid #1a73e8' : '1px solid #dadce0', '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' } }}>
+                        <CardContent>
                           <Checkbox checked={isSelected} onChange={(e) => handleFileSelection(file.fullPath, e)} onClick={(e) => e.stopPropagation()} sx={{ position: 'absolute', top: 4, left: 4 }}/>
                           <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, pl: 4 }}>
                             {getFileIcon(file.name)}
-                            <Typography variant="subtitle2" noWrap sx={{ ml: 1.5, flexGrow: 1 }}>{displayName}</Typography>
+                            {file.reviewed && <CheckCircleIcon sx={{ ml: 1, color: 'success.main', fontSize: 16 }} />}
+                            {file.completed && <AssignmentTurnedInIcon sx={{ ml: 1, color: 'primary.main', fontSize: 16 }} />}
                           </Box>
-                          
+                          <Typography variant="subtitle2" noWrap>{displayName}</Typography>
+                          <Typography variant="body2" color="text.secondary">{displayDate}</Typography>
                           {globalSearch && searchQuery && file.folderPath && (
                             <Chip label={file.folderPath} onClick={(e) => { e.stopPropagation(); navigateToFileFolder(file); }} size="small" sx={{ mt: 1 }}/>
                           )}
-
-                          <Stack direction="row" spacing={1} mt={1} pl={4}>
-                            {file.reviewed && <Chip icon={<CheckCircleIcon/>} label={`Revisado: ${file.reviewedByName || ''}`} size="small" color="success" variant="outlined"/>}
-                            {file.completed && <Chip icon={<AssignmentTurnedInIcon/>} label={`Realizado: ${file.completedByName || ''}`} size="small" color="primary" variant="outlined"/>}
-                          </Stack>
+                          {file.reviewedByName && <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 1 }}>✓ {file.reviewedByName}</Typography>}
+                          {file.completedByName && <Typography variant="caption" color="primary" sx={{ display: 'block' }}>✓ Realizado por {file.completedByName}</Typography>}
+                          <IconButton onClick={(e) => handleActionMenuOpen(e, file)} sx={{ position: 'absolute', top: 8, right: 8 }} size="small"><MoreVertIcon /></IconButton>
                         </CardContent>
                       </Card>
                     </Grid>
@@ -1031,9 +1000,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </Grid>
             ) : (
               <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
+                {/* Carpetas y Archivos en lista (renderizado sin cambios) */}
                  {filteredFolders.map((folder, idx) => (
                   <ListItemButton key={idx} onClick={() => setSelectedPath([...selectedPath, folder.name])}>
-                    <ListItemIcon><FolderIcon color="primary" /></ListItemIcon>
+                    <ListItemIcon><FolderIcon sx={{ color: '#1a73e8' }} /></ListItemIcon>
                     <ListItemText primary={folder.name} secondary={`${folder.files.length} elementos`} />
                   </ListItemButton>
                 ))}
@@ -1041,44 +1011,49 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
                   const isSelected = selectedFiles.includes(file.fullPath);
                   return (
-                    <ListItemButton key={idx} onClick={() => handleOpenFile(file)} selected={isSelected} onContextMenu={(e) => handleContextMenu(e, file)}>
+                    <ListItemButton key={idx} onClick={() => handleOpenFile(file)} selected={isSelected}>
                         <ListItemIcon>
                             <Checkbox edge="start" checked={isSelected} onChange={(e) => handleFileSelection(file.fullPath, e)} onClick={(e) => e.stopPropagation()}/>
                             {getFileIcon(file.name)}
                         </ListItemIcon>
                         <ListItemText 
-                            primary={displayName}
+                            primary={
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    {displayName}
+                                    {file.reviewed && <CheckCircleIcon sx={{ ml: 1, color: 'success.main', fontSize: 16 }} />}
+                                    {file.completed && <AssignmentTurnedInIcon sx={{ ml: 1, color: 'primary.main', fontSize: 16 }} />}
+                                </Box>
+                            }
                             secondary={
                                 <>
                                     {displayDate}
                                     {globalSearch && searchQuery && file.folderPath && 
                                         <Button size="small" onClick={(e) => { e.stopPropagation(); navigateToFileFolder(file); }} sx={{ ml: 1 }}>Ir a carpeta</Button>
                                     }
+                                    {file.reviewedByName && <Typography variant="caption" color="success.main"> | Revisado por {file.reviewedByName}</Typography>}
+                                    {file.completedByName && <Typography variant="caption" color="primary"> | Realizado por {file.completedByName}</Typography>}
                                 </>
                             }
                         />
-                        <Stack direction="row" spacing={1.5} alignItems="center">
-                            {file.reviewed && <Tooltip title={`Revisado por ${file.reviewedByName}`}><CheckCircleIcon color="success" fontSize="small"/></Tooltip>}
-                            {file.completed && <Tooltip title={`Realizado por ${file.completedByName}`}><AssignmentTurnedInIcon color="primary" fontSize="small"/></Tooltip>}
-                        </Stack>
+                        <IconButton onClick={(e) => handleActionMenuOpen(e, file)} size="small"><MoreVertIcon /></IconButton>
                     </ListItemButton>
                   );
                 })}
               </Paper>
             )}
 
-            {filteredFolders.length === 0 && filteredFiles.length === 0 && (
+            {filteredFolders.length === 0 && filteredFiles.length === 0 && !searchQuery && (
               <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3 }}>
                 <FolderOpenIcon sx={{ fontSize: 64, color: '#dadce0', mb: 2 }} />
-                <Typography variant="h6">{!userIsQuality && selectedPath.length === 0 ? 'No tienes carpetas asignadas' : 'Esta carpeta está vacía'}</Typography>
-                <Typography color="text.secondary">{!userIsQuality && selectedPath.length === 0 ? 'Contacta al administrador.' : 'Puedes crear carpetas y subir archivos.'}</Typography>
+                <Typography variant="h6">{!userIsQuality ? 'No tienes carpetas asignadas' : 'Esta carpeta está vacía'}</Typography>
+                <Typography color="text.secondary">{!userIsQuality ? 'Contacta al administrador.' : 'Puedes crear carpetas y subir archivos.'}</Typography>
               </Paper>
             )}
           </>
         ) : null}
       </Container>
       
-      {/* --- Elementos flotantes y diálogos (Tu lógica original sin cambios) --- */}
+      {/* Elementos flotantes y diálogos (sin cambios) */}
       <Slide direction="up" in={selectionMode && selectedFiles.length > 0}>
         <Paper sx={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 2, p: 2, borderRadius: 3, boxShadow: 6, zIndex: 1000 }}>
           {userIsQuality && (
@@ -1093,8 +1068,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       </Slide>
 
       <Drawer anchor="right" open={activityPanelOpen} onClose={() => setActivityPanelOpen(false)} PaperProps={{ sx: { width: { xs: '100%', md: 420 } } }}>
-          {/* Lógica del panel de actividad sin cambios */}
-          <Box sx={{ p: 2 }}>
+        <Box sx={{ p: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">Actividad</Typography>
                 <IconButton onClick={() => setActivityPanelOpen(false)}><CloseIcon /></IconButton>
@@ -1115,39 +1089,26 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </Box>
       </Drawer>
 
-      {/* === CAMBIO: Botón FAB ahora es un SpeedDial === */}
       {userIsQuality && (
-        <SpeedDial
-            ariaLabel="Acciones rápidas"
-            sx={{ position: 'fixed', bottom: 24, right: 24 }}
-            icon={<SpeedDialIcon />}
-        >
-            <SpeedDialAction key="folder" icon={<CreateNewFolderIcon />} tooltipTitle="Crear Carpeta" onClick={() => setCreateFolderOpen(true)} />
-            <SpeedDialAction key="upload" icon={<FileUploadIcon />} tooltipTitle="Subir Archivo" onClick={() => alert("Funcionalidad de subida no implementada")} />
-        </SpeedDial>
+        <Fab onClick={() => setCreateFolderOpen(true)} color="primary" sx={{ position: 'fixed', bottom: 24, right: 24 }}>
+          <AddIcon />
+        </Fab>
       )}
 
-      {/* --- NUEVO: Menú contextual que reemplaza al menú de tres puntos --- */}
-      <Menu
-        open={contextMenu !== null}
-        onClose={handleCloseContextMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={contextMenu !== null ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
-      >
-        {contextMenu?.file && [
-          <MenuItem key="open" onClick={() => { handleOpenFile(contextMenu.file); handleCloseContextMenu(); }}><ListItemIcon><VisibilityIcon fontSize="small" /></ListItemIcon>Abrir</MenuItem>,
-          <MenuItem key="download" onClick={() => { handleDownloadFile(contextMenu.file); handleCloseContextMenu(); }}><ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>Descargar</MenuItem>,
-          globalSearch && searchQuery && <MenuItem key="goto" onClick={() => { navigateToFileFolder(contextMenu.file); handleCloseContextMenu(); }}><ListItemIcon><LaunchIcon fontSize="small" /></ListItemIcon>Ir a carpeta</MenuItem>,
-          userIsQuality && <Divider key="div1" />,
-          userIsQuality && <MenuItem key="move" onClick={() => { setMoveFile(contextMenu.file); handleCloseContextMenu(); }}><ListItemIcon><DriveFileMoveIcon fontSize="small" /></ListItemIcon>Mover</MenuItem>,
-          userIsQuality && <MenuItem key="review" onClick={() => { handleMarkReviewed(contextMenu.file); handleCloseContextMenu(); }}><ListItemIcon><CheckCircleIcon fontSize="small" color="success"/></ListItemIcon>{contextMenu.file.reviewed ? 'Marcar no revisado' : 'Marcar revisado'}</MenuItem>,
-          userIsMetrologist && <MenuItem key="complete" onClick={() => { handleMarkCompleted(contextMenu.file); handleCloseContextMenu(); }}><ListItemIcon><AssignmentTurnedInIcon fontSize="small" color="primary"/></ListItemIcon>{contextMenu.file.completed ? 'Marcar no realizado' : 'Marcar realizado'}</MenuItem>,
-          userIsQuality && <Divider key="div2" />,
-          userIsQuality && <MenuItem key="delete" onClick={() => { setDeleteFile(contextMenu.file); handleCloseContextMenu(); }} sx={{ color: 'error.main' }}><ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>Eliminar</MenuItem>
-        ]}
+      <Menu anchorEl={actionMenuAnchor} open={Boolean(actionMenuAnchor)} onClose={handleActionMenuClose}>
+        <MenuItem onClick={() => { if (selectedFile) handleOpenFile(selectedFile); handleActionMenuClose(); }}><ListItemIcon><VisibilityIcon /></ListItemIcon>Abrir</MenuItem>
+        <MenuItem onClick={() => { if (selectedFile) handleDownloadFile(selectedFile); handleActionMenuClose(); }}><ListItemIcon><DownloadIcon /></ListItemIcon>Descargar</MenuItem>
+        {selectedFile && globalSearch && searchQuery && (
+          <MenuItem onClick={() => { if (selectedFile) navigateToFileFolder(selectedFile); handleActionMenuClose(); }}><ListItemIcon><LaunchIcon /></ListItemIcon>Ir a carpeta</MenuItem>
+        )}
+        {userIsQuality && <Divider />}
+        {userIsQuality && <MenuItem onClick={() => { if (selectedFile) setMoveFile(selectedFile); handleActionMenuClose(); }}><ListItemIcon><DriveFileMoveIcon /></ListItemIcon>Mover</MenuItem>}
+        {userIsQuality && <MenuItem onClick={() => { if (selectedFile) handleMarkReviewed(selectedFile); handleActionMenuClose(); }}><ListItemIcon><CheckCircleIcon color="success"/></ListItemIcon>{selectedFile?.reviewed ? 'Marcar no revisado' : 'Marcar revisado'}</MenuItem>}
+        {userIsMetrologist && <MenuItem onClick={() => { if (selectedFile) handleMarkCompleted(selectedFile); handleActionMenuClose(); }}><ListItemIcon><AssignmentTurnedInIcon color="primary"/></ListItemIcon>{selectedFile?.completed ? 'Marcar no realizado' : 'Marcar realizado'}</MenuItem>}
+        {userIsQuality && <Divider />}
+        {userIsQuality && <MenuItem onClick={() => { if (selectedFile) setDeleteFile(selectedFile); handleActionMenuClose(); }} sx={{ color: 'error.main' }}><ListItemIcon><DeleteIcon color="error" /></ListItemIcon>Eliminar</MenuItem>}
       </Menu>
 
-      {/* --- Diálogos (Tu lógica original sin cambios) --- */}
       <Dialog open={createFolderOpen} onClose={() => setCreateFolderOpen(false)}><DialogTitle>Crear nueva carpeta</DialogTitle><DialogContent><TextField value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} label="Nombre de la carpeta" fullWidth autoFocus margin="normal" /></DialogContent><DialogActions><Button onClick={() => setCreateFolderOpen(false)}>Cancelar</Button><Button onClick={handleCreateFolder} variant="contained">Crear</Button></DialogActions></Dialog>
       <Dialog open={Boolean(deleteFile)} onClose={() => setDeleteFile(null)}><DialogTitle>Eliminar archivo</DialogTitle><DialogContent><Typography>¿Seguro que quieres eliminar "{deleteFile?.name}"? Esta acción no se puede deshacer.</Typography></DialogContent><DialogActions><Button onClick={() => setDeleteFile(null)}>Cancelar</Button><Button onClick={handleDeleteFile} color="error" variant="contained">Eliminar</Button></DialogActions></Dialog>
       <Dialog open={Boolean(moveFile)} onClose={() => !moveLoading && setMoveFile(null)} maxWidth="sm" fullWidth><DialogTitle>Mover "{moveFile?.name}"</DialogTitle><DialogContent>{moveError && <Alert severity="error">{moveError}</Alert>}<Typography sx={{ mb: 2 }}>Selecciona la carpeta de destino:</Typography><FolderMoveTree tree={tree} onSelect={handleMoveFile} excludePath={selectedPath} disabled={moveLoading} />{moveLoading && <Box sx={{ textAlign: 'center', mt: 2 }}><CircularProgress /><Typography>Moviendo...</Typography></Box>}</DialogContent><DialogActions><Button onClick={() => setMoveFile(null)} disabled={moveLoading}>Cancelar</Button></DialogActions></Dialog>
@@ -1157,7 +1118,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   );
 }
 
-// Componente de árbol para mover archivos (Tu lógica original sin cambios)
 function FolderMoveTree({ tree, path = [], onSelect, excludePath = [], disabled = false }: { tree: DriveFolder | null; path?: string[]; onSelect: (path: string[]) => void; excludePath?: string[]; disabled?: boolean; }) {
   if (!tree) return null;
   const isRoot = tree.name === "Drive";
