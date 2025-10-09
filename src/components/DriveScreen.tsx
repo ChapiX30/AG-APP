@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
 import { doc, getDoc, updateDoc, deleteDoc, setDoc, collection, addDoc, query, orderBy, limit, where, getDocs } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
@@ -12,12 +12,18 @@ import {
   Alert, Snackbar, Select, FormControl, Badge, MenuItem, Fab, Menu,
   ListItemIcon, ListItemText, Divider, Avatar, Container, Drawer,
   List, ListItem, ListItemAvatar, ListItemButton, Collapse, Tab, Tabs,
-  Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent,
-  TimelineDot, TimelineOppositeContent, Switch, FormControlLabel, Checkbox,
-  Slide, BottomNavigation, BottomNavigationAction, Skeleton // <-- NUEVO: Importar Skeleton
+  Switch, FormControlLabel, Checkbox,
+  Slide, BottomNavigation, BottomNavigationAction, Skeleton, LinearProgress
 } from "@mui/material";
 
-// Iconos (sin cambios)
+import Timeline from '@mui/lab/Timeline';
+import TimelineItem from '@mui/lab/TimelineItem';
+import TimelineSeparator from '@mui/lab/TimelineSeparator';
+import TimelineConnector from '@mui/lab/TimelineConnector';
+import TimelineContent from '@mui/lab/TimelineContent';
+import TimelineDot from '@mui/lab/TimelineDot';
+import TimelineOppositeContent from '@mui/lab/TimelineOppositeContent';
+
 import FolderIcon from '@mui/icons-material/Folder';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -61,8 +67,12 @@ import SecurityIcon from '@mui/icons-material/Security';
 import LockIcon from '@mui/icons-material/Lock';
 import LaunchIcon from '@mui/icons-material/Launch';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import FileCopyIcon from '@mui/icons-material/FileCopy';
+import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import StorageIcon from '@mui/icons-material/Storage';
 
-// Interfaces (sin cambios)
 interface DriveFile {
   name: string;
   url: string;
@@ -78,6 +88,9 @@ interface DriveFile {
   completedByName?: string;
   completedAt?: string;
   folderPath?: string;
+  starred?: boolean;
+  size?: number;
+  contentType?: string;
 }
 
 interface DriveFolder {
@@ -89,7 +102,7 @@ interface DriveFolder {
 
 interface ActivityLog {
   id: string;
-  action: 'create' | 'delete' | 'move' | 'review' | 'unreview' | 'complete' | 'uncomplete' | 'view' | 'download' | 'create_folder';
+  action: 'create' | 'delete' | 'move' | 'review' | 'unreview' | 'complete' | 'uncomplete' | 'view' | 'download' | 'create_folder' | 'star' | 'unstar' | 'rename' | 'duplicate';
   fileName?: string;
   folderName?: string;
   fromPath?: string;
@@ -108,30 +121,46 @@ interface UserData {
   [key: string]: any;
 }
 
-// --- Componentes Skeleton para la Carga ---
 const CardSkeleton = () => (
-  <Grid item xs={12} sm={6} md={4} lg={3}>
-    <Card sx={{ borderRadius: 3, border: '1px solid #dadce0' }}>
-      <CardContent>
-        <Skeleton variant="rectangular" width="100%" height={40} sx={{ borderRadius: 2 }}/>
-        <Skeleton variant="text" sx={{ fontSize: '1.2rem', mt: 2, mb: 1 }} width="80%" />
-        <Skeleton variant="text" width="50%" />
-      </CardContent>
-    </Card>
-  </Grid>
+  <Card sx={{ 
+    borderRadius: 2, 
+    border: '1px solid #e0e0e0',
+    boxShadow: 'none',
+    '&:hover': { boxShadow: 'none' }
+  }}>
+    <CardContent sx={{ p: 2.5 }}>
+      <Skeleton variant="circular" width={48} height={48} sx={{ mb: 2 }} />
+      <Skeleton variant="text" width="80%" height={24} sx={{ mb: 1 }} />
+      <Skeleton variant="text" width="60%" height={20} />
+    </CardContent>
+  </Card>
 );
 
 const ListSkeleton = () => (
-  <Box sx={{ display: 'flex', alignItems: 'center', p: 2, borderBottom: '1px solid #f1f3f4' }}>
-    <Skeleton variant="circular" width={24} height={24} sx={{ mr: 2 }} />
-    <Box sx={{ flexGrow: 1 }}>
-      <Skeleton variant="text" width="40%" sx={{ fontSize: '1rem' }} />
-      <Skeleton variant="text" width="20%" />
-    </Box>
-  </Box>
+  <ListItem sx={{ 
+    borderRadius: 2, 
+    mb: 0.5,
+    border: '1px solid transparent'
+  }}>
+    <ListItemAvatar>
+      <Skeleton variant="circular" width={40} height={40} />
+    </ListItemAvatar>
+    <ListItemText
+      primary={<Skeleton variant="text" width="40%" height={24} />}
+      secondary={<Skeleton variant="text" width="60%" height={20} />}
+    />
+    <Skeleton variant="rectangular" width={24} height={24} />
+  </ListItem>
 );
 
-// Funciones de ayuda (sin cambios)
+const formatFileSize = (bytes?: number): string => {
+  if (!bytes) return 'Desconocido';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(1) + ' GB';
+};
+
 const extractFileInfo = (fileName: string, updatedDate?: string, originalDate?: string) => {
   const baseName = fileName.replace(/\.pdf$/i, "").replace(/_/g, " ");
   const effectiveDate = originalDate || updatedDate;
@@ -151,22 +180,26 @@ const extractFileInfo = (fileName: string, updatedDate?: string, originalDate?: 
 };
 
 const getFileIcon = (fileName: string) => {
-  if (fileName.toLowerCase().includes('.pdf')) return <PictureAsPdfIcon />;
-  return <InsertDriveFileIcon />;
+  if (fileName.toLowerCase().includes('.pdf')) return <PictureAsPdfIcon color="error" />;
+  return <InsertDriveFileIcon color="primary" />;
 };
 
 const getActivityIcon = (action: string) => {
   switch (action) {
-    case 'create': return <FileUploadIcon />;
-    case 'delete': return <DeleteIcon />;
-    case 'move': return <DriveFileMoveIcon />;
-    case 'review': return <CheckCircleIcon />;
-    case 'unreview': return <CheckCircleIcon />;
-    case 'complete': return <AssignmentTurnedInIcon />;
-    case 'uncomplete': return <AssignmentTurnedInIcon />;
-    case 'view': return <VisibilityIcon />;
-    case 'download': return <DownloadIcon />;
-    case 'create_folder': return <CreateNewFolderIcon />;
+    case 'create': return <FileUploadIcon color="success" />;
+    case 'delete': return <DeleteIcon color="error" />;
+    case 'move': return <DriveFileMoveIcon color="info" />;
+    case 'review': return <CheckCircleIcon color="success" />;
+    case 'unreview': return <CheckCircleIcon color="disabled" />;
+    case 'complete': return <AssignmentTurnedInIcon color="primary" />;
+    case 'uncomplete': return <AssignmentTurnedInIcon color="disabled" />;
+    case 'view': return <VisibilityIcon color="action" />;
+    case 'download': return <DownloadIcon color="action" />;
+    case 'create_folder': return <CreateNewFolderIcon color="warning" />;
+    case 'star': return <StarIcon color="warning" />;
+    case 'unstar': return <StarBorderIcon color="action" />;
+    case 'rename': return <DriveFileRenameOutlineIcon color="info" />;
+    case 'duplicate': return <FileCopyIcon color="info" />;
     default: return <InfoIcon />;
   }
 };
@@ -193,6 +226,14 @@ const getActivityDescription = (activity: ActivityLog) => {
       return `descargó el archivo "${activity.fileName}"`;
     case 'create_folder':
       return `creó la carpeta "${activity.folderName}"`;
+    case 'star':
+      return `marcó como destacado "${activity.fileName}"`;
+    case 'unstar':
+      return `quitó de destacados "${activity.fileName}"`;
+    case 'rename':
+      return `renombró "${activity.details}"`;
+    case 'duplicate':
+      return `duplicó el archivo "${activity.fileName}"`;
     default:
       return `realizó una acción en "${activity.fileName || activity.folderName}"`;
   }
@@ -200,7 +241,7 @@ const getActivityDescription = (activity: ActivityLog) => {
 
 const getFileParentPath = (filePath: string): string[] => {
   const pathParts = filePath.replace('worksheets/', '').split('/');
-  pathParts.pop(); 
+  pathParts.pop();
   return pathParts.filter(part => part && part !== '.keep');
 };
 
@@ -236,19 +277,19 @@ const isMetrologistUser = (userData: UserData | null): boolean => {
 };
 
 const getUserNameByEmail = async (email: string): Promise<string> => {
-    if (!email) return 'Usuario desconocido';
-    try {
-        const usuariosQuery = query(collection(db, 'usuarios'), where('correo', '==', email), limit(1));
-        const querySnapshot = await getDocs(usuariosQuery);
-        if (!querySnapshot.empty) {
-            const userData = querySnapshot.docs[0].data();
-            return userData.name || userData.nombre || email.split('@')[0];
-        }
-        return email.split('@')[0];
-    } catch (error) {
-        console.error('Error buscando usuario por email:', error);
-        return email.split('@')[0];
+  if (!email) return 'Usuario desconocido';
+  try {
+    const usuariosQuery = query(collection(db, 'usuarios'), where('correo', '==', email), limit(1));
+    const querySnapshot = await getDocs(usuariosQuery);
+    if (!querySnapshot.empty) {
+      const userData = querySnapshot.docs[0].data();
+      return userData.name || userData.nombre || email.split('@')[0];
     }
+    return email.split('@')[0];
+  } catch (error) {
+    console.error('Error buscando usuario por email:', error);
+    return email.split('@')[0];
+  }
 };
 
 const getUserDisplayName = async (user: any): Promise<string> => {
@@ -287,7 +328,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveLoading, setMoveLoading] = useState(false);
   const [moveSuccess, setMoveSuccess] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
-  const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
+  const [actionMenuAnchor, setActionMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
   const [activityPanelOpen, setActivityPanelOpen] = useState(false);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
@@ -302,19 +343,34 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<DriveFile | DriveFolder | null>(null);
+  const [newName, setNewName] = useState("");
+  const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
+  const [fileInfoOpen, setFileInfoOpen] = useState(false);
+  const [fileInfoTarget, setFileInfoTarget] = useState<DriveFile | null>(null);
+  const [filterType, setFilterType] = useState<'all' | 'starred' | 'pdf'>('all');
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: DriveFile | null } | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
   const { goBack, navigateTo } = useNavigation();
-  
+
   const navigateToFileFolder = (file: DriveFile) => {
     const folderPath = getFileParentPath(file.fullPath);
     setSelectedPath(folderPath);
     setSearchQuery("");
     setGlobalSearch(false);
   };
-  
+
   useEffect(() => {
     const loadUserPermissions = async () => {
       if (!user?.email) {
@@ -377,7 +433,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         limit(50)
       );
       if (showMyActivityOnly && user) {
-        q = query(q, where('userEmail', '==', user.email));
+        q = query(collection(db, 'driveActivity'), where('userEmail', '==', user.email), orderBy('timestamp', 'desc'), limit(50));
       }
       const querySnapshot = await getDocs(q);
       const activitiesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
@@ -393,19 +449,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const metadataId = file.fullPath.replace(/\//g, '_');
       const metadataRef = doc(db, 'fileMetadata', metadataId);
       const metadataDoc = await getDoc(metadataRef);
-
       if (metadataDoc.exists()) {
         const metadata = metadataDoc.data();
         let reviewedByName = metadata.reviewedByName;
         let completedByName = metadata.completedByName;
-        
         if (metadata.reviewed && metadata.reviewedBy && !reviewedByName) {
           reviewedByName = await getUserNameByEmail(metadata.reviewedBy);
         }
         if (metadata.completed && metadata.completedBy && !completedByName) {
           completedByName = await getUserNameByEmail(metadata.completedBy);
         }
-
         const finalMetadata: DriveFile = {
           ...file,
           reviewed: metadata.reviewed || false,
@@ -418,8 +471,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           completedAt: metadata.completedAt,
           folderPath: getFileParentPath(file.fullPath).join('/'),
           originalUpdated: metadata.originalUpdated || file.updated,
+          starred: metadata.starred || false,
         };
-        
         if (!metadata.originalUpdated) {
           await updateDoc(metadataRef, { originalUpdated: file.updated }).catch(() => {});
         }
@@ -445,6 +498,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     const folders: DriveFolder[] = await Promise.all(
       res.prefixes.map(prefix => fetchFolder([...pathArr, prefix.name]))
     );
+    
     const files: DriveFile[] = await Promise.all(
       res.items.map(async itemRef => {
         const url = await getDownloadURL(itemRef);
@@ -454,10 +508,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           url,
           fullPath: itemRef.fullPath,
           updated: metadata.updated,
+          size: metadata.size,
+          contentType: metadata.contentType,
         };
         return await loadFileMetadata(file);
       })
     );
+
     return {
       name: pathArr[pathArr.length - 1] || "Drive",
       fullPath,
@@ -519,10 +576,25 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     await logActivity('download', file.name);
   };
 
+  const handleToggleStar = async (file: DriveFile) => {
+    if (!user) return;
+    try {
+      const metadataId = file.fullPath.replace(/\//g, '_');
+      const metadataRef = doc(db, 'fileMetadata', metadataId);
+      const newStarredState = !file.starred;
+      await setDoc(metadataRef, { starred: newStarredState }, { merge: true });
+      await logActivity(newStarredState ? 'star' : 'unstar', file.name);
+      reloadTree();
+    } catch (error) {
+      console.error("Error toggling star:", error);
+      setError("Error al marcar el archivo");
+    }
+  };
+
   const getAllFiles = (folder: DriveFolder): DriveFile[] => {
     return folder.files.concat(...folder.folders.map(getAllFiles));
   };
-  
+
   const handleMarkReviewed = async (file: DriveFile) => {
     if (!user) return;
     try {
@@ -530,17 +602,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const metadataRef = doc(db, 'fileMetadata', metadataId);
       const newReviewedState = !file.reviewed;
       const userName = await getUserDisplayName(user);
-      
       const updateData = {
-          reviewed: newReviewedState,
-          reviewedBy: newReviewedState ? user.email : null,
-          reviewedByName: newReviewedState ? userName : null,
-          reviewedAt: newReviewedState ? new Date().toISOString() : null
+        reviewed: newReviewedState,
+        reviewedBy: newReviewedState ? user.email : null,
+        reviewedByName: newReviewedState ? userName : null,
+        reviewedAt: newReviewedState ? new Date().toISOString() : null
       };
-
       await setDoc(metadataRef, updateData, { merge: true });
-
-      await logActivity( newReviewedState ? 'review' : 'unreview', file.name, undefined, undefined, undefined, `Estado cambiado por ${userName}`);
+      await logActivity(
+        newReviewedState ? 'review' : 'unreview',
+        file.name,
+        undefined,
+        undefined,
+        undefined,
+        `Estado cambiado por ${userName}`
+      );
       reloadTree();
     } catch (error) {
       console.error("Error updating review status:", error);
@@ -555,17 +631,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const metadataRef = doc(db, 'fileMetadata', metadataId);
       const newCompletedState = !file.completed;
       const userName = await getUserDisplayName(user);
-
       const updateData = {
-          completed: newCompletedState,
-          completedBy: newCompletedState ? user.email : null,
-          completedByName: newCompletedState ? userName : null,
-          completedAt: newCompletedState ? new Date().toISOString() : null
+        completed: newCompletedState,
+        completedBy: newCompletedState ? user.email : null,
+        completedByName: newCompletedState ? userName : null,
+        completedAt: newCompletedState ? new Date().toISOString() : null
       };
-
       await setDoc(metadataRef, updateData, { merge: true });
-
-      await logActivity( newCompletedState ? 'complete' : 'uncomplete', file.name, undefined, undefined, undefined, `Estado cambiado por ${userName}`);
+      await logActivity(
+        newCompletedState ? 'complete' : 'uncomplete',
+        file.name,
+        undefined,
+        undefined,
+        undefined,
+        `Estado cambiado por ${userName}`
+      );
       reloadTree();
     } catch (error) {
       console.error("Error updating completed status:", error);
@@ -612,7 +692,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     setLoading(false);
   };
-  
+
   const handleBulkMarkReviewed = async () => {
     if (!userIsQuality || !user || selectedFiles.length === 0) return;
     try {
@@ -621,11 +701,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const metadataId = filePath.replace(/\//g, '_');
         const metadataRef = doc(db, 'fileMetadata', metadataId);
         await setDoc(metadataRef, {
-            reviewed: true,
-            reviewedBy: user.email,
-            reviewedByName: userName,
-            reviewedAt: new Date().toISOString(),
-            filePath: filePath
+          reviewed: true,
+          reviewedBy: user.email,
+          reviewedByName: userName,
+          reviewedAt: new Date().toISOString(),
+          filePath: filePath
         }, { merge: true });
       }));
       await logActivity('review', `${selectedFiles.length} archivos`, undefined, undefined, undefined, 'Revisión múltiple');
@@ -638,103 +718,91 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
-  // --- NUEVA FUNCIÓN DE AYUDA REFACTORIZADA PARA MOVER ARCHIVOS ---
   const _moveFile = async (filePath: string, targetPathArr: string[]): Promise<void> => {
-      if (!user) throw new Error("Usuario no autenticado");
+    if (!user) throw new Error("Usuario no autenticado");
+    const fileName = filePath.split('/').pop()!;
+    const fileRef = ref(storage, filePath);
+    const url = await getDownloadURL(fileRef);
+    
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.responseType = 'blob';
+      xhr.timeout = 60000;
+      xhr.onload = () => resolve(xhr.response);
+      xhr.onerror = () => reject(new Error('Error de red al descargar el archivo.'));
+      xhr.open('GET', url);
+      xhr.send();
+    });
 
-      const fileName = filePath.split('/').pop()!;
-      const fileRef = ref(storage, filePath);
-      const url = await getDownloadURL(fileRef);
+    const newPath = [ROOT_PATH, ...targetPathArr, fileName].join("/");
+    const newRef = ref(storage, newPath);
+    await uploadBytes(newRef, blob);
 
-      const blob = await new Promise<Blob>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.responseType = 'blob';
-          xhr.timeout = 60000;
-          xhr.onload = () => resolve(xhr.response);
-          xhr.onerror = () => reject(new Error('Error de red al descargar el archivo.'));
-          xhr.open('GET', url);
-          xhr.send();
+    const oldMetadataId = filePath.replace(/\//g, '_');
+    const newMetadataId = newPath.replace(/\//g, '_');
+    const oldMetadataRef = doc(db, 'fileMetadata', oldMetadataId);
+    const oldMetadataDoc = await getDoc(oldMetadataRef);
+
+    if (oldMetadataDoc.exists()) {
+      const metadataToMove = oldMetadataDoc.data();
+      const userName = await getUserDisplayName(user);
+      if (!metadataToMove.originalUpdated) {
+        const originalFile = getAllFiles(tree!).find(f => f.fullPath === filePath);
+        if (originalFile) metadataToMove.originalUpdated = originalFile.updated;
+      }
+      await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+        ...metadataToMove,
+        filePath: newPath,
+        movedBy: user?.email,
+        movedByName: userName,
+        movedAt: new Date().toISOString()
       });
-
-      const newPath = [ROOT_PATH, ...targetPathArr, fileName].join("/");
-      const newRef = ref(storage, newPath);
-      await uploadBytes(newRef, blob);
-
-      const oldMetadataId = filePath.replace(/\//g, '_');
-      const newMetadataId = newPath.replace(/\//g, '_');
-      const oldMetadataRef = doc(db, 'fileMetadata', oldMetadataId);
-      const oldMetadataDoc = await getDoc(oldMetadataRef);
-
-      if (oldMetadataDoc.exists()) {
-          const metadataToMove = oldMetadataDoc.data();
-          const userName = await getUserDisplayName(user);
-          
-          if (!metadataToMove.originalUpdated) {
-              const originalFile = getAllFiles(tree!).find(f => f.fullPath === filePath);
-              if (originalFile) metadataToMove.originalUpdated = originalFile.updated;
-          }
-          
-          await setDoc(doc(db, 'fileMetadata', newMetadataId), {
-              ...metadataToMove,
-              filePath: newPath,
-              movedBy: user?.email,
-              movedByName: userName,
-              movedAt: new Date().toISOString()
-          });
-          await deleteDoc(oldMetadataRef);
-      }
-
-      await deleteObject(fileRef);
+      await deleteDoc(oldMetadataRef);
+    }
+    await deleteObject(fileRef);
   };
-  
-  // --- FUNCIÓN DE MOVER INDIVIDUAL ACTUALIZADA ---
-  async function handleMoveFile(targetPathArr: string[]) {
-      if (!moveFile) return;
-      const fileToMove = moveFile;
-      const fromPath = getFileParentPath(fileToMove.fullPath).join('/') || 'root';
-      const toPath = targetPathArr.join('/') || 'root';
-      
-      setMoveFile(null);
-      setMoveLoading(true);
 
-      try {
-          await _moveFile(fileToMove.fullPath, targetPathArr);
-          await logActivity('move', fileToMove.name, undefined, fromPath, toPath);
-          setMoveSuccess(true);
-          setTimeout(() => reloadTree(), 600);
-      } catch (e: any) {
-          console.error("Failed to move file:", e);
-          setMoveError("Error al mover el archivo: " + e.message);
-      } finally {
-          setMoveLoading(false);
-      }
+  async function handleMoveFile(targetPathArr: string[]) {
+    if (!moveFile) return;
+    const fileToMove = moveFile;
+    const fromPath = getFileParentPath(fileToMove.fullPath).join('/') || 'root';
+    const toPath = targetPathArr.join('/') || 'root';
+    setMoveFile(null);
+    setMoveLoading(true);
+    try {
+      await _moveFile(fileToMove.fullPath, targetPathArr);
+      await logActivity('move', fileToMove.name, undefined, fromPath, toPath);
+      setMoveSuccess(true);
+      setTimeout(() => reloadTree(), 600);
+    } catch (e: any) {
+      console.error("Failed to move file:", e);
+      setMoveError("Error al mover el archivo: " + e.message);
+    } finally {
+      setMoveLoading(false);
+    }
   }
 
-  // --- FUNCIÓN DE MOVER MÚLTIPLE ACTUALIZADA ---
   const handleBulkMove = async (targetPathArr: string[]) => {
-      if (!userIsQuality || selectedFiles.length === 0) return;
-      const fromPath = selectedPath.join('/') || 'root';
-      const toPath = targetPathArr.join('/') || 'root';
-      
-      setBulkMoveOpen(false);
-      setBulkMoveLoading(true);
-
-      try {
-          await Promise.all(
-              selectedFiles.map(filePath => _moveFile(filePath, targetPathArr))
-          );
-
-          await logActivity('move', `${selectedFiles.length} archivos`, undefined, fromPath, toPath, 'Movimiento múltiple');
-          setSelectedFiles([]);
-          setSelectionMode(false);
-          setMoveSuccess(true);
-          setTimeout(() => reloadTree(), 600);
-      } catch (error) {
-          console.error("Error moving files:", error);
-          setMoveError("Error al mover los archivos: " + (error as Error).message);
-      } finally {
-          setBulkMoveLoading(false);
-      }
+    if (!userIsQuality || selectedFiles.length === 0) return;
+    const fromPath = selectedPath.join('/') || 'root';
+    const toPath = targetPathArr.join('/') || 'root';
+    setBulkMoveOpen(false);
+    setBulkMoveLoading(true);
+    try {
+      await Promise.all(
+        selectedFiles.map(filePath => _moveFile(filePath, targetPathArr))
+      );
+      await logActivity('move', `${selectedFiles.length} archivos`, undefined, fromPath, toPath, 'Movimiento múltiple');
+      setSelectedFiles([]);
+      setSelectionMode(false);
+      setMoveSuccess(true);
+      setTimeout(() => reloadTree(), 600);
+    } catch (error) {
+      console.error("Error moving files:", error);
+      setMoveError("Error al mover los archivos: " + (error as Error).message);
+    } finally {
+      setBulkMoveLoading(false);
+    }
   };
 
   const handleDeleteFile = async () => {
@@ -764,6 +832,163 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setNewFolderName("");
     reloadTree();
   }
+
+  const handleFileUpload = async (files: File[]) => {
+    if (!userIsQuality || files.length === 0) return;
+    setUploadDialogOpen(false);
+    setLoading(true);
+    
+    try {
+      const uploadPromises = files.map(async (file, index) => {
+        const filePath = [ROOT_PATH, ...selectedPath, file.name].join("/");
+        const fileRef = ref(storage, filePath);
+        await uploadBytes(fileRef, file);
+        await logActivity('create', file.name);
+        setUploadProgress(((index + 1) / files.length) * 100);
+      });
+      
+      await Promise.all(uploadPromises);
+      setMoveSuccess(true);
+      setFilesToUpload([]);
+      setTimeout(() => {
+        setUploadProgress(0);
+        reloadTree();
+      }, 600);
+    } catch (error) {
+      console.error("Error uploading files:", error);
+      setError("Error al subir archivos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!userIsQuality) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === dropZoneRef.current) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    if (!userIsQuality) return;
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      await handleFileUpload(files);
+    }
+  };
+
+  const handleRename = async () => {
+    if (!renameTarget || !newName.trim() || !userIsQuality) return;
+    
+    try {
+      if ('url' in renameTarget) {
+        const file = renameTarget as DriveFile;
+        const oldPath = file.fullPath;
+        const pathParts = oldPath.split('/');
+        pathParts[pathParts.length - 1] = newName.trim() + (newName.includes('.') ? '' : '.pdf');
+        const newPath = pathParts.join('/');
+        
+        const oldRef = ref(storage, oldPath);
+        const url = await getDownloadURL(oldRef);
+        const response = await fetch(url);
+        const blob = await response.blob();
+        
+        const newRef = ref(storage, newPath);
+        await uploadBytes(newRef, blob);
+        
+        const oldMetadataId = oldPath.replace(/\//g, '_');
+        const newMetadataId = newPath.replace(/\//g, '_');
+        const oldMetadataRef = doc(db, 'fileMetadata', oldMetadataId);
+        const oldMetadataDoc = await getDoc(oldMetadataRef);
+        
+        if (oldMetadataDoc.exists()) {
+          await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+            ...oldMetadataDoc.data(),
+            filePath: newPath
+          });
+          await deleteDoc(oldMetadataRef);
+        }
+        
+        await deleteObject(oldRef);
+        await logActivity('rename', file.name, undefined, undefined, undefined, `"${file.name}" → "${newName}"`);
+      }
+      
+      setRenameDialogOpen(false);
+      setRenameTarget(null);
+      setNewName("");
+      setMoveSuccess(true);
+      setTimeout(() => reloadTree(), 600);
+    } catch (error) {
+      console.error("Error renaming:", error);
+      setError("Error al renombrar");
+    }
+  };
+
+  const handleDuplicateFile = async (file: DriveFile) => {
+    if (!userIsQuality) return;
+    
+    try {
+      setLoading(true);
+      const oldRef = ref(storage, file.fullPath);
+      const url = await getDownloadURL(oldRef);
+      const response = await fetch(url);
+      const blob = await response.blob();
+      
+      const { displayName } = extractFileInfo(file.name);
+      const newName = `${displayName} (copia).pdf`;
+      const pathParts = file.fullPath.split('/');
+      pathParts[pathParts.length - 1] = newName;
+      const newPath = pathParts.join('/');
+      
+      const newRef = ref(storage, newPath);
+      await uploadBytes(newRef, blob);
+      
+      await logActivity('duplicate', file.name);
+      setMoveSuccess(true);
+      setTimeout(() => reloadTree(), 600);
+    } catch (error) {
+      console.error("Error duplicating file:", error);
+      setError("Error al duplicar el archivo");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePreviewFile = (file: DriveFile) => {
+    setPreviewFile(file);
+  };
+
+  const handleShowFileInfo = (file: DriveFile) => {
+    setFileInfoTarget(file);
+    setFileInfoOpen(true);
+  };
+
+  const handleContextMenu = (event: React.MouseEvent, file: DriveFile) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      file
+    });
+  };
 
   const sortFiles = (files: DriveFile[]) => {
     return [...files].sort((a, b) => {
@@ -798,7 +1023,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const currentFolder = getCurrentFolder();
-  
+
   const filteredFolders = useMemo(() => {
     if (!currentFolder || (globalSearch && searchQuery)) return [];
     let folders = currentFolder.folders;
@@ -815,41 +1040,62 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const filteredFiles = useMemo(() => {
     if (!tree) return [];
     let files = (globalSearch && searchQuery) ? getAllFiles(tree) : (currentFolder?.files || []);
+    
     if (searchQuery) {
-      files = files.filter(f => 
-        f.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      files = files.filter(f =>
+        f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         f.fullPath.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
+    
+    if (filterType === 'starred') {
+      files = files.filter(f => f.starred);
+    } else if (filterType === 'pdf') {
+      files = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    }
+    
     return sortFiles(files);
-  }, [currentFolder, searchQuery, globalSearch, tree, sortBy, sortOrder]);
+  }, [currentFolder, searchQuery, globalSearch, tree, sortBy, sortOrder, filterType]);
 
   const filteredActivities = useMemo(() => {
     if (!activities) return [];
     if (selectedPath.length > 0 && activityTab === 1) {
       const currentPathStr = selectedPath.join('/');
-      return activities.filter(activity => activity.path === currentPathStr || activity.fromPath === currentPathStr || activity.toPath === currentPathStr);
+      return activities.filter(activity =>
+        activity.path === currentPathStr ||
+        activity.fromPath === currentPathStr ||
+        activity.toPath === currentPathStr
+      );
     }
     return activities;
   }, [activities, selectedPath, activityTab]);
 
   if (accessLoading) {
     return (
-      <Container maxWidth="sm" sx={{ mt: 8, textAlign: 'center' }}>
-        <CircularProgress size={60} />
-        <Typography variant="h6" sx={{ mt: 2 }}>Verificando permisos de acceso...</Typography>
+      <Container maxWidth="lg" sx={{ py: 4, textAlign: 'center' }}>
+        <CircularProgress size={48} sx={{ mb: 2 }} />
+        <Typography variant="h6" color="text.secondary">
+          Verificando permisos de acceso...
+        </Typography>
       </Container>
     );
   }
 
   if (!currentUserData) {
     return (
-      <Container maxWidth="sm" sx={{ mt: 8, textAlign: 'center' }}>
-        <Alert severity="error" sx={{ mb: 3 }}>
-          <Typography variant="h6">Acceso Denegado</Typography>
-          <Typography>No tienes permisos para acceder. Contacta al administrador.</Typography>
-        </Alert>
-        <Button variant="contained" onClick={() => onBack ? onBack() : navigateTo("menu")} startIcon={<ArrowBackIcon />}>
+      <Container maxWidth="sm" sx={{ py: 8, textAlign: 'center' }}>
+        <LockIcon sx={{ fontSize: 80, color: 'error.main', mb: 2 }} />
+        <Typography variant="h4" gutterBottom fontWeight={600}>
+          Acceso Denegado
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+          No tienes permisos para acceder. Contacta al administrador.
+        </Typography>
+        <Button
+          variant="contained"
+          onClick={() => onBack ? onBack() : navigateTo("menu")}
+          startIcon={<ArrowBackIcon />}
+        >
           Volver
         </Button>
       </Container>
@@ -857,268 +1103,1175 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f8f9fa' }}>
-      <Container maxWidth="xl" sx={{ py: 2 }}>
-        <Paper sx={{ mb: 3, borderRadius: 3, border: '1px solid #dadce0' }}>
-          {/* Header y Barra de acciones (sin cambios) */}
-          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f3f4' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <IconButton onClick={() => selectedPath.length ? setSelectedPath(selectedPath.slice(0, -1)) : (onBack ? onBack() : goBack())}>
-                    <ArrowBackIcon />
-                </IconButton>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CloudIcon sx={{ color: '#1a73e8', fontSize: 28 }} />
-                    <Typography variant="h6" sx={{ color: '#202124', fontWeight: 500 }}>Drive Interno</Typography>
-                    {userIsQuality && <Chip icon={<SecurityIcon />} label="Calidad" size="small" color="success" variant="outlined" />}
-                    {userIsMetrologist && <Chip icon={<WorkIcon />} label="Metrólogo" size="small" color="primary" variant="outlined" />}
-                </Box>
+    <Box 
+      sx={{ minHeight: '100vh', bgcolor: '#f8f9fa' }}
+      ref={dropZoneRef}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && userIsQuality && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            bgcolor: alpha('#1a73e8', 0.1),
+            border: '4px dashed #1a73e8',
+            zIndex: 9998,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          <Paper sx={{ p: 4, textAlign: 'center' }}>
+            <CloudUploadIcon sx={{ fontSize: 80, color: '#1a73e8', mb: 2 }} />
+            <Typography variant="h5" fontWeight={600}>
+              Suelta los archivos aquí
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Se subirán a la carpeta actual
+            </Typography>
+          </Paper>
+        </Box>
+      )}
+
+      {(loading || uploadProgress > 0) && (
+        <LinearProgress 
+          variant={uploadProgress > 0 ? "determinate" : "indeterminate"} 
+          value={uploadProgress}
+          sx={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            zIndex: 9999,
+            height: 3
+          }} 
+        />
+      )}
+
+      <Paper 
+        elevation={0} 
+        sx={{ 
+          borderBottom: '1px solid #e0e0e0',
+          bgcolor: 'white',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1100
+        }}
+      >
+        <Container maxWidth="xl">
+          <Stack 
+            direction="row" 
+            alignItems="center" 
+            spacing={2} 
+            sx={{ py: 2 }}
+          >
+            <IconButton 
+              onClick={() => selectedPath.length ? setSelectedPath(selectedPath.slice(0, -1)) : (onBack ? onBack() : goBack())}
+              sx={{ 
+                '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
+              }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            
+            <CloudIcon sx={{ fontSize: 40, color: '#1a73e8' }} />
+            
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="h5" fontWeight={600} color="text.primary">
+                Drive Interno
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                {userIsQuality && (
+                  <Chip 
+                    icon={<SecurityIcon />} 
+                    label="Calidad" 
+                    size="small" 
+                    color="success" 
+                    variant="outlined"
+                  />
+                )}
+                {userIsMetrologist && (
+                  <Chip 
+                    icon={<WorkIcon />} 
+                    label="Metrólogo" 
+                    size="small" 
+                    color="primary" 
+                    variant="outlined"
+                  />
+                )}
+              </Stack>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <IconButton onClick={() => setActivityPanelOpen(true)}><HistoryIcon /></IconButton>
-                <ToggleButtonGroup value={view} exclusive onChange={(e, v) => v && setView(v)} size="small">
-                    <ToggleButton value="grid"><ViewModuleIcon /></ToggleButton>
-                    <ToggleButton value="list"><ViewListIcon /></ToggleButton>
-                </ToggleButtonGroup>
-            </Box>
-          </Box>
-          
-          <Box sx={{ px: 2, py: 1 }}>
-            <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />}>
-              <Link component="button" onClick={() => setSelectedPath([])}>Mi unidad</Link>
+
+            {userIsQuality && (
+              <Tooltip title="Subir archivos">
+                <Button
+                  variant="contained"
+                  startIcon={<CloudUploadIcon />}
+                  onClick={() => fileInputRef.current?.click()}
+                  sx={{ 
+                    borderRadius: 3,
+                    textTransform: 'none',
+                    bgcolor: '#1a73e8',
+                    '&:hover': { bgcolor: '#1557b0' }
+                  }}
+                >
+                  Subir
+                </Button>
+              </Tooltip>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length > 0) {
+                  handleFileUpload(files);
+                }
+                e.target.value = '';
+              }}
+            />
+
+            <Tooltip title="Actualizar">
+              <IconButton 
+                onClick={reloadTree}
+                disabled={loading}
+                sx={{ 
+                  '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
+                }}
+              >
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Actividad">
+              <IconButton 
+                onClick={() => setActivityPanelOpen(true)}
+                sx={{ 
+                  '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
+                }}
+              >
+                <HistoryIcon />
+              </IconButton>
+            </Tooltip>
+
+            <ToggleButtonGroup
+              value={view}
+              exclusive
+              onChange={(e, v) => v && setView(v)}
+              size="small"
+              sx={{ 
+                '& .MuiToggleButton-root': {
+                  border: 'none',
+                  '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
+                }
+              }}
+            >
+              <ToggleButton value="grid">
+                <GridViewIcon />
+              </ToggleButton>
+              <ToggleButton value="list">
+                <ViewListIcon />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+
+          <Stack spacing={2} sx={{ pb: 2 }}>
+            <Breadcrumbs 
+              separator={<NavigateNextIcon fontSize="small" />}
+              sx={{ 
+                '& .MuiBreadcrumbs-li': { 
+                  fontSize: '0.9rem' 
+                }
+              }}
+            >
+              <Link 
+                underline="hover" 
+                color="inherit" 
+                onClick={() => setSelectedPath([])}
+                sx={{ 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  '&:hover': { color: 'primary.main' }
+                }}
+              >
+                <CloudIcon sx={{ mr: 0.5, fontSize: 20 }} />
+                Mi unidad
+              </Link>
               {selectedPath.map((seg, idx) => (
-                <Link key={idx} component="button" onClick={() => setSelectedPath(selectedPath.slice(0, idx + 1))}>
+                <Link
+                  key={idx}
+                  underline="hover"
+                  color={idx === selectedPath.length - 1 ? "text.primary" : "inherit"}
+                  onClick={() => setSelectedPath(selectedPath.slice(0, idx + 1))}
+                  sx={{ 
+                    cursor: 'pointer',
+                    fontWeight: idx === selectedPath.length - 1 ? 600 : 400,
+                    '&:hover': { color: 'primary.main' }
+                  }}
+                >
                   {seg}
                 </Link>
               ))}
             </Breadcrumbs>
-          </Box>
 
-          <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            <TextField
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={globalSearch ? "Buscar en todo el Drive" : "Buscar en esta carpeta"}
-              fullWidth
-              size="small"
-              InputProps={{
-                startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>,
-                sx: { bgcolor: '#f1f3f4', borderRadius: 3, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }
-              }}
-            />
-            <Tooltip title={globalSearch ? "Buscar solo en carpeta actual" : "Buscar en todo el drive"}>
-                <IconButton onClick={() => setGlobalSearch(!globalSearch)} color={globalSearch ? "primary" : "default"}><SearchIcon /></IconButton>
-            </Tooltip>
-            <Select
-              value={`${sortBy}-${sortOrder}`}
-              onChange={(e) => {
-                const [newSortBy, newSortOrder] = e.target.value.split('-') as [typeof sortBy, typeof sortOrder];
-                setSortBy(newSortBy);
-                setSortOrder(newSortOrder);
-              }}
-              size="small"
-              sx={{ bgcolor: 'transparent', '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-            >
-              <MenuItem value="name-asc">Nombre A-Z</MenuItem>
-              <MenuItem value="name-desc">Nombre Z-A</MenuItem>
-              <MenuItem value="date-desc">Más reciente</MenuItem>
-              <MenuItem value="date-asc">Más antiguo</MenuItem>
-            </Select>
-          </Box>
-
-          {filteredFiles.length > 0 && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <FormControlLabel
-                control={<Checkbox checked={selectedFiles.length === filteredFiles.length && filteredFiles.length > 0} indeterminate={selectedFiles.length > 0 && selectedFiles.length < filteredFiles.length} onChange={handleSelectAll} />}
-                label={`Seleccionar todo (${selectedFiles.length} seleccionados)`}
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+              <TextField
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={globalSearch ? "Buscar en todo el Drive" : "Buscar en esta carpeta"}
+                fullWidth
+                size="small"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                  sx: { 
+                    bgcolor: '#f1f3f4', 
+                    borderRadius: 5,
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    '&:hover': { bgcolor: '#e8eaed' },
+                    '&.Mui-focused': { bgcolor: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
+                  }
+                }}
               />
-            </Box>
-          )}
-        </Paper>
 
-        {/* --- CAMBIO: Lógica de carga modificada para mostrar Skeletons --- */}
+              <Tooltip title={globalSearch ? "Búsqueda global activada" : "Buscar en esta carpeta"}>
+                <IconButton 
+                  onClick={() => setGlobalSearch(!globalSearch)} 
+                  color={globalSearch ? "primary" : "default"}
+                  sx={{ 
+                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
+                  }}
+                >
+                  {globalSearch ? <SearchIcon /> : <SearchOffIcon />}
+                </IconButton>
+              </Tooltip>
+
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <Select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as typeof filterType)}
+                  startAdornment={<FilterListIcon sx={{ mr: 1, color: 'text.secondary' }} />}
+                  sx={{ 
+                    bgcolor: 'transparent',
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) }
+                  }}
+                >
+                  <MenuItem value="all">Todos</MenuItem>
+                  <MenuItem value="starred">Destacados</MenuItem>
+                  <MenuItem value="pdf">Solo PDF</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <Select
+                  value={`${sortBy}-${sortOrder}`}
+                  onChange={(e) => {
+                    const [newSortBy, newSortOrder] = e.target.value.split('-') as [typeof sortBy, typeof sortOrder];
+                    setSortBy(newSortBy);
+                    setSortOrder(newSortOrder);
+                  }}
+                  startAdornment={<SortIcon sx={{ mr: 1, color: 'text.secondary' }} />}
+                  sx={{ 
+                    bgcolor: 'transparent',
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) }
+                  }}
+                >
+                  <MenuItem value="name-asc">Nombre A-Z</MenuItem>
+                  <MenuItem value="name-desc">Nombre Z-A</MenuItem>
+                  <MenuItem value="date-desc">Más reciente</MenuItem>
+                  <MenuItem value="date-asc">Más antiguo</MenuItem>
+                </Select>
+              </FormControl>
+
+              {filteredFiles.length > 0 && userIsQuality && (
+                <FormControlLabel
+                  control={
+                    <Checkbox 
+                      checked={selectedFiles.length === filteredFiles.length && filteredFiles.length > 0}
+                      indeterminate={selectedFiles.length > 0 && selectedFiles.length < filteredFiles.length}
+                      onChange={handleSelectAll}
+                    />
+                  }
+                  label={`Seleccionar (${selectedFiles.length})`}
+                />
+              )}
+            </Stack>
+          </Stack>
+        </Container>
+      </Paper>
+
+      <Container maxWidth="xl" sx={{ py: 3 }}>
         {loading ? (
           view === "grid" ? (
             <Grid container spacing={2}>
-              {Array.from(new Array(8)).map((_, index) => <CardSkeleton key={index} />)}
+              {Array.from(new Array(12)).map((_, index) => (
+                <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={index}>
+                  <CardSkeleton />
+                </Grid>
+              ))}
             </Grid>
           ) : (
-            <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
-              {Array.from(new Array(5)).map((_, index) => <ListSkeleton key={index} />)}
+            <Paper elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
+              <List>
+                {Array.from(new Array(8)).map((_, index) => (
+                  <ListSkeleton key={index} />
+                ))}
+              </List>
             </Paper>
           )
         ) : error ? (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {error} <Button onClick={reloadTree} sx={{ ml: 1 }}>Reintentar</Button>
+          <Alert 
+            severity="error" 
+            action={
+              <Button color="inherit" size="small" onClick={reloadTree}>
+                Reintentar
+              </Button>
+            }
+          >
+            {error}
           </Alert>
         ) : currentFolder ? (
           <>
             {globalSearch && searchQuery && (
               <Alert severity="info" sx={{ mb: 3 }}>
-                Mostrando {filteredFiles.length} resultados para "{searchQuery}" en todo el drive.
+                Mostrando {filteredFiles.length} resultados para "<strong>{searchQuery}</strong>" en todo el drive.
               </Alert>
             )}
 
             {view === "grid" ? (
               <Grid container spacing={2}>
-                {/* Carpetas y Archivos (renderizado sin cambios) */}
                 {filteredFolders.map((folder, idx) => (
-                  <Grid item xs={12} sm={6} md={4} lg={3} key={idx}>
-                    <Card onClick={() => setSelectedPath([...selectedPath, folder.name])} sx={{ cursor: "pointer", borderRadius: 3, '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' } }}>
-                      <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}><FolderIcon sx={{ color: '#1a73e8', mr: 1 }} /> <Typography variant="subtitle1">{folder.name}</Typography></Box>
-                          <Typography variant="body2" color="text.secondary">{folder.files.length} elementos</Typography>
+                  <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={idx}>
+                    <Card
+                      onClick={() => setSelectedPath([...selectedPath, folder.name])}
+                      sx={{
+                        cursor: "pointer",
+                        borderRadius: 2,
+                        border: '1px solid #e0e0e0',
+                        boxShadow: 'none',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                          transform: 'translateY(-2px)',
+                          borderColor: '#1a73e8'
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ p: 2.5 }}>
+                        <Stack direction="row" alignItems="center" spacing={1.5}>
+                          <FolderIcon sx={{ fontSize: 48, color: '#5f6368' }} />
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography 
+                              variant="body2" 
+                              fontWeight={500} 
+                              noWrap
+                              sx={{ color: 'text.primary' }}
+                            >
+                              {folder.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {folder.files.length} elementos
+                            </Typography>
+                          </Box>
+                        </Stack>
                       </CardContent>
                     </Card>
                   </Grid>
                 ))}
+
                 {filteredFiles.map((file, idx) => {
                   const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
                   const isSelected = selectedFiles.includes(file.fullPath);
                   return (
-                    <Grid item xs={12} sm={6} md={4} lg={3} key={idx}>
-                      <Card onClick={() => handleOpenFile(file)} sx={{ cursor: 'pointer', position: 'relative', borderRadius: 3, border: isSelected ? '2px solid #1a73e8' : '1px solid #dadce0', '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' } }}>
-                        <CardContent>
-                          <Checkbox checked={isSelected} onChange={(e) => handleFileSelection(file.fullPath, e)} onClick={(e) => e.stopPropagation()} sx={{ position: 'absolute', top: 4, left: 4 }}/>
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, pl: 4 }}>
-                            {getFileIcon(file.name)}
-                            {file.reviewed && <CheckCircleIcon sx={{ ml: 1, color: 'success.main', fontSize: 16 }} />}
-                            {file.completed && <AssignmentTurnedInIcon sx={{ ml: 1, color: 'primary.main', fontSize: 16 }} />}
-                          </Box>
-                          <Typography variant="subtitle2" noWrap>{displayName}</Typography>
-                          <Typography variant="body2" color="text.secondary">{displayDate}</Typography>
-                          {globalSearch && searchQuery && file.folderPath && (
-                            <Chip label={file.folderPath} onClick={(e) => { e.stopPropagation(); navigateToFileFolder(file); }} size="small" sx={{ mt: 1 }}/>
-                          )}
-                          {file.reviewedByName && <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 1 }}>✓ {file.reviewedByName}</Typography>}
-                          {file.completedByName && <Typography variant="caption" color="primary" sx={{ display: 'block' }}>✓ Realizado por {file.completedByName}</Typography>}
-                          <IconButton onClick={(e) => handleActionMenuOpen(e, file)} sx={{ position: 'absolute', top: 8, right: 8 }} size="small"><MoreVertIcon /></IconButton>
+                    <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={idx}>
+                      <Card
+                        onClick={() => handleOpenFile(file)}
+                        onContextMenu={(e) => handleContextMenu(e, file)}
+                        sx={{
+                          cursor: 'pointer',
+                          position: 'relative',
+                          borderRadius: 2,
+                          border: isSelected ? '2px solid #1a73e8' : '1px solid #e0e0e0',
+                          boxShadow: 'none',
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                            transform: 'translateY(-2px)',
+                            borderColor: '#1a73e8'
+                          }
+                        }}
+                      >
+                        {selectionMode && userIsQuality && (
+                          <Checkbox
+                            checked={isSelected}
+                            onChange={(e) => handleFileSelection(file.fullPath, e)}
+                            onClick={(e) => e.stopPropagation()}
+                            sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                          />
+                        )}
+                        
+                        <CardContent sx={{ p: 2.5 }}>
+                          <Stack spacing={1.5}>
+                            <Stack direction="row" alignItems="center" spacing={1.5}>
+                              {getFileIcon(file.name)}
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography 
+                                  variant="body2" 
+                                  fontWeight={500} 
+                                  noWrap
+                                  sx={{ color: 'text.primary' }}
+                                >
+                                  {displayName}
+                                </Typography>
+                              </Box>
+                              <Tooltip title={file.starred ? "Quitar de destacados" : "Destacar"}>
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleStar(file);
+                                  }}
+                                  sx={{ ml: 'auto' }}
+                                >
+                                  {file.starred ? <StarIcon color="warning" /> : <StarBorderIcon />}
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+
+                            <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                              {file.reviewed && (
+                                <Chip 
+                                  icon={<CheckCircleIcon />} 
+                                  label="Revisado" 
+                                  size="small" 
+                                  color="success" 
+                                  variant="outlined"
+                                />
+                              )}
+                              {file.completed && (
+                                <Chip 
+                                  icon={<AssignmentTurnedInIcon />} 
+                                  label="Realizado" 
+                                  size="small" 
+                                  color="primary" 
+                                  variant="outlined"
+                                />
+                              )}
+                            </Stack>
+
+                            <Typography variant="caption" color="text.secondary">
+                              {displayDate} • {formatFileSize(file.size)}
+                            </Typography>
+
+                            {globalSearch && searchQuery && file.folderPath && (
+                              <Button
+                                size="small"
+                                startIcon={<FolderOpenIcon />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigateToFileFolder(file);
+                                }}
+                                sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
+                              >
+                                Ir a carpeta
+                              </Button>
+                            )}
+
+                            {file.reviewedByName && (
+                              <Typography variant="caption" color="success.main">
+                                ✓ {file.reviewedByName}
+                              </Typography>
+                            )}
+                            {file.completedByName && (
+                              <Typography variant="caption" color="primary.main">
+                                ✓ Realizado por {file.completedByName}
+                              </Typography>
+                            )}
+                          </Stack>
                         </CardContent>
+
+                        <IconButton
+                          onClick={(e) => handleActionMenuOpen(e, file)}
+                          sx={{ position: 'absolute', top: 8, right: 8 }}
+                          size="small"
+                        >
+                          <MoreVertIcon />
+                        </IconButton>
                       </Card>
                     </Grid>
                   );
                 })}
               </Grid>
             ) : (
-              <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
-                {/* Carpetas y Archivos en lista (renderizado sin cambios) */}
-                 {filteredFolders.map((folder, idx) => (
-                  <ListItemButton key={idx} onClick={() => setSelectedPath([...selectedPath, folder.name])}>
-                    <ListItemIcon><FolderIcon sx={{ color: '#1a73e8' }} /></ListItemIcon>
-                    <ListItemText primary={folder.name} secondary={`${folder.files.length} elementos`} />
-                  </ListItemButton>
-                ))}
-                {filteredFiles.map((file, idx) => {
-                  const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
-                  const isSelected = selectedFiles.includes(file.fullPath);
-                  return (
-                    <ListItemButton key={idx} onClick={() => handleOpenFile(file)} selected={isSelected}>
-                        <ListItemIcon>
-                            <Checkbox edge="start" checked={isSelected} onChange={(e) => handleFileSelection(file.fullPath, e)} onClick={(e) => e.stopPropagation()}/>
-                            {getFileIcon(file.name)}
-                        </ListItemIcon>
-                        <ListItemText 
-                            primary={
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    {displayName}
-                                    {file.reviewed && <CheckCircleIcon sx={{ ml: 1, color: 'success.main', fontSize: 16 }} />}
-                                    {file.completed && <AssignmentTurnedInIcon sx={{ ml: 1, color: 'primary.main', fontSize: 16 }} />}
-                                </Box>
-                            }
-                            secondary={
-                                <>
-                                    {displayDate}
-                                    {globalSearch && searchQuery && file.folderPath && 
-                                        <Button size="small" onClick={(e) => { e.stopPropagation(); navigateToFileFolder(file); }} sx={{ ml: 1 }}>Ir a carpeta</Button>
-                                    }
-                                    {file.reviewedByName && <Typography variant="caption" color="success.main"> | Revisado por {file.reviewedByName}</Typography>}
-                                    {file.completedByName && <Typography variant="caption" color="primary"> | Realizado por {file.completedByName}</Typography>}
-                                </>
-                            }
-                        />
-                        <IconButton onClick={(e) => handleActionMenuOpen(e, file)} size="small"><MoreVertIcon /></IconButton>
+              <Paper elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
+                <List>
+                  {filteredFolders.map((folder, idx) => (
+                    <ListItemButton
+                      key={idx}
+                      onClick={() => setSelectedPath([...selectedPath, folder.name])}
+                      sx={{
+                        borderRadius: 1,
+                        mb: 0.5,
+                        '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) }
+                      }}
+                    >
+                      <ListItemAvatar>
+                        <FolderIcon sx={{ fontSize: 40, color: '#5f6368' }} />
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body2" fontWeight={500}>
+                            {folder.name}
+                          </Typography>
+                        }
+                        secondary={`${folder.files.length} elementos`}
+                      />
                     </ListItemButton>
-                  );
-                })}
+                  ))}
+
+                  {filteredFiles.map((file, idx) => {
+                    const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
+                    const isSelected = selectedFiles.includes(file.fullPath);
+                    return (
+                      <ListItemButton
+                        key={idx}
+                        onClick={() => handleOpenFile(file)}
+                        onContextMenu={(e) => handleContextMenu(e, file)}
+                        selected={isSelected}
+                        sx={{
+                          borderRadius: 1,
+                          mb: 0.5,
+                          '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) }
+                        }}
+                      >
+                        {selectionMode && userIsQuality && (
+                          <Checkbox
+                            checked={isSelected}
+                            onChange={(e) => handleFileSelection(file.fullPath, e)}
+                            onClick={(e) => e.stopPropagation()}
+                            sx={{ mr: 1 }}
+                          />
+                        )}
+                        <ListItemAvatar>
+                          {getFileIcon(file.name)}
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Typography variant="body2" fontWeight={500}>
+                                {displayName}
+                              </Typography>
+                              {file.reviewed && <CheckCircleIcon fontSize="small" color="success" />}
+                              {file.completed && <AssignmentTurnedInIcon fontSize="small" color="primary" />}
+                              {file.starred && <StarIcon fontSize="small" color="warning" />}
+                            </Stack>
+                          }
+                          secondary={
+                            <>
+                              {displayDate} • {formatFileSize(file.size)}
+                              {globalSearch && searchQuery && file.folderPath && (
+                                <Button
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigateToFileFolder(file);
+                                  }}
+                                  sx={{ ml: 1, textTransform: 'none' }}
+                                >
+                                  Ir a carpeta
+                                </Button>
+                              )}
+                              {file.reviewedByName && ` | Revisado por ${file.reviewedByName}`}
+                              {file.completedByName && ` | Realizado por ${file.completedByName}`}
+                            </>
+                          }
+                        />
+                        <IconButton
+                          onClick={(e) => handleActionMenuOpen(e, file)}
+                          size="small"
+                        >
+                          <MoreVertIcon />
+                        </IconButton>
+                      </ListItemButton>
+                    );
+                  })}
+                </List>
               </Paper>
             )}
 
             {filteredFolders.length === 0 && filteredFiles.length === 0 && !searchQuery && (
-              <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3 }}>
-                <FolderOpenIcon sx={{ fontSize: 64, color: '#dadce0', mb: 2 }} />
-                <Typography variant="h6">{!userIsQuality ? 'No tienes carpetas asignadas' : 'Esta carpeta está vacía'}</Typography>
-                <Typography color="text.secondary">{!userIsQuality ? 'Contacta al administrador.' : 'Puedes crear carpetas y subir archivos.'}</Typography>
-              </Paper>
+              <Box sx={{ textAlign: 'center', py: 8 }}>
+                <FolderOpenIcon sx={{ fontSize: 80, color: 'text.disabled', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary" gutterBottom>
+                  {!userIsQuality ? 'No tienes carpetas asignadas' : 'Esta carpeta está vacía'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {!userIsQuality ? 'Contacta al administrador.' : userIsQuality && 'Arrastra archivos aquí o usa el botón Subir.'}
+                </Typography>
+              </Box>
             )}
           </>
         ) : null}
       </Container>
-      
-      {/* Elementos flotantes y diálogos (sin cambios) */}
+
       <Slide direction="up" in={selectionMode && selectedFiles.length > 0}>
-        <Paper sx={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 2, p: 2, borderRadius: 3, boxShadow: 6, zIndex: 1000 }}>
-          {userIsQuality && (
-            <>
-              <Button startIcon={<DeleteIcon />} onClick={handleBulkDelete} color="error" variant="outlined" disabled={bulkMoveLoading}>Eliminar ({selectedFiles.length})</Button>
-              <Button startIcon={<CheckCircleIcon />} onClick={handleBulkMarkReviewed} color="success" variant="contained" disabled={bulkMoveLoading}>Marcar Revisado</Button>
-              <Button startIcon={<DriveFileMoveIcon />} onClick={() => setBulkMoveOpen(true)} variant="contained" disabled={bulkMoveLoading}>Mover</Button>
-            </>
-          )}
-          <Button startIcon={<CloseIcon />} onClick={() => { setSelectedFiles([]); setSelectionMode(false); }} variant="outlined" disabled={bulkMoveLoading}>Cancelar</Button>
+        <Paper
+          elevation={8}
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            p: 2,
+            zIndex: 1200,
+            borderRadius: 3,
+            minWidth: { xs: '90%', sm: 400 }
+          }}
+        >
+          <Stack direction="row" spacing={2} alignItems="center" justifyContent="center" flexWrap="wrap">
+            <Typography variant="body2" fontWeight={600}>
+              {selectedFiles.length} seleccionados
+            </Typography>
+            {userIsQuality && (
+              <>
+                <Button
+                  startIcon={<DeleteIcon />}
+                  onClick={handleBulkDelete}
+                  color="error"
+                  variant="outlined"
+                  disabled={bulkMoveLoading}
+                  size="small"
+                >
+                  Eliminar
+                </Button>
+                <Button
+                  startIcon={<CheckCircleIcon />}
+                  onClick={handleBulkMarkReviewed}
+                  color="success"
+                  variant="contained"
+                  disabled={bulkMoveLoading}
+                  size="small"
+                >
+                  Marcar Revisado
+                </Button>
+                <Button
+                  startIcon={<DriveFileMoveIcon />}
+                  onClick={() => setBulkMoveOpen(true)}
+                  variant="contained"
+                  disabled={bulkMoveLoading}
+                  size="small"
+                >
+                  Mover
+                </Button>
+              </>
+            )}
+            <Button
+              startIcon={<CloseIcon />}
+              onClick={() => {
+                setSelectedFiles([]);
+                setSelectionMode(false);
+              }}
+              variant="outlined"
+              disabled={bulkMoveLoading}
+              size="small"
+            >
+              Cancelar
+            </Button>
+          </Stack>
         </Paper>
       </Slide>
 
-      <Drawer anchor="right" open={activityPanelOpen} onClose={() => setActivityPanelOpen(false)} PaperProps={{ sx: { width: { xs: '100%', md: 420 } } }}>
-        <Box sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Actividad</Typography>
-                <IconButton onClick={() => setActivityPanelOpen(false)}><CloseIcon /></IconButton>
-            </Box>
-            <Tabs value={activityTab} onChange={(e, newValue) => setActivityTab(newValue)}><Tab label="General" /><Tab label="Esta carpeta" /></Tabs>
-            <FormControlLabel control={<Switch checked={showMyActivityOnly} onChange={(e) => setShowMyActivityOnly(e.target.checked)} />} label="Solo mi actividad" />
-            {activityLoading ? <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box> : (
-            <List>
-              {filteredActivities.map((activity, idx) => (
-                <ListItem key={idx}>
-                  <ListItemAvatar><Avatar>{getActivityIcon(activity.action)}</Avatar></ListItemAvatar>
-                  <ListItemText primary={`${activity.userName} ${getActivityDescription(activity)}`} secondary={new Date(activity.timestamp).toLocaleString('es-ES')} />
-                </ListItem>
+      <Drawer
+        anchor="right"
+        open={activityPanelOpen}
+        onClose={() => setActivityPanelOpen(false)}
+        PaperProps={{
+          sx:{
+            width: { xs: '100%', md: 420 },
+            bgcolor: '#f8f9fa'
+          }
+        }}
+      >
+        <Box sx={{ p: 3 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}>
+            <Typography variant="h6" fontWeight={600}>
+              Actividad
+            </Typography>
+            <IconButton onClick={() => setActivityPanelOpen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Stack>
+
+          <Tabs value={activityTab} onChange={(e, newValue) => setActivityTab(newValue)} sx={{ mb: 2 }}>
+            <Tab label="Todas" />
+            <Tab label="Carpeta actual" />
+          </Tabs>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showMyActivityOnly}
+                onChange={(e) => setShowMyActivityOnly(e.target.checked)}
+              />
+            }
+            label="Solo mi actividad"
+            sx={{ mb: 2 }}
+          />
+
+          {activityLoading ? (
+            <Stack spacing={2}>
+              {Array.from(new Array(5)).map((_, i) => (
+                <Box key={i}>
+                  <Skeleton variant="circular" width={40} height={40} />
+                  <Skeleton variant="text" width="80%" />
+                  <Skeleton variant="text" width="60%" />
+                </Box>
               ))}
-              {filteredActivities.length === 0 && <Typography align="center" color="text.secondary" sx={{ py: 4 }}>No hay actividad reciente.</Typography>}
-            </List>
+            </Stack>
+          ) : (
+            <Timeline>
+              {filteredActivities.map((activity, idx) => (
+                <TimelineItem key={activity.id}>
+                  <TimelineOppositeContent color="text.secondary" sx={{ flex: 0.2 }}>
+                    <Typography variant="caption">
+                      {new Date(activity.timestamp).toLocaleTimeString('es-ES', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </Typography>
+                  </TimelineOppositeContent>
+                  <TimelineSeparator>
+                    <TimelineDot color={activity.action === 'delete' ? 'error' : activity.action === 'create' ? 'success' : 'primary'}>
+                      {getActivityIcon(activity.action)}
+                    </TimelineDot>
+                    {idx < filteredActivities.length - 1 && <TimelineConnector />}
+                  </TimelineSeparator>
+                  <TimelineContent>
+                    <Typography variant="body2" fontWeight={500}>
+                      {activity.userName}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {getActivityDescription(activity)}
+                    </Typography>
+                  </TimelineContent>
+                </TimelineItem>
+              ))}
+              {filteredActivities.length === 0 && (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <HistoryIcon sx={{ fontSize: 60, color: 'text.disabled', mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    No hay actividad reciente.
+                  </Typography>
+                </Box>
+              )}
+            </Timeline>
           )}
         </Box>
       </Drawer>
 
       {userIsQuality && (
-        <Fab onClick={() => setCreateFolderOpen(true)} color="primary" sx={{ position: 'fixed', bottom: 24, right: 24 }}>
+        <Fab
+          color="primary"
+          onClick={() => setCreateFolderOpen(true)}
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}
+        >
           <AddIcon />
         </Fab>
       )}
 
-      <Menu anchorEl={actionMenuAnchor} open={Boolean(actionMenuAnchor)} onClose={handleActionMenuClose}>
-        <MenuItem onClick={() => { if (selectedFile) handleOpenFile(selectedFile); handleActionMenuClose(); }}><ListItemIcon><VisibilityIcon /></ListItemIcon>Abrir</MenuItem>
-        <MenuItem onClick={() => { if (selectedFile) handleDownloadFile(selectedFile); handleActionMenuClose(); }}><ListItemIcon><DownloadIcon /></ListItemIcon>Descargar</MenuItem>
+      <Menu
+        anchorEl={actionMenuAnchor}
+        open={Boolean(actionMenuAnchor)}
+        onClose={handleActionMenuClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{
+          sx: { minWidth: 200, borderRadius: 2, mt: 1 }
+        }}
+      >
+        <MenuItem onClick={() => { if (selectedFile) handleOpenFile(selectedFile); handleActionMenuClose(); }}>
+          <ListItemIcon><LaunchIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Abrir</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedFile) handlePreviewFile(selectedFile); handleActionMenuClose(); }}>
+          <ListItemIcon><VisibilityIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Vista previa</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedFile) handleDownloadFile(selectedFile); handleActionMenuClose(); }}>
+          <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Descargar</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedFile) handleShowFileInfo(selectedFile); handleActionMenuClose(); }}>
+          <ListItemIcon><InfoIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Información</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedFile) handleToggleStar(selectedFile); handleActionMenuClose(); }}>
+          <ListItemIcon>
+            {selectedFile?.starred ? <StarIcon fontSize="small" color="warning" /> : <StarBorderIcon fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText>{selectedFile?.starred ? 'Quitar de destacados' : 'Destacar'}</ListItemText>
+        </MenuItem>
         {selectedFile && globalSearch && searchQuery && (
-          <MenuItem onClick={() => { if (selectedFile) navigateToFileFolder(selectedFile); handleActionMenuClose(); }}><ListItemIcon><LaunchIcon /></ListItemIcon>Ir a carpeta</MenuItem>
+          <MenuItem onClick={() => { if (selectedFile) navigateToFileFolder(selectedFile); handleActionMenuClose(); }}>
+            <ListItemIcon><FolderOpenIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Ir a carpeta</ListItemText>
+          </MenuItem>
         )}
         {userIsQuality && <Divider />}
-        {userIsQuality && <MenuItem onClick={() => { if (selectedFile) setMoveFile(selectedFile); handleActionMenuClose(); }}><ListItemIcon><DriveFileMoveIcon /></ListItemIcon>Mover</MenuItem>}
-        {userIsQuality && <MenuItem onClick={() => { if (selectedFile) handleMarkReviewed(selectedFile); handleActionMenuClose(); }}><ListItemIcon><CheckCircleIcon color="success"/></ListItemIcon>{selectedFile?.reviewed ? 'Marcar no revisado' : 'Marcar revisado'}</MenuItem>}
-        {userIsMetrologist && <MenuItem onClick={() => { if (selectedFile) handleMarkCompleted(selectedFile); handleActionMenuClose(); }}><ListItemIcon><AssignmentTurnedInIcon color="primary"/></ListItemIcon>{selectedFile?.completed ? 'Marcar no realizado' : 'Marcar realizado'}</MenuItem>}
+        {userIsQuality && (
+          <>
+            <MenuItem onClick={() => { if (selectedFile) { setRenameTarget(selectedFile); setNewName(extractFileInfo(selectedFile.name).displayName); setRenameDialogOpen(true); } handleActionMenuClose(); }}>
+              <ListItemIcon><DriveFileRenameOutlineIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Renombrar</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { if (selectedFile) handleDuplicateFile(selectedFile); handleActionMenuClose(); }}>
+              <ListItemIcon><FileCopyIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Hacer una copia</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { if (selectedFile) setMoveFile(selectedFile); handleActionMenuClose(); }}>
+              <ListItemIcon><DriveFileMoveIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Mover</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { if (selectedFile) handleMarkReviewed(selectedFile); handleActionMenuClose(); }}>
+              <ListItemIcon><CheckCircleIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>{selectedFile?.reviewed ? 'Marcar no revisado' : 'Marcar revisado'}</ListItemText>
+            </MenuItem>
+          </>
+        )}
+        {userIsMetrologist && (
+          <MenuItem onClick={() => { if (selectedFile) handleMarkCompleted(selectedFile); handleActionMenuClose(); }}>
+            <ListItemIcon><AssignmentTurnedInIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>{selectedFile?.completed ? 'Marcar no realizado' : 'Marcar realizado'}</ListItemText>
+          </MenuItem>
+        )}
         {userIsQuality && <Divider />}
-        {userIsQuality && <MenuItem onClick={() => { if (selectedFile) setDeleteFile(selectedFile); handleActionMenuClose(); }} sx={{ color: 'error.main' }}><ListItemIcon><DeleteIcon color="error" /></ListItemIcon>Eliminar</MenuItem>}
+        {userIsQuality && (
+          <MenuItem onClick={() => { if (selectedFile) setDeleteFile(selectedFile); handleActionMenuClose(); }} sx={{ color: 'error.main' }}>
+            <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+            <ListItemText>Eliminar</ListItemText>
+          </MenuItem>
+        )}
       </Menu>
 
-      <Dialog open={createFolderOpen} onClose={() => setCreateFolderOpen(false)}><DialogTitle>Crear nueva carpeta</DialogTitle><DialogContent><TextField value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} label="Nombre de la carpeta" fullWidth autoFocus margin="normal" /></DialogContent><DialogActions><Button onClick={() => setCreateFolderOpen(false)}>Cancelar</Button><Button onClick={handleCreateFolder} variant="contained">Crear</Button></DialogActions></Dialog>
-      <Dialog open={Boolean(deleteFile)} onClose={() => setDeleteFile(null)}><DialogTitle>Eliminar archivo</DialogTitle><DialogContent><Typography>¿Seguro que quieres eliminar "{deleteFile?.name}"? Esta acción no se puede deshacer.</Typography></DialogContent><DialogActions><Button onClick={() => setDeleteFile(null)}>Cancelar</Button><Button onClick={handleDeleteFile} color="error" variant="contained">Eliminar</Button></DialogActions></Dialog>
-      <Dialog open={Boolean(moveFile)} onClose={() => !moveLoading && setMoveFile(null)} maxWidth="sm" fullWidth><DialogTitle>Mover "{moveFile?.name}"</DialogTitle><DialogContent>{moveError && <Alert severity="error">{moveError}</Alert>}<Typography sx={{ mb: 2 }}>Selecciona la carpeta de destino:</Typography><FolderMoveTree tree={tree} onSelect={handleMoveFile} excludePath={selectedPath} disabled={moveLoading} />{moveLoading && <Box sx={{ textAlign: 'center', mt: 2 }}><CircularProgress /><Typography>Moviendo...</Typography></Box>}</DialogContent><DialogActions><Button onClick={() => setMoveFile(null)} disabled={moveLoading}>Cancelar</Button></DialogActions></Dialog>
-      <Dialog open={bulkMoveOpen} onClose={() => !bulkMoveLoading && setBulkMoveOpen(false)} maxWidth="sm" fullWidth><DialogTitle>Mover {selectedFiles.length} archivos</DialogTitle><DialogContent>{moveError && <Alert severity="error">{moveError}</Alert>}<Typography sx={{ mb: 2 }}>Selecciona la carpeta de destino:</Typography><FolderMoveTree tree={tree} onSelect={handleBulkMove} excludePath={selectedPath} disabled={bulkMoveLoading} />{bulkMoveLoading && <Box sx={{ textAlign: 'center', mt: 2 }}><CircularProgress /><Typography>Moviendo archivos...</Typography></Box>}</DialogContent><DialogActions><Button onClick={() => setBulkMoveOpen(false)} disabled={bulkMoveLoading}>Cancelar</Button></DialogActions></Dialog>
-      <Snackbar open={moveSuccess} autoHideDuration={3000} onClose={() => setMoveSuccess(false)}><Alert onClose={() => setMoveSuccess(false)} severity="success">¡Movido con éxito!</Alert></Snackbar>
+      <Menu
+        open={contextMenu !== null}
+        onClose={() => setContextMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenu !== null
+            ? { top: contextMenu.y, left: contextMenu.x }
+            : undefined
+        }
+        PaperProps={{
+          sx: { minWidth: 200, borderRadius: 2 }
+        }}
+      >
+        <MenuItem onClick={() => { if (contextMenu?.file) handleOpenFile(contextMenu.file); setContextMenu(null); }}>
+          <ListItemIcon><LaunchIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Abrir</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (contextMenu?.file) handlePreviewFile(contextMenu.file); setContextMenu(null); }}>
+          <ListItemIcon><VisibilityIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Vista previa</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (contextMenu?.file) handleDownloadFile(contextMenu.file); setContextMenu(null); }}>
+          <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Descargar</ListItemText>
+        </MenuItem>
+        {userIsQuality && (
+          <>
+            <Divider />
+            <MenuItem onClick={() => { if (contextMenu?.file) { setRenameTarget(contextMenu.file); setNewName(extractFileInfo(contextMenu.file.name).displayName); setRenameDialogOpen(true); } setContextMenu(null); }}>
+              <ListItemIcon><DriveFileRenameOutlineIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Renombrar</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { if (contextMenu?.file) handleDuplicateFile(contextMenu.file); setContextMenu(null); }}>
+              <ListItemIcon><FileCopyIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Hacer una copia</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { if (contextMenu?.file) setMoveFile(contextMenu.file); setContextMenu(null); }}>
+              <ListItemIcon><DriveFileMoveIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Mover</ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={() => { if (contextMenu?.file) setDeleteFile(contextMenu.file); setContextMenu(null); }} sx={{ color: 'error.main' }}>
+              <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+              <ListItemText>Eliminar</ListItemText>
+            </MenuItem>
+          </>
+        )}
+      </Menu>
+
+      <Dialog open={createFolderOpen} onClose={() => setCreateFolderOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Crear nueva carpeta</DialogTitle>
+        <DialogContent>
+          <TextField
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            label="Nombre de la carpeta"
+            fullWidth
+            autoFocus
+            margin="normal"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && newFolderName.trim()) {
+                handleCreateFolder();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCreateFolderOpen(false)}>Cancelar</Button>
+          <Button onClick={handleCreateFolder} variant="contained" disabled={!newFolderName.trim()}>
+            Crear
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Renombrar</DialogTitle>
+        <DialogContent>
+          <TextField
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            label="Nuevo nombre"
+            fullWidth
+            autoFocus
+            margin="normal"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && newName.trim()) {
+                handleRename();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => { setRenameDialogOpen(false); setRenameTarget(null); setNewName(""); }}>Cancelar</Button>
+          <Button onClick={handleRename} variant="contained" disabled={!newName.trim()}>
+            Renombrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog 
+        open={Boolean(previewFile)} 
+        onClose={() => setPreviewFile(null)} 
+        maxWidth="lg" 
+        fullWidth
+        PaperProps={{ sx: { height: '90vh' } }}
+      >
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Typography variant="h6">
+              {previewFile && extractFileInfo(previewFile.name).displayName}
+            </Typography>
+            <IconButton onClick={() => setPreviewFile(null)}>
+              <CloseIcon />
+            </IconButton>
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          {previewFile && (
+            <iframe
+              src={previewFile.url}
+              width="100%"
+              height="100%"
+              style={{ border: 'none' }}
+              title="Vista previa"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={fileInfoOpen} onClose={() => setFileInfoOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Información del archivo</DialogTitle>
+        <DialogContent>
+          {fileInfoTarget && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Nombre</Typography>
+                <Typography variant="body1" fontWeight={500}>
+                  {extractFileInfo(fileInfoTarget.name).displayName}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Tipo</Typography>
+                <Typography variant="body1">{fileInfoTarget.contentType || 'Desconocido'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Tamaño</Typography>
+                <Typography variant="body1">{formatFileSize(fileInfoTarget.size)}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Ubicación</Typography>
+                <Typography variant="body1">{fileInfoTarget.folderPath || 'Raíz'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Última modificación</Typography>
+                <Typography variant="body1">
+                  {extractFileInfo(fileInfoTarget.name, fileInfoTarget.updated, fileInfoTarget.originalUpdated).displayDate}
+                </Typography>
+              </Box>
+              {fileInfoTarget.reviewedByName && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Revisado por</Typography>
+                  <Typography variant="body1" color="success.main">
+                    {fileInfoTarget.reviewedByName}
+                    {fileInfoTarget.reviewedAt && ` - ${new Date(fileInfoTarget.reviewedAt).toLocaleDateString('es-ES')}`}
+                  </Typography>
+                </Box>
+              )}
+              {fileInfoTarget.completedByName && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Realizado por</Typography>
+                  <Typography variant="body1" color="primary.main">
+                    {fileInfoTarget.completedByName}
+                    {fileInfoTarget.completedAt && ` - ${new Date(fileInfoTarget.completedAt).toLocaleDateString('es-ES')}`}
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setFileInfoOpen(false)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteFile)} onClose={() => setDeleteFile(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Eliminar archivo</DialogTitle>
+        <DialogContent>
+          <Typography>
+            ¿Seguro que quieres eliminar "<strong>{deleteFile?.name}</strong>"? Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteFile(null)}>Cancelar</Button>
+          <Button onClick={handleDeleteFile} variant="contained" color="error">
+            Eliminar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(moveFile)}
+        onClose={() => !moveLoading && setMoveFile(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Mover "{moveFile?.name}"</DialogTitle>
+        <DialogContent>
+          {moveError && <Alert severity="error" sx={{ mb: 2 }}>{moveError}</Alert>}
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Selecciona la carpeta de destino:
+          </Typography>
+          {moveLoading && (
+            <Box sx={{ textAlign: 'center', py: 3 }}>
+              <CircularProgress />
+              <Typography variant="body2" sx={{ mt: 2 }}>
+                Moviendo...
+              </Typography>
+            </Box>
+          )}
+          {!moveLoading && (
+            <FolderMoveTree
+              tree={tree}
+              onSelect={handleMoveFile}
+              excludePath={moveFile ? getFileParentPath(moveFile.fullPath) : []}
+              disabled={moveLoading}
+            />
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setMoveFile(null)} disabled={moveLoading}>
+            Cancelar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={bulkMoveOpen}
+        onClose={() => !bulkMoveLoading && setBulkMoveOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Mover {selectedFiles.length} archivos</DialogTitle>
+        <DialogContent>
+          {moveError && <Alert severity="error" sx={{ mb: 2 }}>{moveError}</Alert>}
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Selecciona la carpeta de destino:
+          </Typography>
+          {bulkMoveLoading && (
+            <Box sx={{ textAlign: 'center', py: 3 }}>
+              <CircularProgress />
+              <Typography variant="body2" sx={{ mt: 2 }}>
+                Moviendo archivos...
+              </Typography>
+            </Box>
+          )}
+          {!bulkMoveLoading && (
+            <FolderMoveTree
+              tree={tree}
+              onSelect={handleBulkMove}
+              excludePath={selectedPath}
+              disabled={bulkMoveLoading}
+            />
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setBulkMoveOpen(false)} disabled={bulkMoveLoading}>
+            Cancelar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={moveSuccess}
+        autoHideDuration={3000}
+        onClose={() => setMoveSuccess(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setMoveSuccess(false)} severity="success" sx={{ width: '100%' }}>
+          ¡Operación exitosa!
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
 
-function FolderMoveTree({ tree, path = [], onSelect, excludePath = [], disabled = false }: { tree: DriveFolder | null; path?: string[]; onSelect: (path: string[]) => void; excludePath?: string[]; disabled?: boolean; }) {
+function FolderMoveTree({
+  tree,
+  path = [],
+  onSelect,
+  excludePath = [],
+  disabled = false
+}: {
+  tree: DriveFolder | null;
+  path?: string[];
+  onSelect: (path: string[]) => void;
+  excludePath?: string[];
+  disabled?: boolean;
+}) {
   if (!tree) return null;
   const isRoot = tree.name === "Drive";
   const currentPath = isRoot ? [] : [...path, tree.name];
@@ -1127,12 +2280,30 @@ function FolderMoveTree({ tree, path = [], onSelect, excludePath = [], disabled 
   return (
     <Box>
       {!shouldExclude && (
-        <Button onClick={() => !disabled && onSelect(currentPath)} disabled={disabled} sx={{ justifyContent: 'flex-start', pl: path.length * 2, textTransform: 'none' }} startIcon={<FolderIcon />} fullWidth>
+        <Button
+          onClick={() => !disabled && onSelect(currentPath)}
+          disabled={disabled}
+          sx={{
+            justifyContent: 'flex-start',
+            pl: path.length * 2,
+            textTransform: 'none',
+            width: '100%',
+            '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
+          }}
+          startIcon={<FolderIcon />}
+        >
           {isRoot ? "Carpeta raíz" : tree.name}
         </Button>
       )}
       {tree.folders.map((folder, idx) => (
-        <FolderMoveTree key={idx} tree={folder} path={currentPath} onSelect={onSelect} excludePath={excludePath} disabled={disabled} />
+        <FolderMoveTree
+          key={idx}
+          tree={folder}
+          path={currentPath}
+          onSelect={onSelect}
+          excludePath={excludePath}
+          disabled={disabled}
+        />
       ))}
     </Box>
   );
