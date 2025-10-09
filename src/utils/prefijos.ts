@@ -5,6 +5,7 @@ const prefijos: Record<string, string> = {
     "Dimensional Trazable": "AGDT",
     "Acustica": "AGAC",
     "Acustica Trazable": "AGACT",
+    "Dimensional Trazable": "AGDT",
     "Dureza Trazable": "AGDUT",
     "Electrica": "AGEL",
     "Electrica Trazable": "AGELT",
@@ -27,6 +28,7 @@ const prefijos: Record<string, string> = {
     "Temperatura Trazable": "AGTT",
     "Tiempo": "AGTI",
     "Quimica": "AGQ",
+    "Volumen Trazable": "AGVT", 
     "Vibracion Trazable": "AGVBT",
     // etc.
 };
