@@ -100,6 +100,7 @@ const magnitudesDisponibles = [
   "Electrica",
   "Temperatura",
   "Masa",
+  "Optica",
   "Tiempo",
   "Velocidad",
   "Vacio",
