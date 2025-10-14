@@ -15,6 +15,7 @@ import {
   NotebookPen,
   Edit3,
   Zap, // NUEVO: Icono para indicar transferencia automática
+  Search, // NUEVO: Icono para el buscador
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -33,6 +34,11 @@ import {
   addYears, 
 } from "date-fns"; 
 
+type ClienteRecord = {
+  id: string;
+  nombre: string;
+}
+
 type CelesticaRecord = {
   A: string; // ID
   B: string; // Equipo
@@ -48,6 +54,86 @@ type TechopsRecord = {
   D: string; // MODELO
   E: string; // SERIE
 }
+
+// Componente de búsqueda para clientes
+interface ClienteSearchSelectProps {
+    clientes: ClienteRecord[];
+    onSelect: (cliente: string) => void;
+    currentValue: string;
+}
+
+const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onSelect, currentValue }) => {
+    const [searchTerm, setSearchTerm] = useState(currentValue);
+    const [isOpen, setIsOpen] = useState(false);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    // Filtra la lista de clientes basado en el término de búsqueda
+    const filteredClientes = clientes
+        .filter(cliente => 
+            cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const handleSelect = (clienteNombre: string) => {
+        setSearchTerm(clienteNombre);
+        onSelect(clienteNombre);
+        setIsOpen(false);
+    };
+    
+    // Cierra el desplegable si se hace clic fuera
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [wrapperRef]);
+
+    return (
+        <div className="relative" ref={wrapperRef}>
+            <div className="relative">
+                <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setIsOpen(true);
+                    }}
+                    onFocus={() => setIsOpen(true)}
+                    placeholder="Buscar o seleccionar cliente..."
+                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 ${
+                        isOpen ? 'rounded-b-none border-b-0' : ''
+                    }`}
+                />
+                <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {isOpen && (
+                <ul className="absolute z-10 w-full bg-white border border-gray-300 max-h-60 overflow-y-auto rounded-b-lg shadow-lg">
+                    {filteredClientes.length > 0 ? (
+                        filteredClientes.map((cliente) => (
+                            <li
+                                key={cliente.id}
+                                className="p-3 cursor-pointer hover:bg-blue-100 text-gray-800 text-sm truncate"
+                                onClick={() => handleSelect(cliente.nombre)}
+                            >
+                                {cliente.nombre}
+                            </li>
+                        ))
+                    ) : (
+                        <li className="p-3 text-gray-500 text-sm">No se encontraron clientes.</li>
+                    )}
+                </ul>
+            )}
+        </div>
+    );
+};
+
+// --- FIN DEL COMPONENTE ClienteSearchSelect ---
 
 // Helper para obtener la fecha local en formato YYYY-MM-DD (FIX DE FECHA)
 const getLocalISODate = () => {
@@ -500,7 +586,7 @@ export const WorkSheetScreen: React.FC = () => {
   const [permitirExcepcion, setPermitirExcepcion] = useState(false); // Estado para permitir excepción
   const [isMasterData, setIsMasterData] = useState(false);
   const [fieldsLocked, setFieldsLocked] = useState(false);
-  const [listaClientes, setListaClientes] = useState<{ id: string; nombre: string }[]>([]);
+  const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   // NUEVO: Estado para auto-transferencia
   const [autoTransferEnabled, setAutoTransferEnabled] = useState(() =>
     localStorage.getItem('autoTransferWorksheets') === 'true'
@@ -1010,20 +1096,12 @@ export const WorkSheetScreen: React.FC = () => {
                     <Building2 className="w-4 h-4 text-indigo-500" />
                     <span>Cliente*</span>
                   </label>
-                  <select
-                    value={formData.cliente}
-                    onChange={(e) => handleClienteChange(e.target.value)}
-                    className="w-full p-4 border rounded-lg"
-                  >
-                    <option value="">Seleccionar...</option>
-                    {[...listaClientes]
-                      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
-                      .map((c) => (
-                        <option key={c.id} value={c.nombre}>
-                          {c.nombre}
-                        </option>
-                      ))}
-                  </select>
+                  {/* FIX: Usando el nuevo componente de búsqueda */}
+                  <ClienteSearchSelect
+                    clientes={listaClientes}
+                    onSelect={handleClienteChange}
+                    currentValue={formData.cliente}
+                  />
                 </div>
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
@@ -1171,10 +1249,8 @@ export const WorkSheetScreen: React.FC = () => {
                     <span>Unidad*</span>
                   </label>
                   {formData.magnitud === "Electrica" && (
-                    // FIX: Estructura de pestañas para Electrica
                     <div className="mb-4 space-y-3 p-4 border rounded-lg bg-gray-50">
                       <div className="font-bold text-gray-700">Tipo Eléctrico</div>
-                      {/* Control de Pestañas */}
                       <Tabs value={tipoElectrica} onValueChange={(v) => setTipoElectrica(v as "DC" | "AC" | "Otros")}>
                         <TabsList className="grid w-full grid-cols-3 bg-white/50">
                           <TabsTrigger value="DC" className="font-semibold text-gray-800 data-[state=active]:bg-blue-200">DC</TabsTrigger>
@@ -1184,8 +1260,9 @@ export const WorkSheetScreen: React.FC = () => {
                       </Tabs>
                       {/* Contenido de Pestañas (Renderiza Checkboxes) */}
                       <div className="mt-3 grid grid-cols-3 gap-2">
+                        {/* FIX: Se usa el estado del tipo eléctrico actual para renderizar los checkboxes */}
                         {unidadesPorMagnitud.Electrica[tipoElectrica].map((unidad: string) => {
-                          // Se verifica si la unidad ya está seleccionada en el estado global (sin importar el tipo)
+                          // Se verifica si la unidad ya está seleccionada en el estado global 
                           const isSelected = (formData.unidad || []).includes(unidad);
                           return (
                             <label key={unidad} className="flex items-center space-x-2 text-sm text-gray-700">
@@ -1351,181 +1428,181 @@ export const WorkSheetScreen: React.FC = () => {
               <div>
                 <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
                   <NotebookPen className="w-4 h-4 text-gray-400" />
-                  <span>Notas</span>
-                </label>
-                <textarea
-                  value={formData.notas}
-                  onChange={(e) => handleInputChange("notas", e.target.value)}
-                  className="w-full p-4 border rounded-lg resize-none"
-                  rows={2}
-                  placeholder="Notas adicionales"
-                />
-              </div>
-
-              {/* 10. Temp & HR */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <NotebookPen className="w-4 h-4 text-sky-400" />
-                    <span>Temp. Ambiente (°C)</span>
+                    <span>Notas</span>
                   </label>
-                  <input
-                    type="number"
-                    value={formData.tempAmbiente}
-                    onChange={(e) => handleInputChange("tempAmbiente", e.target.value)}
-                    className="w-full p-4 border rounded-lg"
-                    placeholder="22.5"
+                  <textarea
+                    value={formData.notas}
+                    onChange={(e) => handleInputChange("notas", e.target.value)}
+                    className="w-full p-4 border rounded-lg resize-none"
+                    rows={2}
+                    placeholder="Notas adicionales"
                   />
                 </div>
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <NotebookPen className="w-4 h-4 text-pink-400" />
-                    <span>HR%</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.humedadRelativa}
-                    onChange={(e) => handleInputChange("humedadRelativa", e.target.value)}
-                    className="w-full p-4 border rounded-lg"
-                    placeholder="45"
-                    min={0}
-                    max={100}
-                  />
+
+                {/* 10. Temp & HR */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <NotebookPen className="w-4 h-4 text-sky-400" />
+                      <span>Temp. Ambiente (°C)</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.tempAmbiente}
+                      onChange={(e) => handleInputChange("tempAmbiente", e.target.value)}
+                      className="w-full p-4 border rounded-lg"
+                      placeholder="22.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <NotebookPen className="w-4 h-4 text-pink-400" />
+                      <span>HR%</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.humedadRelativa}
+                      onChange={(e) => handleInputChange("humedadRelativa", e.target.value)}
+                      className="w-full p-4 border rounded-lg"
+                      placeholder="45"
+                      min={0}
+                      max={100}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Vista Previa */}
-          {showPreview && (
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF</h2>
-                <p className="text-gray-600 text-sm">
-                  El PDF se generará siguiendo exactamente este formato
-                </p>
+            {/* Vista Previa */}
+            {showPreview && (
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
+                  <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF</h2>
+                  <p className="text-gray-600 text-sm">
+                    El PDF se generará siguiendo exactamente este formato
+                  </p>
+                </div>
+
+                <div className="p-8 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
+                  {/* Header simulado */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
+                        <span className="text-xs font-bold text-blue-600"></span>
+                      </div>
+                      <div>
+                        <div className="font-bold text-blue-600">Equipos y Servicios</div>
+                        <div className="text-sm text-blue-600">Especializados AG, S.A. de C.V.</div>
+                      </div>
+                    </div>
+                    <div className="text-right text-black space-y-1">
+                      <div><strong>Fecha:</strong> {formData.fecha}</div>
+                      <div><strong>Nombre:</strong> {formData.nombre}</div>
+                    </div>
+                  </div>
+
+                  <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
+
+                  <div className="text-center mb-4 text-black">
+                    {formData.lugarCalibracion}
+                  </div>
+
+                  <div className="space-y-2 text-sm text-black">
+                    <div><strong>N.Certificado:</strong> {formData.certificado}</div>
+                    <div><strong>Fecha de Recepción:</strong> {formData.fecha}</div>
+                    <div className="flex space-x-8 text-black mb-4">
+                      <div><strong>Cliente:</strong> <span className="text-black">{formData.cliente}</span></div>
+                      <div><strong>Equipo:</strong> {formData.equipo}</div>
+                    </div>
+                    <div className="flex space-x-8 text-black">
+                      <div><strong>ID:</strong> {formData.id}</div>
+                      <div><strong>Marca:</strong> {formData.marca}</div>
+                    </div>
+                    <div><strong>Modelo:</strong> {formData.modelo}</div>
+                    <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
+                    <div className="flex space-x-8 text-black">
+                      {/* Muestra las unidades seleccionadas separadas por coma */}
+                      <div><strong>Unidad:</strong> {(formData.unidad || []).join(', ')}</div>
+                      <div><strong>Alcance:</strong> {formData.alcance}</div>
+                    </div>
+                    <div className="flex space-x-8 text-black">
+                      <div><strong>Resolucion:</strong> {formData.resolucion}</div>
+                      <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
+                    </div>
+                    <div className="flex space-x-8 text-black">
+                      <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>
+                      <div><strong>HR:</strong> {formData.humedadRelativa}%</div>
+                    </div>
+                  </div>
+
+                  {/* Tabla de mediciones / Masa (Vista Previa) */}
+                  <div className="mt-6 border border-gray-400">
+                    {esMagnitudMasa(formData.magnitud) ? (
+                      // Vista previa para Masa
+                      <div className="p-2 text-sm text-black space-y-1">
+                          <div><strong>Excentricidad:</strong> {formData.excentricidad || '-'}</div>
+                          <div><strong>Linealidad:</strong> {formData.linealidad || '-'}</div>
+                          <div><strong>Repetibilidad:</strong> {formData.repetibilidad || '-'}</div>
+                      </div>
+                    ) : (
+                      // Vista previa para otras magnitudes
+                      <>
+                      <div className="grid grid-cols-2 border-b border-gray-400">
+                          <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold text-black">Medición Patrón:</div>
+                          <div className="p-2 bg-gray-50 font-bold text-black">Medición Instrumento:</div>
+                      </div>
+                      <div className="grid grid-cols-2 min-h-[100px]">
+                          <div className="p-2 border-r border-gray-400 text-xs text-black">
+                            {formData.medicionPatron}
+                          </div>
+                          <div className="p-2 text-xs text-black">
+                            {formData.medicionInstrumento}
+                          </div>
+                      </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="mt-4 text-sm text-black">
+                    <strong>Notas:</strong> {formData.notas}
+                  </div>
+                </div>
               </div>
-
-              <div className="p-8 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
-                {/* Header simulado */}
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
-                      <span className="text-xs font-bold text-blue-600"></span>
-                    </div>
-                    <div>
-                      <div className="font-bold text-blue-600">Equipos y Servicios</div>
-                      <div className="text-sm text-blue-600">Especializados AG, S.A. de C.V.</div>
-                    </div>
-                  </div>
-                  <div className="text-right text-black space-y-1">
-                    <div><strong>Fecha:</strong> {formData.fecha}</div>
-                    <div><strong>Nombre:</strong> {formData.nombre}</div>
-                  </div>
-                </div>
-
-                <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
-
-                <div className="text-center mb-4 text-black">
-                  {formData.lugarCalibracion}
-                </div>
-
-                <div className="space-y-2 text-sm text-black">
-                  <div><strong>N.Certificado:</strong> {formData.certificado}</div>
-                  <div><strong>Fecha de Recepción:</strong> {formData.fecha}</div>
-                  <div className="flex space-x-8 text-black mb-4">
-                    <div><strong>Cliente:</strong> <span className="text-black">{formData.cliente}</span></div>
-                    <div><strong>Equipo:</strong> {formData.equipo}</div>
-                  </div>
-                  <div className="flex space-x-8 text-black">
-                    <div><strong>ID:</strong> {formData.id}</div>
-                    <div><strong>Marca:</strong> {formData.marca}</div>
-                  </div>
-                  <div><strong>Modelo:</strong> {formData.modelo}</div>
-                  <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
-                  <div className="flex space-x-8 text-black">
-                    {/* Muestra las unidades seleccionadas separadas por coma */}
-                    <div><strong>Unidad:</strong> {(formData.unidad || []).join(', ')}</div>
-                    <div><strong>Alcance:</strong> {formData.alcance}</div>
-                  </div>
-                  <div className="flex space-x-8 text-black">
-                    <div><strong>Resolucion:</strong> {formData.resolucion}</div>
-                    <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
-                  </div>
-                  <div className="flex space-x-8 text-black">
-                    <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>
-                    <div><strong>HR:</strong> {formData.humedadRelativa}%</div>
-                  </div>
-                </div>
-                
-                {/* Tabla de mediciones / Masa (Vista Previa) */}
-                <div className="mt-6 border border-gray-400">
-                  {esMagnitudMasa(formData.magnitud) ? (
-                    // Vista previa para Masa
-                    <div className="p-2 text-sm text-black space-y-1">
-                        <div><strong>Excentricidad:</strong> {formData.excentricidad || '-'}</div>
-                        <div><strong>Linealidad:</strong> {formData.linealidad || '-'}</div>
-                        <div><strong>Repetibilidad:</strong> {formData.repetibilidad || '-'}</div>
-                    </div>
-                  ) : (
-                    // Vista previa para otras magnitudes
-                    <>
-                    <div className="grid grid-cols-2 border-b border-gray-400">
-                        <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold text-black">Medición Patrón:</div>
-                        <div className="p-2 bg-gray-50 font-bold text-black">Medición Instrumento:</div>
-                    </div>
-                    <div className="grid grid-cols-2 min-h-[100px]">
-                        <div className="p-2 border-r border-gray-400 text-xs text-black">
-                          {formData.medicionPatron}
-                        </div>
-                        <div className="p-2 text-xs text-black">
-                          {formData.medicionInstrumento}
-                        </div>
-                    </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="mt-4 text-sm text-black">
-                  <strong>Notas:</strong> {formData.notas}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Botones */}
-      <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
-        <div className="flex justify-end space-x-4">
-          <button
-            onClick={handleCancel}
-            className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2"
-            disabled={isSaving}
-          >
-            <X className="w-4 h-4" />
-            <span>Cancelar</span>
-          </button>
-          <button
-            onClick={handleSave}
-            // MODIFICADO: Deshabilita si isBlocked es true Y permitirExcepcion es false
-            disabled={isSaving || !valid || (idBlocked && !permitirExcepcion)}
-            className={`px-6 py-3 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg ${
-              isSaving || !valid || (idBlocked && !permitirExcepcion)
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-600 to-indigo-700'
-            }`}
-          >
-            {isSaving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
             )}
-            <span>{isSaving ? "Guardando..." : "Guardar"}</span>
-          </button>
+          </div>
+        </div>
+
+        {/* Botones */}
+        <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
+          <div className="flex justify-end space-x-4">
+            <button
+              onClick={handleCancel}
+              className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2"
+              disabled={isSaving}
+            >
+              <X className="w-4 h-4" />
+              <span>Cancelar</span>
+            </button>
+            <button
+              onClick={handleSave}
+              // MODIFICADO: Deshabilita si isBlocked es true Y permitirExcepcion es false
+              disabled={isSaving || !valid || (idBlocked && !permitirExcepcion)}
+              className={`px-6 py-3 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg ${
+                isSaving || !valid || (idBlocked && !permitirExcepcion)
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-700'
+              }`}
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              <span>{isSaving ? "Guardando..." : "Guardar"}</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
 };
 export default WorkSheetScreen;
