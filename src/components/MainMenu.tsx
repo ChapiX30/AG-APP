@@ -105,10 +105,14 @@ export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { logout, user } = useAuth();
   
-  const isJefe =
-    ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
-    ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
-    ((user?.role ?? "").trim().toLowerCase() === "administrativo");
+  // ============= IDENTIFICACIÓN DE ROLES MEJORADA =============
+  const getRole = (u: any) => 
+    ((u?.puesto ?? "").trim().toLowerCase()) ||
+    ((u?.position ?? "").trim().toLowerCase()) ||
+    ((u?.role ?? "").trim().toLowerCase()) || "";
+
+  const isJefe = getRole(user) === "administrativo";
+  const isMetrologo = getRole(user) === "metrólogo"; // 👈 Nuevo rol para la lógica del tip
 
   const menuItemsFiltered = menuItems.filter(item => {
     if (item.id === "calibration-stats") return isJefe;
@@ -124,6 +128,7 @@ export const MainMenu: React.FC = () => {
   const [showEquipmentCounter, setShowEquipmentCounter] = useState(true);
   const [showAssignedBanner, setShowAssignedBanner] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showMetrologoTip, setShowMetrologoTip] = useState(false); // 👈 Nuevo estado para el tip
 
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -136,7 +141,9 @@ export const MainMenu: React.FC = () => {
   
   const inputFileRef = useRef<HTMLInputElement>(null);
 
-  // ============= EFECTOS (mantén tu lógica existente) =============
+  // ============= EFECTOS =============
+  
+  // Efecto para cargar perfil
   useEffect(() => {
     if (!uid) return;
     const unsub = onSnapshot(doc(db, "usuarios", uid), (snap) => {
@@ -150,6 +157,7 @@ export const MainMenu: React.FC = () => {
     return () => unsub();
   }, [uid, user]);
 
+  // Efecto para contar calibraciones
   useEffect(() => {
     if (!uid || !editName) return;
     const now = new Date();
@@ -176,6 +184,21 @@ export const MainMenu: React.FC = () => {
     return () => unsub();
   }, [uid, editName]);
 
+  // Efecto para el Tip del Metrólogo (NEW)
+  useEffect(() => {
+    // Si no es Metrólogo o el contador es 0 (aún no se carga), no hacer nada
+    if (!isMetrologo || equipmentCount === 0) return;
+    
+    // Mostrar el tip por 8 segundos
+    setShowMetrologoTip(true);
+    const timer = setTimeout(() => {
+      setShowMetrologoTip(false);
+    }, 8000); 
+
+    return () => clearTimeout(timer); // Limpieza
+  }, [isMetrologo, equipmentCount]);
+
+  // Efecto para servicios asignados y notificaciones
   useEffect(() => {
     if (!uid && !email) return;
     const key = `notifiedServicios:${uid || email}`;
@@ -215,6 +238,7 @@ export const MainMenu: React.FC = () => {
     return () => unsub();
   }, [uid, email]);
 
+  // Efecto para FCM Token
   useEffect(() => {
     (async () => {
       if (!uid) return;
@@ -293,6 +317,8 @@ export const MainMenu: React.FC = () => {
   };
 
   // ============= COMPONENTES DE UI =============
+  
+  // Componente Modal de Perfil (sin cambios)
   const ProfileModal = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-md bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
@@ -390,6 +416,7 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
+  // Componente Banner de Asignados (sin cambios)
   const AssignedBanner = () => (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 animate-slideDown">
       <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500/90 via-teal-500/90 to-cyan-500/90 backdrop-blur-xl border border-white/20 shadow-2xl">
@@ -403,6 +430,50 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
+  // Componente Tip de Metrólogo (NEW)
+  const MetrologoTip = () => {
+    if (!isMetrologo || !showMetrologoTip || equipmentCount === 0) return null;
+
+    let message: string;
+    let iconClass: string;
+    let gradient: string;
+    let iconComponent: React.ElementType = Check; // Default
+
+    // Lógica de mensajes basada en el contador
+    if (equipmentCount < 50) {
+      message = `¡Vas muy bien, ${equipmentCount} calibraciones este mes! Sigue así. 💪`;
+      iconClass = "text-yellow-400";
+      gradient = "from-yellow-500/90 via-amber-500/90 to-orange-500/90";
+      iconComponent = TrendingUp;
+    } else if (equipmentCount >= 50 && equipmentCount < 100) {
+      message = `¡Excelente! Ya llevas ${equipmentCount} calibraciones. Mantén el ritmo. 🚀`;
+      iconClass = "text-green-400";
+      gradient = "from-emerald-500/90 via-teal-500/90 to-cyan-500/90";
+      iconComponent = Award;
+    } else {
+      message = `¡WOW! Superaste las 100 con ${equipmentCount} calibraciones. ¡Eres imparable! 🌟`;
+      iconClass = "text-fuchsia-400";
+      gradient = "from-violet-500/90 via-purple-500/90 to-fuchsia-600/90";
+      iconComponent = Sparkles;
+    }
+    
+    const Icon = iconComponent; // Usa el componente de icono elegido
+
+    return (
+      <div className="fixed bottom-24 right-6 z-50 animate-fadeInUp"> {/* Posición arriba del contador */}
+        <div className={`px-6 py-4 rounded-2xl bg-gradient-to-r ${gradient} backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300`}>
+          <div className="flex items-center gap-3 text-white">
+            <Icon className={`w-6 h-6 animate-pulse ${iconClass}`} />
+            <p className="font-semibold text-base">
+              {message}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
+  // Componente Contador de Calibraciones (sin cambios mayores)
   const EquipmentCounter = () => (
     <div className="fixed bottom-6 right-6 z-30 animate-fadeIn">
       <div className="relative group">
@@ -429,7 +500,7 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // ============= LAYOUT DESKTOP =============
+  // ============= LAYOUT DESKTOP (sin cambios) =============
   const DesktopLayout = () => (
     <div className="hidden lg:block min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Efectos de fondo */}
@@ -557,7 +628,7 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // ============= LAYOUT MOBILE =============
+  // ============= LAYOUT MOBILE (sin cambios) =============
   const MobileLayout = () => (
     <div className="lg:hidden min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Efectos de fondo mobile */}
@@ -662,6 +733,9 @@ export const MainMenu: React.FC = () => {
     <>
       {showProfile && <ProfileModal />}
       {showAssignedBanner && <AssignedBanner />}
+      {/* Nuevo Tip visible para Metrólogos */}
+      {isMetrologo && showMetrologoTip && <MetrologoTip />} 
+      {/* El contador original sigue visible para todos (o quien tenga count > 0) */}
       {showEquipmentCounter && <EquipmentCounter />}
       <DesktopLayout />
       <MobileLayout />
@@ -681,11 +755,26 @@ export const MainMenu: React.FC = () => {
             transform: translate(-50%, 0);
           }
         }
+        // NUEVA ANIMACIÓN para el push-up
+        @keyframes fadeInUp { 
+          from { 
+            opacity: 0; 
+            transform: translateY(20px);
+          }
+          to { 
+            opacity: 1; 
+            transform: translateY(0);
+          }
+        }
+
         .animate-fadeIn {
           animation: fadeIn 0.3s ease-out;
         }
         .animate-slideDown {
           animation: slideDown 0.5s ease-out;
+        }
+        .animate-fadeInUp {
+          animation: fadeInUp 0.5s ease-out;
         }
       `}</style>
     </>
