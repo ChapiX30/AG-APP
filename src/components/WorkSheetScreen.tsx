@@ -592,6 +592,9 @@ export const WorkSheetScreen: React.FC = () => {
     localStorage.getItem('autoTransferWorksheets') === 'true'
   );
 
+  // FIX: Se inicializa en DC
+  const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
+
   // FIX: Mover la función de validación a un useCallback para que sea accesible para handleIdBlur y useEffect.
   const validarIdEnPeriodo = useCallback(async () => {
     setIdBlocked(false);
@@ -652,13 +655,9 @@ export const WorkSheetScreen: React.FC = () => {
   useEffect(() => {
     validarIdEnPeriodo();
   }, [validarIdEnPeriodo]);
-
-
-  // FIX: Se inicializa en DC
-  const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
-
-  const [unidadesSeleccionadas, setUnidadesSeleccionadas] = useState<{ tipo: string, unidad: string }[]>([]);
-
+  
+  // Las demás funciones (handleIdChange, cargarEmpresas, etc.) se mantienen igual.
+  
   // Cuando cambia el cliente: aplica EP- si es Celestica y limpia
   const handleClienteChange = (value: string) => {
     const cel = (value || "")
@@ -681,9 +680,8 @@ export const WorkSheetScreen: React.FC = () => {
 
     setFieldsLocked(false);
   };
-
+  
   // Cuando cambia el ID: autocompleta o limpia
-  // (La lógica de autocompletado y validación de período se movió a handleIdBlur/useEffect)
   const handleIdChange = (value: string) => {
     setFormData((prev: any) => ({ ...prev, id: value }));
   };
@@ -1135,7 +1133,10 @@ export const WorkSheetScreen: React.FC = () => {
                         checked={permitirExcepcion}
                         onChange={(e) => setPermitirExcepcion(e.target.checked)}
                         className="rounded text-blue-600 focus:ring-blue-500"
-                        disabled={!idBlocked} // Solo permitir si está bloqueado
+                        // FIX: Solo deshabilitamos el checkbox si NO está bloqueado y NO está seleccionado.
+                        // Esto permite al usuario desmarcar la excepción si la marcó por error,
+                        // o si el bloqueo desaparece por otros motivos.
+                        disabled={!idBlocked && !permitirExcepcion} 
                       />
                       <span className={`text-sm ${idBlocked ? 'text-red-700' : 'text-gray-500'}`}>
                         Permitir excepción de calibración (requiere aprobación)
