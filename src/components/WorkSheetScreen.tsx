@@ -120,6 +120,7 @@ const unidadesPorMagnitud: Record<string, string[]> = {
   Otros: ["Hz", "kHz", "MHz"], // Si necesitas frecuencia
 },
   Temperatura: ["°C", "°F", "°K"],
+  Optica: ["BRIX", "°"],
   Masa: ["g", "kg", "lb"],
   Tiempo: ["s", "min", "h"],
   Velocidad: ["m/s", "km/h"],

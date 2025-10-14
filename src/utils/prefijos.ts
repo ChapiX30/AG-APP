@@ -18,7 +18,7 @@ const prefijos: Record<string, string> = {
     "Humedad": "AGH",
     "Masa": "AGM",
     "Masa Trazable": "AGMT",
-    "Optica Trazable": "AGOT",
+    "Óptica Trazable": "AGOT",
     "Par Torsional": "AGPT",
     "Reporte Diagnostico": "AGRD",
     "Par Torsional Trazable": "AGPTT",
