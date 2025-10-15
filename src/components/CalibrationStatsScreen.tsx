@@ -29,13 +29,13 @@ function blendColorWithWhite(hex: string, amount: number = 0.7) {
 
 // -------- COLORES --------
 const METROLOGOS_ORDER_COLOR = [
-  { name: "Abraham Ginez", color: "#aa0000" },
+  { name: "Abraham Ginez", color: "#ae0303" },
   { name: "Dante Hernández", color: "#060476" },
   { name: "Edgar Amador", color: "#028019" },
-  { name: "Angel Amador", color: "#ffe042" },
+  { name: "Angel Amador", color: "#42ffcd" },
   { name: "Ricardo Domínguez", color: "#cc08d6" },
 ];
-const FALLBACK_COLORS = ["#ff9100", "#FF5722", "#1B9CFC", "#B10DC9", "#607D8B"];
+const FALLBACK_COLORS = ["#ff9100", "#1b1a1a", "#1B9CFC", "#B10DC9", "#607D8B"];
 const MAGNITUDES_COLORS: Record<string, string> = {
   "Acustica": "#00e6bf",
   "Dimensional": "#001e78",
