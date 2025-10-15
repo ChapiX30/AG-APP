@@ -2720,7 +2720,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 }
 
 
-// Componente auxiliar para la navegación del árbol de movimiento (CORREGIDO para Lazy Loading)
+// Componente auxiliar para la navegación del árbol de movimiento (CORREGIDO para Lazy Loading y navegación)
 function FolderMoveTree({
   currentPath = [], // El path de la carpeta de origen o del archivo a mover
   onSelect,
@@ -2728,7 +2728,6 @@ function FolderMoveTree({
   currentUserData,
   userIsQuality,
   initialPath = [], // El path de la carpeta que se está renderizando actualmente
-  isRoot = true,
 }: {
   currentPath?: string[];
   onSelect: (path: string[]) => void;
@@ -2736,13 +2735,12 @@ function FolderMoveTree({
   currentUserData: UserData | null;
   userIsQuality: boolean;
   initialPath?: string[];
-  isRoot?: boolean;
 }) {
   const [children, setChildren] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  // Controlamos si el nodo actual está expandido
+  const [expanded, setExpanded] = useState(false); 
   
-  // CORRECCIÓN CLAVE: El path que se usa para navegar en Firebase debe ser `initialPath`
   const path = initialPath; 
   const pathString = [ROOT_PATH, ...path].join('/');
   
@@ -2750,6 +2748,12 @@ function FolderMoveTree({
   const excludePathStr = JSON.stringify(currentPath);
   const currentPathStr = JSON.stringify(path);
   const shouldExclude = currentPathStr === excludePathStr;
+  
+  // Determinamos si es la raíz o el primer nivel (para iniciar expandido)
+  const isRoot = path.length === 0;
+  
+  // El nombre a mostrar
+  const displayName = isRoot ? "Carpeta raíz (Mi unidad)" : path[path.length - 1];
 
   const fetchChildren = useCallback(async () => {
     setLoading(true);
@@ -2765,7 +2769,6 @@ function FolderMoveTree({
 
       setChildren(folderNames);
     } catch (e) {
-      // Manejar el error de carpeta vacía o no encontrada
       console.warn("Error loading subfolders for move tree:", e);
       setChildren([]); // Establecer a vacío para detener la recursión
     } finally {
@@ -2773,58 +2776,96 @@ function FolderMoveTree({
     }
   }, [pathString, path.length, currentUserData, userIsQuality]);
 
+  // CORRECCIÓN CLAVE: Cargar hijos si se expande O si es el nivel raíz/inicial
   useEffect(() => {
-    // Si se expande o si es la raíz y aún no tiene hijos, intentar cargar.
-    if (expanded && children.length === 0 && !loading) {
+    if (isRoot) {
+      // La raíz siempre debe cargarse y mostrarse
+      setExpanded(true);
+      fetchChildren();
+    } else if (expanded && children.length === 0 && !loading) {
       fetchChildren();
     }
-    // Carga inicial para la raíz o si es un nodo que debería estar precargado
-    if (isRoot) {
-        setExpanded(true);
-    }
-  }, [expanded, children.length, loading, fetchChildren, isRoot]);
+  }, [isRoot]); // Ejecutar solo para el nodo raíz al montar
+
+  // Manejar expansión/colapso para nodos no raíz
+  const handleToggleExpand = () => {
+      if (!expanded) {
+          fetchChildren(); // Cargar si se está expandiendo
+      }
+      setExpanded(!expanded);
+  };
   
+  // Si estamos en la carpeta a mover (currentPath), no mostramos ni el botón de mover ni el expandible.
+  if (shouldExclude) {
+    return (
+        <Box sx={{ pl: isRoot ? 0 : 2, borderLeft: !isRoot ? '1px solid #e0e0e0' : 'none' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ py: 1, pl: 1 }}>
+                **{displayName}** (Carpeta actual/origen)
+            </Typography>
+             {/* Renderizamos los hijos para que la navegación pueda ir más profundo, pero sin el botón principal */}
+             <Box>
+                {children.map((folderName, idx) => (
+                    <FolderMoveTree
+                      key={folderName}
+                      currentPath={currentPath}
+                      onSelect={onSelect}
+                      disabled={disabled}
+                      currentUserData={currentUserData}
+                      userIsQuality={userIsQuality}
+                      initialPath={[...path, folderName]}
+                    />
+                ))}
+            </Box>
+        </Box>
+    );
+  }
+
 
   return (
-    <Box sx={{ pl: isRoot && path.length === 0 ? 0 : 2 }}>
+    <Box sx={{ 
+        // Sangría para hijos (la raíz no tiene sangría, los hijos sí)
+        pl: isRoot ? 0 : 1, 
+    }}>
       
       {/* 1. Botón de la carpeta actual como destino */}
-      {!shouldExclude && (
-        <Button
-          onClick={() => !disabled && onSelect(path)}
-          disabled={disabled}
-          sx={{
-            justifyContent: 'flex-start',
-            textTransform: 'none',
-            width: '100%',
-            my: 0.5,
-            bgcolor: 'transparent',
-            '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
-          }}
-          startIcon={<FolderIcon />}
-        >
-          {path.length === 0 ? "Carpeta raíz (Mi unidad)" : path[path.length - 1]}
-        </Button>
-      )}
+      <Button
+        onClick={() => !disabled && onSelect(path)}
+        disabled={disabled}
+        sx={{
+          justifyContent: 'flex-start',
+          textTransform: 'none',
+          width: '100%',
+          my: 0.5,
+          py: 1,
+          pl: isRoot ? 0 : 1, // Ajuste de sangría interna para alinear
+          bgcolor: 'transparent',
+          '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
+        }}
+        startIcon={<FolderIcon />}
+      >
+        {displayName}
+      </Button>
       
       {/* 2. Botón para expandir/colapsar (Solo si hay posibles hijos) */}
-      {(children.length > 0 || loading) && (
+      <Box sx={{ pl: isRoot ? 0.5 : 1, width: '100%' }}>
           <ListItemButton 
-              onClick={() => setExpanded(!expanded)}
-              disabled={disabled}
-              sx={{ pl: path.length === 0 ? 0 : 2, pr: 0, py: 0.5, maxWidth: '100%', display: 'flex', justifyContent: 'flex-start' }}
+              onClick={handleToggleExpand}
+              disabled={disabled || loading}
+              sx={{ p: 0, mb: 1 }}
           >
               {loading ? (
                  <CircularProgress size={16} sx={{ mr: 1 }} />
-              ) : (
+              ) : children.length > 0 ? (
                  expanded ? <ExpandLessIcon sx={{ mr: 1 }} /> : <ExpandMoreIcon sx={{ mr: 1 }} />
+              ) : (
+                 <Box sx={{ width: 24, mr: 1 }} /> // Spacer
               )}
               
               <Typography variant="caption" color="text.secondary">
-                {expanded ? "Ocultar subcarpetas" : `Ver ${children.length} subcarpetas`}
+                {children.length > 0 ? (expanded ? "Ocultar subcarpetas" : `Ver ${children.length} subcarpetas`) : 'Sin subcarpetas'}
               </Typography>
           </ListItemButton>
-      )}
+      </Box>
 
       {/* 3. Renderizado recursivo de hijos */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
@@ -2837,8 +2878,7 @@ function FolderMoveTree({
               disabled={disabled}
               currentUserData={currentUserData}
               userIsQuality={userIsQuality}
-              initialPath={[...path, folderName]} // CORRECCIÓN CLAVE: El nuevo path a renderizar
-              isRoot={false}
+              initialPath={[...path, folderName]} // El nuevo path a renderizar
             />
           ))}
         </Box>
