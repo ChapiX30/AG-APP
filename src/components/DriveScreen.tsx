@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
 import { doc, getDoc, updateDoc, deleteDoc, setDoc, collection, addDoc, query, orderBy, limit, where, getDocs } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
@@ -72,6 +72,8 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileCopyIcon from '@mui/icons-material/FileCopy';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import StorageIcon from '@mui/icons-material/Storage';
+import LinkIcon from '@mui/icons-material/Link'; // Icono para compartir
+import { v4 as uuidv4 } from 'uuid'; // Para generar tokens únicos
 
 interface DriveFile {
   name: string;
@@ -93,10 +95,12 @@ interface DriveFile {
   contentType?: string;
 }
 
+// Interfaz simplificada para la Carga Perezosa (Lazy Loading)
 interface DriveFolder {
   name: string;
   fullPath: string;
-  folders: DriveFolder[];
+  // Solo se cargan en el nivel actual
+  folders: DriveFolder[]; 
   files: DriveFile[];
 }
 
@@ -205,11 +209,12 @@ const getActivityIcon = (action: string) => {
 };
 
 const getActivityDescription = (activity: ActivityLog) => {
+  const isBulk = activity.fileName?.includes('archivos');
   switch (activity.action) {
     case 'create':
-      return `subió el archivo "${activity.fileName}"`;
+      return `subió ${isBulk ? activity.fileName : `el archivo "${activity.fileName}"`}`;
     case 'delete':
-      return `eliminó el archivo "${activity.fileName}"`;
+      return `eliminó ${isBulk ? activity.fileName : `el archivo "${activity.fileName}"`}`;
     case 'move':
       return `movió "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
     case 'review':
@@ -231,7 +236,7 @@ const getActivityDescription = (activity: ActivityLog) => {
     case 'unstar':
       return `quitó de destacados "${activity.fileName}"`;
     case 'rename':
-      return `renombró "${activity.details}"`;
+      return `renombró ${activity.details}`;
     case 'duplicate':
       return `duplicó el archivo "${activity.fileName}"`;
     default:
@@ -299,12 +304,12 @@ const getUserDisplayName = async (user: any): Promise<string> => {
   return 'Usuario desconocido';
 };
 
-const filterFoldersByPermissions = (folders: DriveFolder[], userIsQuality: boolean, userName: string): DriveFolder[] => {
+const filterFoldersByPermissions = (folders: string[], userIsQuality: boolean, userName: string): string[] => {
   if (userIsQuality) return folders;
   const userNameLower = userName.toLowerCase();
-  return folders.filter(folder => {
-    const folderNameLower = folder.name.toLowerCase();
-    return folderNameLower.includes(userNameLower) || userNameLower.includes(folderNameLower) || folder.name === userName;
+  return folders.filter(folderName => {
+    const folderNameLower = folderName.toLowerCase();
+    return folderNameLower.includes(userNameLower) || userNameLower.includes(folderNameLower) || folderName === userName;
   });
 };
 
@@ -312,7 +317,8 @@ const ROOT_PATH = "worksheets";
 
 export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [user] = useAuthState(auth);
-  const [tree, setTree] = useState<DriveFolder | null>(null);
+  // El estado 'currentContent' ahora representa SOLO el contenido de la carpeta actual.
+  const [currentContent, setCurrentContent] = useState<DriveFolder | null>(null); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
@@ -345,32 +351,148 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<DriveFile | DriveFolder | null>(null);
+  const [renameTarget, setRenameTarget] = useState<DriveFile | null>(null); // Solo renombraremos archivos
   const [newName, setNewName] = useState("");
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
   const [fileInfoOpen, setFileInfoOpen] = useState(false);
   const [fileInfoTarget, setFileInfoTarget] = useState<DriveFile | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'starred' | 'pdf'>('all');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: DriveFile | null } | null>(null);
-  
+  const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
+  const [bulkRenameSuffix, setBulkRenameSuffix] = useState(" (copia)");
+  const [storageUsage, setStorageUsage] = useState<number | null>(null); // Nuevo estado
+  const [allFilesCache, setAllFilesCache] = useState<DriveFile[]>([]); // Cache para búsqueda global y acciones masivas
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
   const { goBack, navigateTo } = useNavigation();
 
-  const navigateToFileFolder = (file: DriveFile) => {
-    const folderPath = getFileParentPath(file.fullPath);
-    setSelectedPath(folderPath);
-    setSearchQuery("");
-    setGlobalSearch(false);
-  };
+  // Función auxiliar para obtener todos los archivos (¡Cuidado con el costo de esta función!)
+  const getAllFiles = useCallback(async (pathArr: string[] = []): Promise<DriveFile[]> => {
+    const allFiles: DriveFile[] = [];
+    const queue = [pathArr];
 
+    while (queue.length > 0) {
+      const currentPathArr = queue.shift()!;
+      const fullPath = [ROOT_PATH, ...currentPathArr].join("/");
+      try {
+        const dirRef = ref(storage, fullPath);
+        const res = await listAll(dirRef);
+        
+        // Agregar subcarpetas a la cola (si no se está en una búsqueda global)
+        if (currentPathArr.length < 5) { // Límite de profundidad para evitar Timeouts.
+           res.prefixes.forEach(prefix => {
+            queue.push([...currentPathArr, prefix.name]);
+          });
+        }
+        
+        // Procesar archivos
+        const files: DriveFile[] = await Promise.all(
+          res.items.map(async itemRef => {
+            const url = await getDownloadURL(itemRef);
+            const metadata = await getMetadata(itemRef);
+            const file: DriveFile = {
+              name: itemRef.name,
+              url,
+              fullPath: itemRef.fullPath,
+              updated: metadata.updated,
+              size: metadata.size,
+              contentType: metadata.contentType,
+            };
+            return await loadFileMetadata(file);
+          })
+        );
+        allFiles.push(...files);
+        
+      } catch (e) {
+        // Ignorar carpetas que no existen o errores de permiso, pero continuar con las demás.
+        console.warn(`Error fetching path ${fullPath}:`, e);
+      }
+    }
+    return allFiles;
+  }, [user]);
+
+  // Función modificada para carga perezosa (Lazy Loading)
+  const fetchCurrentContent = useCallback(async (pathArr: string[]): Promise<DriveFolder> => {
+    const fullPath = [ROOT_PATH, ...pathArr].join("/");
+    const dirRef = ref(storage, fullPath);
+    const res = await listAll(dirRef);
+    
+    // Solo cargamos los nombres de las subcarpetas del nivel actual
+    let folders = res.prefixes.map(prefix => ({
+        name: prefix.name,
+        fullPath: prefix.fullPath,
+        folders: [], // Vacío por Lazy Loading
+        files: [] // Vacío por Lazy Loading
+    }));
+
+    // Aplicar filtro de permisos solo a la raíz
+    if (pathArr.length === 0 && currentUserData) {
+      const userName = currentUserData.name || 'Usuario';
+      const allowedFolderNames = filterFoldersByPermissions(folders.map(f => f.name), userIsQuality, userName);
+      folders = folders.filter(f => allowedFolderNames.includes(f.name));
+    }
+    
+    // Cargar los archivos del nivel actual
+    const files: DriveFile[] = await Promise.all(
+      res.items.map(async itemRef => {
+        const url = await getDownloadURL(itemRef);
+        const metadata = await getMetadata(itemRef);
+        const file: DriveFile = {
+          name: itemRef.name,
+          url,
+          fullPath: itemRef.fullPath,
+          updated: metadata.updated,
+          size: metadata.size,
+          contentType: metadata.contentType,
+        };
+        return await loadFileMetadata(file);
+      })
+    );
+
+    return {
+      name: pathArr[pathArr.length - 1] || "Drive",
+      fullPath,
+      folders,
+      files
+    };
+  }, [currentUserData, userIsQuality]);
+  
+  // Función para calcular el uso de almacenamiento
+  const calculateStorageUsage = useCallback((files: DriveFile[]) => {
+    const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
+    setStorageUsage(totalBytes);
+  }, []);
+
+  async function reloadCurrentContent() {
+    setLoading(true);
+    setError(null);
+    try {
+      const content = await fetchCurrentContent(selectedPath);
+      setCurrentContent(content);
+      
+      // Si la búsqueda global está activa o el cache está vacío, recargamos el cache de todos los archivos
+      if (globalSearch || allFilesCache.length === 0) {
+        const allFiles = await getAllFiles();
+        setAllFilesCache(allFiles);
+        calculateStorageUsage(allFiles);
+      } else {
+        // Usar el cache existente si no estamos en búsqueda global
+         calculateStorageUsage(allFilesCache);
+      }
+
+    } catch (e: any) {
+      console.error("Error loading files:", e);
+      setError("No se pudieron cargar los archivos.");
+    }
+    setLoading(false);
+  }
+
+  // Effect para cargar permisos del usuario
   useEffect(() => {
     const loadUserPermissions = async () => {
       if (!user?.email) {
@@ -393,6 +515,33 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     };
     loadUserPermissions();
   }, [user]);
+
+  // Effect principal para recargar el contenido al cambiar de ruta
+  useEffect(() => {
+    if (!accessLoading && currentUserData !== null) {
+      reloadCurrentContent();
+    }
+  }, [accessLoading, currentUserData, selectedPath, globalSearch]); // Dependencia de selectedPath
+
+  // Effect para manejar la actividad
+  useEffect(() => {
+    if (activityPanelOpen) {
+      loadActivities();
+    }
+  }, [activityPanelOpen, showMyActivityOnly]);
+
+
+  // Helper para buscar un archivo en el cache
+  const findFileInCache = (filePath: string): DriveFile | undefined => {
+    return allFilesCache.find(f => f.fullPath === filePath);
+  };
+
+  const navigateToFileFolder = (file: DriveFile) => {
+    const folderPath = getFileParentPath(file.fullPath);
+    setSelectedPath(folderPath);
+    setSearchQuery("");
+    setGlobalSearch(false);
+  };
 
   const logActivity = async (
     action: ActivityLog['action'],
@@ -443,6 +592,28 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     setActivityLoading(false);
   };
+  
+  // Nuevo: Cargar historial de archivo específico
+  const loadFileHistory = async (filePath: string): Promise<ActivityLog[]> => {
+    setActivityLoading(true);
+    try {
+        const fileName = filePath.split('/').pop();
+        
+        const fileHistoryQuery = query(
+            collection(db, 'driveActivity'),
+            where('fileName', '==', fileName), // Buscar por nombre de archivo
+            orderBy('timestamp', 'desc'),
+            limit(20)
+        );
+        const querySnapshot = await getDocs(fileHistoryQuery);
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+    } catch (error) {
+        console.error('Error loading file history:', error);
+        return [];
+    } finally {
+        setActivityLoading(false);
+    }
+  };
 
   const loadFileMetadata = async (file: DriveFile): Promise<DriveFile> => {
     try {
@@ -489,75 +660,99 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       folderPath: getFileParentPath(file.fullPath).join('/')
     };
   };
-
-  async function fetchFolder(pathArr: string[]): Promise<DriveFolder> {
-    const fullPath = [ROOT_PATH, ...pathArr].join("/");
-    const dirRef = ref(storage, fullPath);
-    const res = await listAll(dirRef);
-    
-    const folders: DriveFolder[] = await Promise.all(
-      res.prefixes.map(prefix => fetchFolder([...pathArr, prefix.name]))
-    );
-    
-    const files: DriveFile[] = await Promise.all(
-      res.items.map(async itemRef => {
-        const url = await getDownloadURL(itemRef);
-        const metadata = await getMetadata(itemRef);
-        const file: DriveFile = {
-          name: itemRef.name,
-          url,
-          fullPath: itemRef.fullPath,
-          updated: metadata.updated,
-          size: metadata.size,
-          contentType: metadata.contentType,
-        };
-        return await loadFileMetadata(file);
-      })
-    );
-
-    return {
-      name: pathArr[pathArr.length - 1] || "Drive",
-      fullPath,
-      folders,
-      files
-    };
-  }
-
-  async function reloadTree() {
-    setLoading(true);
-    setError(null);
+  
+  // Manejador individual de Revisado
+  const handleMarkReviewed = async (file: DriveFile) => {
+    if (!user) return;
     try {
-      const rootTree = await fetchFolder([]);
-      setTree(rootTree);
-    } catch (e: any) {
-      console.error("Error loading files:", e);
-      setError("No se pudieron cargar los archivos.");
+      const metadataId = file.fullPath.replace(/\//g, '_');
+      const metadataRef = doc(db, 'fileMetadata', metadataId);
+      const newReviewedState = !file.reviewed;
+      const userName = await getUserDisplayName(user);
+      const updateData = {
+        reviewed: newReviewedState,
+        reviewedBy: newReviewedState ? user.email : null,
+        reviewedByName: newReviewedState ? userName : null,
+        reviewedAt: newReviewedState ? new Date().toISOString() : null
+      };
+      await setDoc(metadataRef, updateData, { merge: true });
+      await logActivity(
+        newReviewedState ? 'review' : 'unreview',
+        file.name,
+        undefined,
+        undefined,
+        undefined,
+        `Estado cambiado por ${userName}`
+      );
+      reloadCurrentContent();
+    } catch (error) {
+      console.error("Error updating review status:", error);
+      setError("Error al actualizar el estado de revisión");
     }
-    setLoading(false);
-  }
+  };
 
-  useEffect(() => {
-    if (!accessLoading && currentUserData !== null) {
-      reloadTree();
+  // Manejador individual de Realizado
+  const handleMarkCompleted = async (file: DriveFile) => {
+    if (!user) return;
+    try {
+      const metadataId = file.fullPath.replace(/\//g, '_');
+      const metadataRef = doc(db, 'fileMetadata', metadataId);
+      const newCompletedState = !file.completed;
+      const userName = await getUserDisplayName(user);
+      const updateData = {
+        completed: newCompletedState,
+        completedBy: newCompletedState ? user.email : null,
+        completedByName: newCompletedState ? userName : null,
+        completedAt: newCompletedState ? new Date().toISOString() : null
+      };
+      await setDoc(metadataRef, updateData, { merge: true });
+      await logActivity(
+        newCompletedState ? 'complete' : 'uncomplete',
+        file.name,
+        undefined,
+        undefined,
+        undefined,
+        `Estado cambiado por ${userName}`
+      );
+      reloadCurrentContent();
+    } catch (error) {
+      console.error("Error updating completed status:", error);
+      setError("Error al actualizar el estado de realización");
     }
-  }, [accessLoading, currentUserData]);
+  };
 
-  useEffect(() => {
-    if (activityPanelOpen) {
-      loadActivities();
-    }
-  }, [activityPanelOpen, showMyActivityOnly]);
+  // Función para generar y guardar el token de compartir
+  const handleShareFile = async (file: DriveFile) => {
+    if (!user) return;
+    try {
+        // 1. Generar token único
+        const shareToken = uuidv4();
+        
+        // 2. Guardar el token y la referencia al archivo en Firestore
+        const shareRef = doc(db, 'sharedFiles', shareToken);
+        await setDoc(shareRef, {
+            filePath: file.fullPath,
+            fileName: file.name,
+            sharedBy: user.email,
+            sharedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Caduca en 7 días
+            downloads: 0
+        });
 
-  function getCurrentFolder(): DriveFolder | null {
-    if (!tree) return null;
-    let folder: DriveFolder = tree;
-    for (const seg of selectedPath) {
-      const next = folder.folders.find(f => f.name === seg);
-      if (!next) return null;
-      folder = next;
+        // 3. Construir el link (asumiendo que tienes una ruta pública en tu app)
+        const shareLink = `${window.location.origin}/share/${shareToken}`;
+        
+        // 4. Copiar al portapapeles y notificar
+        await navigator.clipboard.writeText(shareLink);
+        setMoveSuccess(true);
+        setError(`Link de compartido copiado. Caduca en 7 días. (Simulación)`);
+        await logActivity('duplicate', file.name, undefined, undefined, undefined, `Compartido con link: ${shareToken}`);
+        
+    } catch (error) {
+        console.error("Error sharing file:", error);
+        setError("Error al compartir el archivo. Revisa los permisos.");
     }
-    return folder;
-  }
+  };
 
   const handleOpenFile = async (file: DriveFile) => {
     await logActivity('view', file.name);
@@ -584,75 +779,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const newStarredState = !file.starred;
       await setDoc(metadataRef, { starred: newStarredState }, { merge: true });
       await logActivity(newStarredState ? 'star' : 'unstar', file.name);
-      reloadTree();
+      reloadCurrentContent();
     } catch (error) {
       console.error("Error toggling star:", error);
       setError("Error al marcar el archivo");
     }
   };
-
-  const getAllFiles = (folder: DriveFolder): DriveFile[] => {
-    return folder.files.concat(...folder.folders.map(getAllFiles));
-  };
-
-  const handleMarkReviewed = async (file: DriveFile) => {
-    if (!user) return;
-    try {
-      const metadataId = file.fullPath.replace(/\//g, '_');
-      const metadataRef = doc(db, 'fileMetadata', metadataId);
-      const newReviewedState = !file.reviewed;
-      const userName = await getUserDisplayName(user);
-      const updateData = {
-        reviewed: newReviewedState,
-        reviewedBy: newReviewedState ? user.email : null,
-        reviewedByName: newReviewedState ? userName : null,
-        reviewedAt: newReviewedState ? new Date().toISOString() : null
-      };
-      await setDoc(metadataRef, updateData, { merge: true });
-      await logActivity(
-        newReviewedState ? 'review' : 'unreview',
-        file.name,
-        undefined,
-        undefined,
-        undefined,
-        `Estado cambiado por ${userName}`
-      );
-      reloadTree();
-    } catch (error) {
-      console.error("Error updating review status:", error);
-      setError("Error al actualizar el estado de revisión");
-    }
-  };
-
-  const handleMarkCompleted = async (file: DriveFile) => {
-    if (!user) return;
-    try {
-      const metadataId = file.fullPath.replace(/\//g, '_');
-      const metadataRef = doc(db, 'fileMetadata', metadataId);
-      const newCompletedState = !file.completed;
-      const userName = await getUserDisplayName(user);
-      const updateData = {
-        completed: newCompletedState,
-        completedBy: newCompletedState ? user.email : null,
-        completedByName: newCompletedState ? userName : null,
-        completedAt: newCompletedState ? new Date().toISOString() : null
-      };
-      await setDoc(metadataRef, updateData, { merge: true });
-      await logActivity(
-        newCompletedState ? 'complete' : 'uncomplete',
-        file.name,
-        undefined,
-        undefined,
-        undefined,
-        `Estado cambiado por ${userName}`
-      );
-      reloadTree();
-    } catch (error) {
-      console.error("Error updating completed status:", error);
-      setError("Error al actualizar el estado de realización");
-    }
-  };
-
+  
   const handleFileSelection = (filePath: string, event: React.ChangeEvent<HTMLInputElement>) => {
     event.stopPropagation();
     const newSelectedFiles = event.target.checked
@@ -673,6 +806,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
+  const getFilesByPaths = (paths: string[]): DriveFile[] => {
+    // Usamos el cache para asegurar que tenemos todos los datos de metadata
+    return allFilesCache.filter(file => paths.includes(file.fullPath));
+  };
+  
   const handleBulkDelete = async () => {
     if (!userIsQuality || selectedFiles.length === 0) return;
     setLoading(true);
@@ -685,7 +823,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       await logActivity('delete', `${selectedFiles.length} archivos`, undefined, undefined, undefined, 'Eliminación múltiple');
       setSelectedFiles([]);
       setSelectionMode(false);
-      reloadTree();
+      reloadCurrentContent();
     } catch (error) {
       console.error("Error deleting files:", error);
       setError("Error al eliminar los archivos");
@@ -693,7 +831,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLoading(false);
   };
 
-  const handleBulkMarkReviewed = async () => {
+  const handleBulkMarkReviewed = async (reviewed: boolean) => {
     if (!userIsQuality || !user || selectedFiles.length === 0) return;
     try {
       const userName = await getUserDisplayName(user);
@@ -701,20 +839,63 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const metadataId = filePath.replace(/\//g, '_');
         const metadataRef = doc(db, 'fileMetadata', metadataId);
         await setDoc(metadataRef, {
-          reviewed: true,
-          reviewedBy: user.email,
-          reviewedByName: userName,
-          reviewedAt: new Date().toISOString(),
+          reviewed: reviewed,
+          reviewedBy: reviewed ? user.email : null,
+          reviewedByName: reviewed ? userName : null,
+          reviewedAt: reviewed ? new Date().toISOString() : null,
           filePath: filePath
         }, { merge: true });
       }));
-      await logActivity('review', `${selectedFiles.length} archivos`, undefined, undefined, undefined, 'Revisión múltiple');
+      await logActivity(reviewed ? 'review' : 'unreview', `${selectedFiles.length} archivos`, undefined, undefined, undefined, `Revisión múltiple (${reviewed ? 'Marcado' : 'Desmarcado'})`);
       setSelectedFiles([]);
       setSelectionMode(false);
-      reloadTree();
+      reloadCurrentContent();
     } catch (error) {
       console.error("Error marking files as reviewed:", error);
-      setError("Error al marcar archivos como revisados");
+      setError("Error al actualizar el estado de revisión");
+    }
+  };
+
+  const handleBulkMarkCompleted = async (completed: boolean) => {
+    if (!userIsMetrologist || !user || selectedFiles.length === 0) return;
+    try {
+      const userName = await getUserDisplayName(user);
+      await Promise.all(selectedFiles.map(async filePath => {
+        const metadataId = filePath.replace(/\//g, '_');
+        const metadataRef = doc(db, 'fileMetadata', metadataId);
+        await setDoc(metadataRef, {
+          completed: completed,
+          completedBy: completed ? user.email : null,
+          completedByName: completed ? userName : null,
+          completedAt: completed ? new Date().toISOString() : null,
+          filePath: filePath
+        }, { merge: true });
+      }));
+      await logActivity(completed ? 'complete' : 'uncomplete', `${selectedFiles.length} archivos`, undefined, undefined, undefined, `Realización múltiple (${completed ? 'Marcado' : 'Desmarcado'})`);
+      setSelectedFiles([]);
+      setSelectionMode(false);
+      reloadCurrentContent();
+    } catch (error) {
+      console.error("Error marking files as completed:", error);
+      setError("Error al actualizar el estado de realización");
+    }
+  };
+
+  const handleBulkToggleStar = async (starred: boolean) => {
+    if (!user || selectedFiles.length === 0) return;
+    try {
+      await Promise.all(selectedFiles.map(async filePath => {
+        const metadataId = filePath.replace(/\//g, '_');
+        const metadataRef = doc(db, 'fileMetadata', metadataId);
+        await setDoc(metadataRef, { starred: starred, filePath: filePath }, { merge: true });
+      }));
+      await logActivity(starred ? 'star' : 'unstar', `${selectedFiles.length} archivos`, undefined, undefined, undefined, `Destacado múltiple (${starred ? 'Marcado' : 'Desmarcado'})`);
+      setSelectedFiles([]);
+      setSelectionMode(false);
+      reloadCurrentContent();
+    } catch (error) {
+      console.error("Error toggling bulk star:", error);
+      setError("Error al actualizar el estado de destacado");
     }
   };
 
@@ -746,9 +927,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (oldMetadataDoc.exists()) {
       const metadataToMove = oldMetadataDoc.data();
       const userName = await getUserDisplayName(user);
-      if (!metadataToMove.originalUpdated) {
-        const originalFile = getAllFiles(tree!).find(f => f.fullPath === filePath);
-        if (originalFile) metadataToMove.originalUpdated = originalFile.updated;
+      const originalFile = findFileInCache(filePath); // Buscar en cache
+      if (originalFile && !metadataToMove.originalUpdated) {
+        metadataToMove.originalUpdated = originalFile.updated;
       }
       await setDoc(doc(db, 'fileMetadata', newMetadataId), {
         ...metadataToMove,
@@ -756,8 +937,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         movedBy: user?.email,
         movedByName: userName,
         movedAt: new Date().toISOString()
-      });
+      }, { merge: true });
       await deleteDoc(oldMetadataRef);
+    } else {
+        await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+          filePath: newPath,
+          originalUpdated: new Date().toISOString(),
+        }, { merge: true });
     }
     await deleteObject(fileRef);
   };
@@ -773,7 +959,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       await _moveFile(fileToMove.fullPath, targetPathArr);
       await logActivity('move', fileToMove.name, undefined, fromPath, toPath);
       setMoveSuccess(true);
-      setTimeout(() => reloadTree(), 600);
+      setTimeout(() => reloadCurrentContent(), 600);
     } catch (e: any) {
       console.error("Failed to move file:", e);
       setMoveError("Error al mover el archivo: " + e.message);
@@ -796,7 +982,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       setSelectedFiles([]);
       setSelectionMode(false);
       setMoveSuccess(true);
-      setTimeout(() => reloadTree(), 600);
+      setTimeout(() => reloadCurrentContent(), 600);
     } catch (error) {
       console.error("Error moving files:", error);
       setMoveError("Error al mover los archivos: " + (error as Error).message);
@@ -814,7 +1000,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       await deleteDoc(doc(db, 'fileMetadata', metadataId)).catch(() => {});
       await logActivity('delete', deleteFile.name);
       setDeleteFile(null);
-      reloadTree();
+      reloadCurrentContent();
     } catch (error) {
       console.error("Error deleting file:", error);
       setError("Error al eliminar el archivo");
@@ -830,12 +1016,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     await uploadBytes(fakeFileRef, new Uint8Array([0]));
     await logActivity('create_folder', undefined, newFolderName.trim());
     setNewFolderName("");
-    reloadTree();
+    reloadCurrentContent();
   }
 
   const handleFileUpload = async (files: File[]) => {
     if (!userIsQuality || files.length === 0) return;
-    setUploadDialogOpen(false);
+    
     setLoading(true);
     
     try {
@@ -849,10 +1035,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       
       await Promise.all(uploadPromises);
       setMoveSuccess(true);
-      setFilesToUpload([]);
       setTimeout(() => {
         setUploadProgress(0);
-        reloadTree();
+        reloadCurrentContent();
       }, 600);
     } catch (error) {
       console.error("Error uploading files:", error);
@@ -895,78 +1080,177 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
+  const _renameFile = async (file: DriveFile, newFileName: string, newDisplayName: string) => {
+    const oldPath = file.fullPath;
+    const pathParts = oldPath.split('/');
+    pathParts[pathParts.length - 1] = newFileName;
+    const newPath = pathParts.join('/');
+    
+    const oldRef = ref(storage, oldPath);
+    const url = await getDownloadURL(oldRef);
+    
+    const response = await fetch(url);
+    const blob = await response.blob();
+    
+    const newRef = ref(storage, newPath);
+    await uploadBytes(newRef, blob);
+    
+    const oldMetadataId = oldPath.replace(/\//g, '_');
+    const newMetadataId = newPath.replace(/\//g, '_');
+    const oldMetadataRef = doc(db, 'fileMetadata', oldMetadataId);
+    const oldMetadataDoc = await getDoc(oldMetadataRef);
+    
+    if (oldMetadataDoc.exists()) {
+      await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+        ...oldMetadataDoc.data(),
+        filePath: newPath
+      }, { merge: true });
+      await deleteDoc(oldMetadataRef);
+    } else {
+         await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+          filePath: newPath,
+          originalUpdated: file.updated
+        }, { merge: true });
+    }
+    
+    await deleteObject(oldRef);
+    await logActivity('rename', newFileName, undefined, undefined, undefined, `"${file.name}" → "${newDisplayName}"`);
+  }
+
   const handleRename = async () => {
     if (!renameTarget || !newName.trim() || !userIsQuality) return;
     
     try {
-      if ('url' in renameTarget) {
-        const file = renameTarget as DriveFile;
-        const oldPath = file.fullPath;
-        const pathParts = oldPath.split('/');
-        pathParts[pathParts.length - 1] = newName.trim() + (newName.includes('.') ? '' : '.pdf');
-        const newPath = pathParts.join('/');
-        
-        const oldRef = ref(storage, oldPath);
-        const url = await getDownloadURL(oldRef);
-        const response = await fetch(url);
-        const blob = await response.blob();
-        
-        const newRef = ref(storage, newPath);
-        await uploadBytes(newRef, blob);
-        
-        const oldMetadataId = oldPath.replace(/\//g, '_');
-        const newMetadataId = newPath.replace(/\//g, '_');
-        const oldMetadataRef = doc(db, 'fileMetadata', oldMetadataId);
-        const oldMetadataDoc = await getDoc(oldMetadataRef);
-        
-        if (oldMetadataDoc.exists()) {
-          await setDoc(doc(db, 'fileMetadata', newMetadataId), {
-            ...oldMetadataDoc.data(),
-            filePath: newPath
-          });
-          await deleteDoc(oldMetadataRef);
-        }
-        
-        await deleteObject(oldRef);
-        await logActivity('rename', file.name, undefined, undefined, undefined, `"${file.name}" → "${newName}"`);
-      }
+      const file = renameTarget as DriveFile;
+      const newFileName = newName.trim() + (newName.includes('.') ? '' : '.pdf');
+      await _renameFile(file, newFileName, newName.trim());
       
       setRenameDialogOpen(false);
       setRenameTarget(null);
       setNewName("");
       setMoveSuccess(true);
-      setTimeout(() => reloadTree(), 600);
+      setTimeout(() => reloadCurrentContent(), 600);
     } catch (error) {
       console.error("Error renaming:", error);
       setError("Error al renombrar");
     }
   };
 
+  const handleBulkRename = async () => {
+    if (!bulkRenameSuffix.trim() || !userIsQuality || selectedFiles.length === 0) return;
+    setBulkRenameOpen(false);
+    setLoading(true);
+    
+    try {
+      const selectedFileObjects = getFilesByPaths(selectedFiles);
+      
+      await Promise.all(selectedFileObjects.map(async (file, index) => {
+        const { displayName } = extractFileInfo(file.name);
+        const newDisplayName = `${displayName}${bulkRenameSuffix.trim()}`;
+        const newFileName = newDisplayName + '.pdf';
+        
+        await _renameFile(file, newFileName, newDisplayName);
+      }));
+      
+      await logActivity('rename', `${selectedFiles.length} archivos`, undefined, undefined, undefined, `Renombre múltiple con sufijo: ${bulkRenameSuffix.trim()}`);
+      setSelectedFiles([]);
+      setSelectionMode(false);
+      setMoveSuccess(true);
+      setTimeout(() => reloadCurrentContent(), 600);
+    } catch (error) {
+      console.error("Error bulk renaming:", error);
+      setError("Error al renombrar archivos masivamente");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const _duplicateFile = async (file: DriveFile, newName: string) => {
+    const oldRef = ref(storage, file.fullPath);
+    const url = await getDownloadURL(oldRef);
+    
+    const response = await fetch(url);
+    const blob = await response.blob();
+    
+    const pathParts = file.fullPath.split('/');
+    pathParts[pathParts.length - 1] = newName;
+    const newPath = pathParts.join('/');
+    
+    const newRef = ref(storage, newPath);
+    await uploadBytes(newRef, blob);
+    
+    const oldMetadataId = file.fullPath.replace(/\//g, '_');
+    const newMetadataId = newPath.replace(/\//g, '_');
+    const oldMetadataRef = doc(db, 'fileMetadata', oldMetadataId);
+    const oldMetadataDoc = await getDoc(oldMetadataRef);
+
+    if (oldMetadataDoc.exists()) {
+      const metadataToCopy = oldMetadataDoc.data();
+      delete metadataToCopy.reviewed;
+      delete metadataToCopy.reviewedBy;
+      delete metadataToCopy.reviewedByName;
+      delete metadataToCopy.reviewedAt;
+      delete metadataToCopy.completed;
+      delete metadataToCopy.completedBy;
+      delete metadataToCopy.completedByName;
+      delete metadataToCopy.completedAt;
+      delete metadataToCopy.starred;
+      
+      await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+        ...metadataToCopy,
+        filePath: newPath,
+        originalUpdated: file.updated
+      }, { merge: true });
+    } else {
+       await setDoc(doc(db, 'fileMetadata', newMetadataId), {
+          filePath: newPath,
+          originalUpdated: file.updated
+       }, { merge: true });
+    }
+    await logActivity('duplicate', file.name, undefined, undefined, undefined, `Copiado como "${newName}"`);
+  }
+
   const handleDuplicateFile = async (file: DriveFile) => {
     if (!userIsQuality) return;
     
     try {
       setLoading(true);
-      const oldRef = ref(storage, file.fullPath);
-      const url = await getDownloadURL(oldRef);
-      const response = await fetch(url);
-      const blob = await response.blob();
-      
       const { displayName } = extractFileInfo(file.name);
       const newName = `${displayName} (copia).pdf`;
-      const pathParts = file.fullPath.split('/');
-      pathParts[pathParts.length - 1] = newName;
-      const newPath = pathParts.join('/');
       
-      const newRef = ref(storage, newPath);
-      await uploadBytes(newRef, blob);
-      
-      await logActivity('duplicate', file.name);
+      await _duplicateFile(file, newName);
+
       setMoveSuccess(true);
-      setTimeout(() => reloadTree(), 600);
+      setTimeout(() => reloadCurrentContent(), 600);
     } catch (error) {
       console.error("Error duplicating file:", error);
       setError("Error al duplicar el archivo");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleBulkDuplicate = async () => {
+    if (!userIsQuality || selectedFiles.length === 0) return;
+    setLoading(true);
+    
+    try {
+      const selectedFileObjects = getFilesByPaths(selectedFiles);
+
+      await Promise.all(selectedFileObjects.map(async (file, index) => {
+        const { displayName } = extractFileInfo(file.name);
+        const newName = `${displayName} (copia ${index + 1}).pdf`;
+        await _duplicateFile(file, newName);
+      }));
+      
+      await logActivity('duplicate', `${selectedFiles.length} archivos`, undefined, undefined, undefined, 'Duplicación múltiple');
+      setSelectedFiles([]);
+      setSelectionMode(false);
+      setMoveSuccess(true);
+      setTimeout(() => reloadCurrentContent(), 600);
+    } catch (error) {
+      console.error("Error bulk duplicating files:", error);
+      setError("Error al duplicar archivos masivamente");
     } finally {
       setLoading(false);
     }
@@ -976,8 +1260,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setPreviewFile(file);
   };
 
-  const handleShowFileInfo = (file: DriveFile) => {
+  const handleShowFileInfo = async (file: DriveFile) => {
     setFileInfoTarget(file);
+    // Cargar historial del archivo
+    const history = await loadFileHistory(file.fullPath);
+    setActivities(history);
     setFileInfoOpen(true);
   };
 
@@ -1022,24 +1309,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setSelectedFile(null);
   };
 
-  const currentFolder = getCurrentFolder();
-
-  const filteredFolders = useMemo(() => {
-    if (!currentFolder || (globalSearch && searchQuery)) return [];
-    let folders = currentFolder.folders;
-    if (selectedPath.length === 0 && currentUserData) {
-      const userName = currentUserData.name || 'Usuario';
-      folders = filterFoldersByPermissions(folders, userIsQuality, userName);
-    }
-    if (searchQuery) {
-      folders = folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    }
-    return sortFolders(folders);
-  }, [currentFolder, searchQuery, globalSearch, sortOrder, currentUserData, userIsQuality, selectedPath]);
-
+  // Content for current view
+  const currentFolders = currentContent?.folders || [];
+  const currentFiles = currentContent?.files || [];
+  
   const filteredFiles = useMemo(() => {
-    if (!tree) return [];
-    let files = (globalSearch && searchQuery) ? getAllFiles(tree) : (currentFolder?.files || []);
+    let files: DriveFile[] = [];
+    
+    if (globalSearch && searchQuery) {
+      // Usar cache para búsqueda global
+      files = allFilesCache;
+    } else {
+      files = currentFiles;
+    }
     
     if (searchQuery) {
       files = files.filter(f =>
@@ -1055,12 +1337,25 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     
     return sortFiles(files);
-  }, [currentFolder, searchQuery, globalSearch, tree, sortBy, sortOrder, filterType]);
+  }, [currentFiles, searchQuery, globalSearch, allFilesCache, sortBy, sortOrder, filterType]);
+  
+  const filteredFolders = useMemo(() => {
+    if (globalSearch && searchQuery) return [];
+    let folders = currentFolders;
+
+    if (searchQuery) {
+      folders = folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
+    return sortFolders(folders);
+  }, [currentFolders, searchQuery, globalSearch, sortOrder]);
+
 
   const filteredActivities = useMemo(() => {
     if (!activities) return [];
-    if (selectedPath.length > 0 && activityTab === 1) {
-      const currentPathStr = selectedPath.join('/');
+    if (fileInfoOpen) { // Historial de Archivo: Ya filtrado por loadFileHistory
+        return activities;
+    } else if (activityTab === 1) { // Carpeta actual
+      const currentPathStr = selectedPath.length > 0 ? selectedPath.join('/') : 'root';
       return activities.filter(activity =>
         activity.path === currentPathStr ||
         activity.fromPath === currentPathStr ||
@@ -1068,7 +1363,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       );
     }
     return activities;
-  }, [activities, selectedPath, activityTab]);
+  }, [activities, selectedPath, activityTab, fileInfoOpen]);
+  
 
   if (accessLoading) {
     return (
@@ -1206,6 +1502,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     variant="outlined"
                   />
                 )}
+                {storageUsage !== null && (
+                   <Chip 
+                    icon={<StorageIcon />} 
+                    label={`Uso: ${formatFileSize(storageUsage)}`} 
+                    size="small" 
+                    color="default" 
+                    variant="outlined"
+                  />
+                )}
               </Stack>
             </Box>
 
@@ -1243,7 +1548,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
             <Tooltip title="Actualizar">
               <IconButton 
-                onClick={reloadTree}
+                onClick={reloadCurrentContent}
                 disabled={loading}
                 sx={{ 
                   '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
@@ -1253,9 +1558,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </IconButton>
             </Tooltip>
 
-            <Tooltip title="Actividad">
+            <Tooltip title="Actividad del Drive">
               <IconButton 
-                onClick={() => setActivityPanelOpen(true)}
+                onClick={() => { setFileInfoOpen(false); setActivityPanelOpen(true); }}
                 sx={{ 
                   '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
                 }}
@@ -1350,7 +1655,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
               <Tooltip title={globalSearch ? "Búsqueda global activada" : "Buscar en esta carpeta"}>
                 <IconButton 
-                  onClick={() => setGlobalSearch(!globalSearch)} 
+                  onClick={() => {
+                    setGlobalSearch(!globalSearch);
+                    if (!globalSearch && allFilesCache.length === 0) {
+                        // Forzar precarga de cache si se activa la búsqueda global y está vacío
+                        getAllFiles().then(setAllFilesCache).catch(console.error);
+                    }
+                  }} 
                   color={globalSearch ? "primary" : "default"}
                   sx={{ 
                     '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
@@ -1399,11 +1710,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </Select>
               </FormControl>
 
-              {filteredFiles.length > 0 && userIsQuality && (
+              {(filteredFolders.length > 0 || filteredFiles.length > 0) && (userIsQuality || userIsMetrologist) && (
                 <FormControlLabel
                   control={
                     <Checkbox 
-                      checked={selectedFiles.length === filteredFiles.length && filteredFiles.length > 0}
+                      checked={selectedFiles.length > 0 && selectedFiles.length === filteredFiles.length}
                       indeterminate={selectedFiles.length > 0 && selectedFiles.length < filteredFiles.length}
                       onChange={handleSelectAll}
                     />
@@ -1417,36 +1728,39 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       </Paper>
 
       <Container maxWidth="xl" sx={{ py: 3 }}>
-        {loading ? (
-          view === "grid" ? (
-            <Grid container spacing={2}>
-              {Array.from(new Array(12)).map((_, index) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={index}>
-                  <CardSkeleton />
-                </Grid>
-              ))}
-            </Grid>
-          ) : (
-            <Paper elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
-              <List>
-                {Array.from(new Array(8)).map((_, index) => (
-                  <ListSkeleton key={index} />
+        {loading && !currentContent ? (
+          <Box>
+            {/* Esqueletos de carga */}
+            {view === "grid" ? (
+              <Grid container spacing={2}>
+                {Array.from(new Array(12)).map((_, index) => (
+                  <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={index}>
+                    <CardSkeleton />
+                  </Grid>
                 ))}
-              </List>
-            </Paper>
-          )
+              </Grid>
+            ) : (
+              <Paper elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
+                <List>
+                  {Array.from(new Array(8)).map((_, index) => (
+                    <ListSkeleton key={index} />
+                  ))}
+                </List>
+              </Paper>
+            )}
+          </Box>
         ) : error ? (
           <Alert 
             severity="error" 
             action={
-              <Button color="inherit" size="small" onClick={reloadTree}>
+              <Button color="inherit" size="small" onClick={reloadCurrentContent}>
                 Reintentar
               </Button>
             }
           >
             {error}
           </Alert>
-        ) : currentFolder ? (
+        ) : (
           <>
             {globalSearch && searchQuery && (
               <Alert severity="info" sx={{ mb: 3 }}>
@@ -1486,7 +1800,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                               {folder.name}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {folder.files.length} elementos
+                              {/* No podemos mostrar el número de elementos sin cargar la subcarpeta */}
+                              Carpeta
                             </Typography>
                           </Box>
                         </Stack>
@@ -1517,7 +1832,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                           }
                         }}
                       >
-                        {selectionMode && userIsQuality && (
+                        {(selectionMode && (userIsQuality || userIsMetrologist)) && (
                           <Checkbox
                             checked={isSelected}
                             onChange={(e) => handleFileSelection(file.fullPath, e)}
@@ -1640,7 +1955,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                             {folder.name}
                           </Typography>
                         }
-                        secondary={`${folder.files.length} elementos`}
+                        secondary={`Carpeta`}
                       />
                     </ListItemButton>
                   ))}
@@ -1660,7 +1975,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                           '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.04) }
                         }}
                       >
-                        {selectionMode && userIsQuality && (
+                        {(selectionMode && (userIsQuality || userIsMetrologist)) && (
                           <Checkbox
                             checked={isSelected}
                             onChange={(e) => handleFileSelection(file.fullPath, e)}
@@ -1727,7 +2042,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </Box>
             )}
           </>
-        ) : null}
+        )}
       </Container>
 
       <Slide direction="up" in={selectionMode && selectedFiles.length > 0}>
@@ -1744,55 +2059,105 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             minWidth: { xs: '90%', sm: 400 }
           }}
         >
-          <Stack direction="row" spacing={2} alignItems="center" justifyContent="center" flexWrap="wrap">
-            <Typography variant="body2" fontWeight={600}>
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" flexWrap="wrap">
+            <Typography variant="body2" fontWeight={600} sx={{ mr: 1 }}>
               {selectedFiles.length} seleccionados
             </Typography>
+            
+            <Tooltip title="Destacar">
+              <IconButton 
+                onClick={() => handleBulkToggleStar(true)}
+                color="warning"
+                size="small"
+              >
+                <StarIcon />
+              </IconButton>
+            </Tooltip>
+            
             {userIsQuality && (
               <>
-                <Button
-                  startIcon={<DeleteIcon />}
-                  onClick={handleBulkDelete}
-                  color="error"
-                  variant="outlined"
-                  disabled={bulkMoveLoading}
-                  size="small"
-                >
-                  Eliminar
-                </Button>
+                <Tooltip title="Eliminar">
+                  <IconButton 
+                    onClick={handleBulkDelete}
+                    color="error"
+                    disabled={bulkMoveLoading}
+                    size="small"
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Mover">
+                  <IconButton 
+                    onClick={() => setBulkMoveOpen(true)}
+                    color="info"
+                    disabled={bulkMoveLoading}
+                    size="small"
+                  >
+                    <DriveFileMoveIcon />
+                  </IconButton>
+                </Tooltip>
+
+                <Tooltip title="Hacer copias">
+                  <IconButton 
+                    onClick={handleBulkDuplicate}
+                    color="secondary"
+                    disabled={loading}
+                    size="small"
+                  >
+                    <FileCopyIcon />
+                  </IconButton>
+                </Tooltip>
+
+                <Tooltip title="Renombrar con sufijo">
+                  <IconButton 
+                    onClick={() => setBulkRenameOpen(true)}
+                    color="primary"
+                    disabled={loading}
+                    size="small"
+                  >
+                    <DriveFileRenameOutlineIcon />
+                  </IconButton>
+                </Tooltip>
+                
                 <Button
                   startIcon={<CheckCircleIcon />}
-                  onClick={handleBulkMarkReviewed}
+                  onClick={() => handleBulkMarkReviewed(true)}
                   color="success"
                   variant="contained"
                   disabled={bulkMoveLoading}
                   size="small"
+                  sx={{ textTransform: 'none' }}
                 >
-                  Marcar Revisado
-                </Button>
-                <Button
-                  startIcon={<DriveFileMoveIcon />}
-                  onClick={() => setBulkMoveOpen(true)}
-                  variant="contained"
-                  disabled={bulkMoveLoading}
-                  size="small"
-                >
-                  Mover
+                  Revisado
                 </Button>
               </>
             )}
-            <Button
-              startIcon={<CloseIcon />}
+            
+            {userIsMetrologist && (
+              <Button
+                startIcon={<AssignmentTurnedInIcon />}
+                onClick={() => handleBulkMarkCompleted(true)}
+                color="primary"
+                variant="contained"
+                disabled={bulkMoveLoading}
+                size="small"
+                sx={{ textTransform: 'none' }}
+              >
+                Realizado
+              </Button>
+            )}
+
+            <IconButton
               onClick={() => {
                 setSelectedFiles([]);
                 setSelectionMode(false);
               }}
-              variant="outlined"
               disabled={bulkMoveLoading}
               size="small"
             >
-              Cancelar
-            </Button>
+              <CloseIcon />
+            </IconButton>
           </Stack>
         </Paper>
       </Slide>
@@ -1811,7 +2176,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         <Box sx={{ p: 3 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}>
             <Typography variant="h6" fontWeight={600}>
-              Actividad
+              Actividad del Drive
             </Typography>
             <IconButton onClick={() => setActivityPanelOpen(false)}>
               <CloseIcon />
@@ -1924,7 +2289,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </MenuItem>
         <MenuItem onClick={() => { if (selectedFile) handleShowFileInfo(selectedFile); handleActionMenuClose(); }}>
           <ListItemIcon><InfoIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>Información</ListItemText>
+          <ListItemText>Información/Historial</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (selectedFile) handleShareFile(selectedFile); handleActionMenuClose(); }}>
+          <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Compartir Link</ListItemText>
         </MenuItem>
         <MenuItem onClick={() => { if (selectedFile) handleToggleStar(selectedFile); handleActionMenuClose(); }}>
           <ListItemIcon>
@@ -1938,7 +2307,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <ListItemText>Ir a carpeta</ListItemText>
           </MenuItem>
         )}
-        {userIsQuality && <Divider />}
+        
+        {(userIsQuality || userIsMetrologist) && <Divider />}
+        
         {userIsQuality && (
           <>
             <MenuItem onClick={() => { if (selectedFile) { setRenameTarget(selectedFile); setNewName(extractFileInfo(selectedFile.name).displayName); setRenameDialogOpen(true); } handleActionMenuClose(); }}>
@@ -1953,24 +2324,27 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <ListItemIcon><DriveFileMoveIcon fontSize="small" /></ListItemIcon>
               <ListItemText>Mover</ListItemText>
             </MenuItem>
+            {/* ACCIÓN RESTAURADA: REVISADO */}
             <MenuItem onClick={() => { if (selectedFile) handleMarkReviewed(selectedFile); handleActionMenuClose(); }}>
-              <ListItemIcon><CheckCircleIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>{selectedFile?.reviewed ? 'Marcar no revisado' : 'Marcar revisado'}</ListItemText>
+              <ListItemIcon><CheckCircleIcon fontSize="small" color={selectedFile?.reviewed ? 'success' : 'action'} /></ListItemIcon>
+              <ListItemText>{selectedFile?.reviewed ? 'Marcar NO Revisado' : 'Marcar Revisado'}</ListItemText>
             </MenuItem>
           </>
         )}
+        {/* ACCIÓN RESTAURADA: REALIZADO */}
         {userIsMetrologist && (
           <MenuItem onClick={() => { if (selectedFile) handleMarkCompleted(selectedFile); handleActionMenuClose(); }}>
-            <ListItemIcon><AssignmentTurnedInIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>{selectedFile?.completed ? 'Marcar no realizado' : 'Marcar realizado'}</ListItemText>
+            <ListItemIcon><AssignmentTurnedInIcon fontSize="small" color={selectedFile?.completed ? 'primary' : 'action'} /></ListItemIcon>
+            <ListItemText>{selectedFile?.completed ? 'Marcar NO Realizado' : 'Marcar Realizado'}</ListItemText>
           </MenuItem>
         )}
-        {userIsQuality && <Divider />}
+        
+        {(userIsQuality || userIsMetrologist) && <Divider />}
         {userIsQuality && (
-          <MenuItem onClick={() => { if (selectedFile) setDeleteFile(selectedFile); handleActionMenuClose(); }} sx={{ color: 'error.main' }}>
-            <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
-            <ListItemText>Eliminar</ListItemText>
-          </MenuItem>
+            <MenuItem onClick={() => { if (selectedFile) setDeleteFile(selectedFile); handleActionMenuClose(); }} sx={{ color: 'error.main' }}>
+              <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+              <ListItemText>Eliminar</ListItemText>
+            </MenuItem>
         )}
       </Menu>
 
@@ -1999,6 +2373,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Descargar</ListItemText>
         </MenuItem>
+        
         {userIsQuality && (
           <>
             <Divider />
@@ -2047,7 +2422,39 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </Button>
         </DialogActions>
       </Dialog>
-
+      
+      <Dialog open={bulkRenameOpen} onClose={() => setBulkRenameOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Renombrar {selectedFiles.length} archivos</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Se agregará el sufijo a todos los archivos seleccionados.
+          </Typography>
+          <TextField
+            value={bulkRenameSuffix}
+            onChange={(e) => setBulkRenameSuffix(e.target.value)}
+            label="Sufijo a añadir (ej: (v2))"
+            fullWidth
+            autoFocus
+            margin="normal"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && bulkRenameSuffix.trim()) {
+                handleBulkRename();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setBulkRenameOpen(false)}>Cancelar</Button>
+          <Button 
+            onClick={handleBulkRename} 
+            variant="contained" 
+            disabled={!bulkRenameSuffix.trim() || loading}
+          >
+            Renombrar Masivo
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
       <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Renombrar</DialogTitle>
         <DialogContent>
@@ -2078,7 +2485,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         onClose={() => setPreviewFile(null)} 
         maxWidth="lg" 
         fullWidth
-        PaperProps={{ sx: { height: '90vh' } }}
+        PaperProps={{ sx: { height: '90vh', minHeight: '90vh' } }}
       >
         <DialogTitle>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -2101,57 +2508,108 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             />
           )}
         </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setPreviewFile(null)}>Cerrar</Button>
+          {previewFile && (
+            <Button onClick={() => handleDownloadFile(previewFile)} startIcon={<DownloadIcon />} variant="contained">
+              Descargar
+            </Button>
+          )}
+        </DialogActions>
       </Dialog>
 
       <Dialog open={fileInfoOpen} onClose={() => setFileInfoOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Información del archivo</DialogTitle>
+        <DialogTitle>Información y Historial del Archivo</DialogTitle>
         <DialogContent>
-          {fileInfoTarget && (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Nombre</Typography>
-                <Typography variant="body1" fontWeight={500}>
-                  {extractFileInfo(fileInfoTarget.name).displayName}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Tipo</Typography>
-                <Typography variant="body1">{fileInfoTarget.contentType || 'Desconocido'}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Tamaño</Typography>
-                <Typography variant="body1">{formatFileSize(fileInfoTarget.size)}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Ubicación</Typography>
-                <Typography variant="body1">{fileInfoTarget.folderPath || 'Raíz'}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Última modificación</Typography>
-                <Typography variant="body1">
-                  {extractFileInfo(fileInfoTarget.name, fileInfoTarget.updated, fileInfoTarget.originalUpdated).displayDate}
-                </Typography>
-              </Box>
-              {fileInfoTarget.reviewedByName && (
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {/* Panel de Información */}
+            {fileInfoTarget && (
+              <>
+                <Typography variant="subtitle1" fontWeight={600}>Detalles</Typography>
                 <Box>
-                  <Typography variant="caption" color="text.secondary">Revisado por</Typography>
-                  <Typography variant="body1" color="success.main">
-                    {fileInfoTarget.reviewedByName}
-                    {fileInfoTarget.reviewedAt && ` - ${new Date(fileInfoTarget.reviewedAt).toLocaleDateString('es-ES')}`}
+                  <Typography variant="caption" color="text.secondary">Nombre</Typography>
+                  <Typography variant="body1" fontWeight={500}>
+                    {extractFileInfo(fileInfoTarget.name).displayName}
                   </Typography>
                 </Box>
-              )}
-              {fileInfoTarget.completedByName && (
+                <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Tipo</Typography>
+                        <Typography variant="body1">{fileInfoTarget.contentType || 'Desconocido'}</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                        <Typography variant="caption" color="text.secondary">Tamaño</Typography>
+                        <Typography variant="body1">{formatFileSize(fileInfoTarget.size)}</Typography>
+                    </Grid>
+                </Grid>
                 <Box>
-                  <Typography variant="caption" color="text.secondary">Realizado por</Typography>
-                  <Typography variant="body1" color="primary.main">
-                    {fileInfoTarget.completedByName}
-                    {fileInfoTarget.completedAt && ` - ${new Date(fileInfoTarget.completedAt).toLocaleDateString('es-ES')}`}
+                  <Typography variant="caption" color="text.secondary">Ubicación</Typography>
+                  <Typography variant="body1">{fileInfoTarget.folderPath || 'Raíz'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Última modificación</Typography>
+                  <Typography variant="body1">
+                    {extractFileInfo(fileInfoTarget.name, fileInfoTarget.updated, fileInfoTarget.originalUpdated).displayDate}
                   </Typography>
                 </Box>
-              )}
-            </Stack>
-          )}
+                {fileInfoTarget.reviewedByName && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Revisado por</Typography>
+                    <Typography variant="body1" color="success.main">
+                      {fileInfoTarget.reviewedByName}
+                      {fileInfoTarget.reviewedAt && ` - ${new Date(fileInfoTarget.reviewedAt).toLocaleDateString('es-ES')}`}
+                    </Typography>
+                  </Box>
+                )}
+                {fileInfoTarget.completedByName && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Realizado por</Typography>
+                    <Typography variant="body1" color="primary.main">
+                      {fileInfoTarget.completedByName}
+                      {fileInfoTarget.completedAt && ` - ${new Date(fileInfoTarget.completedAt).toLocaleDateString('es-ES')}`}
+                    </Typography>
+                  </Box>
+                )}
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle1" fontWeight={600}>
+                  Historial de Actividad
+                </Typography>
+              </>
+            )}
+            
+            {/* Historial de Archivo (se utiliza filteredActivities después de loadFileHistory) */}
+            {activityLoading ? (
+              <CircularProgress size={20} />
+            ) : filteredActivities.length > 0 ? (
+              <Timeline sx={{ p: 0 }}>
+                  {filteredActivities.map((activity, idx) => (
+                    <TimelineItem key={activity.id}>
+                      <TimelineOppositeContent color="text.secondary" sx={{ flex: 0.2 }}>
+                        <Typography variant="caption">
+                          {new Date(activity.timestamp).toLocaleDateString('es-ES')}
+                        </Typography>
+                      </TimelineOppositeContent>
+                      <TimelineSeparator>
+                        <TimelineDot color={activity.action === 'delete' ? 'error' : activity.action === 'create' ? 'success' : 'primary'}>
+                          {getActivityIcon(activity.action)}
+                        </TimelineDot>
+                        {idx < filteredActivities.length - 1 && <TimelineConnector />}
+                      </TimelineSeparator>
+                      <TimelineContent>
+                        <Typography variant="body2" fontWeight={500}>
+                          {activity.userName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {getActivityDescription(activity)}
+                        </Typography>
+                      </TimelineContent>
+                    </TimelineItem>
+                  ))}
+              </Timeline>
+            ) : (
+              <Typography variant="body2" color="text.secondary">No hay historial para este archivo.</Typography>
+            )}
+          </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setFileInfoOpen(false)}>Cerrar</Button>
@@ -2195,10 +2653,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           )}
           {!moveLoading && (
             <FolderMoveTree
-              tree={tree}
+              currentPath={moveFile ? getFileParentPath(moveFile.fullPath) : selectedPath}
               onSelect={handleMoveFile}
-              excludePath={moveFile ? getFileParentPath(moveFile.fullPath) : []}
               disabled={moveLoading}
+              currentUserData={currentUserData}
+              userIsQuality={userIsQuality}
             />
           )}
         </DialogContent>
@@ -2231,10 +2690,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           )}
           {!bulkMoveLoading && (
             <FolderMoveTree
-              tree={tree}
+              currentPath={selectedPath}
               onSelect={handleBulkMove}
-              excludePath={selectedPath}
               disabled={bulkMoveLoading}
+              currentUserData={currentUserData}
+              userIsQuality={userIsQuality}
             />
           )}
         </DialogContent>
@@ -2259,52 +2719,130 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   );
 }
 
+
+// Componente auxiliar para la navegación del árbol de movimiento (ahora con Lazy Loading)
 function FolderMoveTree({
-  tree,
-  path = [],
+  currentPath = [],
   onSelect,
-  excludePath = [],
-  disabled = false
+  disabled = false,
+  currentUserData,
+  userIsQuality,
+  initialPath = [],
+  isRoot = true,
 }: {
-  tree: DriveFolder | null;
-  path?: string[];
+  currentPath?: string[];
   onSelect: (path: string[]) => void;
-  excludePath?: string[];
   disabled?: boolean;
+  currentUserData: UserData | null;
+  userIsQuality: boolean;
+  initialPath?: string[];
+  isRoot?: boolean;
 }) {
-  if (!tree) return null;
-  const isRoot = tree.name === "Drive";
-  const currentPath = isRoot ? [] : [...path, tree.name];
-  const shouldExclude = JSON.stringify(currentPath) === JSON.stringify(excludePath);
+  const [children, setChildren] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  
+  const path = isRoot ? initialPath : [...initialPath, currentPath[currentPath.length - 1]];
+  const pathString = [ROOT_PATH, ...path].join('/');
+  
+  // Usamos el path del item a mover/carpeta actual para excluir
+  const excludePathStr = JSON.stringify(currentPath);
+  const currentPathStr = JSON.stringify(path);
+  const shouldExclude = currentPathStr === excludePathStr;
+
+  const fetchChildren = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dirRef = ref(storage, pathString);
+      const res = await listAll(dirRef);
+      let folderNames = res.prefixes.map(p => p.name);
+
+      if (path.length === 0 && currentUserData) {
+        const userName = currentUserData.name || 'Usuario';
+        folderNames = filterFoldersByPermissions(folderNames, userIsQuality, userName);
+      }
+
+      setChildren(folderNames);
+    } catch (e) {
+      console.error("Error loading subfolders for move tree:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [pathString, path.length, currentUserData, userIsQuality]);
+
+  useEffect(() => {
+    if (expanded && children.length === 0 && !loading) {
+      fetchChildren();
+    }
+  }, [expanded, children.length, loading, fetchChildren]);
+  
+  // Forzar la carga de la raíz al inicio
+  useEffect(() => {
+    if (isRoot) {
+      // Inicia expandido si es la raíz o si es un path inicial que necesita cargarse
+      setExpanded(true);
+    }
+  }, [isRoot]);
+
+  // Si no es la raíz, mostramos el botón de la carpeta actual.
+  if (!isRoot && shouldExclude) {
+    return null; 
+  }
 
   return (
-    <Box>
-      {!shouldExclude && (
-        <Button
-          onClick={() => !disabled && onSelect(currentPath)}
-          disabled={disabled}
-          sx={{
-            justifyContent: 'flex-start',
-            pl: path.length * 2,
-            textTransform: 'none',
-            width: '100%',
-            '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
-          }}
-          startIcon={<FolderIcon />}
-        >
-          {isRoot ? "Carpeta raíz" : tree.name}
-        </Button>
+    <Box sx={{ pl: isRoot ? 0 : 2 }}>
+      <Button
+        onClick={() => !disabled && onSelect(path)}
+        disabled={disabled}
+        sx={{
+          justifyContent: 'flex-start',
+          textTransform: 'none',
+          width: '100%',
+          my: 0.5,
+          bgcolor: 'transparent',
+          '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
+        }}
+        startIcon={<FolderIcon />}
+      >
+        {isRoot && path.length === 0 ? "Carpeta raíz (Mi unidad)" : path[path.length - 1]}
+      </Button>
+      
+      {children.length > 0 && (
+          <ListItemButton 
+              onClick={() => setExpanded(!expanded)}
+              disabled={disabled || loading}
+              sx={{ pl: isRoot ? 0 : 2, pr: 0, py: 0.5, maxWidth: '100%', display: 'flex', justifyContent: 'flex-start' }}
+          >
+              {loading ? (
+                 <CircularProgress size={16} sx={{ mr: 1 }} />
+              ) : children.length > 0 ? (
+                 expanded ? <ExpandLessIcon sx={{ mr: 1 }} /> : <ExpandMoreIcon sx={{ mr: 1 }} />
+              ) : (
+                 <Box sx={{ width: 24, mr: 1 }} /> // Spacer
+              )}
+              
+              <Typography variant="caption" color="text.secondary">
+                {expanded ? "Ocultar subcarpetas" : `Ver ${children.length} subcarpetas`}
+              </Typography>
+          </ListItemButton>
       )}
-      {tree.folders.map((folder, idx) => (
-        <FolderMoveTree
-          key={idx}
-          tree={folder}
-          path={currentPath}
-          onSelect={onSelect}
-          excludePath={excludePath}
-          disabled={disabled}
-        />
-      ))}
+
+      <Collapse in={expanded} timeout="auto" unmountOnExit>
+        <Box>
+          {children.map((folderName, idx) => (
+            <FolderMoveTree
+              key={idx}
+              currentPath={currentPath}
+              onSelect={onSelect}
+              disabled={disabled}
+              currentUserData={currentUserData}
+              userIsQuality={userIsQuality}
+              initialPath={[...path, folderName]}
+              isRoot={false}
+            />
+          ))}
+        </Box>
+      </Collapse>
     </Box>
   );
 }
