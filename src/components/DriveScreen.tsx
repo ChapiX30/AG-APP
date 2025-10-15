@@ -1143,7 +1143,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     
     try {
       const selectedFileObjects = getFilesByPaths(selectedFiles);
-      
+
       await Promise.all(selectedFileObjects.map(async (file, index) => {
         const { displayName } = extractFileInfo(file.name);
         const newDisplayName = `${displayName}${bulkRenameSuffix.trim()}`;
@@ -2720,14 +2720,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 }
 
 
-// Componente auxiliar para la navegación del árbol de movimiento (ahora con Lazy Loading)
+// Componente auxiliar para la navegación del árbol de movimiento (CORREGIDO para Lazy Loading)
 function FolderMoveTree({
-  currentPath = [],
+  currentPath = [], // El path de la carpeta de origen o del archivo a mover
   onSelect,
   disabled = false,
   currentUserData,
   userIsQuality,
-  initialPath = [],
+  initialPath = [], // El path de la carpeta que se está renderizando actualmente
   isRoot = true,
 }: {
   currentPath?: string[];
@@ -2742,10 +2742,11 @@ function FolderMoveTree({
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   
-  const path = isRoot ? initialPath : [...initialPath, currentPath[currentPath.length - 1]];
+  // CORRECCIÓN CLAVE: El path que se usa para navegar en Firebase debe ser `initialPath`
+  const path = initialPath; 
   const pathString = [ROOT_PATH, ...path].join('/');
   
-  // Usamos el path del item a mover/carpeta actual para excluir
+  // Lógica para excluir la carpeta de origen (donde está el archivo)
   const excludePathStr = JSON.stringify(currentPath);
   const currentPathStr = JSON.stringify(path);
   const shouldExclude = currentPathStr === excludePathStr;
@@ -2764,61 +2765,59 @@ function FolderMoveTree({
 
       setChildren(folderNames);
     } catch (e) {
-      console.error("Error loading subfolders for move tree:", e);
+      // Manejar el error de carpeta vacía o no encontrada
+      console.warn("Error loading subfolders for move tree:", e);
+      setChildren([]); // Establecer a vacío para detener la recursión
     } finally {
       setLoading(false);
     }
   }, [pathString, path.length, currentUserData, userIsQuality]);
 
   useEffect(() => {
+    // Si se expande o si es la raíz y aún no tiene hijos, intentar cargar.
     if (expanded && children.length === 0 && !loading) {
       fetchChildren();
     }
-  }, [expanded, children.length, loading, fetchChildren]);
-  
-  // Forzar la carga de la raíz al inicio
-  useEffect(() => {
+    // Carga inicial para la raíz o si es un nodo que debería estar precargado
     if (isRoot) {
-      // Inicia expandido si es la raíz o si es un path inicial que necesita cargarse
-      setExpanded(true);
+        setExpanded(true);
     }
-  }, [isRoot]);
-
-  // Si no es la raíz, mostramos el botón de la carpeta actual.
-  if (!isRoot && shouldExclude) {
-    return null; 
-  }
+  }, [expanded, children.length, loading, fetchChildren, isRoot]);
+  
 
   return (
-    <Box sx={{ pl: isRoot ? 0 : 2 }}>
-      <Button
-        onClick={() => !disabled && onSelect(path)}
-        disabled={disabled}
-        sx={{
-          justifyContent: 'flex-start',
-          textTransform: 'none',
-          width: '100%',
-          my: 0.5,
-          bgcolor: 'transparent',
-          '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
-        }}
-        startIcon={<FolderIcon />}
-      >
-        {isRoot && path.length === 0 ? "Carpeta raíz (Mi unidad)" : path[path.length - 1]}
-      </Button>
+    <Box sx={{ pl: isRoot && path.length === 0 ? 0 : 2 }}>
       
-      {children.length > 0 && (
+      {/* 1. Botón de la carpeta actual como destino */}
+      {!shouldExclude && (
+        <Button
+          onClick={() => !disabled && onSelect(path)}
+          disabled={disabled}
+          sx={{
+            justifyContent: 'flex-start',
+            textTransform: 'none',
+            width: '100%',
+            my: 0.5,
+            bgcolor: 'transparent',
+            '&:hover': { bgcolor: alpha('#1a73e8', 0.08) }
+          }}
+          startIcon={<FolderIcon />}
+        >
+          {path.length === 0 ? "Carpeta raíz (Mi unidad)" : path[path.length - 1]}
+        </Button>
+      )}
+      
+      {/* 2. Botón para expandir/colapsar (Solo si hay posibles hijos) */}
+      {(children.length > 0 || loading) && (
           <ListItemButton 
               onClick={() => setExpanded(!expanded)}
-              disabled={disabled || loading}
-              sx={{ pl: isRoot ? 0 : 2, pr: 0, py: 0.5, maxWidth: '100%', display: 'flex', justifyContent: 'flex-start' }}
+              disabled={disabled}
+              sx={{ pl: path.length === 0 ? 0 : 2, pr: 0, py: 0.5, maxWidth: '100%', display: 'flex', justifyContent: 'flex-start' }}
           >
               {loading ? (
                  <CircularProgress size={16} sx={{ mr: 1 }} />
-              ) : children.length > 0 ? (
-                 expanded ? <ExpandLessIcon sx={{ mr: 1 }} /> : <ExpandMoreIcon sx={{ mr: 1 }} />
               ) : (
-                 <Box sx={{ width: 24, mr: 1 }} /> // Spacer
+                 expanded ? <ExpandLessIcon sx={{ mr: 1 }} /> : <ExpandMoreIcon sx={{ mr: 1 }} />
               )}
               
               <Typography variant="caption" color="text.secondary">
@@ -2827,17 +2826,18 @@ function FolderMoveTree({
           </ListItemButton>
       )}
 
+      {/* 3. Renderizado recursivo de hijos */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box>
           {children.map((folderName, idx) => (
             <FolderMoveTree
-              key={idx}
-              currentPath={currentPath}
+              key={folderName}
+              currentPath={currentPath} // Pasa el path del origen (no cambia)
               onSelect={onSelect}
               disabled={disabled}
               currentUserData={currentUserData}
               userIsQuality={userIsQuality}
-              initialPath={[...path, folderName]}
+              initialPath={[...path, folderName]} // CORRECCIÓN CLAVE: El nuevo path a renderizar
               isRoot={false}
             />
           ))}
