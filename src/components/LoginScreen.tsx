@@ -33,6 +33,9 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
 
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
+  
+  // Nuevo: MotionValue para simular un movimiento sutil en móvil/tiempo
+  const mobileBgShift = useMotionValue(0); 
 
   useEffect(() => {
     if (!email) {
@@ -62,9 +65,24 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
       mouseX.set(e.clientX);
       mouseY.set(e.clientY);
     };
+    
+    // Listener para seguimiento de mouse (principalmente escritorio)
     window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+
+    // Animación de shift de fondo constante para móvil/tiempo
+    const animateShift = () => {
+      // Simular un movimiento lento y cíclico
+      mobileBgShift.set(Math.sin(Date.now() / 10000) * 20); // Valor entre -20 y 20
+      requestAnimationFrame(animateShift);
+    };
+
+    const animationId = requestAnimationFrame(animateShift);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      cancelAnimationFrame(animationId);
+    }
+  }, [mouseX, mouseY, mobileBgShift]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,15 +122,30 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
     }
   };
 
+  // Usa mouseX/mouseY para desktop, y mobileBgShift como fallback sutil
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth > 768;
   const bgX = useTransform(mouseX, [0, window.innerWidth], [-20, 20]);
   const bgY = useTransform(mouseY, [0, window.innerHeight], [-20, 20]);
-
+  
   return (
     <div className="min-h-screen w-full relative overflow-hidden bg-black">
       {/* MESH GRADIENT BACKGROUND - Sin recuadros, fluido */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
-          style={{ x: bgX, y: bgY }}
+          // AJUSTE CLAVE para móvil: Animación de "respiración" constante si no es desktop (o siempre, combinándose con el mouse)
+          animate={{
+            x: [0, 10, -5, 0],
+            y: [0, -5, 10, 0]
+          }}
+          transition={{
+            duration: 30, // Movimiento lento
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+          style={{ 
+            x: isDesktop ? bgX : undefined, // Usar mouseX solo en desktop
+            y: isDesktop ? bgY : undefined, // Usar mouseY solo en desktop
+          }}
           className="absolute inset-0 opacity-60"
         >
           {/* Mesh gradient fluido */}
@@ -241,7 +274,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
             <motion.div
               initial={{ opacity: 0, x: -30, filter: "blur(10px)" }}
               animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-              transition={{ delay: 0.4, duration: 0.5 }}
+              transition={{ delay: 0.6, duration: 0.5 }} // AJUSTE DE DELAY para mejor staggering
             >
               <motion.label
                 animate={{ x: focusedField === 'email' ? 4 : 0 }}
@@ -273,8 +306,8 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
                     className="w-full h-14 pl-14 pr-5 bg-white/[0.03] backdrop-blur-xl text-white placeholder-gray-500 rounded-2xl focus:outline-none transition-all duration-300 border-0 focus:bg-white/[0.05]"
                     style={{
                       boxShadow: focusedField === 'email' 
-                        ? '0 0 0 1px rgba(59, 130, 246, 0.3), 0 10px 40px -10px rgba(59, 130, 246, 0.3)' 
-                        : '0 0 0 1px rgba(255, 255, 255, 0.05)'
+                        ? '0 0 0 1px rgba(59, 130, 246, 0.5), 0 10px 40px -10px rgba(59, 130, 246, 0.4)' // Más saturado en focus
+                        : '0 0 0 1px rgba(255, 255, 255, 0.08)' // Línea base más visible en móvil
                     }}
                   />
                   {isFetchingName && (
@@ -292,7 +325,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
             <motion.div
               initial={{ opacity: 0, x: -30, filter: "blur(10px)" }}
               animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-              transition={{ delay: 0.5, duration: 0.5 }}
+              transition={{ delay: 0.7, duration: 0.5 }} // AJUSTE DE DELAY para mejor staggering
             >
               <motion.label
                 animate={{ x: focusedField === 'password' ? 4 : 0 }}
@@ -323,8 +356,8 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
                     className="w-full h-14 pl-14 pr-14 bg-white/[0.03] backdrop-blur-xl text-white placeholder-gray-500 rounded-2xl focus:outline-none transition-all duration-300 border-0 focus:bg-white/[0.05]"
                     style={{
                       boxShadow: focusedField === 'password' 
-                        ? '0 0 0 1px rgba(168, 85, 247, 0.3), 0 10px 40px -10px rgba(168, 85, 247, 0.3)' 
-                        : '0 0 0 1px rgba(255, 255, 255, 0.05)'
+                        ? '0 0 0 1px rgba(168, 85, 247, 0.5), 0 10px 40px -10px rgba(168, 85, 247, 0.4)' // Más saturado en focus
+                        : '0 0 0 1px rgba(255, 255, 255, 0.08)' // Línea base más visible en móvil
                     }}
                   />
                   <motion.button
@@ -374,7 +407,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
             <motion.div
               initial={{ opacity: 0, y: 20, filter: "blur(10px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ delay: 0.6, duration: 0.5 }}
+              transition={{ delay: 0.8, duration: 0.5 }} // AJUSTE DE DELAY para mejor staggering
             >
               <motion.button
                 whileHover={{ scale: 1.02, y: -2 }}
@@ -433,7 +466,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
+              transition={{ delay: 0.9 }} // AJUSTE DE DELAY
               className="flex items-center justify-center gap-2 text-gray-500 text-xs"
             >
               <Fingerprint className="w-4 h-4" />
@@ -456,14 +489,14 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
             <motion.button
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8 }}
+              transition={{ delay: 1 }} // AJUSTE DE DELAY
               whileHover={{ scale: 1.02, y: -2 }}
               whileTap={{ scale: 0.98 }}
               type="button"
               onClick={onNavigateToRegister}
               className="w-full h-14 bg-white/[0.03] backdrop-blur-xl text-white font-medium rounded-2xl hover:bg-white/[0.06] transition-all duration-300"
               style={{
-                boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.05)'
+                boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.08)' // Línea base más visible en móvil
               }}
             >
               Crear Nueva Cuenta
@@ -474,7 +507,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 1 }}
+            transition={{ delay: 1.1 }} // AJUSTE DE DELAY
             className="mt-12 text-center"
           >
             <p className="text-xs text-gray-600">
@@ -499,7 +532,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({
         }
         .animation-delay-4000 {
           animation-delay: 4s;
-        }
+      }
       `}</style>
     </div>
   );
