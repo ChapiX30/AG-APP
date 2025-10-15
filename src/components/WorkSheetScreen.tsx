@@ -595,20 +595,20 @@ export const WorkSheetScreen: React.FC = () => {
   // FIX: Se inicializa en DC
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
 
-  // FIX: Mover la función de validación a un useCallback para que sea accesible para handleIdBlur y useEffect.
+  // FIX: Implementación de la lógica de validación usando la frecuencia del registro ANTERIOR
   const validarIdEnPeriodo = useCallback(async () => {
     setIdBlocked(false);
     setIdErrorMessage("");
 
     const id = formData.id?.trim();
     const cliente = formData.cliente;
-    const frecuencia = formData.frecuenciaCalibracion;
+    const frecuenciaActual = formData.frecuenciaCalibracion; // Frecuencia del formulario actual (solo se usará en el mensaje de error si no se encuentra la anterior)
 
     if (permitirExcepcion) return;
 
-    if (!id || !cliente || !frecuencia) return;
+    if (!id || !cliente) return;
 
-    // 1. Buscar registros anteriores para este ID y Cliente (Requiere que el cliente coincida para trazabilidad)
+    // 1. Buscar registros anteriores para este ID y Cliente
     const q = query(
       collection(db, "hojasDeTrabajo"), 
       where("id", "==", id),
@@ -618,26 +618,33 @@ export const WorkSheetScreen: React.FC = () => {
 
     if (docs.empty) return;
 
-    // 2. Encontrar la fecha de última calibración (más reciente)
+    // 2. Encontrar la fecha y FRECUENCIA de última calibración (más reciente)
     let maxFecha: Date | null = null;
+    let frecuenciaAnterior: string | undefined = undefined;
+    let maxFechaString: string | undefined = undefined;
+
     docs.forEach(doc => {
-      const f = doc.data().fecha; 
-      
-      // FIX: Crea la fecha de forma segura (YYYY, MM-1, DD) para evitar el desfase de zona horaria
+      const data = doc.data();
+      const f = data.fecha;
+      const freq = data.frecuenciaCalibracion; // <-- EXTRAEMOS LA FRECUENCIA GUARDADA
+
+      // FIX: Crea la fecha de forma segura (YYYY, MM-1, DD)
       const parts = f.split('-');
       const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
 
       if (!isNaN(dateObj.getTime())) { 
         if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) {
           maxFecha = dateObj;
+          frecuenciaAnterior = freq;
+          maxFechaString = f;
         }
       }
     });
 
-    if (!maxFecha) return;
+    if (!maxFecha || !frecuenciaAnterior) return;
 
-    // 3. Calcular la fecha de la siguiente calibración permitida
-    const nextAllowed = calcularSiguienteFecha(maxFecha.toISOString().slice(0, 10), frecuencia);
+    // 3. CALCULAR la próxima fecha permitida usando la FRECUENCIA ANTERIOR
+    const nextAllowed = calcularSiguienteFecha(maxFechaString!, frecuenciaAnterior);
 
     if (!nextAllowed) return; 
 
@@ -646,16 +653,17 @@ export const WorkSheetScreen: React.FC = () => {
     if (isBefore(hoy, nextAllowed)) {
       setIdBlocked(true);
       setIdErrorMessage(
-        `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")}. La próxima calibración permitida es después de ${format(nextAllowed, "dd/MM/yyyy")}. Active la excepción si es necesario.`
+        `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")} (Frecuencia: ${frecuenciaAnterior}). La próxima calibración permitida es después de ${format(nextAllowed, "dd/MM/yyyy")}. Active la excepción si es necesario.`
       );
     }
-  }, [formData.id, formData.cliente, formData.frecuenciaCalibracion, permitirExcepcion]);
+  }, [formData.id, formData.cliente, permitirExcepcion]); // La frecuencia actual no afecta el bloqueo, pero el cliente sí.
 
   // Ejecutar validación cuando cambian los campos relevantes o la excepción
   useEffect(() => {
     validarIdEnPeriodo();
   }, [validarIdEnPeriodo]);
-  
+
+
   // Las demás funciones (handleIdChange, cargarEmpresas, etc.) se mantienen igual.
   
   // Cuando cambia el cliente: aplica EP- si es Celestica y limpia
@@ -1115,7 +1123,7 @@ export const WorkSheetScreen: React.FC = () => {
                     className={`w-full p-4 border-2 rounded-lg transition-all ${
                       idBlocked && !permitirExcepcion
                         ? "border-red-500 bg-red-50 text-red-700 placeholder-red-400 focus:ring-red-500" // Texto rojo y fondo claro al estar bloqueado
-                        : "border-gray-200 text-gray-900 focus:ring-blue-500" // Texto normal
+                        : "border-gray-200 text-white-900 focus:ring-blue-500" // Texto normal
                     }`}
                     placeholder="ID"
                   />
@@ -1134,8 +1142,6 @@ export const WorkSheetScreen: React.FC = () => {
                         onChange={(e) => setPermitirExcepcion(e.target.checked)}
                         className="rounded text-blue-600 focus:ring-blue-500"
                         // FIX: Solo deshabilitamos el checkbox si NO está bloqueado y NO está seleccionado.
-                        // Esto permite al usuario desmarcar la excepción si la marcó por error,
-                        // o si el bloqueo desaparece por otros motivos.
                         disabled={!idBlocked && !permitirExcepcion} 
                       />
                       <span className={`text-sm ${idBlocked ? 'text-red-700' : 'text-gray-500'}`}>
