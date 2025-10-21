@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Plus, Trash2, ChevronRight, ChevronDown, X, CheckCircle, Users, Search, Filter, Columns, GripVertical, Move, Copy, Archive, MoreHorizontal, Download, FileText, Send, ChevronLeft, Home, ArrowUpDown, ArrowUp, ArrowDown, Settings, Eye, EyeOff
+  Plus, Trash2, ChevronRight, ChevronDown, X, CheckCircle, Users, Search, Filter, Columns, GripVertical, Move, Copy, Archive, MoreHorizontal, Download, FileText, Send, ChevronLeft, Home, ArrowUpDown, ArrowUp, ArrowDown, Settings, Eye, EyeOff, Bell, UserCircle
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
-import { doc, getDoc, updateDoc, collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
+import { doc, updateDoc, collection, getDocs, query, where, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -167,9 +167,18 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
 
   // Refs para scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Refs para estado estable para funciones asíncronas.
+  const groupsRef = useRef(groups);
+  const columnsRef = useRef(columns);
+  useEffect(() => {
+    groupsRef.current = groups;
+    columnsRef.current = columns;
+  }, [groups, columns]);
+
 
   // --- NAVEGACIÓN CORREGIDA CON BOTÓN DE REGRESO ---
-const { navigateTo } = useNavigation();
+  const { navigateTo } = useNavigation();
 
   const manejarNavegacion = useCallback((destino: string) => {
     
@@ -214,17 +223,73 @@ const { navigateTo } = useNavigation();
     };
     getUsers();
   },[]);
+  
+  // Función unificada para agregar/modificar Worksheets
+  const updateWorksheetInBoard = useCallback((newWorksheet: any) => {
+    const currentGroups = groupsRef.current;
+    
+    // Determinar el grupo objetivo basado en 'lugarCalibracion'
+    const targetGroupIndex = currentGroups.findIndex(g => 
+      g.id === newWorksheet.lugarCalibracion || 
+      (newWorksheet.lugarCalibracion === 'sitio' && g.id === 'sitio') ||
+      (newWorksheet.lugarCalibracion === 'laboratorio' && g.id === 'laboratorio')
+    );
+    
+    if (targetGroupIndex !== -1) {
+      setGroups(prevGroups => {
+        const updatedGroups = [...prevGroups];
+        const targetGroup = updatedGroups[targetGroupIndex];
+        
+        if (!targetGroup) return prevGroups; // Safety check
 
-  // --- LOAD DATA CON LISTENER EN TIEMPO REAL MEJORADO ---
+        // Usar 'id' para la verificación
+        const existingRowIndex = targetGroup.rows.findIndex(
+          row => row.id === newWorksheet.id
+        );
+
+        const rowData: WorksheetData = {
+              ...newWorksheet,
+              // Inicialización estricta a "" si es nulo/undefined
+              folio: newWorksheet.folio || "",
+              certificado: newWorksheet.certificado || "",
+              id: newWorksheet.id || "",
+              lugarCalibracion: newWorksheet.lugarCalibracion || targetGroup.id,
+              equipo: newWorksheet.equipo || "",
+              marca: newWorksheet.marca || "",
+              modelo: newWorksheet.modelo || "",
+              serie: newWorksheet.serie || "",
+              cliente: newWorksheet.cliente || "",
+              status: newWorksheet.status || 'pending',
+              priority: newWorksheet.priority || 'medium',
+              assignedTo: newWorksheet.assignedTo || "",
+              dueDate: newWorksheet.dueDate || "",
+              createdAt: newWorksheet.createdAt || new Date().toISOString(),
+              lastUpdated: newWorksheet.lastUpdated || new Date().toISOString(),
+          };
+          
+        if (existingRowIndex === -1) {
+            // Agregar nueva fila
+            targetGroup.rows.push(rowData);
+        } else {
+            // Actualizar fila existente
+            targetGroup.rows[existingRowIndex] = rowData;
+        }
+        return updatedGroups;
+      });
+    }
+  }, []);
+
+  // --- LOAD DATA CON LISTENER EN TIEMPO REAL MEJORADO Y SINCRONIZADO ---
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribeBoard: (() => void) | null = null;
+    let unsubscribeWorksheets: (() => void) | null = null;
 
     const loadData = async () => {
       try {
         const docRef = doc(db, "tableros", "principal");
         
-        // Listener en tiempo real para actualización automática
-        unsubscribe = onSnapshot(docRef, (docSnap) => {
+        // 1. Listener en tiempo real para actualización automática del tablero
+        unsubscribeBoard = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const board = docSnap.data();
             
@@ -233,7 +298,9 @@ const { navigateTo } = useNavigation();
                 ...g, 
                 rows: g.rows?.map((row: any) => ({
                   ...row,
-                  folio: row.folio || row.certificado || `F${Date.now()}`
+                  folio: row.folio || "",
+                  certificado: row.certificado || "",
+                  id: row.id || "",
                 })) || []
               })));
             }
@@ -243,49 +310,23 @@ const { navigateTo } = useNavigation();
             }
           }
         }, (error) => {
-          console.error("Error listening to data:", error);
+          console.error("Error listening to board data:", error);
         });
 
-        // También escuchar cambios en hojas de trabajo individuales
+        // 2. Escuchar cambios en hojas de trabajo (Worksheets)
         const worksheetRef = collection(db, "hojasDeTrabajo");
-        const worksheetUnsubscribe = onSnapshot(worksheetRef, (snapshot) => {
-          console.log("Cambios detectados en hojas de trabajo");
+        unsubscribeWorksheets = onSnapshot(worksheetRef, (snapshot) => {
           snapshot.docChanges().forEach((change) => {
-            if (change.type === "added") {
-              const newWorksheet = change.doc.data();
-              console.log("Nueva hoja de trabajo detectada:", newWorksheet);
-              
-              // Agregar automáticamente al grupo apropiado
-              setGroups(prevGroups => {
-                const updatedGroups = [...prevGroups];
-                const targetGroupIndex = updatedGroups.findIndex(g => 
-                  g.id === newWorksheet.lugarCalibracion || 
-                  (newWorksheet.lugarCalibracion === 'sitio' && g.id === 'sitio') ||
-                  (newWorksheet.lugarCalibracion === 'laboratorio' && g.id === 'laboratorio')
-                );
-                
-                if (targetGroupIndex !== -1) {
-                  const existingRowIndex = updatedGroups[targetGroupIndex].rows.findIndex(
-                    row => row.id === newWorksheet.id || row.certificado === newWorksheet.certificado
-                  );
-                  
-                  if (existingRowIndex === -1) {
-                    updatedGroups[targetGroupIndex].rows.push({
-                      ...newWorksheet,
-                      folio: newWorksheet.folio || newWorksheet.certificado || `F${Date.now()}`
-                    });
-                  }
-                }
-                
-                return updatedGroups;
-              });
+            const worksheetData = { id: change.doc.id, ...change.doc.data() };
+            if (change.type === "added" || change.type === "modified") {
+              updateWorksheetInBoard(worksheetData);
             }
           });
         });
 
         return () => {
-          unsubscribe?.();
-          worksheetUnsubscribe?.();
+          unsubscribeBoard?.();
+          unsubscribeWorksheets?.();
         };
       } catch (error) {
         console.error("Error loading data:", error);
@@ -295,9 +336,10 @@ const { navigateTo } = useNavigation();
     loadData();
 
     return () => {
-      unsubscribe?.();
+      unsubscribeBoard?.();
+      unsubscribeWorksheets?.();
     };
-  }, []);
+  }, [updateWorksheetInBoard]);
 
   // --- FUNCIÓN DE ORDENAMIENTO MEJORADA SOLO PARA FOLIO ---
   const handleSort = useCallback((columnKey: string) => {
@@ -384,15 +426,14 @@ const { navigateTo } = useNavigation();
         })), 
         columns 
       });
-      console.log("Datos guardados correctamente");
     } catch (error) {
       console.error("Error saving:", error);
     }
   };
 
-  // AUTO SAVE
+  // AUTO SAVE: Se activa al cambiar groups o columns
   useEffect(() => {
-    const timer = setTimeout(saveData, 2000);
+    const timer = setTimeout(saveData, 2000); 
     return () => clearTimeout(timer);
   }, [groups, columns]);
 
@@ -422,17 +463,42 @@ const { navigateTo } = useNavigation();
     if (!draggedItem || draggedItem.type !== type) return;
 
     if (type === 'row') {
+      const sourceGroupIndex = draggedItem.groupIndex!;
+      const draggedRowIndex = draggedItem.rowIndex!;
+      const targetGroupIndex = target.groupIndex;
+      const targetRowIndex = target.rowIndex;
+
+      let draggedRow: WorksheetData;
+      let targetGroupName: string;
+
       setGroups(prev => {
         const newGroups = [...prev];
-        const sourceGroup = newGroups[draggedItem.groupIndex!];
-        const targetGroup = newGroups[target.groupIndex];
-        const draggedRow = sourceGroup.rows[draggedItem.rowIndex!];
+        const sourceGroup = newGroups[sourceGroupIndex];
+        const targetGroup = newGroups[targetGroupIndex];
+        draggedRow = sourceGroup.rows[draggedRowIndex];
+        targetGroupName = targetGroup.id as 'sitio' | 'laboratorio'; 
+
+        // 1. Mover la fila localmente
+        sourceGroup.rows.splice(draggedRowIndex, 1);
+        targetGroup.rows.splice(targetRowIndex, 0, draggedRow);
         
-        sourceGroup.rows.splice(draggedItem.rowIndex!, 1);
-        targetGroup.rows.splice(target.rowIndex, 0, draggedRow);
-        
+        // 2. Actualizar el lugarCalibracion en la fila local
+        draggedRow.lugarCalibracion = targetGroupName;
+
         return newGroups;
       });
+
+      // 3. Persistir el cambio de grupo en Firebase (Worksheet)
+      if (draggedRow! && draggedRow!.id) {
+        const docRef = doc(db, "hojasDeTrabajo", draggedRow!.id);
+        updateDoc(docRef, { 
+            lugarCalibracion: targetGroupName!,
+            lastUpdated: new Date().toISOString()
+        }).catch(error => {
+            console.error("Error persisting row drag/drop:", error);
+        });
+      }
+
     } else if (type === 'column') {
       setColumns(prev => {
         const newCols = [...prev];
@@ -459,14 +525,35 @@ const { navigateTo } = useNavigation();
   }, []);
 
   // --- CELL EDITING ---
-  const handleSaveCell = useCallback(() => {
+  const handleSaveCell = useCallback((newValue?: string) => {
     if (!editCell) return;
     
+    const finalValue = newValue !== undefined ? newValue : editValue;
+    const { key, gidx, ridx } = editCell;
+
     setGroups(prev => {
       const newGroups = [...prev];
-      const group = newGroups[editCell.gidx];
-      const row = group.rows[editCell.ridx];
-      (row as any)[editCell.key] = editValue;
+      const row = newGroups[gidx].rows[ridx];
+      
+      // 1. Actualizar la fila en el grupo local
+      (row as any)[key] = finalValue;
+
+      // 2. Persistir el cambio en el documento de hojasDeTrabajo
+      if (row.id) {
+          const docRef = doc(db, "hojasDeTrabajo", row.id);
+          
+          // **AJUSTE FINAL:** Si se edita ID, Folio o Certificado, aseguramos que el valor
+          // que se guarda sea el valor editado (finalValue), evitando la reversión.
+          const updateData: { [key: string]: any } = { 
+            [key]: finalValue,
+            lastUpdated: new Date().toISOString()
+          };
+          
+          updateDoc(docRef, updateData).catch(error => {
+              console.error(`Error updating worksheet ${key}:`, error);
+          });
+      }
+      
       return newGroups;
     });
     
@@ -475,17 +562,21 @@ const { navigateTo } = useNavigation();
   }, [editCell, editValue]);
 
   // --- ROW OPERATIONS ---
-  const addRow = useCallback((groupIndex: number) => {
-    const newRow: WorksheetData = {
-      certificado: `CERT-${Date.now()}`,
+  const addWorksheetInDB = async (groupIndex: number) => {
+    const now = Date.now();
+    const newId = `WS-${now}`; 
+    const targetGroup = groups[groupIndex];
+    
+    const newWorksheet: WorksheetData = {
+      certificado: "",
       cliente: "",
-      id: `ID-${Date.now()}`,
-      folio: `F-${Date.now()}`,
+      id: newId,
+      folio: "",
       equipo: "",
       marca: "",
       modelo: "",
       serie: "",
-      lugarCalibracion: groups[groupIndex].id as 'sitio' | 'laboratorio',
+      lugarCalibracion: targetGroup.id as 'sitio' | 'laboratorio',
       status: 'pending',
       priority: 'medium',
       assignedTo: "",
@@ -494,23 +585,61 @@ const { navigateTo } = useNavigation();
       lastUpdated: new Date().toISOString()
     };
     
-    setGroups(prev => {
-      const newGroups = [...prev];
-      newGroups[groupIndex].rows.push(newRow);
-      return newGroups;
-    });
+    try {
+        const docRef = doc(db, "hojasDeTrabajo", newId);
+        await setDoc(docRef, newWorksheet);
+    } catch (error) {
+        console.error("Error creating worksheet:", error);
+    }
+  };
+
+  const addRow = useCallback((groupIndex: number) => {
+    addWorksheetInDB(groupIndex);
   }, [groups]);
 
+  // CORRECCIÓN CRÍTICA DE deleteRows
   const deleteRows = useCallback(() => {
-    setGroups(prev => {
-      const newGroups = [...prev];
-      selectedRows.sort((a, b) => b.ridx - a.ridx).forEach(({gidx, ridx}) => {
-        newGroups[gidx].rows.splice(ridx, 1);
+    // 1. Crear un mapa de los IDs de fila a eliminar, agrupados por Group Index
+    const rowsToDeleteMap = new Map<number, { id: string, ridx: number }[]>();
+    
+    selectedRows
+      .sort((a, b) => b.ridx - a.ridx) // Ordenar descendente para la eliminación local
+      .forEach(({ gidx, ridx }) => {
+        const row = groups[gidx]?.rows[ridx];
+        if (row && row.id) {
+          if (!rowsToDeleteMap.has(gidx)) {
+            rowsToDeleteMap.set(gidx, []);
+          }
+          rowsToDeleteMap.get(gidx)!.push({ id: row.id, ridx });
+        }
       });
+      
+    // 2. Ejecutar la eliminación en Firebase y en el estado local
+    setGroups(prevGroups => {
+      const newGroups = [...prevGroups];
+      
+      rowsToDeleteMap.forEach((rows, gidx) => {
+        const group = newGroups[gidx];
+        if (group) {
+          rows.forEach(({ id, ridx }) => {
+            // ELIMINAR DE FIREBASE
+             if (id) { 
+                 deleteDoc(doc(db, "hojasDeTrabajo", id)).catch(error => {
+                     console.error("Error deleting worksheet from DB:", error);
+                 });
+             }
+            
+            // Eliminar del estado local
+            group.rows.splice(ridx, 1);
+          });
+        }
+      });
+      
       return newGroups;
     });
+    
     setSelectedRows([]);
-  }, [selectedRows]);
+  }, [selectedRows, groups]); 
 
   // --- COLUMN OPERATIONS ---
   const addColumn = useCallback(() => {
@@ -549,11 +678,73 @@ const { navigateTo } = useNavigation();
         
         return Object.entries(filters).every(([key, value]) => {
           if (!value) return true;
-          return String(row[key as keyof WorksheetData]).toLowerCase().includes(String(value).toLowerCase());
+          const rowValue = (row as any)[key];
+          if (rowValue === undefined || rowValue === null) return false;
+          return String(rowValue).toLowerCase().includes(String(value).toLowerCase());
         });
       })
     }));
   }, [sortedGroups, search, filters]);
+
+  // --- REDIMENSIONAMIENTO DE COLUMNAS ---
+  const [resizingCol, setResizingCol] = useState<number | null>(null);
+  
+  const resizeDataRef = useRef<{startClientX: number, startWidth: number} | null>(null);
+
+  const startResize = useCallback((e: React.MouseEvent, colIndex: number) => {
+    const colToResize = document.querySelector(`.column-header-${colIndex}`);
+    
+    if (colToResize) {
+        resizeDataRef.current = {
+            startClientX: e.clientX,
+            startWidth: colToResize.clientWidth
+        };
+        setResizingCol(colIndex);
+        e.preventDefault();
+        document.body.style.cursor = 'col-resize';
+    }
+  }, []);
+
+  const resizeColumn = useCallback((e: MouseEvent) => {
+    if (resizingCol === null || !resizeDataRef.current) return;
+    
+    const { startClientX, startWidth } = resizeDataRef.current;
+    
+    const deltaX = e.clientX - startClientX;
+    const newWidth = Math.max(50, startWidth + deltaX);
+    
+    const visibleCols = columns.filter(c => !c.hidden);
+    const originalColumnKey = visibleCols[resizingCol]?.key;
+
+    if (originalColumnKey) {
+        setColumns(prev => 
+            prev.map(col => 
+                col.key === originalColumnKey ? { ...col, width: newWidth } : col
+            )
+        );
+    }
+  }, [resizingCol, columns]);
+
+  const stopResize = useCallback(() => {
+    setResizingCol(null);
+    resizeDataRef.current = null;
+    document.body.style.cursor = '';
+  }, []);
+
+  useEffect(() => {
+    if (resizingCol !== null) {
+      window.addEventListener('mousemove', resizeColumn);
+      window.addEventListener('mouseup', stopResize);
+    } else {
+      window.removeEventListener('mousemove', resizeColumn);
+      window.removeEventListener('mouseup', stopResize);
+    }
+    return () => {
+      window.removeEventListener('mousemove', resizeColumn);
+      window.removeEventListener('mouseup', stopResize);
+    };
+  }, [resizingCol, resizeColumn, stopResize]);
+
 
   if (!isMobile && sidebarAbierto) {
     return (
@@ -564,63 +755,85 @@ const { navigateTo } = useNavigation();
           onToggle={() => setSidebarAbierto(!sidebarAbierto)}
         />
         
-        <div className="flex-1 flex flex-col overflow-hidden ml-64">
-          {/* Header estilo Monday.com */}
-          <div className="bg-white shadow-sm border-b px-6 py-4">
+        {/* CORRECCIÓN DE LAYOUT: min-w-0 para que overflow-x-auto funcione correctamente */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0 ml-64">
+          {/* Header Superior estilo Monday.com */}
+          <div className="bg-white shadow-sm border-b px-6 py-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <button 
-                  onClick={() => manejarNavegacion('mainmenu')}
-                  className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-                >
-                  <Home className="w-5 h-5" />
-                  <span className="font-medium">Menú Principal</span>
-                </button>
-                <div className="h-6 w-px bg-gray-300"></div>
-                <h1 className="text-2xl font-bold text-gray-900">Equipos en Calibración</h1>
+              <div className="flex items-center space-x-2">
+                <Home className="w-4 h-4 text-gray-400" />
+                <span className="text-sm text-gray-500">Menú Principal</span>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-semibold text-gray-800">Equipos en Calibración</span>
               </div>
               
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-4">
+                <Bell className="w-5 h-5 text-gray-500 hover:text-blue-600 cursor-pointer" />
+                <UserCircle className="w-6 h-6 text-gray-500 hover:text-blue-600 cursor-pointer" />
+              </div>
+            </div>
+          </div>
+
+          {/* Segunda Barra de Header estilo Monday.com (Board Header) */}
+          <div className="bg-white shadow-sm border-b px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <h1 className="text-2xl font-bold text-gray-900">Equipos en Calibración</h1>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
                     placeholder="Buscar..."
-                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64 text-sm"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
-                
+              </div>
+              
+              <div className="flex items-center space-x-3">
                 <button 
                   onClick={() => setShowFilters(!showFilters)}
-                  className={`p-2 rounded-lg transition-colors ${showFilters ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                  className={`flex items-center p-2 rounded-lg transition-colors ${showFilters ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
                 >
-                  <Filter className="w-5 h-5" />
+                  <Filter className="w-5 h-5 mr-1" />
+                  <span className="text-sm">Filtros</span>
                 </button>
                 
                 <button 
                   onClick={() => setShowColumnSettings(true)}
-                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="flex items-center p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <Settings className="w-5 h-5" />
+                  <Settings className="w-5 h-5 mr-1" />
+                  <span className="text-sm">Columnas</span>
                 </button>
                 
                 <button 
                   onClick={() => setShowAddCol(true)}
-                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="flex items-center p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <Columns className="w-5 h-5" />
+                  <Plus className="w-5 h-5 mr-1" />
+                  <span className="text-sm">Añadir columna</span>
                 </button>
                 
                 {selectedRows.length > 0 && (
                   <button 
                     onClick={deleteRows}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    className="flex items-center p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <Trash2 className="w-5 h-5 mr-1" />
+                    <span className="text-sm">Eliminar ({selectedRows.length})</span>
                   </button>
                 )}
+                
+                {/* Botón "Add Item" como en Monday.com */}
+                <button 
+                    onClick={() => addRow(0)}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                    <Plus className="w-5 h-5 mr-2" />
+                    <span>Añadir equipo</span>
+                </button>
               </div>
             </div>
           </div>
@@ -647,16 +860,16 @@ const { navigateTo } = useNavigation();
             </div>
           )}
           
-          {/* Tabla estilo Monday.com EXACTO */}
-          <div className="flex-1 overflow-auto bg-white" ref={scrollContainerRef}>
-            <div className="min-w-full">
+          {/* Tabla estilo Monday.com - CORRECCIÓN DE LAYOUT Y SCROLL */}
+          <div className="flex-1 overflow-x-auto overflow-y-auto bg-white border-t border-gray-200" ref={scrollContainerRef}>
+            <div className="inline-block" style={{ minWidth: 'max-content' }}>
               {/* Header de la tabla EXACTO COMO MONDAY.COM */}
               <div className="bg-gray-50 sticky top-0 z-20 border-b border-gray-200">
                 <div className="flex">
-                  <div className="w-12 px-3 py-3 border-r border-gray-200 bg-gray-50">
+                  <div className="w-12 px-3 py-3 border-r border-gray-200 bg-gray-50 flex items-center justify-center">
                     <input 
                       type="checkbox" 
-                      checked={selectedRows.length === filteredGroups.reduce((acc, g) => acc + g.rows.length, 0)}
+                      checked={selectedRows.length > 0 && selectedRows.length === filteredGroups.reduce((acc, g) => acc + g.rows.length, 0)}
                       onChange={(e) => {
                         if (e.target.checked) {
                           const allRows: {gidx:number, ridx:number}[] = [];
@@ -677,7 +890,7 @@ const { navigateTo } = useNavigation();
                   {columns.filter(c => !c.hidden).map((col, colIndex) => (
                     <div
                       key={col.key}
-                      className={`px-3 py-3 border-r border-gray-200 bg-gray-50 font-medium text-gray-700 text-sm select-none flex items-center justify-between ${
+                      className={`column-header-${colIndex} px-3 py-3 border-r border-gray-200 bg-gray-50 font-medium text-gray-700 text-sm select-none flex items-center justify-between relative ${
                         col.sortable ? 'cursor-pointer hover:bg-gray-100' : ''
                       }`}
                       style={{ width: col.width }}
@@ -688,16 +901,21 @@ const { navigateTo } = useNavigation();
                       onDragEnd={handleDragEnd}
                       onClick={col.sortable ? () => handleSort(col.key) : undefined}
                     >
-                      <span className="flex items-center">
+                      <span className="flex items-center group">
                         {col.label}
                         {renderSortIcon(col.key)}
                       </span>
                       <GripVertical className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100" />
+                      {/* Resizer para columnas */}
+                      <div 
+                        className="absolute right-0 top-0 h-full w-2 cursor-col-resize z-10 hover:bg-blue-200"
+                        onMouseDown={(e) => startResize(e, colIndex)}
+                      />
                     </div>
                   ))}
                   
-                  <div className="w-12 px-3 py-3 bg-gray-50 font-medium text-gray-700 text-sm">
-                    <MoreHorizontal className="w-4 h-4" />
+                  <div className="w-12 px-3 py-3 border-r border-gray-200 bg-gray-50 font-medium text-gray-700 text-sm flex items-center justify-center">
+                    <MoreHorizontal className="w-4 h-4 text-gray-400" />
                   </div>
                 </div>
               </div>
@@ -713,6 +931,7 @@ const { navigateTo } = useNavigation();
                         i === gidx ? { ...g, collapsed: !g.collapsed } : g
                       ));
                     }}
+                    style={{ minWidth: 'max-content' }}
                   >
                     {group.collapsed ? <ChevronRight className="w-4 h-4 mr-2 text-gray-500" /> : <ChevronDown className="w-4 h-4 mr-2 text-gray-500" />}
                     <div 
@@ -737,7 +956,7 @@ const { navigateTo } = useNavigation();
                   {!group.collapsed && group.rows.map((row, ridx) => (
                     <div 
                       key={`${gidx}-${ridx}`} 
-                      className="bg-white border-b border-gray-100 hover:bg-gray-50 flex items-center"
+                      className="bg-white border-b border-gray-100 hover:bg-gray-50 flex items-center group"
                       draggable
                       onDragStart={(e) => handleDragStart(e, 'row', { groupIndex: gidx, rowIndex: ridx, data: row })}
                       onDragOver={(e) => handleDragOver(e, 'row', { groupIndex: gidx, rowIndex: ridx })}
@@ -764,18 +983,14 @@ const { navigateTo } = useNavigation();
                         const isEditing = editCell && editCell.gidx === gidx && editCell.ridx === ridx && editCell.key === col.key;
                         let content = (row as any)[col.key];
                         
-                        // Status badges EXACTOS COMO MONDAY.COM
+                        // Renderizado de badges y personas
                         if (col.key === "status") {
                           const s = STATUS_BADGE[(row.status || "pending") as keyof typeof STATUS_BADGE];
                           content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span>;
-                        }
-                        if (col.key === "priority") {
+                        } else if (col.key === "priority") {
                           const c = PRIORITY_BADGE[(row.priority || "medium") as keyof typeof PRIORITY_BADGE];
                           content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${c}`}>{row.priority}</span>;
-                        }
-                        
-                        // Responsable EXACTO COMO MONDAY.COM
-                        if (col.key === "assignedTo" && col.type === "person") {
+                        } else if (col.key === "assignedTo" && col.type === "person") {
                           const met = metrologos.find(m => m.name === row.assignedTo);
                           content = met ? 
                             <div className="flex items-center">
@@ -790,76 +1005,96 @@ const { navigateTo } = useNavigation();
                         return (
                           <div 
                             key={col.key}
-                            className="border-r border-gray-100 px-3 py-2 text-sm text-gray-900 cursor-pointer"
+                            className="border-r border-gray-100 px-3 py-2 text-sm text-gray-900 cursor-pointer relative"
                             style={{ width: col.width }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (col.type === "dropdown" || col.type === "person" || col.type === "date") {
+                                // Para dropdowns, personas y fechas, al hacer click, activar edición
+                                setEditCell({ gidx, ridx, key: col.key });
+                                setEditValue((row as any)[col.key] ?? "");
+                              } else if (!isEditing) {
+                                setEditCell({ gidx, ridx, key: col.key });
+                                setEditValue((row as any)[col.key] ?? "");
+                              }
+                            }}
                           >
                             {isEditing ? (
-                              col.type === "dropdown" ? (
-                                <select
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                  onBlur={handleSaveCell}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleSaveCell();
-                                    if (e.key === "Escape") setEditCell(null);
-                                  }}
-                                  autoFocus
-                                  className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none"
-                                >
-                                  {col.options?.map(opt => (
-                                    <option key={opt} value={opt}>{opt}</option>
-                                  ))}
-                                </select>
-                              ) : col.type === "person" ? (
-                                <select
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                  onBlur={handleSaveCell}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleSaveCell();
-                                    if (e.key === "Escape") setEditCell(null);
-                                  }}
-                                  autoFocus
-                                  className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none"
-                                >
-                                  <option value="">Sin asignar</option>
-                                  {metrologos.map(met => (
-                                    <option key={met.id} value={met.name}>{met.name}</option>
-                                  ))}
-                                </select>
-                              ) : col.type === "date" ? (
-                                <input
-                                  type="date"
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleSaveCell();
-                                    if (e.key === "Escape") setEditCell(null);
-                                  }}
-                                  autoFocus
-                                  className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none"
-                                />
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                  autoFocus
-                                  onBlur={handleSaveCell}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleSaveCell();
-                                    if (e.key === "Escape") setEditCell(null);
-                                  }}
-                                  className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none"
-                                />
-                              )
+                              col.type === "dropdown" || col.type === "person" ? (
+                                  <div className="absolute left-0 top-0 w-full bg-white border border-blue-500 rounded shadow-md z-30">
+                                    {(col.type === "dropdown" ? col.options : metrologos.map(m => m.name))?.map((option, optionIdx) => (
+                                      <div
+                                        key={optionIdx}
+                                        className={clsx(
+                                          "px-3 py-2 text-sm cursor-pointer hover:bg-blue-50",
+                                          (editValue === option) && "bg-blue-100 font-semibold"
+                                        )}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSaveCell(option); // Pasa el valor seleccionado
+                                        }}
+                                      >
+                                        {col.key === "status" && STATUS_BADGE[option as keyof typeof STATUS_BADGE] ? (
+                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_BADGE[option as keyof typeof STATUS_BADGE].color}`}>
+                                            {STATUS_BADGE[option as keyof typeof STATUS_BADGE].label}
+                                          </span>
+                                        ) : col.key === "priority" && PRIORITY_BADGE[option as keyof typeof PRIORITY_BADGE] ? (
+                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${PRIORITY_BADGE[option as keyof typeof PRIORITY_BADGE]}`}>
+                                            {option}
+                                          </span>
+                                        ) : col.type === "person" && metrologos.find(m=>m.name===option) ? (
+                                          <div className="flex items-center">
+                                            <div className="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center mr-2 font-medium">
+                                              {option.charAt(0).toUpperCase()}
+                                            </div>
+                                            <span className="text-sm text-gray-900">{option}</span>
+                                          </div>
+                                        ) : (
+                                          option
+                                        )}
+                                      </div>
+                                    ))}
+                                    {col.type === "person" && (
+                                      <div 
+                                        className="px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 text-gray-500"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSaveCell(""); // Opción para "Sin asignar"
+                                        }}
+                                      >
+                                        - Sin asignar -
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : col.type === "date" ? (
+                                  <input
+                                    type="date"
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleSaveCell();
+                                      if (e.key === "Escape") setEditCell(null);
+                                    }}
+                                    onBlur={(e) => handleSaveCell(e.target.value)} // Pasar valor de input
+                                    autoFocus
+                                    className="w-full h-full absolute left-0 top-0 px-2 py-1 border border-blue-500 rounded focus:outline-none bg-white"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                    autoFocus
+                                    onBlur={(e) => handleSaveCell(e.target.value)} // Pasar valor de input
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleSaveCell();
+                                      if (e.key === "Escape") setEditCell(null);
+                                    }}
+                                    className="w-full h-full absolute left-0 top-0 px-2 py-1 border border-blue-500 rounded focus:outline-none bg-white"
+                                  />
+                                )
                             ) : (
                               <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditCell({ gidx, ridx, key: col.key });
-                                  setEditValue((row as any)[col.key] ?? "");
-                                }}
                                 className="min-h-[20px] flex items-center"
                               >
                                 {content || <span className="text-gray-400">-</span>}
@@ -869,9 +1104,16 @@ const { navigateTo } = useNavigation();
                         );
                       })}
                       
-                      <div className="w-12 px-3 py-2 flex items-center">
-                        <button className="p-1 text-gray-400 hover:text-gray-600">
-                          <GripVertical className="w-4 h-4" />
+                      {/* Botón de 3 puntos para acciones de fila (Monday.com style) */}
+                      <div className="w-12 px-3 py-2 border-r border-gray-100 flex items-center justify-center">
+                        <button 
+                          className="p-1 text-gray-400 hover:bg-gray-100 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            alert(`Acciones para fila: ${row.folio}`);
+                          }}
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
                         </button>
                       </div>
                     </div>

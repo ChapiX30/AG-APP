@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Download, Star, Edit3, ArrowLeft, Loader2, Home, Trash2, RotateCcw, Save, Eye, User, Building, Calendar, FileText, Phone, Mail, Search, ChevronDown, Wrench // <-- Se importa el ícono de la herramienta
+  Download, Star, Edit3, ArrowLeft, Loader2, Home, Trash2, RotateCcw, Save, Eye, User, Building, Calendar, FileText, Phone, Mail, Search, ChevronDown, Wrench
 } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
 // IMPORTACIONES ADICIONALES PARA FIREBASE STORAGE
@@ -35,8 +35,20 @@ type Empresa = {
   correo?: string;
 };
 
-// Se mantiene el tipo actualizado para manejar la clasificación
-type EquipoCalibrado = { id?: string; tecnico?: string; estado: 'CALIBRADO' | 'RECHAZADO' }; 
+// Tipo para un equipo unificado, incluyendo su estado para el color
+type EquipoUnificado = {
+    id: string;
+    estado: 'CALIBRADO' | 'RECHAZADO';
+}
+
+// Se mantiene el tipo actualizado para manejar la clasificación (ahora con id obligatorio para el push)
+type EquipoCalibrado = { id: string; tecnico?: string; estado: 'CALIBRADO' | 'RECHAZADO' }; 
+
+// Tipo para la nueva estructura unificada por técnico
+type GrupoEquiposUnificado = { 
+    tecnico: string; 
+    equipos: EquipoUnificado[]; 
+};
 
 const formatDate = (dateString: string): string => {
   if (!dateString) return '__________';
@@ -78,7 +90,8 @@ async function saveServiceData(campos: any, firmaTecnico: string, firmaCliente: 
     folioNum: folioNumber,
     firmaTecnico: firmaTecnico || '',
     firmaCliente: firmaCliente || '',
-    equiposCalibrados: equiposCalibrados || {},
+    // Nota: equiposCalibrados es el objeto original sin unificar, se mantiene para la base de datos.
+    equiposCalibrados: equiposCalibrados || {}, 
     fechaCreacion: Timestamp.now(),
     fechaModificacion: Timestamp.now(),
     estado: 'completado',
@@ -121,57 +134,40 @@ function truncateText(text: string, maxLength: number): string {
   return text && text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text || '';
 }
 
-// La función ahora clasifica y separa en dos listas: calibrados (no AGRD) y rechazados (AGRD)
-function organizarEquiposProfesional(equiposCalibrados: Record<string, EquipoCalibrado[]>) {
-  const equiposPorTecnico: Array<{ tecnico: string; equipos: string[]; estado: 'CALIBRADO' | 'RECHAZADO' }> = [];
-  
-  // Equipos Calibrados (los que NO son AGRD-)
-  const equiposCalibradosFiltrados = Object.fromEntries(
-    Object.entries(equiposCalibrados).map(([tecnico, equipos]) => [
-      tecnico,
-      equipos.filter(e => e.estado === 'CALIBRADO')
-    ]).filter(([, equipos]) => equipos.length > 0)
-  );
+/**
+ * Unifica los equipos calibrados y rechazados en una sola lista por técnico.
+ * @param equiposCalibrados Objeto con equipos separados por técnico (con id y estado).
+ * @returns Array de grupos de equipos unificados (todos juntos).
+ */
+function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalibrado[]>): GrupoEquiposUnificado[] {
+    const equiposUnificadosPorTecnico: Record<string, EquipoUnificado[]> = {};
 
-  Object.entries(equiposCalibradosFiltrados).forEach(([tecnico, equipos]) => {
-    const listaEquipos: string[] = [];
-    equipos.forEach((equipo: EquipoCalibrado) => {
-      if (equipo.id) {
-        equipo.id.split(',').forEach((idSingle: string) => {
-          listaEquipos.push(idSingle.trim());
+    Object.entries(equiposCalibrados).forEach(([tecnico, equipos]) => {
+        if (!equiposUnificadosPorTecnico[tecnico]) {
+            equiposUnificadosPorTecnico[tecnico] = [];
+        }
+
+        equipos.forEach((equipo: EquipoCalibrado) => {
+            if (equipo.id) {
+                // Dividir IDs si están separados por coma y agregar el estado a cada uno
+                equipo.id.split(',').forEach((idSingle: string) => {
+                    const trimmedId = idSingle.trim();
+                    if (trimmedId) {
+                        equiposUnificadosPorTecnico[tecnico].push({ id: trimmedId, estado: equipo.estado });
+                    }
+                });
+            }
         });
-      }
     });
-    if (listaEquipos.length > 0) {
-      equiposPorTecnico.push({ tecnico, equipos: listaEquipos, estado: 'CALIBRADO' });
-    }
-  });
 
-  // Equipos Rechazados (los que SÍ son AGRD-)
-  const equiposRechazadosFiltrados = Object.fromEntries(
-    Object.entries(equiposCalibrados).map(([tecnico, equipos]) => [
-      tecnico,
-      equipos.filter(e => e.estado === 'RECHAZADO')
-    ]).filter(([, equipos]) => equipos.length > 0)
-  );
-  
-  const equiposRechazados: Array<{ tecnico: string; equipos: string[]; estado: 'CALIBRADO' | 'RECHAZADO' }> = [];
-  Object.entries(equiposRechazadosFiltrados).forEach(([tecnico, equipos]) => {
-      const listaEquipos: string[] = [];
-      equipos.forEach((equipo: EquipoCalibrado) => {
-          if (equipo.id) {
-              equipo.id.split(',').forEach((idSingle: string) => {
-                  listaEquipos.push(idSingle.trim());
-              });
-          }
-      });
-      if (listaEquipos.length > 0) {
-          equiposRechazados.push({ tecnico, equipos: listaEquipos, estado: 'RECHAZADO' });
-      }
-  });
-  
-  return { calibrados: equiposPorTecnico, rechazados: equiposRechazados };
+    // Convertir el objeto a un array de la estructura GrupoEquiposUnificado[]
+    const resultado: GrupoEquiposUnificado[] = Object.entries(equiposUnificadosPorTecnico)
+        .filter(([, equipos]) => equipos.length > 0)
+        .map(([tecnico, equipos]) => ({ tecnico, equipos }));
+        
+    return resultado;
 }
+
 
 async function generarPDFFormal({
   campos,
@@ -193,6 +189,7 @@ async function generarPDFFormal({
   const azulSecundario = [52, 144, 220];
   const grisTexto = [60, 60, 60];
   const grisClaro = [240, 242, 247];
+  const rojoRechazo = [200, 0, 0]; // Color rojo para equipos rechazados
 
   function crearNuevaPagina() {
     doc.addPage();
@@ -295,9 +292,10 @@ async function generarPDFFormal({
 
   currentY += 34;
   
-  const { calibrados, rechazados } = organizarEquiposProfesional(equiposCalibrados);
+  // Usar la función de unificación
+  const equiposUnificados = organizarEquiposUnificado(equiposCalibrados);
 
-  // === SECCIÓN 1: EQUIPOS CALIBRADOS (TODOS EXCEPTO AGRD-) ===
+  // === SECCIÓN ÚNICA: EQUIPOS CALIBRADOS EN SITIO (CON RECHAZADOS EN ROJO) ===
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
@@ -305,11 +303,11 @@ async function generarPDFFormal({
   currentY += 6;
 
   
-  if (calibrados.length === 0) {
+  if (equiposUnificados.length === 0) {
     doc.setTextColor(...grisTexto);
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(9);
-    doc.text('No se registraron equipos calibrados.', 105, currentY + 10, { align: 'center' });
+    doc.text('No se registraron equipos en sitio para esta fecha.', 105, currentY + 10, { align: 'center' });
     currentY += 20;
   } else {
     const margenIzq = 15;
@@ -318,15 +316,20 @@ async function generarPDFFormal({
     const anchoColumna = anchoTotal / equiposPorFila;
     const altoFila = 4.5;
     const altoEncabezado = 7;
+    
+    // NOTA: Se elimina la línea de "Total de Equipos Atendidos" de esta sección.
 
-    calibrados.forEach((grupo, tecnicoIndex) => {
+    equiposUnificados.forEach((grupo, tecnicoIndex) => {
+      // **MODIFICACIÓN CLAVE: Ordenar los IDs por alfabético/numérico antes de pintar**
+      grupo.equipos.sort((a, b) => a.id.localeCompare(b.id));
+
       const numFilas = Math.ceil(grupo.equipos.length / equiposPorFila);
       const altoTotalGrupo = altoEncabezado + (numFilas * altoFila) + 3;
       
       if (currentY + altoTotalGrupo + 50 > 280) {
         currentY = crearNuevaPagina();
       }
-
+      
       doc.setFillColor(245, 248, 255);
       doc.setDrawColor(...azulSecundario);
       doc.setLineWidth(0.3);
@@ -335,7 +338,8 @@ async function generarPDFFormal({
       doc.setTextColor(...azulSecundario);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.text(`${grupo.tecnico} (${grupo.equipos.length} equipos CALIBRADOS)`, margenIzq + 2, currentY + 4.5);
+      // ENCABEZADO: Solo nombre y total por técnico
+      doc.text(`${grupo.tecnico} (${grupo.equipos.length} equipos)`, margenIzq + 2, currentY + 4.5);
       
       currentY += altoEncabezado;
 
@@ -348,11 +352,13 @@ async function generarPDFFormal({
       while (equipoIndex < grupo.equipos.length) {
         const yFila = currentY + (numFila * altoFila);
         
+        // Fondo de fila alternado
         if (numFila % 2 === 0) {
           doc.setFillColor(252, 253, 255);
           doc.rect(margenIzq, yFila, anchoTotal, altoFila, 'F');
         }
 
+        // Líneas divisorias verticales
         doc.setDrawColor(230, 230, 230);
         doc.setLineWidth(0.1);
         for (let col = 1; col < equiposPorFila; col++) {
@@ -360,10 +366,20 @@ async function generarPDFFormal({
           doc.line(xLinea, yFila, xLinea, yFila + altoFila);
         }
 
-        doc.setTextColor(...grisTexto);
         for (let col = 0; col < equiposPorFila && equipoIndex < grupo.equipos.length; col++) {
+          const equipo = grupo.equipos[equipoIndex];
           const xPos = margenIzq + (col * anchoColumna) + 2;
-          const equipoTexto = truncateText(grupo.equipos[equipoIndex], 14);
+          const equipoTexto = truncateText(equipo.id, 14);
+          
+          // Lógica para resaltar en rojo los rechazados
+          if (equipo.estado === 'RECHAZADO') {
+             doc.setTextColor(...rojoRechazo);
+             doc.setFont('helvetica', 'bold');
+          } else {
+             doc.setTextColor(...grisTexto);
+             doc.setFont('helvetica', 'normal');
+          }
+          
           doc.text(equipoTexto, xPos, yFila + 2.5);
           equipoIndex++;
         }
@@ -371,7 +387,7 @@ async function generarPDFFormal({
       }
       currentY += (numFilas * altoFila) + 2;
 
-      if (tecnicoIndex < calibrados.length - 1) {
+      if (tecnicoIndex < equiposUnificados.length - 1) {
         doc.setDrawColor(200, 200, 200);
         doc.setLineWidth(0.2);
         doc.line(margenIzq, currentY, margenIzq + anchoTotal, currentY);
@@ -379,88 +395,11 @@ async function generarPDFFormal({
       }
     });
   }
-  
-  // === SECCIÓN 2: EQUIPOS RECHAZADOS (SÍ SON AGRD-) ===
-  if (rechazados.length > 0) {
-      currentY += 4;
-      if (currentY + 50 > 280) { // Check for page break before new section
-          currentY = crearNuevaPagina();
-      }
-      
-      doc.setTextColor(200, 0, 0); // Red color for rejected
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('EQUIPOS RECHAZADOS', 15, currentY);
-      currentY += 6;
+  // === FIN SECCIÓN DE EQUIPOS UNIFICADA ===
 
-      const margenIzq = 15;
-      const anchoTotal = 180;
-      const equiposPorFila = 5;
-      const anchoColumna = anchoTotal / equiposPorFila;
-      const altoFila = 4.5;
-      const altoEncabezado = 7;
-
-      rechazados.forEach((grupo, tecnicoIndex) => {
-          const numFilas = Math.ceil(grupo.equipos.length / equiposPorFila);
-          const altoTotalGrupo = altoEncabezado + (numFilas * altoFila) + 3;
-          
-          if (currentY + altoTotalGrupo + 50 > 280) {
-              currentY = crearNuevaPagina();
-          }
-
-          doc.setFillColor(255, 240, 240); // Light red background
-          doc.setDrawColor(200, 0, 0); // Red border
-          doc.setLineWidth(0.3);
-          doc.roundedRect(margenIzq, currentY, anchoTotal, altoEncabezado, 1, 1, 'FD');
-          
-          doc.setTextColor(200, 0, 0);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8.5);
-          doc.text(`${grupo.tecnico} (${grupo.equipos.length} equipos RECHAZADOS)`, margenIzq + 2, currentY + 4.5);
-          
-          currentY += altoEncabezado;
-
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.5);
-
-          let equipoIndex = 0;
-          let numFila = 0;
-
-          while (equipoIndex < grupo.equipos.length) {
-              const yFila = currentY + (numFila * altoFila);
-              
-              if (numFila % 2 === 0) {
-                  doc.setFillColor(255, 248, 248);
-                  doc.rect(margenIzq, yFila, anchoTotal, altoFila, 'F');
-              }
-
-              doc.setDrawColor(230, 230, 230);
-              doc.setLineWidth(0.1);
-              for (let col = 1; col < equiposPorFila; col++) {
-                  const xLinea = margenIzq + (col * anchoColumna);
-                  doc.line(xLinea, yFila, xLinea, yFila + altoFila);
-              }
-
-              doc.setTextColor(...grisTexto);
-              for (let col = 0; col < equiposPorFila && equipoIndex < grupo.equipos.length; col++) {
-                  const xPos = margenIzq + (col * anchoColumna) + 2;
-                  const equipoTexto = truncateText(grupo.equipos[equipoIndex], 14);
-                  doc.text(equipoTexto, xPos, yFila + 2.5);
-                  equipoIndex++;
-              }
-              numFila++;
-          }
-          currentY += (numFilas * altoFila) + 2;
-
-          if (tecnicoIndex < rechazados.length - 1) {
-              doc.setDrawColor(200, 200, 200);
-              doc.setLineWidth(0.2);
-              doc.line(margenIzq, currentY, margenIzq + anchoTotal, currentY);
-              currentY += 2;
-          }
-      });
-  }
-  // === FIN SECCIÓN DE EQUIPOS RECHAZADOS ===
+  // Resetear el color del texto a gris por defecto después de la sección de equipos
+  doc.setTextColor(...grisTexto);
+  doc.setFont('helvetica', 'normal');
 
 
   if (campos.comentarios && campos.comentarios.trim()) {
@@ -496,14 +435,33 @@ async function generarPDFFormal({
     firmasY = crearNuevaPagina();
   }
   
+  // === Mover Total Equipos a esta sección ===
+  const equiposUnificadosParaCalculo = organizarEquiposUnificado(equiposCalibrados);
+  const totalEquipos = equiposUnificadosParaCalculo.reduce((sum, grupo) => sum + grupo.equipos.length, 0);
+  
+  const initialX = 15;
+  const spacing = 60; // Espacio entre los dos textos
+  
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('CALIDAD DEL SERVICIO:', 15, firmasY);
+  
+  // 1. Calidad del Servicio
+  doc.text('CALIDAD DEL SERVICIO:', initialX, firmasY);
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
-  doc.text(campos.calidadServicio, 70, firmasY);
+  doc.text(campos.calidadServicio, initialX + 55, firmasY); // Ajustar posición para Calidad
+  
+  // 2. Total Equipos (Nuevo)
+  doc.setTextColor(...azulPrimario);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TOTAL EQUIPOS:', initialX + spacing * 2, firmasY);
+  doc.setTextColor(...azulSecundario);
+  doc.setFont('helvetica', 'bold');
+  doc.text(totalEquipos.toString(), initialX + spacing * 2 + 38, firmasY); // Ajustar posición para Total Equipos
+  
   firmasY += 8;
+  // =============================================================
 
   doc.setFillColor(...grisClaro);
   doc.rect(10, firmasY, 190, 40, 'F');
@@ -704,7 +662,7 @@ export default function HojaDeServicioScreen() {
     loadDatosEmpresa();
   }, [campos.empresaId]);
 
-  // CORRECCIÓN FINAL: Lógica para clasificar equipos usando el campo 'certificado' o 'id' para buscar AGRD-.
+  // Lógica para clasificar equipos: AGRD- es RECHAZADO, !AGRD- es CALIBRADO.
   useEffect(() => {
     const fetchEquipos = async () => {
       setLoadingEquipos(true);
@@ -729,7 +687,7 @@ export default function HojaDeServicioScreen() {
           if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
           
           const idBase = String(data.id || '').toUpperCase().trim();
-          const certificadoString = String(data.certificado || '').toUpperCase().trim(); // Asumimos que el campo se llama 'certificado'
+          const certificadoString = String(data.certificado || '').toUpperCase().trim();
           
           // La cadena de clasificación es el campo 'certificado' si existe, sino es el 'id'
           const classificationString = certificadoString || idBase;
@@ -737,12 +695,12 @@ export default function HojaDeServicioScreen() {
           // Si la cadena de clasificación contiene AGRD-, se clasifica como RECHAZADO.
           const isAGRD = classificationString.includes('AGRD-'); 
           
-          // LÓGICA: AGRD- es RECHAZADO, !AGRD- es CALIBRADO.
           const estado: 'CALIBRADO' | 'RECHAZADO' = isAGRD ? 'RECHAZADO' : 'CALIBRADO';
 
           // Solo agregamos si hay un ID (que es lo que se muestra).
           if (idBase) {
-             equiposPorTecnico[tecnico].push({ id: data.id, estado: estado });
+             // El id se pasa como un string, la función organizarEquiposUnificado se encargará de dividir si hay comas.
+             equiposPorTecnico[tecnico].push({ id: idBase, estado: estado }); 
           }
         }
       });
@@ -898,7 +856,7 @@ export default function HojaDeServicioScreen() {
                         ref={canvasRef}
                         width={600}
                         height={300}
-                        className="border-2 border-gray-300 rounded-lg w-full bg-white shadow-inner"
+                        className="border-2 border-dashed border-gray-300 rounded-lg w-full bg-white shadow-inner"
                         onPointerDown={handlePointerDown}
                         onPointerMove={handlePointerMove}
                         onPointerUp={handlePointerUp}
@@ -938,9 +896,19 @@ export default function HojaDeServicioScreen() {
         </div>
     );
   }
+  
+  // Usar la función de unificación para la vista previa y la UI
+  const equiposUnificados = organizarEquiposUnificado(equiposCalibrados);
+  const totalEquiposAtendidos = equiposUnificados.reduce((sum, grupo) => sum + grupo.equipos.length, 0);
+
 
   if (vistaPrevia) {
-      const { calibrados, rechazados } = organizarEquiposProfesional(equiposCalibrados);
+    // Ordenar equipos para la vista previa de la UI
+    const equiposUnificadosVP = equiposUnificados.map(grupo => ({
+        ...grupo,
+        equipos: [...grupo.equipos].sort((a, b) => a.id.localeCompare(b.id))
+    }));
+
     return (
       <div className="min-h-screen bg-gray-50 p-2 sm:p-4">
         <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
@@ -991,51 +959,41 @@ export default function HojaDeServicioScreen() {
             </div>
           </div>
 
-          {/* Equipos calibrados (Todos excepto AGRD-) */}
+          {/* Equipos calibrados UNIFICADOS */}
           <div className="p-4 sm:p-6 border-b">
             <h3 className="text-base sm:text-lg font-bold text-blue-700 mb-4">EQUIPOS CALIBRADOS EN SITIO</h3>
             {loadingEquipos ? (
-              <div className="text-center py-4 text-gray-500">Cargando equipos calibrados...</div>
+              <div className="text-center py-4 text-gray-500">Cargando equipos atendidos...</div>
             ) : (
-              calibrados.length === 0 ? (
-                <div className="text-center py-4 text-gray-500 italic">No se registraron equipos calibrados.</div>
+              equiposUnificados.length === 0 ? (
+                <div className="text-center py-4 text-gray-500 italic">No se registraron equipos en sitio para esta fecha.</div>
               ) : (
-                calibrados.map((grupo, groupIndex) => (
-                    <div key={groupIndex} className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <h4 className="font-bold text-blue-700 mb-3">{grupo.tecnico}:</h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 text-sm">
-                        {grupo.equipos.map((equipo, equipoIndex) => (
-                          <div key={equipoIndex} className="text-gray-700">
-                            • {truncateText(equipo, 22)}
-                          </div>
-                        ))}
+                <>
+                  {/* Se elimina el total de equipos de esta sección en la vista previa de la UI */}
+                  {equiposUnificadosVP.map((grupo, groupIndex) => (
+                      <div key={groupIndex} className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        {/* ENCABEZADO MODIFICADO: Solo nombre y total por técnico */}
+                        <h4 className="font-bold text-blue-700 mb-3">{grupo.tecnico} ({grupo.equipos.length} equipos):</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 text-sm">
+                          {grupo.equipos.map((equipo, equipoIndex) => (
+                            <div 
+                              key={equipoIndex} 
+                              // Aplicar color rojo a los rechazados en la vista previa
+                              className={`
+                                  ${equipo.estado === 'RECHAZADO' ? 'text-red-700 font-semibold' : 'text-gray-700'}
+                              `}
+                            >
+                              • {truncateText(equipo.id, 22)}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                ))
+                  ))}
+                </>
               )
             )}
           </div>
           
-          {/* Vista previa de Equipos Rechazados (AGRD-) */}
-          {rechazados.length > 0 && (
-            <div className="p-4 sm:p-6 border-b bg-red-50">
-              <h3 className="text-base sm:text-lg font-bold text-red-700 mb-4">EQUIPOS RECHAZADOS</h3>
-              {rechazados.map((grupo, groupIndex) => (
-                  <div key={groupIndex} className="mb-6 p-4 bg-red-100 rounded-lg border border-red-300">
-                    <h4 className="font-bold text-red-700 mb-3">{grupo.tecnico}:</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 text-sm">
-                      {grupo.equipos.map((equipo, equipoIndex) => (
-                        <div key={equipoIndex} className="text-gray-700">
-                          • {truncateText(equipo, 22)}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-              ))}
-            </div>
-          )}
-
-
           {/* Comentarios */}
           {campos.comentarios && campos.comentarios.trim() && (
             <div className="p-4 sm:p-6 border-b bg-gray-50">
@@ -1046,11 +1004,17 @@ export default function HojaDeServicioScreen() {
             </div>
           )}
 
-          {/* Calidad del servicio */}
+          {/* Calidad del servicio (AHORA CON TOTAL EQUIPOS) */}
           <div className="p-4 sm:p-6 border-b">
-            <div className="text-sm">
-              <strong className="text-blue-700">CALIDAD DEL SERVICIO:</strong>
-              <span className="ml-2 font-semibold text-blue-600">{campos.calidadServicio}</span>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <strong className="text-blue-700">CALIDAD DEL SERVICIO:</strong>
+                    <span className="ml-2 font-semibold text-blue-600">{campos.calidadServicio}</span>
+                </div>
+                <div>
+                    <strong className="text-blue-700">TOTAL EQUIPOS:</strong>
+                    <span className="ml-2 font-semibold text-blue-600">{totalEquiposAtendidos}</span>
+                </div>
             </div>
           </div>
 
@@ -1115,7 +1079,6 @@ export default function HojaDeServicioScreen() {
   }
 
   const currentRating = qualityMap[campos.calidadServicio] || 0;
-  const { calibrados, rechazados } = organizarEquiposProfesional(equiposCalibrados);
 
 
   return (
@@ -1324,8 +1287,6 @@ export default function HojaDeServicioScreen() {
                 </label>
                 <textarea value={campos.comentarios} onChange={(e) => setCampos({ ...campos, comentarios: e.target.value })} rows={4} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none" placeholder="Observaciones importantes del servicio..." />
               </div>
-              {/* ===== INICIO DE LA MODIFICACIÓN (No afectada por el cambio) ===== */}
-              {/* Se reemplazan las pericas (animal) por pericas (herramienta) */}
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                   <Star size={16} className="text-purple-600" />
@@ -1356,7 +1317,6 @@ export default function HojaDeServicioScreen() {
                     </span>
                 </div>
               </div>
-              {/* ===================================== */}
             </div>
           </div>
 
@@ -1366,76 +1326,63 @@ export default function HojaDeServicioScreen() {
               <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Equipos Calibrados en Sitio</h2>
             </div>
             
-            {/* === SECCIÓN EQUIPOS CALIBRADOS (NO AGRD-) === */}
+            {/* === SECCIÓN EQUIPOS UNIFICADA EN LA UI === */}
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 sm:p-6 mb-8">
-              <h3 className="font-semibold text-lg text-orange-800 mb-4">Equipos Calibrados (Sin ID de Certificado AGRD-)</h3>
+              <h3 className="font-semibold text-lg text-orange-800 mb-4">Lista de Equipos Atendidos</h3>
               {loadingEquipos ? (
                 <div className="text-center py-8">
                   <Loader2 className="animate-spin mx-auto mb-4 text-orange-600" size={32} />
                   <p className="text-orange-700">Cargando equipos...</p>
                 </div>
               ) : (
-                calibrados.length === 0 ? (
+                equiposUnificados.length === 0 ? (
                   <div className="text-center py-8 text-orange-700">
                     <FileText className="mx-auto mb-4 text-orange-600" size={48} />
-                    <p className="text-lg font-semibold">No se encontraron equipos Calibrados</p>
-                    <p className="text-sm">Para este cliente y fecha en sitio.</p>
+                    <p className="text-lg font-semibold">No se encontraron equipos en sitio</p>
+                    <p className="text-sm">Para este cliente y fecha.</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {calibrados.map((grupo, groupIndex) => (
-                      <div key={groupIndex} className="bg-white rounded-lg border border-orange-300 p-4 shadow-sm">
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
-                          <h4 className="font-bold text-orange-800 text-base sm:text-lg flex items-center gap-2">
-                            <User size={20} />
-                            {grupo.tecnico}
-                          </h4>
-                          <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-semibold">
-                            {grupo.equipos.length} equipos
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                          {grupo.equipos.map((equipo, equipoIndex) => (
-                            <div key={equipoIndex} className="bg-orange-100 text-orange-800 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-center truncate">
-                              {equipo}
+                    {/* Se elimina el total de equipos de esta sección en la UI principal */}
+                    {equiposUnificados.map(grupo => {
+                        // Ordenar equipos para la UI principal
+                        const equiposOrdenados = [...grupo.equipos].sort((a, b) => a.id.localeCompare(b.id));
+
+                        return (
+                          <div key={grupo.tecnico} className="bg-white rounded-lg border border-orange-300 p-4 shadow-sm">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
+                              <h4 className="font-bold text-orange-800 text-base sm:text-lg flex items-center gap-2">
+                                <User size={20} />
+                                {grupo.tecnico}
+                              </h4>
+                              <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-semibold">
+                                {grupo.equipos.length} equipos
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                              {equiposOrdenados.map((equipo, equipoIndex) => (
+                                <div 
+                                    key={equipoIndex} 
+                                    className={`
+                                        px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-center truncate 
+                                        ${equipo.estado === 'RECHAZADO' 
+                                            ? 'bg-red-200 text-red-800 border border-red-400' 
+                                            : 'bg-green-100 text-green-800 border border-green-300'}
+                                    `}
+                                    title={equipo.estado === 'RECHAZADO' ? 'RECHAZADO' : 'CALIBRADO'}
+                                >
+                                  {equipo.id}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                    })}
                   </div>
                 )
               )}
             </div>
 
-            {/* === SECCIÓN EQUIPOS RECHAZADOS (SÍ AGRD-) === */}
-            {rechazados.length > 0 && (
-                <div className="bg-red-50 border border-red-300 rounded-lg p-4 sm:p-6">
-                    <h3 className="font-semibold text-lg text-red-800 mb-4">Equipos Rechazados (ID de Certificado AGRD-)</h3>
-                    <div className="space-y-6">
-                        {rechazados.map((grupo, groupIndex) => (
-                            <div key={groupIndex} className="bg-white rounded-lg border border-red-400 p-4 shadow-sm">
-                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
-                                    <h4 className="font-bold text-red-800 text-base sm:text-lg flex items-center gap-2">
-                                        <User size={20} className="text-red-600" />
-                                        {grupo.tecnico}
-                                    </h4>
-                                    <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-semibold">
-                                        {grupo.equipos.length} equipos
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                                    {grupo.equipos.map((equipo, equipoIndex) => (
-                                        <div key={equipoIndex} className="bg-red-100 text-red-800 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium text-center truncate">
-                                            {equipo}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
           </div>
           {/* === FIN DE SECCIONES DE EQUIPOS === */}
 

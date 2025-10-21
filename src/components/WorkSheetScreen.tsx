@@ -15,14 +15,14 @@ import {
   NotebookPen,
   Edit3,
   Zap, // NUEVO: Icono para indicar transferencia automática
-  Search, // NUEVO: Icono para el buscador
+  Search, // Icono para el buscador
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc, setDoc } from "firebase/firestore"; // MODIFICADO: Agregadas funciones para Friday
+import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc, setDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
@@ -55,7 +55,9 @@ type TechopsRecord = {
   E: string; // SERIE
 }
 
-// Componente de búsqueda para clientes
+// ====================================================================
+// Componente de búsqueda para clientes MEJORADO (Agrupación por letra)
+// ====================================================================
 interface ClienteSearchSelectProps {
     clientes: ClienteRecord[];
     onSelect: (cliente: string) => void;
@@ -67,12 +69,27 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // Filtra la lista de clientes basado en el término de búsqueda
-    const filteredClientes = clientes
-        .filter(cliente => 
-            cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-        .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    // Filtra y agrupa los clientes por la primera letra de su nombre
+    const filteredAndGroupedClientes = React.useMemo(() => {
+        const term = searchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const grouped: Record<string, ClienteRecord[]> = {};
+
+        const filtered = clientes
+            .filter(cliente => 
+                cliente.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(term)
+            )
+            .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+        filtered.forEach(cliente => {
+            const firstLetter = cliente.nombre.charAt(0).toUpperCase();
+            if (!grouped[firstLetter]) {
+                grouped[firstLetter] = [];
+            }
+            grouped[firstLetter].push(cliente);
+        });
+
+        return grouped;
+    }, [clientes, searchTerm]);
 
     const handleSelect = (clienteNombre: string) => {
         setSearchTerm(clienteNombre);
@@ -91,10 +108,18 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
         };
-    }, [wrapperRef]);
+    }, []);
+
+    // Sincroniza el searchTerm con currentValue cuando cambia externamente
+    useEffect(() => {
+        setSearchTerm(currentValue);
+    }, [currentValue]);
+
+    const sortedLetters = Object.keys(filteredAndGroupedClientes).sort();
 
     return (
         <div className="relative" ref={wrapperRef}>
+            {/* Input de búsqueda */}
             <div className="relative">
                 <input
                     type="text"
@@ -105,35 +130,53 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                     }}
                     onFocus={() => setIsOpen(true)}
                     placeholder="Buscar o seleccionar cliente..."
-                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 ${
+                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
                         isOpen ? 'rounded-b-none border-b-0' : ''
                     }`}
+                    aria-label="Buscar cliente"
                 />
                 <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             </div>
 
+            {/* Desplegable de resultados con grupos */}
             {isOpen && (
-                <ul className="absolute z-10 w-full bg-white border border-gray-300 max-h-60 overflow-y-auto rounded-b-lg shadow-lg">
-                    {filteredClientes.length > 0 ? (
-                        filteredClientes.map((cliente) => (
-                            <li
-                                key={cliente.id}
-                                className="p-3 cursor-pointer hover:bg-blue-100 text-gray-800 text-sm truncate"
-                                onClick={() => handleSelect(cliente.nombre)}
-                            >
-                                {cliente.nombre}
-                            </li>
+                <div className="absolute z-20 w-full bg-white border border-gray-300 max-h-80 overflow-y-auto rounded-b-lg shadow-xl">
+                    {sortedLetters.length > 0 ? (
+                        sortedLetters.map(letter => (
+                            <div key={letter}>
+                                {/* Encabezado de la letra: Sticky para mejor UX */}
+                                <div className="sticky top-0 bg-gray-100 px-3 py-2 text-sm font-bold text-blue-700 border-b border-gray-200 shadow-sm">
+                                    {letter}
+                                </div>
+                                {/* Lista de clientes para la letra */}
+                                <ul>
+                                    {filteredAndGroupedClientes[letter].map(cliente => (
+                                        <li
+                                            key={cliente.id}
+                                            className="px-4 py-3 cursor-pointer hover:bg-blue-50 text-gray-800 text-sm truncate transition-colors duration-150"
+                                            onClick={() => handleSelect(cliente.nombre)}
+                                            role="option"
+                                            aria-selected={searchTerm === cliente.nombre}
+                                        >
+                                            {cliente.nombre}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
                         ))
                     ) : (
-                        <li className="p-3 text-gray-500 text-sm">No se encontraron clientes.</li>
+                        <div className="p-4 text-gray-500 text-sm">No se encontraron clientes.</div>
                     )}
-                </ul>
+                </div>
             )}
         </div>
     );
 };
 
-// --- FIN DEL COMPONENTE ClienteSearchSelect ---
+// ====================================================================
+// FIN del Componente ClienteSearchSelect
+// ====================================================================
+
 
 // Helper para obtener la fecha local en formato YYYY-MM-DD (FIX DE FECHA)
 const getLocalISODate = () => {
@@ -398,34 +441,34 @@ const transferToFriday = async (formData: any, userId: string, user: any) => {
 };
 
 
-// FIX: Se modifica la función para manejar la visualización de Excentricidad/Linealidad/Repetibilidad (Magnitud Masa)
+// FIX: Se modifica la función para generar PDF (mejor maquetación y sin logo roto)
 const generateTemplatePDF = (formData: any, JsPDF: any) => {
+  // Ajuste de formato para mejor uso del espacio
   const doc = new jsPDF({ orientation:"p", unit: "pt", format: "a4" });
   
   const marginLeft = 50;
   const marginRight = 550;
   const lineHeight = 18;
-  let y = 50;
-
+  let y = 50; // Posición inicial
+  
   doc.setFont("helvetica", "normal");
   doc.setTextColor(0, 0, 0);
 
-  // COMENTADO el logo Base64 para evitar el error "wrong PNG signature"
-  // const logoBase64 = "data:image/png;base64,... (Tu logo Base64 aquí)"; 
-  // doc.addImage(logoBase64, "PNG", marginLeft, y, 50, 50);
+  // ❌ Se elimina la línea del logo roto.
 
   // Título del laboratorio
-  doc.setFontSize(14);
+  doc.setFontSize(16); // Tamaño un poco más grande
   doc.setFont(undefined, "bold");
-  doc.text("Equipos y Servicios Especializados AG", marginLeft + 60, y + 20);
+  doc.text("Equipos y Servicios Especializados AG", marginLeft, y);
+  y += 20;
 
-  // Fecha y nombre
-  doc.setFontSize(12);
+  // Fecha y nombre (ajustados para quedar en línea)
+  doc.setFontSize(11);
   doc.setFont(undefined, "normal");
-  doc.text(`Fecha: ${formData.fecha}`, marginRight - 100, y + 20);
+  doc.text(`Fecha: ${formData.fecha}`, marginRight - 100, y);
   doc.setFont(undefined, "bold");
-  doc.text(`Nombre: ${formData.nombre}`, marginRight - 100, y + 40);
-  y += 70;
+  doc.text(`Nombre: ${formData.nombre}`, marginRight - 100, y + 15);
+  y += 35;
 
   // Línea separadora
   doc.setDrawColor(160);
@@ -454,12 +497,15 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
   ];
 
   doc.setFontSize(11);
+  const col1Width = 150; // Ancho para las etiquetas
+  const col2X = marginLeft + col1Width; // Posición para los valores
+  
   for (let i = 0; i < infoPairs.length; i++) {
     const [label, value] = infoPairs[i];
     doc.setFont(undefined, "bold");
     doc.text(`${label}:`, marginLeft, y);
     doc.setFont(undefined, "normal");
-    doc.text(`${value || "-"}`, marginLeft + 150, y);
+    doc.text(`${value || "-"}`, col2X, y); // Uso del ancho de columna fijo
     y += lineHeight;
   }
 
@@ -537,10 +583,9 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
   y += splitNotas.length * lineHeight;
 
   // --- Pie de página ---
-  y = 790;
   doc.setFontSize(10);
   doc.setFont(undefined, "italic");
-  doc.text("AG-CAL-F39-00", marginLeft, y);
+  doc.text("AG-CAL-F39-00", marginLeft, 790); // Se fija a 790 para el pie de página
 
   return doc;
 };
@@ -602,9 +647,9 @@ export const WorkSheetScreen: React.FC = () => {
 
     const id = formData.id?.trim();
     const cliente = formData.cliente;
-    const frecuenciaActual = formData.frecuenciaCalibracion; // Frecuencia del formulario actual (solo se usará en el mensaje de error si no se encuentra la anterior)
 
-    if (permitirExcepcion) return;
+    // Si la excepción está marcada, no realizamos el bloqueo.
+    if (permitirExcepcion) return; 
 
     if (!id || !cliente) return;
 
@@ -1102,7 +1147,7 @@ export const WorkSheetScreen: React.FC = () => {
                     <Building2 className="w-4 h-4 text-indigo-500" />
                     <span>Cliente*</span>
                   </label>
-                  {/* FIX: Usando el nuevo componente de búsqueda */}
+                  {/* FIX: Usando el componente de búsqueda MEJORADO */}
                   <ClienteSearchSelect
                     clientes={listaClientes}
                     onSelect={handleClienteChange}
@@ -1119,11 +1164,10 @@ export const WorkSheetScreen: React.FC = () => {
                     value={formData.id || ""}
                     onChange={(e) => handleIdChange(e.target.value)}
                     onBlur={handleIdBlur}
-                    // FIX: Clases ajustadas para que el texto sea visible (no blanco) y el input se vea rojo
                     className={`w-full p-4 border-2 rounded-lg transition-all ${
                       idBlocked && !permitirExcepcion
-                        ? "border-red-500 bg-red-50 text-red-700 placeholder-red-400 focus:ring-red-500" // Texto rojo y fondo claro al estar bloqueado
-                        : "border-gray-200 text-white-900 focus:ring-blue-500" // Texto normal
+                        ? "border-red-500 bg-red-50 text-red-700 placeholder-red-400 focus:ring-red-500"
+                        : "border-gray-200 text-gray-900 focus:ring-blue-500"
                     }`}
                     placeholder="ID"
                   />
@@ -1133,7 +1177,7 @@ export const WorkSheetScreen: React.FC = () => {
                       {idErrorMessage}
                     </p>
                   )}
-                  {/* Permitir Excepción */}
+                  {/* Permitir Excepción (Lógica corregida) */}
                   <div className="mt-3">
                     <label className="flex items-center gap-2">
                       <input
@@ -1141,10 +1185,10 @@ export const WorkSheetScreen: React.FC = () => {
                         checked={permitirExcepcion}
                         onChange={(e) => setPermitirExcepcion(e.target.checked)}
                         className="rounded text-blue-600 focus:ring-blue-500"
-                        // FIX: Solo deshabilitamos el checkbox si NO está bloqueado y NO está seleccionado.
-                        disabled={!idBlocked && !permitirExcepcion} 
+                        // 🌟 CORRECCIÓN DE LÓGICA: Solo se habilita si hay bloqueo.
+                        disabled={!idBlocked} 
                       />
-                      <span className={`text-sm ${idBlocked ? 'text-red-700' : 'text-gray-500'}`}>
+                      <span className={`text-sm ${idBlocked ? 'text-red-700 font-bold' : 'text-gray-500'}`}>
                         Permitir excepción de calibración (requiere aprobación)
                       </span>
                     </label>
@@ -1413,7 +1457,9 @@ export const WorkSheetScreen: React.FC = () => {
                       value={formData.medicionPatron}
                       onChange={(e) => handleInputChange("medicionPatron", e.target.value)}
                       rows={4}
-                      className="w-full p-2 border rounded resize-y"
+                      // 🌟 CORRECCIÓN DE UX MÓVIL: Se agrega scroll y altura máxima.
+                      className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40"
+                      placeholder="Ingrese los datos de medición del patrón aquí..."
                     />
                   </div>
                   <div>
@@ -1425,7 +1471,9 @@ export const WorkSheetScreen: React.FC = () => {
                       value={formData.medicionInstrumento}
                       onChange={(e) => handleInputChange("medicionInstrumento", e.target.value)}
                       rows={4}
-                      className="w-full p-2 border rounded resize-y"
+                      // 🌟 CORRECCIÓN DE UX MÓVIL: Se agrega scroll y altura máxima.
+                      className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40"
+                      placeholder="Ingrese los datos de medición del instrumento aquí..."
                     />
                   </div>
                 </div>
