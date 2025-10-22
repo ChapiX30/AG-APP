@@ -72,7 +72,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileCopyIcon from '@mui/icons-material/FileCopy';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import StorageIcon from '@mui/icons-material/Storage';
-import LinkIcon from '@mui/icons-material/Link'; 
+import LinkIcon from '@mui/icons-material/Link'; // Icono para compartir
 
 interface DriveFile {
   name: string;
@@ -314,19 +314,16 @@ const ROOT_PATH = "worksheets";
 
 export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [user] = useAuthState(auth);
-  
-  // --- ESTADOS OPTIMIZADOS PARA CARGA PEREZOSA ---
-  const [tree, setTree] = useState<DriveFolder | null>(null); // Árbol completo (para mover/cache/búsqueda global, cargado en 2do plano)
-  const [currentFolderData, setCurrentFolderData] = useState<DriveFolder | null>(null); // Data de la carpeta actual (carga rápida)
+  // Revertimos a la lógica de un solo árbol completo
+  const [tree, setTree] = useState<DriveFolder | null>(null); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
-  // -------------------------------------------------
-
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<'name' | 'date'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  // Mantenemos globalSearch pero solo como toggle, la búsqueda será LOCAL
   const [globalSearch, setGlobalSearch] = useState(false); 
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -363,6 +360,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [bulkRenameSuffix, setBulkRenameSuffix] = useState(" (copia)");
   const [storageUsage, setStorageUsage] = useState<number | null>(null); 
+  // Cache de archivos para búsqueda global/acciones masivas (llenado en 2do plano)
   const [allFilesCache, setAllFilesCache] = useState<DriveFile[]>([]); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -498,80 +496,48 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     };
   };
 
-  // --- FUNCIÓN CENTRAL DE CARGA PEREZOSA (NO RECURSIVA) CON CARGA CONDICIONAL DE METADATA ---
-  const fetchFolder = useCallback(async (pathArr: string[], skipMetadata: boolean = false): Promise<DriveFolder> => {
+  // Función recursiva original (lenta, pero necesaria para obtener todo el árbol para la búsqueda global)
+  async function fetchFolder(pathArr: string[]): Promise<DriveFolder> {
     const fullPath = [ROOT_PATH, ...pathArr].join("/");
     const dirRef = ref(storage, fullPath);
-
-    try {
-      const res = await listAll(dirRef);
-      
-      const folders: DriveFolder[] = res.prefixes.map(prefix => ({
-        name: prefix.name,
-        fullPath: prefix.fullPath,
-        folders: [], 
-        files: []
-      }));
-      
-      const files: DriveFile[] = (await Promise.all(
-        res.items.map(async itemRef => {
-          if (itemRef.name === '.keep') return null; 
-
-          const url = await getDownloadURL(itemRef);
-          const metadata = await getMetadata(itemRef);
-          const basicFile: DriveFile = {
-            name: itemRef.name,
-            url,
-            fullPath: itemRef.fullPath,
-            updated: metadata.updated,
-            size: metadata.size,
-            contentType: metadata.contentType,
-          };
-
-          // OPTIMIZACIÓN CLAVE: Si se salta la metadata (carga rápida de la vista)
-          if (skipMetadata) {
-              return basicFile;
-          }
-
-          // Si no se salta, carga metadatos completos (Firestore call)
-          return await loadFileMetadata(basicFile);
-        })
-      )).filter(f => f !== null) as DriveFile[];
-
-      return {
-        name: pathArr[pathArr.length - 1] || "Drive",
-        fullPath,
-        folders,
-        files
-      };
-    } catch (e: any) {
-      if (e.code === 'storage/object-not-found' && pathArr.length === 0) {
-        return {
-          name: "Drive",
-          fullPath: ROOT_PATH,
-          folders: [],
-          files: []
-        };
-      }
-      throw e;
-    }
-  }, []);
-
-  // Función recursiva (LENTA) para obtener TODOS los archivos (solo para caché/búsqueda global/uso de almacenamiento)
-  // Siempre trae metadatos completos (skipMetadata=false)
-  const fetchAllFilesRecursive = useCallback(async (pathArr: string[]): Promise<DriveFolder> => {
-    const currentFolder = await fetchFolder(pathArr, false); 
+    const res = await listAll(dirRef);
     
-    currentFolder.folders = await Promise.all(
-        currentFolder.folders.map(folder => fetchAllFilesRecursive([...pathArr, folder.name]))
+    // **NOTA CLAVE:** Si esta función es el cuello de botella, se debe usar Lazy Loading. 
+    // Para simplificar y restaurar la funcionalidad original, la mantenemos, pero la carga es lenta.
+    const folders: DriveFolder[] = await Promise.all(
+      res.prefixes.map(prefix => fetchFolder([...pathArr, prefix.name]))
     );
-    return currentFolder;
-  }, [fetchFolder]);
+    
+    const files: DriveFile[] = await Promise.all(
+      res.items.map(async itemRef => {
+        const url = await getDownloadURL(itemRef);
+        const metadata = await getMetadata(itemRef);
+        const file: DriveFile = {
+          name: itemRef.name,
+          url,
+          fullPath: itemRef.fullPath,
+          updated: metadata.updated,
+          size: metadata.size,
+          contentType: metadata.contentType,
+        };
+        return await loadFileMetadata(file);
+      })
+    );
+
+    return {
+      name: pathArr[pathArr.length - 1] || "Drive",
+      fullPath,
+      folders,
+      files
+    };
+  }
 
   // Función para obtener TODOS los archivos (llenado de caché)
-  const fetchAllFiles = useCallback(async (initialFolder: DriveFolder) => {
+  const fetchAllFiles = useCallback(async (initialFolder?: DriveFolder) => {
+    let rootFolder = initialFolder || await fetchFolder([]);
+    
     const allFiles: DriveFile[] = [];
-    const queue: DriveFolder[] = [initialFolder];
+    const queue: DriveFolder[] = [rootFolder];
 
     while (queue.length > 0) {
       const current = queue.shift()!;
@@ -582,53 +548,31 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     const totalBytes = allFiles.reduce((sum, file) => sum + (file.size || 0), 0);
     setStorageUsage(totalBytes);
     setAllFilesCache(allFiles);
-  }, []);
+  }, [user]);
 
-  // --- FUNCIÓN DE RECARGA OPTIMIZADA CON RESILIENCIA ---
-  async function reloadTree(path: string[] = selectedPath, attempt: number = 1) {
-    if (!currentUserData) return;
-    
-    setError(null);
+  async function reloadTree() {
     setLoading(true);
-
+    setError(null);
     try {
-        // Carga Rápida: Solo la carpeta actual. Saltamos metadatos de Firestore para que sea lo más rápido posible.
-        const currentData = await fetchFolder(path, true); 
-        setCurrentFolderData(currentData);
-        
-        // Carga en Segundo Plano (No Bloqueante): Mantenemos el árbol completo
-        if (tree === null || allFilesCache.length === 0) {
-            // No bloqueamos la interfaz con el await si no es globalSearch
-            const rootTreePromise = fetchAllFilesRecursive([]);
-            rootTreePromise.then(rootTree => {
-              setTree(rootTree);
-              fetchAllFiles(rootTree);
-            }).catch(e => console.error("Error loading full tree (background):", e));
-        }
+      // Usamos fetchFolder (recursivo, lento) para cargar el árbol completo (necesario si globalSearch se usa)
+      const rootTree = await fetchFolder([]);
+      setTree(rootTree);
+      
+      // Llenamos el cache en segundo plano
+      fetchAllFiles(rootTree);
 
     } catch (e: any) {
-        console.error(`Error loading current folder (Attempt ${attempt}):`, e);
-
-        // Reintento Silencioso (mejora la UX en fallos transitorios)
-        if (attempt === 1) {
-            console.log("Reintentando carga inicial en 500ms...");
-            await new Promise(resolve => setTimeout(resolve, 500));
-            return reloadTree(path, 2); 
-        }
-
-        setError("No se pudieron cargar los archivos de la carpeta actual. Intenta de nuevo.");
-
-    } finally {
-        setLoading(false);
+      console.error("Error loading files:", e);
+      setError("No se pudieron cargar los archivos.");
     }
+    setLoading(false);
   }
 
-  // useEffect principal: Dispara la carga de la carpeta actual y navega
   useEffect(() => {
     if (!accessLoading && currentUserData !== null) {
       reloadTree();
     }
-  }, [accessLoading, currentUserData, selectedPath]); 
+  }, [accessLoading, currentUserData]);
 
   useEffect(() => {
     if (activityPanelOpen) {
@@ -636,15 +580,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   }, [activityPanelOpen, showMyActivityOnly]);
 
-  // Esta función ya no es necesaria, pero la mantenemos para compatibilidad con el resto de tu código que la usa.
   function getCurrentFolder(): DriveFolder | null {
-    return currentFolderData;
+    if (!tree) return null;
+    let folder: DriveFolder = tree;
+    for (const seg of selectedPath) {
+      const next = folder.folders.find(f => f.name === seg);
+      if (!next) return null;
+      folder = next;
+    }
+    return folder;
   }
-  
-  const getAllFilesFromTree = (folder: DriveFolder): DriveFile[] => {
-    return folder.files.concat(...folder.folders.map(getAllFilesFromTree));
-  };
-
 
   const handleOpenFile = async (file: DriveFile) => {
     await logActivity('view', file.name);
@@ -676,6 +621,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       console.error("Error toggling star:", error);
       setError("Error al marcar el archivo");
     }
+  };
+
+  const getAllFilesFromTree = (folder: DriveFolder): DriveFile[] => {
+    return folder.files.concat(...folder.folders.map(getAllFilesFromTree));
   };
 
   const handleMarkReviewed = async (file: DriveFile) => {
@@ -757,6 +706,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const getFilesByPaths = (paths: string[]): DriveFile[] => {
+    // Usamos el caché de Storage, que tiene los tamaños, fechas, etc.
     return allFilesCache.filter(file => paths.includes(file.fullPath));
   };
   
@@ -834,7 +784,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (!user || selectedFiles.length === 0) return;
     try {
       await Promise.all(selectedFiles.map(async filePath => {
-        const metadataId = filePath.replace(/\//g, '_');
+        const metadataId = filePath.fullPath.replace(/\//g, '_');
         const metadataRef = doc(db, 'fileMetadata', metadataId);
         await setDoc(metadataRef, { starred: starred, filePath: filePath }, { merge: true });
       }));
@@ -876,17 +826,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (oldMetadataDoc.exists()) {
       const metadataToMove = oldMetadataDoc.data();
       const userName = await getUserDisplayName(user);
-      
-      let originalUpdated = metadataToMove.originalUpdated;
-      if (!originalUpdated) {
-        const originalFile = allFilesCache.find(f => f.fullPath === filePath);
-        if (originalFile) originalUpdated = originalFile.updated;
+      if (!metadataToMove.originalUpdated) {
+        // Asumimos que el árbol 'tree' tiene los datos (el caché)
+        const originalFile = getAllFilesFromTree(tree!).find(f => f.fullPath === filePath);
+        if (originalFile) metadataToMove.originalUpdated = originalFile.updated;
       }
-      
       await setDoc(doc(db, 'fileMetadata', newMetadataId), {
         ...metadataToMove,
         filePath: newPath,
-        originalUpdated: originalUpdated,
         movedBy: user?.email,
         movedByName: userName,
         movedAt: new Date().toISOString()
@@ -975,17 +922,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const uploadPromises = files.map(async (file, index) => {
         const filePath = [ROOT_PATH, ...selectedPath, file.name].join("/");
         const fileRef = ref(storage, filePath);
-        
-        const uploadTask = uploadBytes(fileRef, file);
-        uploadTask.then(async () => {
-            await logActivity('create', file.name);
-            setUploadProgress(prev => prev + (100 / files.length));
-        });
-        return uploadTask;
+        await uploadBytes(fileRef, file);
+        await logActivity('create', file.name);
+        setUploadProgress(((index + 1) / files.length) * 100);
       });
       
       await Promise.all(uploadPromises);
-
       setMoveSuccess(true);
       setTimeout(() => {
         setUploadProgress(0);
@@ -1091,9 +1033,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLoading(true);
     
     try {
-      const selectedFileObjects = allFilesCache.filter(file => selectedFiles.includes(file.fullPath));
+      const selectedFileObjects = getAllFilesFromTree(tree).filter(file => selectedFiles.includes(file.fullPath));
       
-      await Promise.all(selectedFileObjects.map(async (file) => {
+      await Promise.all(selectedFileObjects.map(async (file, index) => {
         const { displayName } = extractFileInfo(file.name);
         const newDisplayName = `${displayName}${bulkRenameSuffix.trim()}`;
         const newFileName = newDisplayName + '.pdf';
@@ -1125,8 +1067,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const blob = await response.blob();
       
       const { displayName } = extractFileInfo(file.name);
-      const extension = file.name.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
-      const newName = `${displayName} (copia)${extension}`;
+      const newName = `${displayName} (copia).pdf`;
       const pathParts = file.fullPath.split('/');
       pathParts[pathParts.length - 1] = newName;
       const newPath = pathParts.join('/');
@@ -1150,7 +1091,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLoading(true);
     
     try {
-      const selectedFileObjects = allFilesCache.filter(file => selectedFiles.includes(file.fullPath));
+      const selectedFileObjects = getAllFilesFromTree(tree).filter(file => selectedFiles.includes(file.fullPath));
 
       await Promise.all(selectedFileObjects.map(async (file, index) => {
         const oldRef = ref(storage, file.fullPath);
@@ -1159,8 +1100,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const blob = await response.blob();
         
         const { displayName } = extractFileInfo(file.name);
-        const extension = file.name.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
-        const newName = `${displayName} (copia ${index + 1})${extension}`;
+        const newName = `${displayName} (copia ${index + 1}).pdf`;
         const pathParts = file.fullPath.split('/');
         pathParts[pathParts.length - 1] = newName;
         const newPath = pathParts.join('/');
@@ -1236,7 +1176,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const currentFolder = getCurrentFolder();
 
   const filteredFolders = useMemo(() => {
-    // Usamos currentFolderData (carga rápida)
     if (!currentFolder || (globalSearch && searchQuery)) return [];
     let folders = currentFolder.folders;
     if (selectedPath.length === 0 && currentUserData) {
@@ -1247,11 +1186,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       folders = folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
     }
     return sortFolders(folders);
-  }, [currentFolderData, searchQuery, globalSearch, sortOrder, currentUserData, userIsQuality, selectedPath]);
+  }, [currentFolder, searchQuery, globalSearch, sortOrder, currentUserData, userIsQuality, selectedPath]);
 
   const filteredFiles = useMemo(() => {
-    // Si la búsqueda es GLOBAL, usamos la CACHE (cargada en segundo plano). De lo contrario, usamos la carga rápida.
-    let files = (globalSearch && searchQuery) ? allFilesCache : (currentFolderData?.files || []);
+    if (!tree) return [];
+    
+    // Si la búsqueda es GLOBAL, usamos todos los archivos (lento, pero funcional)
+    let files = (globalSearch && searchQuery) ? getAllFilesFromTree(tree) : (currentFolder?.files || []);
     
     if (searchQuery) {
       files = files.filter(f =>
@@ -1267,7 +1208,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     
     return sortFiles(files);
-  }, [currentFolderData, searchQuery, globalSearch, allFilesCache, sortBy, sortOrder, filterType]);
+  }, [currentFolder, searchQuery, globalSearch, tree, sortBy, sortOrder, filterType]);
 
   const filteredActivities = useMemo(() => {
     if (!activities) return [];
@@ -1464,7 +1405,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
             <Tooltip title="Actualizar">
               <IconButton 
-                onClick={() => reloadTree()}
+                onClick={reloadTree}
                 disabled={loading}
                 sx={{ 
                   '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
@@ -1660,19 +1601,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <Alert 
             severity="error" 
             action={
-              <Button color="inherit" size="small" onClick={() => reloadTree()}>
+              <Button color="inherit" size="small" onClick={reloadTree}>
                 Reintentar
               </Button>
             }
           >
             {error}
           </Alert>
-        ) : currentFolderData ? (
+        ) : currentFolder ? (
           <>
             {globalSearch && searchQuery && (
               <Alert severity="info" sx={{ mb: 3 }}>
-                Mostrando **{filteredFiles.length} resultados** para "<strong>{searchQuery}</strong>" en todo el drive. 
-                {allFilesCache.length === 0 && <Typography variant="caption" sx={{ ml: 1 }}>*(Cargando lista completa en segundo plano...)*</Typography>}
+                Mostrando {filteredFiles.length} resultados para "<strong>{searchQuery}</strong>" en todo el drive.
               </Alert>
             )}
 
