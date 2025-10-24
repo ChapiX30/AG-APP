@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { differenceInDays, parseISO, format, addDays, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,7 +9,6 @@ import {
   Clock,
   Plus,
   Download,
-  Filter,
   Search,
   Activity,
   Settings,
@@ -27,19 +25,47 @@ import {
   History,
   Wrench,
   Target,
-  ArrowLeft // Importa el icono de flecha izquierda
+  ArrowLeft,
+  ChevronDown,
+  Save,
+  Loader2,
+  Info,
+  Trash2
 } from 'lucide-react';
 // Importa tu hook personalizado de navegación
-import { useNavigation } from '../hooks/useNavigation'; // Ajusta la ruta según tu estructura
+import { useNavigation } from '../hooks/useNavigation';
+import { patronesData } from './patronesData'; 
 
-interface HistorialEntry {
+// --- IMPORTACIONES DE FIREBASE ---
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  setDoc,
+  query,
+  where 
+} from 'firebase/firestore';
+// Asume que tienes configurada la conexión a Firebase en '../utils/firebase'
+// **IMPORTANTE:** Reemplaza el path si es necesario.
+import { db } from '../utils/firebase'; 
+
+
+// --- INTERFACES (EXPORTADAS) ---
+
+export interface HistorialEntry {
   fecha: string;
   accion: string;
   usuario: string;
   observaciones?: string;
+  detalles?: any; 
 }
 
-interface RegistroPatron {
+// Añadimos 'id' para la referencia en Firestore
+export interface RegistroPatron {
+  id?: string; // ID generado por Firestore
   noControl: string;
   descripcion: string;
   serie: string;
@@ -57,94 +83,80 @@ interface RegistroPatron {
   historial: HistorialEntry[];
 }
 
-const mockData: RegistroPatron[] = [
-  {
-    noControl: 'AG-001',
-    descripcion: 'Bloques Patrón 33 piezas',
-    serie: '980495',
-    marca: 'MITUTOYO',
-    modelo: 'S/M',
-    frecuencia: '12 Meses ± 5 Días',
-    tipoServicio: 'Calibración',
-    fecha: '2025-10-18',
-    prioridad: 'Alta',
-    ubicacion: 'Lab A',
-    responsable: 'Juan Pérez',
-    historial: [
-      { fecha: '2024-10-18', accion: 'Calibración completada', usuario: 'Juan Pérez' }
-    ],
-    estadoProceso: 'operativo',
-  },
-  {
-    noControl: 'AG-002',
-    descripcion: 'Multímetro Fluke 87',
-    serie: 'FLK12345',
-    marca: 'FLUKE',
-    modelo: '87V',
-    frecuencia: '6 Meses ± 5 Días',
-    tipoServicio: 'Mantenimiento',
-    fecha: '2025-07-25',
-    prioridad: 'Media',
-    ubicacion: 'Lab B',
-    responsable: 'María García',
-    estadoProceso: 'en_proceso',
-    fechaInicioProceso: '2025-07-20',
-    observaciones: 'En proceso de mantenimiento preventivo',
-    historial: [
-      { fecha: '2025-07-20', accion: 'Iniciado mantenimiento', usuario: 'María García' },
-      { fecha: '2025-01-25', accion: 'Último mantenimiento completado', usuario: 'Carlos López' }
-    ]
-  },
-  {
-    noControl: 'AG-003',
-    descripcion: 'Balanza Analítica',
-    serie: 'BAL-789',
-    marca: 'SARTORIUS',
-    modelo: 'MSA225S',
-    frecuencia: '3 Meses ± 2 Días',
-    tipoServicio: 'Calibración',
-    fecha: '2025-07-20',
-    prioridad: 'Alta',
-    ubicacion: 'Lab C',
-    responsable: 'Carlos López',
-    estadoProceso: 'operativo',
-    historial: [
-      { fecha: '2025-04-20', accion: 'Calibración completada', usuario: 'Carlos López' }
-    ]
-  },
-  {
-    noControl: 'AG-004',
-    descripcion: 'Termómetro Digital',
-    serie: 'TEMP456',
-    marca: 'FLUKE',
-    modelo: '1523',
-    frecuencia: '12 Meses ± 5 Días',
-    tipoServicio: 'Verificación',
-    fecha: '2025-12-15',
-    prioridad: 'Baja',
-    ubicacion: 'Lab A',
-    responsable: 'Ana Rodríguez',
-    estadoProceso: 'operativo',
-    historial: [
-      { fecha: '2024-12-15', accion: 'Verificación completada', usuario: 'Ana Rodríguez' }
-    ]
-  }
-];
+const USUARIO_ACTUAL = "Jesús Sustaita"; // Constante de usuario
+const COLLECTION_NAME = "patronesCalibracion"; // Nombre de tu colección en Firestore
+
+// --- Tipos para el ordenamiento
+type SortableColumn = keyof RegistroPatron | 'statusVencimiento';
 
 export const ProgramaCalibracionScreen: React.FC = () => {
   const [fechaFiltro, setFechaFiltro] = useState<string>('');
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
-  const [filtroServicio, setFiltroServicio] = useState<string>('todos');
+  const [filtroServicio, setFFiltroServicio] = useState<string>('todos');
   const [busqueda, setBusqueda] = useState<string>('');
-  const [data, setData] = useState<RegistroPatron[]>(() => {
-    const saved = localStorage.getItem('patrones_calibracion');
-    return saved ? JSON.parse(saved) : mockData;
-  });
+  const [loading, setLoading] = useState(true); // Nuevo estado de carga
+  
+  // 🔄 ESTADOS DE ORDENAMIENTO 
+  const [sortColumn, setSortColumn] = useState<SortableColumn>('statusVencimiento');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  // ------------------------------------
 
-  // Cada vez que se modifique 'data', guárdalo en localStorage
-  React.useEffect(() => {
-    localStorage.setItem('patrones_calibracion', JSON.stringify(data));
-  }, [data]);
+  // --- CARGA DE DATOS (AHORA CON FIREBASE) ---
+  const [data, setData] = useState<RegistroPatron[]>([]);
+
+  // Lógica para sincronizar datos al inicio
+  const fetchPatrones = useCallback(async () => {
+    setLoading(true);
+    try {
+      const q = query(collection(db, COLLECTION_NAME));
+      const querySnapshot = await getDocs(q);
+      const fetchedData: RegistroPatron[] = [];
+
+      querySnapshot.forEach((doc) => {
+        // Mapea el documento de Firestore a tu interfaz, incluyendo el ID
+        fetchedData.push({ id: doc.id, ...doc.data() } as RegistroPatron);
+      });
+
+      if (fetchedData.length === 0) {
+        // Si no hay datos en Firebase, usa patronesData.ts e inicializa la colección
+        console.log("No hay datos en Firestore. Inicializando con patronesData.ts");
+        
+        // Carga los patrones uno por uno en Firestore
+        const promises = patronesData.map(patron => 
+          addDoc(collection(db, COLLECTION_NAME), patron)
+        );
+        await Promise.all(promises);
+
+        // Actualiza el estado con los datos iniciales
+        setData(patronesData);
+      } else {
+        // Si hay datos en Firebase, úsalos
+        setData(fetchedData);
+      }
+
+      // IMPORTANTE: Eliminar la lógica de localStorage
+      // localStorage.removeItem('patrones_calibracion'); 
+
+    } catch (e) {
+      console.error("Error al cargar o inicializar los patrones: ", e);
+      // Fallback: Si Firebase falla, intenta usar localStorage por si acaso
+      const saved = localStorage.getItem('patrones_calibracion');
+      if (saved) {
+        setData(JSON.parse(saved));
+      } else {
+        setData(patronesData); // Si todo falla, usa los datos del archivo
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPatrones();
+  }, [fetchPatrones]);
+  // --- FIN CARGA DE DATOS ---
+  
+  // ... (El resto de tus estados se mantienen)
 
   const [modalOpen, setModalOpen] = useState(false);
   const [accionModalOpen, setAccionModalOpen] = useState(false);
@@ -159,144 +171,94 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   const [mantenimientoModalOpen, setMantenimientoModalOpen] = useState(false);
   const [verificacionModalOpen, setVerificacionModalOpen] = useState(false);
 
-  // Estados para formularios específicos
   const [datosEnvio, setDatosEnvio] = useState({
-    laboratorio: '',
-    direccion: '',
-    contacto: '',
-    telefono: '',
-    email: '',
-    paqueteria: '',
-    fechaEnvio: '',
-    fechaEstimadaRegreso: '',
-    costo: '',
-    numeroOrden: '',
-    observaciones: '',
-    numeroPaqueteria: '', // Agregado para el número de guía
+    laboratorio: '', direccion: '', contacto: '', telefono: '', email: '',
+    paqueteria: '', fechaEnvio: format(new Date(), 'yyyy-MM-dd'), fechaEstimadaRegreso: '',
+    costo: '', numeroOrden: '', observaciones: '', numeroPaqueteria: '',
   });
+
+  const limpiarDatosEnvio = () => {
+    setDatosEnvio({
+      laboratorio: '', direccion: '', contacto: '', telefono: '', email: '',
+      paqueteria: '', fechaEnvio: format(new Date(), 'yyyy-MM-dd'), fechaEstimadaRegreso: '',
+      costo: '', numeroOrden: '', observaciones: '', numeroPaqueteria: '',
+    });
+  };
 
   const [nuevoRegistro, setNuevoRegistro] = useState<RegistroPatron>({
     noControl: '', descripcion: '', serie: '', marca: '', modelo: '',
-    frecuencia: '', tipoServicio: '', fecha: '', prioridad: 'Media',
-    ubicacion: '', responsable: '', estadoProceso: 'operativo', historial: []
+    frecuencia: '12 Meses ± 5 Días', tipoServicio: 'Calibración', fecha: '', prioridad: 'Media',
+    ubicacion: 'Laboratorio', responsable: USUARIO_ACTUAL, estadoProceso: 'operativo', historial: []
   });
 
   const hoy = new Date();
-
-  // Hook de navegación personalizado
   const { navigateTo } = useNavigation();
 
-  // Función para regresar al menú principal
   const handleGoBack = () => {
-    navigateTo('menu'); // Navega al menú principal
+    navigateTo('menu');
   };
 
+  // ⚙️ FUNCIÓN PARA MANEJAR EL ORDENAMIENTO
+  const handleSort = (column: SortableColumn) => {
+    if (column === sortColumn) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // --- LÓGICA DE CÁLCULO DE ESTADO ---
   const getStatusInfo = (fecha: string) => {
-    const dias = differenceInDays(parseISO(fecha), hoy);
-    if (dias < 0) {
+    // Lógica se mantiene igual
+    if (!fecha || fecha === 'Por Comprar' || fecha === '') {
       return {
-        status: 'vencido',
-        color: 'bg-red-500',
-        bgColor: 'bg-red-50',
-        textColor: 'text-red-700',
-        borderColor: 'border-red-200',
-        label: 'Vencido',
-        icon: AlertTriangle,
-        dias: Math.abs(dias)
+        status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200',
+        label: 'Pendiente', icon: Info, dias: 0, sortValue: 4 // Nuevo: Valor para ordenar (mayor = menos urgente)
       };
     }
-    if (dias >= 0 && dias <= 7) {
+    try {
+      const fechaVencimiento = parseISO(fecha);
+      const dias = differenceInDays(fechaVencimiento, hoy);
+
+      if (dias < 0) {
+        return {
+          status: 'vencido', color: 'bg-red-500', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200',
+          label: 'Vencido', icon: AlertTriangle, dias: Math.abs(dias), sortValue: 0 // Más urgente
+        };
+      }
+      if (dias >= 0 && dias <= 7) {
+        return {
+          status: 'critico', color: 'bg-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200',
+          label: 'Crítico', icon: AlertCircle, dias, sortValue: 1 
+        };
+      }
+      if (dias > 7 && dias <= 30) {
+        return {
+          status: 'proximo', color: 'bg-yellow-500', bgColor: 'bg-yellow-50', textColor: 'text-yellow-700', borderColor: 'border-yellow-200',
+          label: 'Próximo', icon: Clock, dias, sortValue: 2
+        };
+      }
       return {
-        status: 'critico',
-        color: 'bg-orange-500',
-        bgColor: 'bg-orange-50',
-        textColor: 'text-orange-700',
-        borderColor: 'border-orange-200',
-        label: 'Crítico',
-        icon: AlertCircle,
-        dias
+        status: 'vigente', color: 'bg-green-500', bgColor: 'bg-green-50', textColor: 'text-green-700', borderColor: 'border-green-200',
+        label: 'Vigente', icon: CheckCircle, dias, sortValue: 3 // Menos urgente
+      };
+    } catch (error) {
+       return {
+        status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200',
+        label: 'Error Fecha', icon: Info, dias: 0, sortValue: 5 // Error o pendiente al final
       };
     }
-    if (dias > 7 && dias <= 30) {
-      return {
-        status: 'proximo',
-        color: 'bg-yellow-500',
-        bgColor: 'bg-yellow-50',
-        textColor: 'text-yellow-700',
-        borderColor: 'border-yellow-200',
-        label: 'Próximo',
-        icon: Clock,
-        dias
-      };
-    }
-    return {
-      status: 'vigente',
-      color: 'bg-green-500',
-      bgColor: 'bg-green-50',
-      textColor: 'text-green-700',
-      borderColor: 'border-green-200',
-      label: 'Vigente',
-      icon: CheckCircle,
-      dias
-    };
   };
 
-  const getEstadoProcesoInfo = (estadoProceso: string) => {
+  const getEstadoProcesoInfo = (estadoProceso: RegistroPatron['estadoProceso']) => {
     switch(estadoProceso) {
-      case 'operativo':
-        return {
-          label: 'Operativo',
-          color: 'bg-blue-500',
-          bgColor: 'bg-blue-50',
-          textColor: 'text-blue-700',
-          borderColor: 'border-blue-200',
-          icon: Target
-        };
-      case 'programado':
-        return {
-          label: 'Programado',
-          color: 'bg-purple-500',
-          bgColor: 'bg-purple-50',
-          textColor: 'text-purple-700',
-          borderColor: 'border-purple-200',
-          icon: Calendar
-        };
-      case 'en_proceso':
-        return {
-          label: 'En Proceso',
-          color: 'bg-orange-500',
-          bgColor: 'bg-orange-50',
-          textColor: 'text-orange-700',
-          borderColor: 'border-orange-200',
-          icon: Wrench
-        };
-      case 'completado':
-        return {
-          label: 'Completado',
-          color: 'bg-green-500',
-          bgColor: 'bg-green-50',
-          textColor: 'text-green-700',
-          borderColor: 'border-green-200',
-          icon: CheckCircle2
-        };
-      case 'fuera_servicio':
-        return {
-          label: 'Fuera de Servicio',
-          color: 'bg-red-500',
-          bgColor: 'bg-red-50',
-          textColor: 'text-red-700',
-          borderColor: 'border-red-200',
-          icon: XCircle
-        };
-      default:
-        return {
-          label: 'Desconocido',
-          color: 'bg-gray-500',
-          bgColor: 'bg-gray-50',
-          textColor: 'text-gray-700',
-          borderColor: 'border-gray-200',
-          icon: AlertCircle
-        };
+      case 'operativo': return { label: 'Operativo', color: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: Target, sortValue: 4 };
+      case 'programado': return { label: 'Programado', color: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', icon: Calendar, sortValue: 2 };
+      case 'en_proceso': return { label: 'En Proceso', color: 'text-orange-700', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', icon: Wrench, sortValue: 1 };
+      case 'completado': return { label: 'Completado', color: 'text-green-700', bgColor: 'bg-green-50', borderColor: 'border-green-200', icon: CheckCircle2, sortValue: 3 };
+      case 'fuera_servicio': return { label: 'Fuera de Servicio', color: 'text-red-700', bgColor: 'bg-red-50', borderColor: 'border-red-200', icon: XCircle, sortValue: 0 };
+      default: return { label: 'Desconocido', color: 'text-gray-700', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', icon: AlertCircle, sortValue: 5 };
     }
   };
 
@@ -309,116 +271,86 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
 
+  const getPrioridadSortValue = (prioridad: string): number => {
+    switch(prioridad) {
+        case 'Alta': return 0;
+        case 'Media': return 1;
+        case 'Baja': return 2;
+        default: return 3;
+    }
+  };
+  
+  const parseFrecuenciaEnMeses = (frecuencia: string): number => {
+    const mesesMatch = frecuencia.match(/(\d+)\s*Meses?/i);
+    return mesesMatch ? parseInt(mesesMatch[1], 10) : 12;
+  };
+  
+  const calcularNuevaFechaVencimiento = (frecuencia: string, fechaBase: Date = new Date()) => {
+    try {
+        const meses = parseFrecuenciaEnMeses(frecuencia);
+        return format(addMonths(fechaBase, meses), 'yyyy-MM-dd');
+    } catch (e) {
+        return format(addMonths(fechaBase, 12), 'yyyy-MM-dd'); // Fallback
+    }
+  };
+  
+  // --- LÓGICA DE ACCIONES (Se mantiene) ---
+
   const getAccionesDisponibles = (item: RegistroPatron) => {
-    const statusInfo = getStatusInfo(item.fecha);
+    // Lógica se mantiene igual
     const acciones = [];
+
+    if (item.tipoServicio === 'Calibración' && item.estadoProceso === 'operativo') {
+        acciones.push({ id: 'calibracion_externa', label: 'Calibración Externa', icon: Calendar, color: 'bg-blue-600 hover:bg-blue-700' });
+    } else if (item.tipoServicio === 'Mantenimiento' && item.estadoProceso === 'operativo') {
+        acciones.push({ id: 'mantenimiento', label: 'Iniciar Mantenimiento', icon: Wrench, color: 'bg-red-600 hover:bg-red-700' });
+    } else if (item.tipoServicio === 'Verificación' && item.estadoProceso === 'operativo') {
+        acciones.push({ id: 'verificacion', label: 'Iniciar Verificación', icon: Eye, color: 'bg-green-600 hover:bg-green-700' });
+    }
 
     switch(item.estadoProceso) {
       case 'operativo':
-        if (statusInfo.status === 'vencido' || statusInfo.status === 'critico') {
-          acciones.push({
-            id: 'programar',
-            label: 'Programar Servicio',
-            icon: Calendar,
-            color: 'bg-purple-600 hover:bg-purple-700'
-          });
-        }
-        acciones.push({
-          id: 'iniciar_proceso',
-          label: 'Iniciar Proceso',
-          icon: Play,
-          color: 'bg-orange-600 hover:bg-orange-700'
-        });
-        // Acciones específicas por tipo de servicio
-        if (item.tipoServicio === 'Calibración') {
-          acciones.push({
-            id: 'calibracion_externa',
-            label: 'Calibración Externa',
-            icon: Calendar,
-            color: 'bg-blue-600 hover:bg-blue-700'
-          });
-        } else if (item.tipoServicio === 'Mantenimiento') {
-          acciones.push({
-            id: 'mantenimiento',
-            label: 'Mantenimiento',
-            icon: Wrench,
-            color: 'bg-orange-600 hover:bg-orange-700'
-          });
-        } else if (item.tipoServicio === 'Verificación') {
-          acciones.push({
-            id: 'verificacion',
-            label: 'Verificación',
-            icon: Eye,
-            color: 'bg-green-600 hover:bg-green-700'
-          });
-        }
+        acciones.push({ id: 'programar', label: 'Programar Servicio', icon: Clock, color: 'bg-purple-600 hover:bg-purple-700' });
+        acciones.push({ id: 'fuera_servicio', label: 'Poner Fuera de Servicio', icon: XCircle, color: 'bg-red-600 hover:bg-red-700' });
         break;
       case 'programado':
-        acciones.push({
-          id: 'iniciar_proceso',
-          label: 'Iniciar Proceso',
-          icon: Play,
-          color: 'bg-orange-600 hover:bg-orange-700'
-        });
-        acciones.push({
-          id: 'cancelar',
-          label: 'Cancelar',
-          icon: XCircle,
-          color: 'bg-gray-600 hover:bg-gray-700'
-        });
+        acciones.push({ id: 'iniciar_proceso', label: 'Iniciar Proceso', icon: Play, color: 'bg-orange-600 hover:bg-orange-700' });
+        acciones.push({ id: 'cancelar', label: 'Cancelar Programa', icon: RotateCcw, color: 'bg-gray-600 hover:bg-gray-700' });
         break;
       case 'en_proceso':
-        acciones.push({
-          id: 'completar',
-          label: 'Completar',
-          icon: CheckCircle2,
-          color: 'bg-green-600 hover:bg-green-700'
-        });
-        acciones.push({
-          id: 'pausar',
-          label: 'Pausar',
-          icon: Pause,
-          color: 'bg-yellow-600 hover:bg-yellow-700'
-        });
+        acciones.push({ id: 'completar', label: 'Completar Proceso', icon: CheckCircle2, color: 'bg-green-600 hover:bg-green-700' });
+        acciones.push({ id: 'pausar', label: 'Pausar Proceso', icon: Pause, color: 'bg-yellow-600 hover:bg-yellow-700' });
         break;
       case 'completado':
-        acciones.push({
-          id: 'reactivar',
-          label: 'Reactivar',
-          icon: RotateCcw,
-          color: 'bg-blue-600 hover:bg-blue-700'
-        });
+        acciones.push({ id: 'reactivar', label: 'Reactivar/Operativo', icon: RotateCcw, color: 'bg-blue-600 hover:bg-blue-700' });
+        break;
+      case 'fuera_servicio':
+        acciones.push({ id: 'reactivar', label: 'Poner Operativo', icon: RotateCcw, color: 'bg-blue-600 hover:bg-blue-700' });
         break;
     }
-    acciones.push({
-      id: 'editar',
-      label: 'Editar',
-      icon: Edit,
-      color: 'bg-gray-400 hover:bg-gray-500'
-    });
-
-    return acciones;
-  };
-
-  const calcularNuevaFechaVencimiento = (frecuencia: string, fechaBase: Date = new Date()) => {
-    const mesesMatch = frecuencia.match(/(\d+)\s*Meses?/i);
-    if (mesesMatch) {
-      const meses = parseInt(mesesMatch[1]);
-      return format(addMonths(fechaBase, meses), 'yyyy-MM-dd');
+    
+    if (item.estadoProceso === 'operativo' || item.estadoProceso === 'programado' || item.estadoProceso === 'fuera_servicio') {
+      acciones.push({ id: 'editar', label: 'Editar Datos', icon: Edit, color: 'bg-gray-400 hover:bg-gray-500' });
     }
-    return format(addMonths(fechaBase, 12), 'yyyy-MM-dd');
-  };
 
-  const ejecutarAccion = () => {
-    if (!equipoSeleccionado || !accionSeleccionada) return;
+    return acciones.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
+  };
+  
+  // --- MANIPULACIÓN DE DATOS (FIREBASE - Se mantiene) ---
+  
+  const ejecutarAccion = async () => {
+    if (!equipoSeleccionado || !accionSeleccionada || !equipoSeleccionado.id) return;
+    setLoading(true);
 
     const equipoActualizado = { ...equipoSeleccionado };
     const nuevaEntradaHistorial: HistorialEntry = {
       fecha: format(new Date(), 'yyyy-MM-dd'),
       accion: '',
-      usuario: equipoSeleccionado.responsable,
+      usuario: USUARIO_ACTUAL,
       observaciones: observacionesAccion
     };
+    
+    let nuevaFecha = equipoSeleccionado.fecha;
 
     switch(accionSeleccionada) {
       case 'programar':
@@ -428,16 +360,13 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       case 'iniciar_proceso':
         equipoActualizado.estadoProceso = 'en_proceso';
         equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-        nuevaEntradaHistorial.accion = `${equipoSeleccionado.tipoServicio} iniciado`;
+        nuevaEntradaHistorial.accion = `Proceso iniciado genérico para ${equipoSeleccionado.tipoServicio}`;
         break;
       case 'completar':
         equipoActualizado.estadoProceso = 'operativo';
         equipoActualizado.fechaInicioProceso = undefined;
-        if (nuevaFechaVencimiento) {
-          equipoActualizado.fecha = nuevaFechaVencimiento;
-        } else {
-          equipoActualizado.fecha = calcularNuevaFechaVencimiento(equipoSeleccionado.frecuencia);
-        }
+        nuevaFecha = nuevaFechaVencimiento || calcularNuevaFechaVencimiento(equipoSeleccionado.frecuencia, hoy);
+        equipoActualizado.fecha = nuevaFecha;
         nuevaEntradaHistorial.accion = `${equipoSeleccionado.tipoServicio} completado`;
         break;
       case 'pausar':
@@ -450,43 +379,62 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         break;
       case 'reactivar':
         equipoActualizado.estadoProceso = 'operativo';
-        nuevaEntradaHistorial.accion = 'Equipo reactivado';
+        nuevaEntradaHistorial.accion = 'Equipo puesto en Operativo';
+        break;
+      case 'fuera_servicio':
+        equipoActualizado.estadoProceso = 'fuera_servicio';
+        nuevaEntradaHistorial.accion = 'Puesto Fuera de Servicio';
         break;
     }
 
     equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-    equipoActualizado.observaciones = observacionesAccion || equipoActualizado.observaciones;
+    
+    try {
+      // 1. Quitar el ID para el update (Firestore no necesita el ID en el objeto)
+      const { id, ...dataToUpdate } = equipoActualizado;
+      
+      // 2. Ejecutar la actualización en Firebase
+      const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
+      await updateDoc(docRef, dataToUpdate);
 
-    setData(data.map(item =>
-      item.noControl === equipoSeleccionado.noControl ? equipoActualizado : item
-    ));
+      // 3. Refrescar el estado con los nuevos datos de Firebase
+      await fetchPatrones();
 
-    setAccionModalOpen(false);
-    setAccionSeleccionada('');
-    setObservacionesAccion('');
-    setNuevaFechaVencimiento('');
-    setEquipoSeleccionado(null);
+    } catch (e) {
+      console.error("Error al ejecutar la acción en Firebase: ", e);
+      alert("Error al guardar la acción. Intente de nuevo.");
+    } finally {
+      setLoading(false);
+      setAccionModalOpen(false);
+      setAccionSeleccionada('');
+      setObservacionesAccion('');
+      setNuevaFechaVencimiento('');
+      setEquipoSeleccionado(null);
+    }
   };
-
+  
   const abrirModalAccion = (equipo: RegistroPatron, accion: string) => {
+    // Lógica se mantiene igual, se llamará a ejecutarAccion()
     setEquipoSeleccionado(equipo);
     setAccionSeleccionada(accion);
 
-    if (accion === 'completar') {
-      setNuevaFechaVencimiento(calcularNuevaFechaVencimiento(equipo.frecuencia));
-      setAccionModalOpen(true);
-    } else if (accion === 'editar') {
-      setEquipoEditando(equipo);
-      setEditModalOpen(true);
-    } else if (accion === 'calibracion_externa') {
-      setCalibracionModalOpen(true);
+    if (accion === 'calibracion_externa') {
+      limpiarDatosEnvio(); setCalibracionModalOpen(true); return;
     } else if (accion === 'mantenimiento') {
-      setMantenimientoModalOpen(true);
+      limpiarDatosEnvio(); setMantenimientoModalOpen(true); return;
     } else if (accion === 'verificacion') {
-      setVerificacionModalOpen(true);
-    } else {
-      setAccionModalOpen(true);
+      limpiarDatosEnvio(); setVerificacionModalOpen(true); return;
+    } else if (accion === 'editar') {
+      setEquipoEditando(equipo); setEditModalOpen(true); return;
     }
+    
+    if (accion === 'completar') {
+      setNuevaFechaVencimiento(calcularNuevaFechaVencimiento(equipo.frecuencia, hoy));
+    } else {
+      setNuevaFechaVencimiento('');
+    }
+    setObservacionesAccion(equipo.observaciones || '');
+    setAccionModalOpen(true);
   };
 
   const abrirHistorial = (equipo: RegistroPatron) => {
@@ -494,8 +442,206 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     setHistorialModalOpen(true);
   };
 
+  // --- CRUD BÁSICO (FIREBASE - Se mantiene) ---
+
+  const handleGuardar = async () => {
+    if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion || !nuevoRegistro.fecha) {
+      alert('Por favor complete los campos obligatorios');
+      return;
+    }
+    setLoading(true);
+    
+    const nuevaEntradaHistorial: HistorialEntry = {
+        fecha: format(new Date(), 'yyyy-MM-dd'),
+        accion: 'Registro Creado',
+        usuario: USUARIO_ACTUAL,
+        observaciones: 'Patrón añadido al sistema.'
+    };
+    
+    try {
+      // 1. Agregar el nuevo documento a Firestore
+      await addDoc(collection(db, COLLECTION_NAME), {
+        ...nuevoRegistro,
+        historial: [nuevaEntradaHistorial]
+      });
+      
+      // 2. Refrescar el estado con los nuevos datos de Firebase
+      await fetchPatrones();
+
+    } catch (e) {
+      console.error("Error al agregar patrón a Firebase: ", e);
+      alert("Error al guardar el patrón. Intente de nuevo.");
+    } finally {
+      setLoading(false);
+      setModalOpen(false);
+      setNuevoRegistro({
+        noControl: '', descripcion: '', serie: '', marca: '', modelo: '',
+        frecuencia: '12 Meses ± 5 Días', tipoServicio: 'Calibración', fecha: '', prioridad: 'Media',
+        ubicacion: 'Laboratorio', responsable: USUARIO_ACTUAL, estadoProceso: 'operativo', historial: []
+      });
+    }
+  };
+
+  const guardarEdicion = async () => {
+    if (!equipoEditando || !equipoEditando.id) return;
+    setLoading(true);
+    
+    const nuevaEntradaHistorial: HistorialEntry = {
+      fecha: format(new Date(), 'yyyy-MM-dd'),
+      accion: 'Registro Editado',
+      usuario: USUARIO_ACTUAL,
+      observaciones: 'Se modificaron los datos generales del patrón.'
+    };
+    
+    const equipoConHistorial = { 
+        ...equipoEditando, 
+        historial: [nuevaEntradaHistorial, ...equipoEditando.historial] 
+    };
+
+    try {
+      // 1. Quitar el ID para el update
+      const { id, ...dataToUpdate } = equipoConHistorial;
+
+      // 2. Ejecutar la actualización en Firebase
+      const docRef = doc(db, COLLECTION_NAME, equipoEditando.id);
+      await updateDoc(docRef, dataToUpdate);
+      
+      // 3. Refrescar el estado con los nuevos datos de Firebase
+      await fetchPatrones();
+
+    } catch (e) {
+      console.error("Error al editar patrón en Firebase: ", e);
+      alert("Error al guardar la edición. Intente de nuevo.");
+    } finally {
+      setLoading(false);
+      setEditModalOpen(false);
+      setEquipoEditando(null);
+    }
+  };
+  
+  const handleEliminar = async (id: string) => {
+    setLoading(true);
+    try {
+        // 1. Eliminar de Firebase
+        const docRef = doc(db, COLLECTION_NAME, id);
+        await deleteDoc(docRef);
+
+        // 2. Refrescar el estado con los nuevos datos de Firebase
+        await fetchPatrones();
+
+    } catch (e) {
+        console.error("Error al eliminar patrón en Firebase: ", e);
+        alert("Error al eliminar el patrón. Intente de nuevo.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // --- LÓGICA DE PROCESOS ESPECÍFICOS (FIREBASE - Se mantiene) ---
+
+  const procesarEnvioCalibracion = async () => {
+    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
+    setLoading(true);
+
+    const equipoActualizado = { ...equipoSeleccionado };
+    const nuevaEntradaHistorial: HistorialEntry = {
+      fecha: format(new Date(), 'yyyy-MM-dd'),
+      accion: 'Envío a Calibración Externa',
+      usuario: USUARIO_ACTUAL,
+      observaciones: `Lab: ${datosEnvio.laboratorio}, Guía: ${datosEnvio.numeroPaqueteria}. ${datosEnvio.observaciones}`,
+      detalles: datosEnvio
+    };
+
+    equipoActualizado.estadoProceso = 'en_proceso'; 
+    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
+    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
+
+    try {
+        const { id, ...dataToUpdate } = equipoActualizado;
+        const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
+        await updateDoc(docRef, dataToUpdate);
+        await fetchPatrones();
+    } catch (e) {
+        console.error("Error al procesar envío a Firebase: ", e);
+        alert("Error al guardar el envío. Intente de nuevo.");
+    } finally {
+        setLoading(false);
+        setCalibracionModalOpen(false);
+        limpiarDatosEnvio();
+        setEquipoSeleccionado(null);
+    }
+  };
+
+  const procesarMantenimiento = async () => {
+    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
+    setLoading(true);
+
+    const equipoActualizado = { ...equipoSeleccionado };
+    const nuevaEntradaHistorial: HistorialEntry = {
+      fecha: format(new Date(), 'yyyy-MM-dd'),
+      accion: `Mantenimiento iniciado - Tipo: ${datosEnvio.laboratorio}`,
+      usuario: USUARIO_ACTUAL,
+      observaciones: datosEnvio.observaciones,
+      detalles: datosEnvio
+    };
+
+    equipoActualizado.estadoProceso = 'en_proceso';
+    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
+    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
+
+    try {
+        const { id, ...dataToUpdate } = equipoActualizado;
+        const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
+        await updateDoc(docRef, dataToUpdate);
+        await fetchPatrones();
+    } catch (e) {
+        console.error("Error al procesar mantenimiento a Firebase: ", e);
+        alert("Error al guardar el mantenimiento. Intente de nuevo.");
+    } finally {
+        setLoading(false);
+        setMantenimientoModalOpen(false);
+        limpiarDatosEnvio();
+        setEquipoSeleccionado(null);
+    }
+  };
+
+  const procesarVerificacion = async () => {
+    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
+    setLoading(true);
+
+    const equipoActualizado = { ...equipoSeleccionado };
+    const nuevaEntradaHistorial: HistorialEntry = {
+      fecha: format(new Date(), 'yyyy-MM-dd'),
+      accion: `Verificación iniciada - Tipo: ${datosEnvio.laboratorio}`,
+      usuario: USUARIO_ACTUAL,
+      observaciones: datosEnvio.observaciones,
+      detalles: datosEnvio
+    };
+
+    equipoActualizado.estadoProceso = 'en_proceso';
+    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
+    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
+
+    try {
+        const { id, ...dataToUpdate } = equipoActualizado;
+        const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
+        await updateDoc(docRef, dataToUpdate);
+        await fetchPatrones();
+    } catch (e) {
+        console.error("Error al procesar verificación a Firebase: ", e);
+        alert("Error al guardar la verificación. Intente de nuevo.");
+    } finally {
+        setLoading(false);
+        setVerificacionModalOpen(false);
+        limpiarDatosEnvio();
+        setEquipoSeleccionado(null);
+    }
+  };
+
+  // --- FILTRADO Y EXPORTACIÓN ---
+
   const dataFiltrada = useMemo(() => {
-    return data.filter(item => {
+    let filtered = data.filter(item => {
       const statusInfo = getStatusInfo(item.fecha);
       const cumpleFecha = fechaFiltro === '' || item.fecha.startsWith(fechaFiltro);
       const cumpleEstado = filtroEstado === 'todos' || statusInfo.status === filtroEstado;
@@ -507,14 +653,59 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
       return cumpleFecha && cumpleEstado && cumpleServicio && cumpleBusqueda;
     });
-  }, [data, fechaFiltro, filtroEstado, filtroServicio, busqueda]);
+
+    // 🔄 LÓGICA DE ORDENAMIENTO APLICADA DESPUÉS DEL FILTRADO
+    filtered.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      if (sortColumn === 'statusVencimiento') {
+        // Ordena por el valor numérico del estado de vencimiento (0=Vencido, 1=Crítico, ...)
+        aValue = getStatusInfo(a.fecha).sortValue;
+        bValue = getStatusInfo(b.fecha).sortValue;
+        
+        // Si los estados son iguales (ej. ambos Vigentes), usa la fecha como desempate
+        if (aValue === bValue) {
+            aValue = parseISO(a.fecha).getTime();
+            bValue = parseISO(b.fecha).getTime();
+        }
+
+      } else if (sortColumn === 'fecha' || sortColumn === 'fechaInicioProceso') {
+        // Ordena fechas
+        aValue = a[sortColumn] ? parseISO(a[sortColumn]!).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
+        bValue = b[sortColumn] ? parseISO(b[sortColumn]!).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
+
+      } else if (sortColumn === 'prioridad') {
+        // Ordena prioridades (Alta=0, Media=1, Baja=2)
+        aValue = getPrioridadSortValue(a.prioridad);
+        bValue = getPrioridadSortValue(b.prioridad);
+
+      } else if (sortColumn === 'estadoProceso') {
+         // Ordena por estado de proceso
+        aValue = getEstadoProcesoInfo(a.estadoProceso).sortValue;
+        bValue = getEstadoProcesoInfo(b.estadoProceso).sortValue;
+        
+      } else {
+        // Ordena cadenas (strings)
+        aValue = (a[sortColumn] || '').toLowerCase();
+        bValue = (b[sortColumn] || '').toLowerCase();
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0; // Si son iguales, no cambia el orden relativo
+    });
+
+    return filtered;
+  }, [data, fechaFiltro, filtroEstado, filtroServicio, busqueda, sortColumn, sortDirection]);
 
   const estadisticas = useMemo(() => {
     const total = data.length;
-    const vencidos = data.filter(item => getStatusInfo(item.fecha).status === 'vencido').length;
-    const criticos = data.filter(item => getStatusInfo(item.fecha).status === 'critico').length;
-    const proximos = data.filter(item => getStatusInfo(item.fecha).status === 'proximo').length;
-    const vigentes = data.filter(item => getStatusInfo(item.fecha).status === 'vigente').length;
+    const operativos = data.filter(item => item.estadoProceso !== 'fuera_servicio');
+    const vencidos = operativos.filter(item => getStatusInfo(item.fecha).status === 'vencido').length;
+    const criticos = operativos.filter(item => getStatusInfo(item.fecha).status === 'critico').length;
+    const proximos = operativos.filter(item => getStatusInfo(item.fecha).status === 'proximo').length;
+    const vigentes = operativos.filter(item => getStatusInfo(item.fecha).status === 'vigente').length;
 
     return { total, vencidos, criticos, proximos, vigentes };
   }, [data]);
@@ -535,118 +726,37 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     link.click();
   };
 
-  const handleGuardar = () => {
-    if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion || !nuevoRegistro.fecha) {
-      alert('Por favor complete los campos obligatorios');
-      return;
-    }
-    setData([...data, nuevoRegistro]);
-    setModalOpen(false);
-    setNuevoRegistro({
-      noControl: '', descripcion: '', serie: '', marca: '', modelo: '',
-      frecuencia: '', tipoServicio: '', fecha: '', prioridad: 'Media',
-      ubicacion: '', responsable: '', estadoProceso: 'operativo', historial: []
-    });
+
+  // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS (USADA EN OTRAS SCREENS) ---
+  const getPatronesList = () => {
+      // Mapea a las descripciones y filtra duplicados
+      const descripcionesUnicas = Array.from(new Set(data.map(patron => patron.descripcion)));
+      // Filtra cualquier valor vacío o indefinido si lo hubiera
+      return descripcionesUnicas.filter(desc => desc && desc !== '');
   };
 
-  const guardarEdicion = () => {
-    if (equipoEditando) {
-      setData(data.map(item =>
-        item.noControl === equipoEditando.noControl ? equipoEditando : item
-      ));
-      setEditModalOpen(false);
-      setEquipoEditando(null);
-    }
-  };
+  // Lista de patrones única para la supuesta 'NormasScreen'
+  const patronesUnicos = useMemo(() => getPatronesList(), [data]);
 
-  const limpiarDatosEnvio = () => {
-    setDatosEnvio({
-      laboratorio: '',
-      direccion: '',
-      contacto: '',
-      telefono: '',
-      email: '',
-      paqueteria: '',
-      fechaEnvio: '',
-      fechaEstimadaRegreso: '',
-      costo: '',
-      numeroOrden: '',
-      observaciones: '',
-      numeroPaqueteria: '',
-    });
-  };
+  // --- RENDERIZADO (JSX) ---
 
-  const procesarEnvioCalibracion = () => {
-    if (!equipoSeleccionado) return;
-
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: `Envío a Calibración Externa - Lab: ${datosEnvio.laboratorio}, Guía: ${datosEnvio.numeroPaqueteria}`,
-      usuario: equipoSeleccionado.responsable,
-      observaciones: datosEnvio.observaciones
-    };
-
-    equipoActualizado.estadoProceso = 'en_proceso'; // O un estado específico para "en calibración externa"
-    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-
-    setData(data.map(item =>
-      item.noControl === equipoSeleccionado.noControl ? equipoActualizado : item
-    ));
-
-    setCalibracionModalOpen(false);
-    limpiarDatosEnvio();
-    setEquipoSeleccionado(null);
-  };
-
-  const procesarMantenimiento = () => {
-    if (!equipoSeleccionado) return;
-
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: `Mantenimiento iniciado - Tipo: ${datosEnvio.laboratorio}, Técnico: ${datosEnvio.contacto}`,
-      usuario: equipoSeleccionado.responsable,
-      observaciones: datosEnvio.observaciones
-    };
-
-    equipoActualizado.estadoProceso = 'en_proceso';
-    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-
-    setData(data.map(item =>
-      item.noControl === equipoSeleccionado.noControl ? equipoActualizado : item
-    ));
-
-    setMantenimientoModalOpen(false);
-    limpiarDatosEnvio();
-    setEquipoSeleccionado(null);
-  };
-
-  const procesarVerificacion = () => {
-    if (!equipoSeleccionado) return;
-
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: `Verificación iniciada - Tipo: ${datosEnvio.laboratorio}, Inspector: ${datosEnvio.contacto}`,
-      usuario: equipoSeleccionado.responsable,
-      observaciones: datosEnvio.observaciones
-    };
-
-    equipoActualizado.estadoProceso = 'en_proceso';
-    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-
-    setData(data.map(item =>
-      item.noControl === equipoSeleccionado.noControl ? equipoActualizado : item
-    ));
-
-    setVerificacionModalOpen(false);
-    limpiarDatosEnvio();
-    setEquipoSeleccionado(null);
-  };
+  // ℹ️ FUNCIÓN DE RENDERIZADO PARA LOS ENCABEZADOS DE COLUMNA
+  const renderSortableHeader = (columnKey: SortableColumn, label: string) => (
+    <th className="text-left p-4 font-semibold text-gray-700">
+      <button
+        onClick={() => handleSort(columnKey)}
+        className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+      >
+        {label}
+        {sortColumn === columnKey && (
+          <ChevronDown 
+            className={`w-4 h-4 transition-transform ${sortDirection === 'desc' ? 'rotate-180' : ''}`} 
+          />
+        )}
+      </button>
+    </th>
+  );
+  // -------------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -655,7 +765,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              {/* Botón de regreso */}
               <button
                 onClick={handleGoBack}
                 className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center"
@@ -684,266 +793,318 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6">
-        {/* Dashboard Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Total Patrones</p>
-                <p className="text-3xl font-bold text-gray-900">{estadisticas.total}</p>
-              </div>
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <TrendingUp className="w-6 h-6 text-blue-600" />
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-white rounded-xl shadow-sm border border-red-200 p-6 hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-red-600 mb-1">Vencidos</p>
-                <p className="text-3xl font-bold text-red-700">{estadisticas.vencidos}</p>
-              </div>
-              <div className="p-3 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600" />
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white rounded-xl shadow-sm border border-orange-200 p-6 hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-orange-600 mb-1">Críticos (≤7 días)</p>
-                <p className="text-3xl font-bold text-orange-700">{estadisticas.criticos}</p>
-              </div>
-              <div className="p-3 bg-orange-100 rounded-lg">
-                <AlertCircle className="w-6 h-6 text-orange-600" />
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-white rounded-xl shadow-sm border border-green-200 p-6 hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-green-600 mb-1">Vigentes</p>
-                <p className="text-3xl font-bold text-green-700">{estadisticas.vigentes}</p>
-              </div>
-              <div className="p-3 bg-green-100 rounded-lg">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Filters and Actions */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="flex flex-col sm:flex-row gap-4 flex-1">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Buscar por descripción, control o marca..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                />
-              </div>
-
-              <select
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-              >
-                <option value="todos">Todos los estados</option>
-                <option value="vencido">Vencidos</option>
-                <option value="critico">Críticos</option>
-                <option value="proximo">Próximos</option>
-                <option value="vigente">Vigentes</option>
-              </select>
-
-              <select
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                value={filtroServicio}
-                onChange={(e) => setFiltroServicio(e.target.value)}
-              >
-                <option value="todos">Todos los servicios</option>
-                <option value="Calibración">Calibración</option>
-                <option value="Mantenimiento">Mantenimiento</option>
-                <option value="Verificación">Verificación</option>
-              </select>
-
-              <input
-                type="month"
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                value={fechaFiltro}
-                onChange={(e) => setFechaFiltro(e.target.value)}
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setModalOpen(true)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
-              >
-                <Plus className="w-4 h-4" />
-                Nuevo Patrón
-              </button>
-              <button
-                onClick={handleExportar}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
-              >
-                <Download className="w-4 h-4" />
-                Exportar
-              </button>
-            </div>
+        
+        {loading && (
+          <div className="flex justify-center items-center py-8">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin mr-2" />
+            <span className="text-lg text-gray-700">Cargando datos de Firebase...</span>
           </div>
-        </div>
+        )}
 
-        {/* Results Info */}
-        <div className="mb-4">
-          <p className="text-sm text-gray-600">
-            Mostrando {dataFiltrada.length} de {data.length} patrones
-          </p>
-        </div>
+        {!loading && (
+          <>
+            {/* Dashboard Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {/* ... (Tus tarjetas de estadísticas) ... */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Total Patrones</p>
+                    <p className="text-3xl font-bold text-gray-900">{estadisticas.total}</p>
+                  </div>
+                  <div className="p-3 bg-blue-100 rounded-lg">
+                    <TrendingUp className="w-6 h-6 text-blue-600" />
+                  </div>
+                </div>
+              </motion.div>
 
-        {/* Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left p-4 font-semibold text-gray-700">Control</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Descripción</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Marca/Modelo</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Servicio</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Fecha Vencimiento</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Estado Calibración</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Estado Proceso</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Prioridad</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence>
-                  {dataFiltrada.map((item, index) => {
-                    const statusInfo = getStatusInfo(item.fecha);
-                    const IconComponent = statusInfo.icon;
-                    const estadoProcesoInfo = getEstadoProcesoInfo(item.estadoProceso);
-                    const EstadoProcesoIcon = estadoProcesoInfo.icon;
-                    const accionesDisponibles = getAccionesDisponibles(item);
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="bg-white rounded-xl shadow-sm border border-red-200 p-6 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-red-600 mb-1">Vencidos</p>
+                    <p className="text-3xl font-bold text-red-700">{estadisticas.vencidos}</p>
+                  </div>
+                  <div className="p-3 bg-red-100 rounded-lg">
+                    <AlertTriangle className="w-6 h-6 text-red-600" />
+                  </div>
+                </div>
+              </motion.div>
 
-                    return (
-                      <motion.tr
-                        key={item.noControl}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        transition={{ duration: 0.2, delay: index * 0.05 }}
-                        className={`border-b border-gray-100 hover:${statusInfo.bgColor} transition-colors group`}
-                      >
-                        <td className="p-4">
-                          <div className="font-semibold text-gray-900">{item.noControl}</div>
-                          <div className="text-xs text-gray-500">{item.ubicacion}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="font-medium text-gray-900">{item.descripcion}</div>
-                          <div className="text-xs text-gray-500">Serie: {item.serie}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="font-medium text-gray-700">{item.marca}</div>
-                          <div className="text-xs text-gray-500">{item.modelo}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="font-medium text-gray-700">{item.tipoServicio}</div>
-                          <div className="text-xs text-gray-500">{item.frecuencia}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="font-medium text-gray-900">
-                            {format(parseISO(item.fecha), 'dd MMM yyyy', { locale: es })}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {statusInfo.dias === 0 ? 'Hoy' :
-                             statusInfo.status === 'vencido' ? `${statusInfo.dias} días vencido` :
-                             `${statusInfo.dias} días restantes`}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} border`}>
-                            <IconComponent className="w-3 h-3" />
-                            {statusInfo.label}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${estadoProcesoInfo.bgColor} ${estadoProcesoInfo.textColor} ${estadoProcesoInfo.borderColor} border`}>
-                            <EstadoProcesoIcon className="w-3 h-3" />
-                            {estadoProcesoInfo.label}
-                          </div>
-                          {item.fechaInicioProceso && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              Desde: {format(parseISO(item.fechaInicioProceso), 'dd/MM', { locale: es })}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getPrioridadColor(item.prioridad)}`}>
-                            {item.prioridad}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            {accionesDisponibles.map((accion) => {
-                              const AccionIcon = accion.icon;
-                              return (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="bg-white rounded-xl shadow-sm border border-orange-200 p-6 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-orange-600 mb-1">Críticos (≤7 días)</p>
+                    <p className="text-3xl font-bold text-orange-700">{estadisticas.criticos}</p>
+                  </div>
+                  <div className="p-3 bg-orange-100 rounded-lg">
+                    <AlertCircle className="w-6 h-6 text-orange-600" />
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-white rounded-xl shadow-sm border border-green-200 p-6 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-green-600 mb-1">Vigentes</p>
+                    <p className="text-3xl font-bold text-green-700">{estadisticas.vigentes}</p>
+                  </div>
+                  <div className="p-3 bg-green-100 rounded-lg">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Filters and Actions */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por descripción, control o marca..."
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={busqueda}
+                      onChange={(e) => setBusqueda(e.target.value)}
+                    />
+                  </div>
+
+                  <select
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    value={filtroEstado}
+                    onChange={(e) => setFiltroEstado(e.target.value)}
+                  >
+                    <option value="todos">Todos los estados</option>
+                    <option value="vencido">Vencidos</option>
+                    <option value="critico">Críticos</option>
+                    <option value="proximo">Próximos</option>
+                    <option value="vigente">Vigentes</option>
+                    <option value="pendiente">Pendientes</option>
+                  </select>
+
+                  <select
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    value={filtroServicio}
+                    onChange={(e) => setFFiltroServicio(e.target.value)}
+                  >
+                    <option value="todos">Todos los servicios</option>
+                    <option value="Calibración">Calibración</option>
+                    <option value="Mantenimiento">Mantenimiento</option>
+                    <option value="Verificación">Verificación</option>
+                  </select>
+
+                  <input
+                    type="month"
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    value={fechaFiltro}
+                    onChange={(e) => setFechaFiltro(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setModalOpen(true)}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nuevo Patrón
+                  </button>
+                  <button
+                    onClick={handleExportar}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exportar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Results Info */}
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                Mostrando {dataFiltrada.length} de {data.length} patrones
+              </p>
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {renderSortableHeader('noControl', 'Control')}
+                      {renderSortableHeader('descripcion', 'Descripción')}
+                      {renderSortableHeader('marca', 'Marca/Modelo')}
+                      {renderSortableHeader('tipoServicio', 'Servicio')}
+                      {renderSortableHeader('fecha', 'Fecha Vencimiento')} 
+                      {renderSortableHeader('statusVencimiento', 'Estado Calibración')} 
+                      {renderSortableHeader('estadoProceso', 'Estado Proceso')}
+                      {renderSortableHeader('prioridad', 'Prioridad')}
+                      <th className="text-left p-4 font-semibold text-gray-700">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence>
+                      {dataFiltrada.map((item, index) => {
+                        const statusInfo = getStatusInfo(item.fecha);
+                        const IconComponent = statusInfo.icon;
+                        const estadoProcesoInfo = getEstadoProcesoInfo(item.estadoProceso);
+                        const EstadoProcesoIcon = estadoProcesoInfo.icon;
+                        const accionesDisponibles = getAccionesDisponibles(item);
+
+                        return (
+                          <motion.tr
+                            key={item.id || item.noControl} // Usar el ID de Firestore
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2, delay: index * 0.05 }}
+                            className={`border-b border-gray-100 hover:bg-gray-50 transition-colors group`}
+                          >
+                            <td className="p-4">
+                              <div className="font-semibold text-gray-900">{item.noControl}</div>
+                              <div className="text-xs text-gray-500">{item.ubicacion}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-medium text-gray-900">{item.descripcion}</div>
+                              <div className="text-xs text-gray-500">Serie: {item.serie}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-medium text-gray-700">{item.marca}</div>
+                              <div className="text-xs text-gray-500">{item.modelo}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-medium text-gray-700">{item.tipoServicio}</div>
+                              <div className="text-xs text-gray-500">{item.frecuencia}</div>
+                            </td>
+                            <td className="p-4">
+                              {item.fecha && item.fecha !== 'Por Comprar' && (
+                                 <div className="font-medium text-gray-900">
+                                    {format(parseISO(item.fecha), 'dd MMM yyyy', { locale: es })}
+                                  </div>
+                              )}
+                              
+                              <div className="text-xs text-gray-500">
+                                {statusInfo.status === 'vencido' ? `${statusInfo.dias} días vencido` :
+                                 statusInfo.status === 'pendiente' ? statusInfo.label :
+                                 `${statusInfo.dias} días restantes`}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} border`}>
+                                <IconComponent className="w-3 h-3" />
+                                {statusInfo.label}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${estadoProcesoInfo.bgColor} ${estadoProcesoInfo.textColor} ${estadoProcesoInfo.borderColor} border`}>
+                                <EstadoProcesoIcon className="w-3 h-3" />
+                                {estadoProcesoInfo.label}
+                              </div>
+                              {item.fechaInicioProceso && item.estadoProceso === 'en_proceso' && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Desde: {format(parseISO(item.fechaInicioProceso), 'dd/MM', { locale: es })}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getPrioridadColor(item.prioridad)}`}>
+                                {item.prioridad}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center gap-2">
+                                 <div className="relative inline-block text-left">
+                                    <button
+                                      className="group inline-flex justify-center text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 p-2 rounded-lg"
+                                      onClick={(e) => {
+                                          const menu = e.currentTarget.nextElementSibling;
+                                          if (menu) menu.classList.toggle('hidden');
+                                      }}
+                                      onBlur={(e) => {
+                                          if (!e.currentTarget.parentNode?.contains(e.relatedTarget as Node)) {
+                                              e.currentTarget.nextElementSibling?.classList.add('hidden');
+                                          }
+                                      }}
+                                    >
+                                      <Wrench className="w-4 h-4" />
+                                      <ChevronDown className="-mr-1 ml-1 h-4 w-4 flex-shrink-0 text-gray-400 group-hover:text-gray-500" aria-hidden="true" />
+                                    </button>
+                                    <div className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden" role="menu">
+                                        <div className="py-1">
+                                        {accionesDisponibles.map((accion) => {
+                                            const AccionIcon = accion.icon;
+                                            return (
+                                                <button
+                                                    key={accion.id}
+                                                    onClick={(e) => {
+                                                        abrirModalAccion(item, accion.id);
+                                                        (e.currentTarget.closest('[role=menu]') as HTMLElement).classList.add('hidden');
+                                                    }}
+                                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                >
+                                                    <AccionIcon className="w-4 h-4 inline mr-2" />
+                                                    {accion.label}
+                                                </button>
+                                            );
+                                        })}
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <button
-                                  key={accion.id}
-                                  onClick={() => abrirModalAccion(item, accion.id)}
-                                  className={`${accion.color} text-white p-2 rounded-lg text-xs transition-all duration-200 hover:shadow-md`}
-                                  title={accion.label}
+                                  onClick={() => abrirHistorial(item)}
+                                  className="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-lg text-xs transition-all duration-200 hover:shadow-md"
+                                  title="Ver Historial"
                                 >
-                                  <AccionIcon className="w-3 h-3" />
+                                  <History className="w-3 h-3" />
                                 </button>
-                              );
-                            })}
-                            <button
-                              onClick={() => abrirHistorial(item)}
-                              className="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-lg text-xs transition-all duration-200 hover:shadow-md"
-                              title="Ver Historial"
-                            >
-                              <History className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
-        </div>
+                                {/* Botón de Eliminar */}
+                                <button 
+                                  onClick={() => item.id && handleEliminar(item.id)}
+                                  className="p-2 text-red-500 hover:text-red-700" 
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 🚫 Bloque para mostrar la lista de patrones (REMOVIDO) */}
+          </>
+        )}
       </div>
 
-      {/* Modal de Acciones */}
+      {/* Modal de Acciones Genérico */}
       <AnimatePresence>
         {accionModalOpen && equipoSeleccionado && (
           <motion.div
@@ -957,6 +1118,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -968,7 +1130,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Acción: {getAccionesDisponibles(equipoSeleccionado).find(a => a.id === accionSeleccionada)?.label}
+                    Acción: {getAccionesDisponibles(equipoSeleccionado).find(a => a.id === accionSeleccionada)?.label || accionSeleccionada}
                   </label>
                 </div>
 
@@ -984,7 +1146,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                       onChange={(e) => setNuevaFechaVencimiento(e.target.value)}
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Fecha calculada automáticamente según frecuencia: {calcularNuevaFechaVencimiento(equipoSeleccionado.frecuencia)}
+                      Fecha sugerida según frecuencia: {calcularNuevaFechaVencimiento(equipoSeleccionado.frecuencia, hoy)}
                     </p>
                   </div>
                 )}
@@ -999,17 +1161,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                     value={observacionesAccion}
                     onChange={(e) => setObservacionesAccion(e.target.value)}
                   />
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Estado Actual:</h4>
-                  <div className="text-sm text-gray-600">
-                    <p><span className="font-medium">Proceso:</span> {getEstadoProcesoInfo(equipoSeleccionado.estadoProceso).label}</p>
-                    <p><span className="font-medium">Responsable:</span> {equipoSeleccionado.responsable}</p>
-                    {equipoSeleccionado.fechaInicioProceso && (
-                      <p><span className="font-medium">Iniciado:</span> {format(parseISO(equipoSeleccionado.fechaInicioProceso), 'dd/MM/yyyy', { locale: es })}</p>
-                    )}
-                  </div>
                 </div>
               </div>
 
@@ -1029,6 +1180,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 <button
                   onClick={ejecutarAccion}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  disabled={loading}
                 >
                   Confirmar Acción
                 </button>
@@ -1037,7 +1189,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
-
+      
       {/* Modal de Edición */}
       <AnimatePresence>
         {editModalOpen && equipoEditando && (
@@ -1046,12 +1198,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => { setEditModalOpen(false); setEquipoEditando(null); }}
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-xl font-semibold text-gray-900">
@@ -1065,8 +1219,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">No. Control</label>
                     <input
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                       value={equipoEditando.noControl}
+                      disabled
                       onChange={(e) => setEquipoEditando({ ...equipoEditando, noControl: e.target.value })}
                     />
                   </div>
@@ -1189,6 +1344,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 <button
                   onClick={guardarEdicion}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  disabled={loading}
                 >
                   Guardar Cambios
                 </button>
@@ -1206,12 +1362,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => { setCalibracionModalOpen(false); limpiarDatosEnvio(); setEquipoSeleccionado(null); }}
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center gap-3">
@@ -1400,6 +1558,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                   onClick={() => {
                     setCalibracionModalOpen(false);
                     limpiarDatosEnvio();
+                    setEquipoSeleccionado(null);
                   }}
                   className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -1407,7 +1566,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 </button>
                 <button
                   onClick={procesarEnvioCalibracion}
-                  disabled={!datosEnvio.laboratorio || !datosEnvio.paqueteria || !datosEnvio.numeroPaqueteria || !datosEnvio.fechaEnvio}
+                  disabled={loading || !datosEnvio.laboratorio || !datosEnvio.paqueteria || !datosEnvio.numeroPaqueteria || !datosEnvio.fechaEnvio}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   Confirmar Envío
@@ -1426,12 +1585,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => { setMantenimientoModalOpen(false); limpiarDatosEnvio(); setEquipoSeleccionado(null); }}
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center gap-3">
@@ -1562,6 +1723,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                   onClick={() => {
                     setMantenimientoModalOpen(false);
                     limpiarDatosEnvio();
+                    setEquipoSeleccionado(null);
                   }}
                   className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -1570,6 +1732,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 <button
                   onClick={procesarMantenimiento}
                   className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
+                  disabled={loading}
                 >
                   Iniciar Mantenimiento
                 </button>
@@ -1587,12 +1750,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => { setVerificacionModalOpen(false); limpiarDatosEnvio(); setEquipoSeleccionado(null); }}
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center gap-3">
@@ -1747,6 +1912,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                   onClick={() => {
                     setVerificacionModalOpen(false);
                     limpiarDatosEnvio();
+                    setEquipoSeleccionado(null);
                   }}
                   className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -1755,6 +1921,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 <button
                   onClick={procesarVerificacion}
                   className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  disabled={loading}
                 >
                   Iniciar Verificación
                 </button>
@@ -1772,12 +1939,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => { setHistorialModalOpen(false); setEquipoSeleccionado(null); }}
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -1838,12 +2007,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => setModalOpen(false)}
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-xl font-semibold text-gray-900">Nuevo Patrón de Medición</h3>
@@ -1913,7 +2084,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                       value={nuevoRegistro.tipoServicio}
                       onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, tipoServicio: e.target.value })}
                     >
-                      <option value="">Seleccionar...</option>
                       <option value="Calibración">Calibración</option>
                       <option value="Mantenimiento">Mantenimiento</option>
                       <option value="Verificación">Verificación</option>
@@ -1971,6 +2141,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 <button
                   onClick={handleGuardar}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  disabled={loading}
                 >
                   Guardar Patrón
                 </button>
@@ -1982,6 +2153,3 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     </div>
   );
 };
-
-export default ProgramaCalibracionScreen;
-

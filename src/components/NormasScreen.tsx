@@ -1,544 +1,1063 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import {
-  getStorage,
-  ref,
-  listAll,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject,
-} from 'firebase/storage';
-import { Folder, FileText, ArrowLeft, Download, Eye, Search, Plus, ChevronRight, X, Upload, RefreshCw, Grid, List } from 'lucide-react';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { useForm, useFieldArray, SubmitHandler, Controller, useWatch } from 'react-hook-form';
+import { PDFDocument, rgb, StandardFonts, PDFFont } from 'pdf-lib';
+import { saveAs } from 'file-saver';
+// --- 1. CAMBIOS DE IMPORTACIÓN ---
+import { useNavigation } from '../hooks/useNavigation';
+import { collection, query, where, getDocs } from 'firebase/firestore'; 
+import { db } from '../utils/firebase';
+// Importamos los iconos
+import { ArrowLeft, User, Archive, ListPlus, Loader2 } from 'lucide-react'; 
 
-// PDF.js worker (usa CDN para máxima compatibilidad)
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// ==================================================================
+// --- 1. DATOS Y CATÁLOGOS ---
+// ==================================================================
 
-interface FolderItem {
-  name: string;
-  ref: any;
-  count?: number;
+// Interfaz para la herramienta estática de la base de datos (simplificada para el select)
+interface PatronBase {
+    nombre: string;
+    marca: string;
+    modelo: string;
+    serie: string;
 }
 
-interface FileItem {
-  name: string;
-  url: string;
+// Interfaz completa de RegistroPatron del otro componente
+export interface RegistroPatron {
+    id?: string;
+    noControl: string;
+    descripcion: string;
+    serie: string;
+    marca: string;
+    modelo: string;
+    frecuencia: string;
+    tipoServicio: string;
+    fecha: string;
+    prioridad: 'Alta' | 'Media' | 'Baja';
+    ubicacion: string;
+    responsable: string;
+    estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio';
+    fechaInicioProceso?: string;
+    observaciones?: string;
+    historial: any[];
 }
 
-const NormasScreen: React.FC = () => {
-  const [folders, setFolders] = useState<FolderItem[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<FolderItem | null>(null);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([]);
-  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [uploadFolder, setUploadFolder] = useState<string>('');
-  const [isQuickPreviewOpen, setIsQuickPreviewOpen] = useState(false);
-  const [isFullViewerOpen, setIsFullViewerOpen] = useState(false);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [search, setSearch] = useState('');
-  const [layout, setLayout] = useState<'grid' | 'list'>('grid');
-  const [isLoadingFolders, setIsLoadingFolders] = useState(false);
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+const COLLECTION_NAME_PATRONES = "patronesCalibracion"; // Colección de patrones
 
-  // Fuente del PDF cargada por fetch -> Blob | null
-  const [pdfSrc, setPdfSrc] = useState<Blob | null>(null);
-  const [isFetchingPdf, setIsFetchingPdf] = useState(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
+const BACKPACK_CATALOG = {
+    // ... (Mochilas se mantienen igual)
+  mochila_abraham: {
+    nombre: 'Mochila 1 (Abraham)',
+    items: [
+      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
+      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
+      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
+      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' },
+    ],
+  },
+  mochila_Dante: {
+    nombre: 'Mochila 2 (Dante)',
+    items: [
+      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
+      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
+      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
+      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVEPNEU0017947' },
+    ],
+  },
+  mochila_Angel: {
+    nombre: 'Mochila 3 (Angel)',
+    items: [
+      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
+      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
+      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
+      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' },
+    ],
+  },
+  mochila_Edgar: {
+    nombre: 'Mochila 4 (Edgar)',
+    items: [
+      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
+      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
+      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
+      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2L', serie: 'DT220240700114' },
+    ],
+  },
+  mochila_Daniel: {
+    nombre: 'Mochila 5 (Daniel)',
+    items: [
+      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Urrea', modelo: '6-in-1', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' },
+      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
+      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
+      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
+    ],
+  },
+  mochila_Ricardo: {
+    nombre: 'Mochila 6 (Ricardo)',
+    items: [
+      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
+      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
+      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
+      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017933' },
+    ],
+ }
+};
 
-  const viewerContainerRef = useRef<HTMLDivElement | null>(null);
-  const [viewerWidth, setViewerWidth] = useState<number>(800);
+// --- Tipos de Datos (Sin cambios) ---
+type ToolItem = {
+  herramienta: string;
+  qty: string | number;
+  marca: string;
+  modelo: string;
+  serie: string;
+};
 
-  // Resize handler para que el PDF se adapte al contenedor
+type FormInputs = {
+  fecha: string;
+  usuario: string;
+  gafeteContratista: string;
+  companiaDepto: string;
+  noEmpleado: string;
+  selectedBackpacks: string[];
+  manualTools: ToolItem[];
+};
+
+// ==================================================================
+// --- ESTILOS MEJORADOS (CORRECCIÓN DE COLOR APLICADA AQUÍ) ---
+// ==================================================================
+const styles = `
+  /* --- KEYFRAMES PARA ANIMACIÓN --- */
+  @keyframes fadeInUp {
+    from { 
+      opacity: 0; 
+      transform: translateY(20px); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translateY(0); 
+    }
+  }
+
+  .form-container { 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+    max-width: 1000px; 
+    margin: 20px auto; 
+    padding: 0;
+    background: #f4f7f6;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    /* Oculta el overflow para que las animaciones "entren" */
+    overflow: hidden; 
+  }
+  
+  /* --- Encabezado con Botón de Regreso --- */
+  .header-bar {
+    display: flex;
+    align-items: center;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #ffffff;
+  }
+  .header-bar h2 {
+    margin: 0;
+    margin-left: 16px;
+    color: #333;
+    font-size: 1.5rem;
+  }
+  
+  .btn-back {
+    background: #f0f0f0; /* Color más suave */
+    color: #333;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-back:hover {
+    background: #e0e0e0;
+    transform: scale(1.1); /* Efecto en hover */
+  }
+
+  /* --- Contenido del Formulario --- */
+  .form-content {
+    padding: 24px;
+  }
+
+  /* --- Tarjetas de Sección --- */
+  .form-section {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    /* --- ANIMACIÓN AÑADIDA --- */
+    animation: fadeInUp 0.5s ease-out forwards;
+    opacity: 0; /* Empezar oculto */
+  }
+  .form-section h3 { 
+    color: #004a99; 
+    border-bottom: 2px solid #004a99; 
+    padding-bottom: 8px; 
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 1.25rem;
+    /* --- ICONOS AÑADIDOS --- */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* --- Grid de Campos --- */
+  .form-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+    gap: 20px; 
+  }
+  .form-field { 
+    display: flex; 
+    flex-direction: column; 
+  }
+  .form-field label { 
+    margin-bottom: 8px; 
+    font-weight: 600; 
+    color: #555; 
+    font-size: 0.875rem;
+  }
+  .form-field input[type="date"],
+  .form-field input[type="text"],
+  .form-field input[type="number"],
+  .form-field select { 
+    padding: 10px; 
+    border: 1px solid #ddd; 
+    border-radius: 6px; 
+    font-size: 1rem;
+    background: #fdfdfd;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    color: #333 !important; /* <--- CORRECCIÓN 1: Color de texto de la caja principal */
+  }
+  
+  /* <--- CORRECCIÓN 2: Asegurar el color de texto de las opciones del select ---> */
+  .form-field select option {
+      color: #333 !important;
+      background-color: #fff; 
+  }
+  
+  .form-field input:focus,
+  .form-field select:focus {
+    outline: none;
+    border-color: #004a99;
+    box-shadow: 0 0 0 2px rgba(0, 74, 153, 0.2);
+  }
+
+  /* --- Estilos de Tabla Mejorados --- */
+  .tool-table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    margin-top: 20px; 
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .tool-table th, .tool-table td { 
+    padding: 12px 15px; 
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .tool-table th { 
+    background-color: #f9f9f9;
+    font-size: 0.875rem;
+    color: #333;
+    text-transform: uppercase;
+  }
+  .tool-table tr:last-child td {
+    border-bottom: none;
+  }
+  .tool-table tr:nth-child(even) {
+    background-color: #fdfdfd;
+  }
+  /* --- ANIMACIÓN DE FILAS --- */
+  .tool-table tbody tr {
+    animation: fadeInUp 0.4s ease-out forwards;
+    opacity: 0;
+  }
+
+  .tool-table input, .tool-table select { 
+    width: 100%; 
+    box-sizing: border-box; 
+    border: 1px solid #ddd; 
+    padding: 8px; 
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+  .tool-table input:focus, .tool-table select:focus {
+    outline: none;
+    border-color: #004a99;
+  }
+  .tool-table td.readonly { 
+    background: #f9f9f9; 
+    color: #333; 
+    font-size: 0.9rem;
+  }
+
+  /* --- Selector de Mochilas Mejorado --- */
+  .backpack-selector { 
+    display: flex; 
+    flex-wrap: wrap;
+    gap: 12px; 
+  }
+  .backpack-option { 
+    display: flex; 
+    align-items: center; 
+    gap: 8px; 
+    background: #fff; 
+    border: 1px solid #ddd; 
+    padding: 10px 14px; 
+    border-radius: 20px; /* Estilo "Chip" */
+    cursor: pointer;
+    transition: all 0.3s;
+    /* --- CORRECCIÓN DE COLOR --- */
+    font-weight: 600; 
+    color: #333;
+    /* --- ANIMACIÓN AÑADIDA --- */
+    animation: fadeInUp 0.4s ease-out forwards;
+    opacity: 0; /* Empezar oculto */
+  }
+  .backpack-option input { 
+    width: 16px; 
+    height: 16px; 
+  }
+  .backpack-option span { /* Target el span, no el label */
+    cursor: pointer;
+  }
+  .backpack-option:hover {
+    border-color: #004a99;
+    transform: translateY(-2px); /* Efecto hover */
+  }
+  .backpack-option input:checked + span { /* Target el span */
+    color: #004a99;
+  }
+
+  /* --- Botones --- */
+  .btn { 
+    padding: 12px 20px; 
+    border: none; 
+    border-radius: 6px; 
+    cursor: pointer; 
+    font-size: 1rem; 
+    font-weight: 600;
+    transition: all 0.3s;
+  }
+  .btn:hover {
+    transform: translateY(-2px); /* Efecto hover */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  }
+  .btn:active {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+
+  .btn-primary { 
+    background-color: #004a99; 
+    color: white; 
+  }
+  .btn-primary:hover { 
+    background-color: #003366; 
+  }
+  .btn-secondary { 
+    background-color: #6c757d; 
+    color: white; 
+  }
+  .btn-secondary:hover { 
+    background-color: #5a6268; 
+  }
+  .btn-danger { 
+    background-color: #dc3545; 
+    color: white; 
+    padding: 8px 12px;
+    font-size: 0.875rem;
+  }
+  .btn-danger:hover {
+    background-color: #c82333;
+  }
+
+  /* --- Barra de Botones Inferior --- */
+  .button-bar { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center;
+    margin-top: 24px; 
+    gap: 15px; 
+    background: #fff;
+    padding: 16px 24px;
+    border-radius: 0 0 12px 12px;
+    border-top: 1px solid #e0e0e0;
+    margin: 0 -24px -24px -24px;
+  }
+  .button-bar-right {
+    display: flex;
+    gap: 10px;
+  }
+`;
+
+// --- LÓGICA DE AGREGACIÓN DE MOCHILAS (Sin cambios) ---
+function aggregateTools(backpackIds: string[]): ToolItem[] {
+  const aggregator = new Map<string, ToolItem>();
+  for (const id of backpackIds) {
+    const backpack = BACKPACK_CATALOG[id];
+    if (!backpack) continue;
+    for (const item of backpack.items) {
+      const key = `${item.herramienta}|${item.marca}|${item.modelo}|${item.serie}`;
+      if (aggregator.has(key)) {
+        const existing = aggregator.get(key)!;
+        const newQty = (Number(existing.qty) || 0) + (Number(item.qty) || 0);
+        existing.qty = String(newQty); 
+      } else {
+        aggregator.set(key, { ...item, qty: String(item.qty) }); 
+      }
+    }
+  }
+  return Array.from(aggregator.values());
+}
+
+// =================================================================
+// --- PDF 1: FUNCIÓN PARA GENERAR PDF CELESTICA (Sin cambios) ---
+// =================================================================
+async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
+  try {
+    const templateUrl = '/template.pdf'; 
+    const existingPdfBytes = await fetch(templateUrl).then(res => res.arrayBuffer());
+    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const firstPage = pdfDoc.getPages()[0];
+    const { width, height } = firstPage.getSize();
+    const fontSize = 9;
+    const color = rgb(0, 0, 0);
+
+    // --- DATOS DE ARRIBA (USUARIO, FECHA, ETC.) ---
+    firstPage.drawText(data.fecha, { x: 60, y: height - 82, size: fontSize, font, color });
+    firstPage.drawText(data.usuario,           { x: 320, y: height - 82, size: fontSize, font, color });
+    firstPage.drawText(data.gafeteContratista, { x: 490, y: height - 80, size: fontSize, font, color });
+    firstPage.drawText(data.companiaDepto,     { x: 320, y: height - 114, size: fontSize, font, color });
+    firstPage.drawText(data.noEmpleado,        { x: 500, y: height - 114, size: fontSize, font, color });
+
+    // --- TABLA DE HERRAMIENTAS ---
+    let yStartTable = height - 222; 
+    const rowHeight = 16.7;       
+    const xColTool = 40;
+    const xColQty = 270;
+    const xColMarca = 310;
+    const xColModelo = 400;
+    const xColSerie = 420;
+
+    allTools.forEach((tool, index) => {
+      if (index >= 30) return;
+      const y = yStartTable - (index * rowHeight);
+      firstPage.drawText(tool.herramienta, { x: xColTool,   y: y, size: fontSize, font, color });
+      firstPage.drawText(String(tool.qty), { x: xColQty,    y: y, size: fontSize, font, color });
+      firstPage.drawText(tool.marca,       { x: xColMarca,  y: y, size: fontSize, font, color });
+      firstPage.drawText(tool.modelo,      { x: xColModelo, y: y, size: fontSize, font, color });
+      firstPage.drawText(tool.serie,       { x: xColSerie,  y: y, size: fontSize, font, color });
+    });
+
+    const pdfBytes = await pdfDoc.save();
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    saveAs(blob, `Registro_Celestica_${data.usuario}.pdf`);
+
+  } catch (error) {
+    console.error('Error al generar el PDF de Celestica:', error);
+    alert('Error al generar el PDF de Celestica. Revisa la consola.');
+  }
+}
+
+// =================================================================
+// --- PDF 2: NUEVA FUNCIÓN PARA PDF GENÉRICO (Sin cambios) ---
+// =================================================================
+async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
+  try {
+    const pdfDoc = await PDFDocument.create();
+    let page = pdfDoc.addPage([595.28, 841.89]); // Tamaño A4
+    const { width, height } = page.getSize();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const color = rgb(0, 0, 0);
+    const margin = 50;
+
+    // --- 1. Cargar y dibujar tu LOGO ---
+    const logoUrl = '/lab_logo.png';
+    const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
+    const logoImage = await pdfDoc.embedPng(logoBytes);
+    const logoDims = logoImage.scale(0.25); 
+
+    page.drawImage(logoImage, {
+      x: margin,
+      y: height - margin - logoDims.height,
+      width: logoDims.width,
+      height: logoDims.height,
+    });
+
+    // --- 2. Dibujar Título ---
+    page.drawText('Registro de Herramienta o Equipo', {
+      x: margin + logoDims.width + 10,
+      y: height - margin - 30,
+      size: 18,
+      font: fontBold,
+      color: color,
+    });
+
+    // --- 3. Dibujar Datos del Usuario ---
+    let yPos = height - margin - logoDims.height - 30;
+    const drawField = (label: string, value: string) => {
+      if (!value) return; 
+      page.drawText(label, { x: margin, y: yPos, size: 9, font: fontBold });
+      page.drawText(value, { x: margin + 120, y: yPos, size: 9, font: font });
+      yPos -= 15;
+    };
+    
+    drawField('Fecha:', data.fecha);
+    drawField('Usuario:', data.usuario);
+    drawField('Compañía:', data.companiaDepto);
+    drawField('No. Empleado:', data.noEmpleado);
+    drawField('Gafete Contratista:', data.gafeteContratista);
+
+    // --- 4. Dibujar la Tabla ---
+    yPos -= 20;
+    const rowHeight = 20;
+    const tableMargin = margin - 10;
+
+    const cols = [
+      { header: 'Herramienta', x: tableMargin, width: 170 },
+      { header: 'Qty', x: tableMargin + 170, width: 30 },
+      { header: 'Marca', x: tableMargin + 200, width: 110 },
+      { header: 'Modelo/Color', x: tableMargin + 310, width: 120 },
+      { header: 'Serie', x: tableMargin + 430, width: 120 },
+    ];
+
+    const drawTableHeader = (currentPage: any) => {
+      currentPage.drawRectangle({
+        x: tableMargin,
+        y: yPos - 5,
+        width: width - 2 * tableMargin,
+        height: rowHeight,
+        color: rgb(0.9, 0.9, 0.9),
+      });
+      cols.forEach(col => {
+        currentPage.drawText(col.header, { x: col.x + 5, y: yPos, size: 10, font: fontBold });
+      });
+      yPos -= rowHeight;
+    };
+
+    drawTableHeader(page);
+
+    for (const tool of allTools) {
+      if (yPos < margin + rowHeight) {
+        page = pdfDoc.addPage([595.28, 841.89]);
+        yPos = height - margin;
+        drawTableHeader(page);
+      }
+
+      const rowData = [
+        String(tool.herramienta),
+        String(tool.qty),
+        String(tool.marca),
+        String(tool.modelo),
+        String(tool.serie),
+      ];
+      
+      cols.forEach((col, i) => {
+        page.drawText(rowData[i], { x: col.x + 5, y: yPos, size: 9, font: font });
+      });
+      
+      page.drawLine({
+          start: { x: tableMargin, y: yPos - 5 },
+          end: { x: width - tableMargin, y: yPos - 5 },
+          thickness: 0.5,
+          color: rgb(0.8, 0.8, 0.8),
+      });
+
+      yPos -= rowHeight;
+    }
+
+    // --- 5. Guardar y Descargar ---
+    const pdfBytes = await pdfDoc.save();
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    saveAs(blob, `Registro_Generico_${data.usuario}.pdf`);
+
+  } catch (error) {
+    console.error('Error al generar el PDF Genérico:', error);
+    alert('Error al generar el PDF Genérico. Revisa la consola.');
+  }
+}
+
+
+// =================================================================
+// --- COMPONENTE DEL FORMULARIO (SCREEN) - CON MODIFICACIONES ---
+// =================================================================
+
+// Tipo para los usuarios de Firebase
+type Metrologo = {
+  id: string;
+  nombre: string;
+};
+
+// Tipo simplificado para guardar los patrones disponibles (Herramienta: Datos)
+type PatronesMap = Map<string, PatronBase>;
+
+const NormasScreen = () => {
+  // --- 1. HOOKS PARA NAVEGACIÓN Y FIREBASE ---
+  const { navigateTo } = useNavigation();
+  const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  
+  // --- NUEVOS ESTADOS PARA PATRONES ---
+  const [patronesDisponibles, setPatronesDisponibles] = useState<PatronesMap>(new Map());
+  const [isLoadingPatrones, setIsLoadingPatrones] = useState(true);
+
+
+  // --- 2. HOOK DE FORMULARIO CON VALOR POR DEFECTO ---
+  const { register, control, handleSubmit, setValue, watch, trigger, getValues } = useForm<FormInputs>({
+    defaultValues: {
+      fecha: new Date().toISOString().split('T')[0],
+      selectedBackpacks: [],
+      manualTools: [],
+      companiaDepto: 'Equipos y Servicios AG',
+    },
+    mode: 'onChange' 
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'manualTools',
+  });
+
+  // --- LÓGICA DE FIREBASE PARA CARGAR METRÓLOGOS (CORRECCIÓN APLICADA) ---
   useEffect(() => {
-    const handler = () => {
-      if (viewerContainerRef.current) {
-        const w = viewerContainerRef.current.getBoundingClientRect().width;
-        setViewerWidth(Math.max(320, Math.floor(w)));
+    const fetchMetrologos = async () => {
+      try {
+        // CORRECCIÓN APLICADA: Usamos "puesto" y "Metrólogo" (con acento y mayúscula)
+        const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
+        const querySnapshot = await getDocs(q);
+        const usersList: Metrologo[] = [];
+        querySnapshot.forEach((doc) => {
+          // Usamos 'name' como campo de nombre visible en el dropdown (Edgar Amador)
+          usersList.push({ id: doc.id, nombre: doc.data().name || doc.data().nombre });
+        });
+        setMetrologos(usersList);
+      } catch (error) {
+        console.error("Error cargando metrólogos (puesto Metrólogo): ", error);
+        // No alertamos en useEffects pasivos para no molestar al usuario si no es crítico.
+      } finally {
+        setIsLoadingUsers(false);
       }
     };
-    handler();
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
+
+    fetchMetrologos();
   }, []);
-
-  useEffect(() => {
-    fetchFolders();
-  }, []);
-
-  // Carga carpetas y cuenta de archivos
-  const fetchFolders = async () => {
-    setIsLoadingFolders(true);
-    const rootRef = ref(getStorage(), 'normas/');
+  
+  // --- LÓGICA DE FIREBASE PARA CARGAR PATRONES (Mantenida) ---
+  const fetchPatrones = useCallback(async () => {
+    setIsLoadingPatrones(true);
     try {
-      const res = await listAll(rootRef);
-      const folderList: FolderItem[] = await Promise.all(
-        res.prefixes.map(async (prefix) => {
-          const filesInFolder = await listAll(prefix);
-          return { name: prefix.name, ref: prefix, count: filesInFolder.items.length };
-        })
-      );
-      // Orden alfabético
-      folderList.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-      setFolders(folderList);
-    } catch (error) {
-      console.error('Error fetching folders:', error);
-    } finally {
-      setIsLoadingFolders(false);
-    }
-  };
+      const q = query(collection(db, COLLECTION_NAME_PATRONES));
+      const querySnapshot = await getDocs(q);
+      const patronesMap: PatronesMap = new Map();
 
-  // Crear carpeta (subiendo un marcador .keep)
-  const createFolder = async () => {
-    const name = newFolderName.trim();
-    if (!name) return;
-    const folderRef = ref(getStorage(), `normas/${name}/`);
-    try {
-      await uploadBytes(ref(folderRef, '.keep'), new Blob());
-      setNewFolderName('');
-      await fetchFolders();
-    } catch (error) {
-      console.error('Error creating folder:', error);
-    }
-  };
-
-  // Carga archivos de carpeta
-  const fetchFiles = async (folder: FolderItem) => {
-    setSelectedFolder(folder);
-    setFiles([]);
-    setFilteredFiles([]);
-    setSearch('');
-    setSelectedFile(null);
-    setPdfSrc(null);
-    setPdfError(null);
-    setIsLoadingFiles(true);
-    try {
-      const res = await listAll(folder.ref);
-      const filePromises = res.items.map(async (item) => {
-        const url = await getDownloadURL(item);
-        return { name: item.name, url } as FileItem;
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as RegistroPatron;
+        const key = data.descripcion.trim(); 
+        if (key && !patronesMap.has(key)) {
+            patronesMap.set(key, { 
+                nombre: key, 
+                marca: data.marca || 'S/M', 
+                modelo: data.modelo || 'S/M', 
+                serie: data.serie || 'S/N' 
+            });
+        }
       });
-      const list = await Promise.all(filePromises);
-      // Orden por nombre
-      list.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-      setFiles(list);
-      setFilteredFiles(list);
+
+      setPatronesDisponibles(patronesMap);
     } catch (error) {
-      console.error('Error fetching files:', error);
+      console.error("Error cargando patrones de medición: ", error);
+      // No alertamos en useEffects pasivos
     } finally {
-      setIsLoadingFiles(false);
+      setIsLoadingPatrones(false);
     }
-  };
-
-  // Subir PDFs (múltiples)
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !uploadFolder) return;
-    const chosen = Array.from(e.target.files);
-    for (const file of chosen) {
-      const fileRef = ref(getStorage(), `normas/${uploadFolder}/${file.name}`);
-      await uploadBytes(fileRef, file);
-    }
-    // Si estás en esa carpeta, recarga; si no, solo refresca lista de carpetas
-    if (selectedFolder?.name === uploadFolder) {
-      await fetchFiles(folders.find((f) => f.name === uploadFolder)!);
-    }
-    await fetchFolders();
-    // Limpia input
-    e.currentTarget.value = '';
-  };
-
-  // Búsqueda por nombre de archivo
+  }, []);
+  
   useEffect(() => {
-    if (!search) {
-      setFilteredFiles(files);
+    fetchPatrones();
+  }, [fetchPatrones]);
+
+
+  // --- Lógicas de Memo (Mantenidas) ---
+  const watchedManualTools = watch('manualTools');
+  
+  // Lista de nombres de herramientas manuales ya seleccionadas
+  const selectedManualToolNames = useMemo(() => 
+    new Set(watchedManualTools.map(tool => tool.herramienta).filter(Boolean)),
+    [watchedManualTools]
+  );
+  
+  // Lista de patrones disponibles para seleccionar (PatronesDisponibles - Ya Seleccionados)
+  const availablePatronNames = useMemo(() => {
+    const names: string[] = [];
+    patronesDisponibles.forEach((patron, name) => {
+        if (!selectedManualToolNames.has(name)) {
+            names.push(name);
+        }
+    });
+    return names.sort();
+  }, [patronesDisponibles, selectedManualToolNames]);
+
+  // Lógica de mochilas se mantiene igual
+  const watchedBackpacks = watch('selectedBackpacks');
+  const aggregatedTools = useMemo(() => 
+    aggregateTools(watchedBackpacks || []), 
+    [watchedBackpacks]
+  );
+
+  // --- Manejador de envío (sin cambios) ---
+  const handleGeneratePdf = async (type: 'celestica' | 'generic') => {
+    const isValid = await trigger();
+    if (!isValid) {
+      alert('Formulario incompleto. Revisa los campos marcados.');
       return;
     }
-    const q = search.toLowerCase();
-    setFilteredFiles(files.filter((f) => f.name.toLowerCase().includes(q)));
-  }, [search, files]);
-
-  // --- Carga segura del PDF a través de fetch -> Blob ---
-  const loadPdfBlob = async (file: FileItem) => {
-    setIsFetchingPdf(true);
-    setPdfError(null);
-    try {
-      const res = await fetch(file.url, { mode: 'cors', credentials: 'omit' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      // Verifica tipo
-      if (blob.type && !blob.type.includes('pdf')) {
-        // Algunos buckets no devuelven type, pero si lo devuelven incorrecto, forzamos
-        // Aun así pdf.js puede leer Blob binario
-        console.warn('Content-Type no es PDF, intentando igualmente...');
-      }
-      setPdfSrc(blob);
-    } catch (err: any) {
-      console.error('loadPdfBlob error:', err);
-      setPdfError('No se pudo cargar el PDF (CORS/permiso).');
-      setPdfSrc(null);
-    } finally {
-      setIsFetchingPdf(false);
+    const data = getValues();
+    const allTools = [...aggregatedTools, ...data.manualTools];
+    console.log('Datos listos para enviar al PDF:', data);
+    console.log('Herramientas combinadas:', allTools);
+    if (type === 'celestica') {
+      await generateCelesticaPdf(data, allTools);
+    } else {
+      await generateGenericPdf(data, allTools);
     }
   };
 
-  const openQuickPreview = (file: FileItem) => {
-    setSelectedFile(file);
-    setPageNumber(1);
-    setNumPages(null);
-    setIsQuickPreviewOpen(true);
-    loadPdfBlob(file);
-  };
-
-  const openFullViewer = (file: FileItem) => {
-    setSelectedFile(file);
-    setPageNumber(1);
-    setNumPages(null);
-    setIsFullViewerOpen(true);
-    loadPdfBlob(file);
-  };
-
-  const closeModals = () => {
-    setIsQuickPreviewOpen(false);
-    setIsFullViewerOpen(false);
-    setPdfSrc(null);
-    setPdfError(null);
-  };
-
-  const onDocumentLoadSuccess = ({ numPages: n }: { numPages: number }) => {
-    setNumPages(n);
-    setPageNumber(1);
-  };
-
-  const onDocumentLoadError = (err: any) => {
-    console.error('react-pdf error:', err);
-    setPdfError('Failed to load PDF file.');
-  };
-
-  const downloadFile = (url: string, name: string) => {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.click();
-  };
-
-  // Eliminar archivo (opcional)
-  const deleteFile = async (file: FileItem) => {
-    if (!selectedFolder) return;
-    if (!confirm(`¿Eliminar "${file.name}"?`)) return;
-    try {
-      const fileRef = ref(getStorage(), `normas/${selectedFolder.name}/${file.name}`);
-      await deleteObject(fileRef);
-      await fetchFiles(selectedFolder);
-      await fetchFolders();
-    } catch (error) {
-      console.error('Error deleting file:', error);
-      alert('No se pudo eliminar el archivo. Revisa permisos.');
-    }
-  };
-
+  // --- 4. RENDER CON MEJORAS DE UI ---
   return (
-    <div className="flex h-full bg-gray-100">
-      {/* Sidebar */}
-      <aside className="w-80 bg-white p-4 shadow-lg overflow-y-auto border-r">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">📚 Normas del Laboratorio</h2>
-          <button
-            onClick={fetchFolders}
-            title="Refrescar"
-            className="p-2 rounded hover:bg-gray-100"
+    <>
+      <style>{styles}</style>
+      <div className="form-container">
+        
+        {/* --- BOTÓN DE REGRESO Y TÍTULO --- */}
+        <div className="header-bar">
+          <button 
+            type="button" 
+            className="btn-back" 
+            onClick={() => navigateTo('/')}
+            title="Regresar a Menú Principal"
           >
-            <RefreshCw size={18} />
+            <ArrowLeft size={20} />
           </button>
+          <h2>Registro de Herramienta y Equipo</h2>
         </div>
 
-        {/* Crear carpeta */}
-        <div className="mb-6">
-          <label className="text-sm text-gray-700">Nueva carpeta</label>
-          <div className="flex gap-2 mt-1">
-            <input
-              type="text"
-              placeholder="Nombre..."
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              className="flex-1 p-2 border rounded"
-            />
-            <button
-              onClick={createFolder}
-              className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1"
-            >
-              <Plus size={16} /> Crear
-            </button>
-          </div>
-        </div>
+        <form className="form-content"> 
+          
+          {/* --- SECCIÓN DATOS DE USUARIO MEJORADA --- */}
+          <div className="form-section" style={{ animationDelay: '100ms' }}>
+            <h3>
+              <User size={20} />
+              Datos del Usuario
+            </h3>
+            <div className="form-grid">
+              
+              <div className="form-field">
+                <label>Fecha</label>
+                <input type="date" {...register('fecha', { required: true })} />
+              </div>
 
-        {/* Subir PDFs */}
-        <div className="mb-6">
-          <label className="block text-sm text-gray-700 mb-1">Subir PDF(s)</label>
-          <select
-            value={uploadFolder}
-            onChange={(e) => setUploadFolder(e.target.value)}
-            className="w-full p-2 border rounded mb-2"
-          >
-            <option value="">Selecciona carpeta...</option>
-            {folders.map((folder) => (
-              <option key={folder.name} value={folder.name}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-          <label className={`w-full flex items-center gap-2 justify-center p-3 border-2 border-dashed rounded cursor-pointer ${uploadFolder ? 'hover:bg-gray-50' : 'opacity-60 cursor-not-allowed'}`}>
-            <Upload size={18} />
-            <span>Elegir archivo(s) PDF</span>
-            <input type="file" accept="application/pdf" multiple className="hidden" disabled={!uploadFolder} onChange={handleFileUpload} />
-          </label>
-        </div>
+              {/* --- SELECTOR DE USUARIO (FIREBASE) --- */}
+              <div className="form-field">
+                <label>Usuario (Nombre Completo)</label>
+                <Controller
+                  name="usuario"
+                  control={control}
+                  rules={{ required: "Debes seleccionar un usuario" }}
+                  render={({ field }) => (
+                    <select {...field} disabled={isLoadingUsers}>
+                      <option value="">
+                        {isLoadingUsers ? 'Cargando usuarios...' : '-- Seleccionar Metrólogo --'}
+                      </option>
+                      {metrologos.map(user => (
+                        <option key={user.id} value={user.nombre}>
+                          {user.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                />
+              </div>
+              
+              <div className="form-field">
+                <label>Gafete Contratista</label>
+                <input type="text" {...register('gafeteContratista')} />
+              </div>
 
-        {/* Lista de carpetas */}
-        <div>
-          <p className="text-xs text-gray-500 mb-2">Carpetas</p>
-          {isLoadingFolders && <p className="text-sm text-gray-500">Cargando...</p>}
-          <ul>
-            {folders.map((folder) => (
-              <li key={folder.name} className="mb-1">
-                <button
-                  onClick={() => fetchFiles(folder)}
-                  className={`w-full flex items-center justify-between p-2 rounded hover:bg-blue-50 transition ${
-                    selectedFolder?.name === folder.name ? 'bg-blue-100 font-semibold' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Folder size={18} />
-                    {folder.name}
-                  </div>
-                  <span className="text-xs text-gray-500">{folder.count ?? 0}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <main className="flex-1 p-4 overflow-auto">
-        {/* Breadcrumb / encabezado */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="font-semibold">Normas</span>
-            <ChevronRight size={16} />
-            <span className="truncate max-w-[40vw]">
-              {selectedFolder ? selectedFolder.name : 'Selecciona una carpeta'}
-            </span>
+              {/* --- CAMPO CON VALOR POR DEFECTO --- */}
+              <div className="form-field">
+                <label>Compañía y/o Departamento</label>
+                <input type="text" {...register('companiaDepto', { required: true })} />
+              </div>
+              
+              <div className="form-field">
+                <label>No. Empleado</label>
+                <input type="text" {...register('noEmpleado')} />
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2" size={16} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar archivo..."
-                className="pl-8 pr-3 py-2 border rounded w-64"
+          {/* --- SECCIÓN DE MOCHILAS MEJORADA --- */}
+          <div className="form-section" style={{ animationDelay: '200ms' }}>
+            <h3>
+              <Archive size={20} />
+              Selector de Mochilas
+            </h3>
+            <div className="backpack-selector">
+              <Controller
+                name="selectedBackpacks"
+                control={control}
+                render={({ field }) => (
+                  <>
+                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack], index) => (
+                      <label 
+                        key={id} 
+                        className="backpack-option" 
+                        htmlFor={`backpack-${id}`}
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <input
+                          type="checkbox"
+                          id={`backpack-${id}`}
+                          value={id}
+                          onChange={(e) => {
+                            const newSelection = e.target.checked
+                              ? [...field.value, id]
+                              : field.value.filter((value) => value !== id);
+                            field.onChange(newSelection);
+                          }}
+                          checked={field.value.includes(id)}
+                        />
+                        <span>{backpack.nombre}</span>
+                      </label>
+                    ))}
+                  </>
+                )}
               />
             </div>
-            <button
-              onClick={() => setLayout('grid')}
-              className={`p-2 rounded ${layout === 'grid' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-              title="Vista de cuadrícula"
-            >
-              <Grid size={18} />
-            </button>
-            <button
-              onClick={() => setLayout('list')}
-              className={`p-2 rounded ${layout === 'list' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-              title="Vista de lista"
-            >
-              <List size={18} />
-            </button>
-          </div>
-        </div>
 
-        {/* Contenido */}
-        {!selectedFolder && (
-          <div className="text-gray-500">Selecciona una carpeta para ver sus normas.</div>
-        )}
-
-        {selectedFolder && (
-          <>
-            {isLoadingFiles ? (
-              <div className="text-gray-500">Cargando archivos...</div>
-            ) : filteredFiles.length === 0 ? (
-              <div className="text-gray-500">No hay archivos en esta carpeta.</div>
-            ) : layout === 'grid' ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredFiles.map((file) => (
-                  <div
-                    key={file.name}
-                    className="bg-white rounded shadow group relative hover:shadow-lg transition cursor-pointer p-3"
-                  >
-                    <div className="flex flex-col items-center" onClick={() => openFullViewer(file)}>
-                      <FileText size={44} className="text-blue-500" />
-                      <p className="text-sm font-medium truncate mt-2 text-center w-full" title={file.name}>
-                        {file.name}
-                      </p>
-                    </div>
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-2">
-                      <button
-                        onClick={() => openQuickPreview(file)}
-                        className="p-1.5 bg-gray-200 rounded hover:bg-gray-300"
-                        title="Vista rápida"
-                      >
-                        <Eye size={16} />
-                      </button>
-                      <button
-                        onClick={() => downloadFile(file.url, file.name)}
-                        className="p-1.5 bg-gray-200 rounded hover:bg-gray-300"
-                        title="Descargar"
-                      >
-                        <Download size={16} />
-                      </button>
-                    </div>
-                    <div className="absolute -bottom-2 right-2 opacity-0 group-hover:opacity-100 transition">
-                      <button
-                        onClick={() => deleteFile(file)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-white rounded shadow">
-                <div className="grid grid-cols-12 px-4 py-2 text-xs text-gray-500 border-b">
-                  <div className="col-span-7">Nombre</div>
-                  <div className="col-span-5 text-right pr-1">Acciones</div>
-                </div>
-                <ul>
-                  {filteredFiles.map((file) => (
-                    <li key={file.name} className="grid grid-cols-12 items-center px-4 py-3 border-b last:border-b-0 hover:bg-gray-50">
-                      <div className="col-span-7 flex items-center gap-2 truncate">
-                        <FileText size={18} className="text-blue-500" />
-                        <button onClick={() => openFullViewer(file)} className="truncate text-left hover:underline" title={file.name}>
-                          {file.name}
-                        </button>
-                      </div>
-                      <div className="col-span-5 flex justify-end gap-2">
-                        <button onClick={() => openQuickPreview(file)} className="px-2 py-1 text-sm bg-gray-200 rounded hover:bg-gray-300">
-                          Vista rápida
-                        </button>
-                        <button onClick={() => downloadFile(file.url, file.name)} className="px-2 py-1 text-sm bg-gray-200 rounded hover:bg-gray-300">
-                          Descargar
-                        </button>
-                        <button onClick={() => deleteFile(file)} className="px-2 py-1 text-sm text-red-700 bg-red-100 rounded hover:bg-red-200">
-                          Eliminar
-                        </button>
-                      </div>
-                    </li>
+            {/* --- Tabla de Herramientas de Mochila --- */}
+            {aggregatedTools.length > 0 && (
+              <table className="tool-table" style={{ marginTop: '20px' }}>
+                <thead>
+                  <tr>
+                    <th>Herramienta (Agregada)</th>
+                    <th>Qty Total</th>
+                    <th>Marca</th>
+                    <th>Modelo/Color</th>
+                    <th>Serie</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aggregatedTools.sort((a, b) => a.herramienta.localeCompare(b.herramienta)).map((tool, index) => (
+                    <tr 
+                      key={`${tool.herramienta}-${tool.marca}-${tool.modelo}-${tool.serie}`}
+                      style={{ animationDelay: `${index * 30}ms` }}
+                    >
+                      <td className="readonly">{tool.herramienta}</td>
+                      <td className="readonly" style={{ textAlign: 'center' }}>{tool.qty}</td>
+                      <td className="readonly">{tool.marca}</td>
+                      <td className="readonly">{tool.modelo}</td>
+                      <td className="readonly">{tool.serie}</td>
+                    </tr>
                   ))}
-                </ul>
-              </div>
+                </tbody>
+              </table>
             )}
-          </>
-        )}
-      </main>
+          </div>
 
-      {/* QUICK PREVIEW MODAL */}
-      {isQuickPreviewOpen && selectedFile && (
-        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" onClick={closeModals}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl relative" onClick={(e) => e.stopPropagation()}>
-            <button className="absolute top-3 right-3 p-2 rounded hover:bg-gray-100" onClick={closeModals}>
-              <X size={18} />
-            </button>
-            <div className="px-5 pt-5 pb-3 border-b">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <FileText size={16} className="text-blue-500" />
-                <span className="truncate" title={selectedFile.name}>{selectedFile.name}</span>
-              </div>
-            </div>
-            <div className="p-5" ref={viewerContainerRef}>
-              {isFetchingPdf && <div className="text-gray-500">Cargando vista previa...</div>}
-              {pdfError && <div className="text-red-600 text-sm">{pdfError}</div>}
-              {pdfSrc && (
-                <Document file={pdfSrc} onLoadSuccess={onDocumentLoadSuccess} onLoadError={onDocumentLoadError} loading={<div className="text-gray-500">Cargando...</div>}>
-                  <Page pageNumber={1} width={viewerWidth} renderAnnotationLayer={false} renderTextLayer={false} />
-                </Document>
-              )}
-            </div>
-            <div className="px-5 pb-5 flex justify-end gap-2">
-              <button className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300" onClick={() => selectedFile && downloadFile(selectedFile.url, selectedFile.name)}>
-                <Download size={16} className="inline mr-1" /> Descargar
-              </button>
-              <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={() => { setIsQuickPreviewOpen(false); setIsFullViewerOpen(true); }}>
-                Abrir completo
+          {/* --- SECCIÓN MANUAL MEJORADA --- */}
+          <div className="form-section" style={{ animationDelay: '300ms' }}>
+            <h3>
+              <ListPlus size={20} />
+              Herramientas Manuales Adicionales
+            </h3>
+            
+            {/* Botón de Agregar Fila (Movido arriba de la tabla) */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}
+                disabled={isLoadingPatrones}
+              >
+                {isLoadingPatrones ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+                ) : (
+                    '+ Agregar Herramienta Manual'
+                )}
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* FULL VIEWER MODAL */}
-      {isFullViewerOpen && selectedFile && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex flex-col">
-          <div className="bg-white p-3 flex items-center gap-2 shadow">
-            <button className="p-2 rounded hover:bg-gray-100" onClick={closeModals} title="Cerrar">
-              <ArrowLeft size={18} />
-            </button>
-            <div className="flex-1 truncate">{selectedFile.name}</div>
-            <button className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300" onClick={() => selectedFile && downloadFile(selectedFile.url, selectedFile.name)}>
-              <Download size={16} className="inline mr-1" /> Descargar
-            </button>
-            <a
-              className="ml-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              href={selectedFile.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Abrir en pestaña
-            </a>
+            <table className="tool-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Herramienta</th>
+                  <th>Qty</th>
+                  <th>Marca</th>
+                  <th>Modelo/Color</th>
+                  <th>Serie</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fields.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', color: '#888' }}>
+                      {isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado herramientas manuales.'}
+                    </td>
+                  </tr>
+                )}
+                {fields.map((item, index) => {
+                  const currentToolName = watchedManualTools[index]?.herramienta;
+                  return (
+                    <tr key={item.id} style={{ animationDelay: `${index * 30}ms` }}>
+                      <td style={{ width: '40px', textAlign: 'center', color: '#555' }}>{index + 1}</td>
+                      <td>
+                        <Controller
+                          name={`manualTools.${index}.herramienta`}
+                          control={control}
+                          rules={{ required: true }}
+                          render={({ field }) => (
+                            <select 
+                              {...field}
+                              disabled={isLoadingPatrones}
+                              onChange={(e) => {
+                                const selectedToolName = e.target.value;
+                                field.onChange(selectedToolName);
+                                
+                                // OBTENER DATOS DEL PATRÓN DESDE EL MAP DE FIREBASE
+                                const toolData = patronesDisponibles.get(selectedToolName);
+                                
+                                if (toolData) {
+                                  // Usar setValue para actualizar los campos automáticamente
+                                  setValue(`manualTools.${index}.qty`, '1');
+                                  setValue(`manualTools.${index}.marca`, toolData.marca);
+                                  setValue(`manualTools.${index}.modelo`, toolData.modelo);
+                                  setValue(`manualTools.${index}.serie`, toolData.serie);
+                                } else {
+                                  setValue(`manualTools.${index}.qty`, '1'); // Default qty 1
+                                  setValue(`manualTools.${index}.marca`, '');
+                                  setValue(`manualTools.${index}.modelo`, '');
+                                  setValue(`manualTools.${index}.serie`, '');
+                                }
+                              }}
+                            >
+                              <option value="">
+                                {isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}
+                              </option>
+                              {/* Opción seleccionada actualmente (si no está en disponibles, se muestra igual) */}
+                              {currentToolName && !availablePatronNames.includes(currentToolName) && currentToolName !== '' && (
+                                <option key={currentToolName} value={currentToolName}>{currentToolName}</option>
+                              )}
+                              
+                              {/* Patrones disponibles de Firebase */}
+                              {availablePatronNames.map(name => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
+                          )}
+                        />
+                      </td>
+                      <td style={{ width: '80px' }}>
+                        <input {...register(`manualTools.${index}.qty`, { required: true })} placeholder="Ej. 1" type="number" />
+                      </td>
+                      <td>
+                        <input {...register(`manualTools.${index}.marca`)} placeholder="Ej. Fluke" />
+                      </td>
+                      <td>
+                        <input {...register(`manualTools.${index}.modelo`)} placeholder="Ej. 87V" />
+                      </td>
+                      <td>
+                        <input {...register(`manualTools.${index}.serie`)} placeholder="Ej. SN..." />
+                      </td>
+                      <td style={{ width: '80px', textAlign: 'center' }}>
+                        <button type="button" className="btn btn-danger" onClick={() => remove(index)}>
+                          Quitar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          <div className="flex-1 overflow-auto p-4" ref={viewerContainerRef}>
-            <div className="max-w-5xl mx-auto">
-              {isFetchingPdf && <div className="text-gray-100">Cargando documento...</div>}
-              {pdfError && <div className="text-red-200 text-sm">{pdfError}</div>}
-              {pdfSrc && (
-                <Document
-                  file={pdfSrc}
-                  onLoadSuccess={onDocumentLoadSuccess}
-                  onLoadError={onDocumentLoadError}
-                  loading={<div className="text-gray-200">Cargando documento...</div>}
-                >
-                  <Page pageNumber={pageNumber} width={viewerWidth} />
-                </Document>
-              )}
+          
+          {/* --- BARRA DE BOTONES INFERIOR --- */}
+          <div className="button-bar">
+            <span></span> {/* Placeholder */}
+            
+            <div className="button-bar-right">
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => handleGeneratePdf('celestica')}
+                style={{ background: '#004a99' }}
+                title="Generar formato oficial de Celestica"
+                disabled={fields.length === 0 && aggregatedTools.length === 0}
+              >
+                Generar PDF Celestica
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => handleGeneratePdf('generic')}
+                title="Generar formato interno con logo"
+                disabled={fields.length === 0 && aggregatedTools.length === 0}
+              >
+                Generar PDF Genérico
+              </button>
             </div>
           </div>
-          {/* Controles de paginación */}
-          <div className="bg-white p-3 shadow flex items-center justify-center gap-3">
-            <button
-              onClick={() => setPageNumber((p) => Math.max(p - 1, 1))}
-              disabled={pageNumber <= 1}
-              className="px-3 py-2 bg-gray-200 rounded disabled:opacity-50 hover:bg-gray-300"
-            >
-              Anterior
-            </button>
-            <div className="text-sm">
-              Página {pageNumber} {numPages ? `de ${numPages}` : ''}
-            </div>
-            <button
-              onClick={() => setPageNumber((p) => (numPages ? Math.min(p + 1, numPages) : p + 1))}
-              disabled={!!numPages && pageNumber >= numPages}
-              className="px-3 py-2 bg-gray-200 rounded disabled:opacity-50 hover:bg-gray-300"
-            >
-              Siguiente
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+        </form>
+      </div>
+    </>
   );
 };
 

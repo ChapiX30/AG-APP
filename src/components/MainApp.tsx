@@ -21,7 +21,7 @@ const WorkSheetScreen = lazy(() => import('./WorkSheetScreen'));
 const FridayScreen = lazy(() => import('./FridayScreen'));
 const FridayServiciosScreen = lazy(() => import('./FridayServiciosScreen'));
 const DriveScreen = lazy(() => import('./DriveScreen'));
-const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen'));
+const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen').then(module => ({ default: module.ProgramaCalibracionScreen })));
 const HojaDeServicioScreen = lazy(() => import('./HojaDeServicioScreen'));
 const CalibrationManager = lazy(() => import('./CalibrationManager'));
 const EmpresasScreen = lazy(() => import('./EmpresasScreen'));

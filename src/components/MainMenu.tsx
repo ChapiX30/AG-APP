@@ -85,19 +85,19 @@ const menuItems = [
   },
   { 
     id: 'normas', 
-    title: 'Normas', 
+    title: 'Hojas de Herramienta', 
     icon: BookOpen, 
     gradient: 'from-slate-600 to-slate-700',
     description: 'Próximamente',
-    available: false 
+    available: true 
   },
   { 
-    id: 'procedimientos', 
-    title: 'Procedimientos', 
+    id: 'programa-calibracion', 
+    title: 'Patrones', 
     icon: Settings, 
     gradient: 'from-slate-600 to-slate-700',
     description: 'Próximamente',
-    available: false 
+    available: true 
   },
 ];
 
