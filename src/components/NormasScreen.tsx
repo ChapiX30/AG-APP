@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useForm, useFieldArray, SubmitHandler, Controller, useWatch } from 'react-hook-form';
 import { PDFDocument, rgb, StandardFonts, PDFFont } from 'pdf-lib';
 import { saveAs } from 'file-saver';
-import { differenceInDays, parseISO, format } from 'date-fns'; // Importamos funciones de fecha adicionales
+import { differenceInDays, parseISO, format } from 'date-fns'; 
 // --- 1. CAMBIOS DE IMPORTACIÓN ---
 import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
@@ -49,7 +49,6 @@ export interface RegistroPatron {
 const COLLECTION_NAME_PATRONES = "patronesCalibracion"; // Colección de patrones
 
 const BACKPACK_CATALOG = {
-    // ... (Mochilas se mantienen igual)
   mochila_abraham: {
     nombre: 'Mochila 1 (Abraham)',
     items: [
@@ -62,6 +61,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/N' },
     ],
   },
   mochila_Dante: {
@@ -90,6 +90,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/N' },
     ],
   },
   mochila_Edgar: {
@@ -156,7 +157,7 @@ type FormInputs = {
 };
 
 // ==================================================================
-// --- LÓGICA CRÍTICA DE VENCIMIENTO (NUEVO) ---
+// --- LÓGICA CRÍTICA DE VENCIMIENTO (Sin cambios) ---
 // ==================================================================
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
@@ -178,7 +179,7 @@ const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
 };
 
 // ==================================================================
-// --- ESTILOS MEJORADOS (CORRECCIÓN DE COLOR APLICADA AQUÍ) ---
+// --- ESTILOS MEJORADOS (OPTIMIZACIÓN PARA MOBILE-FIRST Y CORRECCIÓN DE COLOR) ---
 // ==================================================================
 const styles = `
   /* --- KEYFRAMES PARA ANIMACIÓN --- */
@@ -201,8 +202,9 @@ const styles = `
     background: #f4f7f6;
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    /* Oculta el overflow para que las animaciones "entren" */
-    overflow: hidden; 
+    /* Ajuste para móvil: Asegura que el contenedor ocupe todo el ancho en pantallas pequeñas */
+    margin: 0;
+    min-height: 100vh;
   }
   
   /* --- Encabezado con Botón de Regreso --- */
@@ -212,22 +214,22 @@ const styles = `
     padding: 16px 24px;
     border-bottom: 1px solid #e0e0e0;
     background: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Sombra para que destaque en móvil */
   }
   .header-bar h2 {
     margin: 0;
     margin-left: 16px;
     color: #333;
-    font-size: 1.5rem;
+    font-size: 1.25rem; /* Ajuste para móvil */
   }
   
   .btn-back {
-    background: #f0f0f0; /* Color más suave */
+    background: #f0f0f0; 
     color: #333;
     border: none;
     border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    font-size: 1.5rem;
+    width: 36px; /* Más compacto en móvil */
+    height: 36px;
     cursor: pointer;
     transition: all 0.3s;
     display: flex;
@@ -236,256 +238,214 @@ const styles = `
   }
   .btn-back:hover {
     background: #e0e0e0;
-    transform: scale(1.1); /* Efecto en hover */
+    transform: scale(1.1); 
   }
 
   /* --- Contenido del Formulario --- */
   .form-content {
-    padding: 24px;
+    padding: 24px 16px; /* Padding reducido horizontalmente para móvil */
+    min-height: calc(100vh - 120px); /* Ajuste para evitar salto */
   }
 
   /* --- Tarjetas de Sección --- */
   .form-section {
     background: #ffffff;
     border-radius: 8px;
-    padding: 24px;
+    padding: 16px; /* Padding más compacto en móvil */
     margin-bottom: 24px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    /* --- ANIMACIÓN AÑADIDA --- */
     animation: fadeInUp 0.5s ease-out forwards;
-    opacity: 0; /* Empezar oculto */
+    opacity: 0; 
   }
   .form-section h3 { 
     color: #004a99; 
     border-bottom: 2px solid #004a99; 
     padding-bottom: 8px; 
     margin-top: 0;
-    margin-bottom: 20px;
-    font-size: 1.25rem;
-    /* --- ICONOS AÑADIDOS --- */
+    margin-bottom: 15px; /* Margen reducido */
+    font-size: 1.1rem; /* Tamaño de fuente reducido */
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  /* --- Grid de Campos --- */
+  /* --- Grid de Campos (Responsivo) --- */
   .form-grid { 
+    /* En móvil, se apilan en una sola columna */
     display: grid; 
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
-    gap: 20px; 
+    grid-template-columns: 1fr; 
+    gap: 15px; 
   }
-  .form-field { 
-    display: flex; 
-    flex-direction: column; 
+  /* En escritorio, usa el grid dinámico */
+  @media (min-width: 768px) {
+    .form-grid {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+      gap: 20px; 
+    }
   }
+
   .form-field label { 
-    margin-bottom: 8px; 
+    margin-bottom: 6px; 
     font-weight: 600; 
     color: #555; 
     font-size: 0.875rem;
   }
-  .form-field input[type="date"],
-  .form-field input[type="text"],
-  .form-field input[type="number"],
-  .form-field select { 
+  .form-field input, .form-field select { 
     padding: 10px; 
     border: 1px solid #ddd; 
     border-radius: 6px; 
-    font-size: 1rem;
-    background: #fdfdfd;
-    transition: border-color 0.3s, box-shadow 0.3s;
-    color: #333 !important; 
-  }
-  
-  /* Asegurar el color de texto de las opciones del select */
-  .form-field select option {
-      color: #333 !important;
-      background-color: #fff; 
-  }
-  
-  .form-field input:focus,
-  .form-field select:focus {
-    outline: none;
-    border-color: #004a99;
-    box-shadow: 0 0 0 2px rgba(0, 74, 153, 0.2);
+    font-size: 0.95rem; /* Ligeramente más grande para mejor tacto */
   }
 
-  /* --- Estilos de Tabla Mejorados --- */
+  /* --- Estilos de Tabla (CRÍTICO: Scroll Horizontal para Móvil) --- */
+  .tool-table-wrapper {
+      overflow-x: auto; /* Permite el scroll horizontal en la tabla */
+      width: 100%;
+      /* Asegura que el color de fondo no afecte el color de la fuente del encabezado */
+      background-color: #fff; 
+  }
+
   .tool-table { 
+    /* La tabla debe ser más ancha que el contenedor para forzar el scroll en móvil */
+    min-width: 800px; 
     width: 100%; 
     border-collapse: collapse; 
-    margin-top: 20px; 
+    margin-top: 10px; 
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
+  
+  /* CORRECCIÓN CRÍTICA: Asegurar color de texto en encabezado y filas */
   .tool-table th, .tool-table td { 
-    padding: 12px 15px; 
-    text-align: left;
-    border-bottom: 1px solid #e0e0e0;
+    padding: 8px 12px; 
+    font-size: 0.8rem; 
+    white-space: nowrap; 
+    color: #333; /* <-- CORRECCIÓN APLICADA AQUÍ: Asegura que la fuente sea oscura */
   }
   .tool-table th { 
     background-color: #f9f9f9;
-    font-size: 0.875rem;
-    color: #333;
-    text-transform: uppercase;
-  }
-  .tool-table tr:last-child td {
-    border-bottom: none;
-  }
-  .tool-table tr:nth-child(even) {
-    background-color: #fdfdfd;
-  }
-  /* --- ANIMACIÓN DE FILAS --- */
-  .tool-table tbody tr {
-    animation: fadeInUp 0.4s ease-out forwards;
-    opacity: 0;
+    font-size: 0.75rem; 
+    color: #333; /* <-- CORRECCIÓN APLICADA AQUÍ: Asegura que el texto del encabezado sea oscuro */
   }
 
-  /* --- COLORES DE ESTADO DE VENCIMIENTO (NUEVO) --- */
+  /* --- COLORES DE ESTADO DE VENCIMIENTO (Sin cambios, ya definen su color de texto) --- */
   .tool-row-vencido {
-    background-color: #fcebeb !important; /* Rojo muy pálido */
-    color: #9f1c2b; /* Texto rojo oscuro */
+    background-color: #fcebeb !important; 
+    color: #9f1c2b !important; /* Mantenemos este color específico para vencido */
     font-weight: 600;
   }
   .tool-row-vencido td {
-    border-left: 4px solid #dc3545; /* Barra roja */
+    border-left: 4px solid #dc3545; 
   }
   .tool-row-critico {
-    background-color: #fff8eb !important; /* Naranja/Amarillo pálido */
-    color: #925c0e; 
+    background-color: #fff8eb !important; 
+    color: #925c0e !important; /* Mantenemos este color específico para crítico */
   }
   .tool-row-critico td {
     border-left: 4px solid #ffc107;
   }
   .tool-row-vigente {
-    background-color: #f1fff4 !important; /* Verde pálido */
+    background-color: #f1fff4 !important; 
   }
   .tool-row-vigente td {
-    border-left: 4px solid #198754; /* Barra verde */
+    border-left: 4px solid #198754; 
   }
-
-  .tool-table input, .tool-table select { 
-    width: 100%; 
-    box-sizing: border-box; 
-    border: 1px solid #ddd; 
-    padding: 8px; 
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-  .tool-table input:focus, .tool-table select:focus {
-    outline: none;
-    border-color: #004a99;
-  }
-  .tool-table td.readonly { 
-    background: #f9f9f9; 
-    color: #333; 
-    font-size: 0.9rem;
+  
+  .tool-table .btn-danger {
+      padding: 6px 10px;
+      font-size: 0.7rem;
   }
 
   /* --- Selector de Mochilas Mejorado --- */
   .backpack-selector { 
     display: flex; 
     flex-wrap: wrap;
-    gap: 12px; 
+    gap: 8px; 
   }
   .backpack-option { 
-    display: flex; 
-    align-items: center; 
-    gap: 8px; 
-    background: #fff; 
-    border: 1px solid #ddd; 
-    padding: 10px 14px; 
-    border-radius: 20px; /* Estilo "Chip" */
-    cursor: pointer;
-    transition: all 0.3s;
-    /* --- CORRECCIÓN DE COLOR --- */
-    font-weight: 600; 
-    color: #333;
-    /* --- ANIMACIÓN AÑADIDA --- */
-    animation: fadeInUp 0.4s ease-out forwards;
-    opacity: 0; /* Empezar oculto */
+    padding: 8px 12px; 
+    border-radius: 16px;
+    font-size: 0.85rem; 
   }
-  .backpack-option input { 
-    width: 16px; 
-    height: 16px; 
-  }
-  .backpack-option span { /* Target el span, no el label */
+  
+  /* Asegura que el texto del selector de mochila sea oscuro */
+  .backpack-option span {
+    color: #333; 
     cursor: pointer;
   }
-  .backpack-option:hover {
-    border-color: #004a99;
-    transform: translateY(-2px); /* Efecto hover */
-  }
-  .backpack-option input:checked + span { /* Target el span */
+  .backpack-option input:checked + span { 
     color: #004a99;
   }
 
-  /* --- Botones --- */
-  .btn { 
-    padding: 12px 20px; 
-    border: none; 
-    border-radius: 6px; 
-    cursor: pointer; 
-    font-size: 1rem; 
-    font-weight: 600;
-    transition: all 0.3s;
-  }
-  .btn:hover {
-    transform: translateY(-2px); /* Efecto hover */
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  }
-  .btn:active {
-    transform: translateY(0);
-    box-shadow: none;
-  }
-
-  .btn-primary { 
-    background-color: #004a99; 
-    color: white; 
-  }
-  .btn-primary:hover:not(:disabled) { 
-    background-color: #003366; 
-  }
-  .btn-primary:disabled {
-      background-color: #adb5bd; /* Gris para deshabilitado */
-      cursor: not-allowed;
-      box-shadow: none;
-      transform: none;
-  }
-  .btn-secondary { 
-    background-color: #6c757d; 
-    color: white; 
-  }
-  .btn-secondary:hover { 
-    background-color: #5a6268; 
-  }
-  .btn-danger { 
-    background-color: #dc3545; 
-    color: white; 
-    padding: 8px 12px;
-    font-size: 0.875rem;
-  }
-  .btn-danger:hover {
-    background-color: #c82333;
-  }
-
-  /* --- Barra de Botones Inferior --- */
+  /* --- Barra de Botones Inferior (Sticky en Móvil) --- */
   .button-bar { 
     display: flex; 
+    flex-direction: column; 
     justify-content: space-between; 
     align-items: center;
-    margin-top: 24px; 
-    gap: 15px; 
+    gap: 10px; 
     background: #fff;
-    padding: 16px 24px;
-    border-radius: 0 0 12px 12px;
+    padding: 16px;
     border-top: 1px solid #e0e0e0;
-    margin: 0 -24px -24px -24px;
+    position: sticky; 
+    bottom: 0;
+    width: 100%;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    z-index: 10;
   }
+  
+  .button-bar > span { 
+      text-align: center;
+      padding-bottom: 5px;
+      font-size: 0.9rem;
+  }
+
   .button-bar-right {
     display: flex;
-    gap: 10px;
+    flex-direction: column; 
+    width: 100%;
+    gap: 8px; 
+  }
+  
+  .button-bar-right .btn {
+      width: 100%; 
+      padding: 12px;
+  }
+
+  /* Media Query para Escritorio */
+  @media (min-width: 768px) {
+    .form-container {
+        margin: 20px auto;
+    }
+    .form-content {
+        padding: 24px;
+    }
+    .header-bar h2 {
+        font-size: 1.5rem;
+    }
+    .btn-back {
+        width: 40px;
+        height: 40px;
+    }
+    .button-bar {
+      flex-direction: row; 
+      margin: 0 -24px -24px -24px; 
+      padding: 16px 24px;
+      position: static; 
+      box-shadow: none;
+    }
+    .button-bar-right {
+      flex-direction: row; 
+      width: auto;
+    }
+    .button-bar-right .btn {
+      width: auto;
+      padding: 12px 20px;
+    }
+    .tool-table-wrapper {
+        overflow-x: hidden; 
+    }
   }
 `;
 
@@ -787,6 +747,7 @@ const NormasScreen = () => {
   
   // 🔄 NUEVO: Hook para rastrear si ALGÚN PATRÓN seleccionado está vencido
   const isAnyPatronVencido = useMemo(() => {
+    // Considera vencido/crítico como riesgo
     return watchedManualTools.some(tool => tool.isVencida);
   }, [watchedManualTools]);
   
@@ -800,6 +761,8 @@ const NormasScreen = () => {
   const availablePatronNames = useMemo(() => {
     const names: string[] = [];
     patronesDisponibles.forEach((patron, name) => {
+        // Solo lista los patrones que NO están ya en la tabla.
+        // El patrón actual en la fila siempre estará disponible para su propia fila.
         if (!selectedManualToolNames.has(name)) {
             names.push(name);
         }
@@ -828,9 +791,10 @@ const NormasScreen = () => {
       return;
     }
     const data = getValues();
-    const allTools = [...aggregatedTools, ...data.manualTools];
+    // Aseguramos que solo se incluyan herramientas manuales con un nombre de patrón seleccionado, ya que son los ítems de calibración.
+    const validManualTools = data.manualTools.filter(tool => tool.herramienta);
+    const allTools = [...aggregatedTools, ...validManualTools];
     
-    // El resto de la lógica de generación de PDF
     console.log('Datos listos para enviar al PDF:', data);
     console.log('Herramientas combinadas:', allTools);
     if (type === 'celestica') {
@@ -955,31 +919,33 @@ const NormasScreen = () => {
 
             {/* --- Tabla de Herramientas de Mochila --- */}
             {aggregatedTools.length > 0 && (
-              <table className="tool-table" style={{ marginTop: '20px' }}>
-                <thead>
-                  <tr>
-                    <th>Herramienta (Agregada)</th>
-                    <th>Qty Total</th>
-                    <th>Marca</th>
-                    <th>Modelo/Color</th>
-                    <th>Serie</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {aggregatedTools.sort((a, b) => a.herramienta.localeCompare(b.herramienta)).map((tool, index) => (
-                    <tr 
-                      key={`${tool.herramienta}-${tool.marca}-${tool.modelo}-${tool.serie}`}
-                      style={{ animationDelay: `${index * 30}ms` }}
-                    >
-                      <td className="readonly">{tool.herramienta}</td>
-                      <td className="readonly" style={{ textAlign: 'center' }}>{tool.qty}</td>
-                      <td className="readonly">{tool.marca}</td>
-                      <td className="readonly">{tool.modelo}</td>
-                      <td className="readonly">{tool.serie}</td>
+              <div className="tool-table-wrapper">
+                <table className="tool-table" style={{ marginTop: '20px' }}>
+                  <thead>
+                    <tr>
+                      <th>Herramienta (Agregada)</th>
+                      <th>Qty Total</th>
+                      <th>Marca</th>
+                      <th>Modelo/Color</th>
+                      <th>Serie</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {aggregatedTools.sort((a, b) => a.herramienta.localeCompare(b.herramienta)).map((tool, index) => (
+                      <tr 
+                        key={`${tool.herramienta}-${tool.marca}-${tool.modelo}-${tool.serie}`}
+                        style={{ animationDelay: `${index * 30}ms` }}
+                      >
+                        <td className="readonly">{tool.herramienta}</td>
+                        <td className="readonly" style={{ textAlign: 'center' }}>{tool.qty}</td>
+                        <td className="readonly">{tool.marca}</td>
+                        <td className="readonly">{tool.modelo}</td>
+                        <td className="readonly">{tool.serie}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 
@@ -991,16 +957,16 @@ const NormasScreen = () => {
             </h3>
             
             {/* Botón de Agregar Fila (Movido arriba de la tabla) */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {isAnyPatronVencido && (
-                    <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg">
+                    <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg mb-2">
                         ⚠️ **ERROR:** Patrón(es) VENCIDO(s)/CRÍTICO(s) seleccionado(s).
                     </div>
                 )}
               <button
                 type="button"
                 className="btn btn-secondary ml-auto"
-                onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}
+                onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '', isVencida: false })}
                 disabled={isLoadingPatrones}
               >
                 {isLoadingPatrones ? (
@@ -1011,122 +977,137 @@ const NormasScreen = () => {
               </button>
             </div>
 
-            <table className="tool-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Patrón de Medición</th>
-                  <th>Estatus Venc.</th>
-                  <th>Qty</th>
-                  <th>Marca</th>
-                  <th>Modelo/Color</th>
-                  <th>Serie</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fields.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', color: '#888' }}>
-                      {isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado patrones manuales.'}
-                    </td>
-                  </tr>
-                )}
-                {fields.map((item, index) => {
-                  const currentToolName = watchedManualTools[index]?.herramienta;
-                  const rowStatus = patronesDisponibles.get(currentToolName)?.status || 'pendiente';
-                  
-                  // Clase dinámica para el color de la fila
-                  let rowClassName = '';
-                  if (rowStatus === 'vencido' || rowStatus === 'critico') {
-                      rowClassName = 'tool-row-vencido';
-                  } else if (rowStatus === 'vigente') {
-                      rowClassName = 'tool-row-vigente';
-                  }
-
-                  return (
-                    <tr 
-                      key={item.id} 
-                      className={rowClassName} // Aplicamos la clase aquí
-                      style={{ animationDelay: `${index * 30}ms` }}
-                    >
-                      <td style={{ width: '40px', textAlign: 'center', color: '#555' }}>{index + 1}</td>
-                      <td>
-                        <Controller
-                          name={`manualTools.${index}.herramienta`}
-                          control={control}
-                          rules={{ required: true }}
-                          render={({ field }) => (
-                            <select 
-                              {...field}
-                              disabled={isLoadingPatrones}
-                              onChange={(e) => {
-                                const selectedToolName = e.target.value;
-                                field.onChange(selectedToolName);
-                                
-                                const toolData = patronesDisponibles.get(selectedToolName);
-                                
-                                if (toolData) {
-                                  // 🚨 ACTUALIZAR EL ESTADO DE VENCIMIENTO INTERNO (isVencida)
-                                  const isVencida = (toolData.status === 'vencido' || toolData.status === 'critico');
-                                  
-                                  setValue(`manualTools.${index}.qty`, '1');
-                                  setValue(`manualTools.${index}.marca`, toolData.marca);
-                                  setValue(`manualTools.${index}.modelo`, toolData.modelo);
-                                  setValue(`manualTools.${index}.serie`, toolData.serie);
-                                  setValue(`manualTools.${index}.isVencida`, isVencida); // Guardamos el estado
-                                } else {
-                                  setValue(`manualTools.${index}.qty`, '1'); 
-                                  setValue(`manualTools.${index}.marca`, '');
-                                  setValue(`manualTools.${index}.modelo`, '');
-                                  setValue(`manualTools.${index}.serie`, '');
-                                  setValue(`manualTools.${index}.isVencida`, false); // Si no se selecciona, no está vencida
-                                }
-                              }}
-                            >
-                              <option value="">
-                                {isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}
-                              </option>
-                              {/* Opciones disponibles y la seleccionada actualmente */}
-                              {[...availablePatronNames, currentToolName].filter(name => name && name !== '').map(name => (
-                                <option key={name} value={name}>{name}</option>
-                              ))}
-                            </select>
-                          )}
-                        />
-                      </td>
-                      {/* NUEVO: Columna de estado de vencimiento */}
-                      <td style={{ width: '120px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
-                          <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                            rowStatus === 'vencido' ? 'bg-red-300 text-red-800' : 
-                            rowStatus === 'critico' ? 'bg-orange-300 text-orange-800' : 
-                            rowStatus === 'vigente' ? 'bg-green-300 text-green-800' : 'bg-gray-300 text-gray-800'
-                          }`}>
-                            {rowStatus.toUpperCase()}
-                          </span>
-                      </td>
-                      <td style={{ width: '80px' }}>
-                        <input {...register(`manualTools.${index}.qty`, { required: true })} placeholder="Ej. 1" type="number" />
-                      </td>
-                      <td>
-                        <input {...register(`manualTools.${index}.marca`)} placeholder="Ej. Fluke" />
-                      </td>
-                      <td>
-                        <input {...register(`manualTools.${index}.modelo`)} placeholder="Ej. 87V" />
-                      </td>
-                      <td>
-                        <input {...register(`manualTools.${index}.serie`)} placeholder="Ej. SN..." />
-                      </td>
-                      <td style={{ width: '80px', textAlign: 'center' }}>
-                        <button type="button" className="btn btn-danger" onClick={() => remove(index)}>
-                          Quitar
-                        </button>
-                      </td>
+            <div className="tool-table-wrapper">
+                <table className="tool-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Patrón de Medición</th>
+                      <th>Estatus Venc.</th>
+                      <th style={{ width: '60px' }}>Qty</th>
+                      <th>Marca</th>
+                      <th>Modelo/Color</th>
+                      <th>Serie</th>
+                      <th style={{ width: '80px' }}>Acción</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {fields.length === 0 && (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', color: '#888' }}>
+                          {isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado patrones manuales.'}
+                        </td>
+                      </tr>
+                    )}
+                    {fields.map((item, index) => {
+                      const currentToolName = watchedManualTools[index]?.herramienta;
+                      const rowStatus = patronesDisponibles.get(currentToolName)?.status || 'pendiente';
+                      
+                      // Clase dinámica para el color de la fila
+                      let rowClassName = '';
+                      if (rowStatus === 'vencido') {
+                          rowClassName = 'tool-row-vencido';
+                      } else if (rowStatus === 'critico') {
+                          rowClassName = 'tool-row-critico';
+                      } else if (rowStatus === 'vigente') {
+                          rowClassName = 'tool-row-vigente';
+                      }
+
+                      return (
+                        <tr 
+                          key={item.id} 
+                          className={rowClassName} // Aplicamos la clase aquí
+                          style={{ animationDelay: `${index * 30}ms` }}
+                        >
+                          <td style={{ width: '40px', textAlign: 'center', color: rowStatus === 'vencido' || rowStatus === 'critico' ? '#9f1c2b' : '#555' }}>{index + 1}</td>
+                          <td>
+                            <Controller
+                              name={`manualTools.${index}.herramienta`}
+                              control={control}
+                              rules={{ required: true }}
+                              render={({ field }) => (
+                                <select 
+                                  {...field}
+                                  disabled={isLoadingPatrones}
+                                  onChange={(e) => {
+                                    const selectedToolName = e.target.value;
+                                    field.onChange(selectedToolName);
+                                    
+                                    const toolData = patronesDisponibles.get(selectedToolName);
+                                    
+                                    // Aseguramos que solo las opciones NO seleccionadas y el valor actual estén disponibles
+                                    const currentValues = getValues('manualTools').map(t => t.herramienta);
+                                    const alreadySelected = new Set(currentValues.filter((_, i) => i !== index));
+                                    
+                                    if (toolData) {
+                                      // 🚨 ACTUALIZAR EL ESTADO DE VENCIMIENTO INTERNO (isVencida)
+                                      const isVencida = (toolData.status === 'vencido' || toolData.status === 'critico');
+                                      
+                                      setValue(`manualTools.${index}.qty`, '1');
+                                      setValue(`manualTools.${index}.marca`, toolData.marca);
+                                      setValue(`manualTools.${index}.modelo`, toolData.modelo);
+                                      setValue(`manualTools.${index}.serie`, toolData.serie);
+                                      setValue(`manualTools.${index}.isVencida`, isVencida); // Guardamos el estado
+                                    } else {
+                                      // Si se deselecciona o es la opción inicial
+                                      setValue(`manualTools.${index}.qty`, '1'); 
+                                      setValue(`manualTools.${index}.marca`, '');
+                                      setValue(`manualTools.${index}.modelo`, '');
+                                      setValue(`manualTools.${index}.serie`, '');
+                                      setValue(`manualTools.${index}.isVencida`, false); 
+                                    }
+                                  }}
+                                >
+                                  <option value="">
+                                    {isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}
+                                  </option>
+                                  {/* Renderiza solo opciones no seleccionadas previamente y el valor actual */}
+                                  {[...availablePatronNames, currentToolName].filter(name => name && name !== '').map(name => (
+                                    <option 
+                                        key={name} 
+                                        value={name}
+                                        disabled={selectedManualToolNames.has(name) && name !== currentToolName} // Deshabilita si ya fue seleccionado en otra fila
+                                    >
+                                        {name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            />
+                          </td>
+                          {/* Columna de estado de vencimiento */}
+                          <td style={{ width: '120px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
+                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
+                                rowStatus === 'vencido' ? 'bg-red-300 text-red-800' : 
+                                rowStatus === 'critico' ? 'bg-orange-300 text-orange-800' : 
+                                rowStatus === 'vigente' ? 'bg-green-300 text-green-800' : 'bg-gray-300 text-gray-800'
+                              }`}>
+                                {rowStatus.toUpperCase()}
+                              </span>
+                          </td>
+                          <td style={{ width: '80px' }}>
+                            <input {...register(`manualTools.${index}.qty`, { required: true, valueAsNumber: true })} placeholder="1" type="number" min="1" />
+                          </td>
+                          <td>
+                            <input {...register(`manualTools.${index}.marca`)} placeholder="Marca" readOnly tabIndex={-1} className="readonly" />
+                          </td>
+                          <td>
+                            <input {...register(`manualTools.${index}.modelo`)} placeholder="Modelo" readOnly tabIndex={-1} className="readonly" />
+                          </td>
+                          <td>
+                            <input {...register(`manualTools.${index}.serie`)} placeholder="Serie" readOnly tabIndex={-1} className="readonly" />
+                          </td>
+                          <td style={{ width: '80px', textAlign: 'center' }}>
+                            <button type="button" className="btn btn-danger" onClick={() => remove(index)}>
+                              Quitar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+            </div>
           </div>
           
           {/* --- BARRA DE BOTONES INFERIOR --- */}
