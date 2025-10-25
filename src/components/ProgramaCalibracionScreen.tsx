@@ -50,6 +50,8 @@ import {
 } from 'firebase/firestore';
 // Asume que tienes configurada la conexión a Firebase en '../utils/firebase'
 // **IMPORTANTE:** Reemplaza el path si es necesario.
+// **NOTA IMPORTANTE:** Debes asegurarte de que tu archivo '../utils/firebase'
+// exporte la constante 'db' de tu configuración de Firestore.
 import { db } from '../utils/firebase'; 
 
 
@@ -94,70 +96,15 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
   const [filtroServicio, setFFiltroServicio] = useState<string>('todos');
   const [busqueda, setBusqueda] = useState<string>('');
-  const [loading, setLoading] = useState(true); // Nuevo estado de carga
+  const [loading, setLoading] = useState(true); 
   
-  // 🔄 ESTADOS DE ORDENAMIENTO 
+  // 🔄 ESTADOS DE ORDENAMIENTO (para habilitar la tabla interactiva)
   const [sortColumn, setSortColumn] = useState<SortableColumn>('statusVencimiento');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   // ------------------------------------
 
-  // --- CARGA DE DATOS (AHORA CON FIREBASE) ---
+  // --- ESTADOS DE DATOS Y MODALES ---
   const [data, setData] = useState<RegistroPatron[]>([]);
-
-  // Lógica para sincronizar datos al inicio
-  const fetchPatrones = useCallback(async () => {
-    setLoading(true);
-    try {
-      const q = query(collection(db, COLLECTION_NAME));
-      const querySnapshot = await getDocs(q);
-      const fetchedData: RegistroPatron[] = [];
-
-      querySnapshot.forEach((doc) => {
-        // Mapea el documento de Firestore a tu interfaz, incluyendo el ID
-        fetchedData.push({ id: doc.id, ...doc.data() } as RegistroPatron);
-      });
-
-      if (fetchedData.length === 0) {
-        // Si no hay datos en Firebase, usa patronesData.ts e inicializa la colección
-        console.log("No hay datos en Firestore. Inicializando con patronesData.ts");
-        
-        // Carga los patrones uno por uno en Firestore
-        const promises = patronesData.map(patron => 
-          addDoc(collection(db, COLLECTION_NAME), patron)
-        );
-        await Promise.all(promises);
-
-        // Actualiza el estado con los datos iniciales
-        setData(patronesData);
-      } else {
-        // Si hay datos en Firebase, úsalos
-        setData(fetchedData);
-      }
-
-      // IMPORTANTE: Eliminar la lógica de localStorage
-      // localStorage.removeItem('patrones_calibracion'); 
-
-    } catch (e) {
-      console.error("Error al cargar o inicializar los patrones: ", e);
-      // Fallback: Si Firebase falla, intenta usar localStorage por si acaso
-      const saved = localStorage.getItem('patrones_calibracion');
-      if (saved) {
-        setData(JSON.parse(saved));
-      } else {
-        setData(patronesData); // Si todo falla, usa los datos del archivo
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchPatrones();
-  }, [fetchPatrones]);
-  // --- FIN CARGA DE DATOS ---
-  
-  // ... (El resto de tus estados se mantienen)
-
   const [modalOpen, setModalOpen] = useState(false);
   const [accionModalOpen, setAccionModalOpen] = useState(false);
   const [historialModalOpen, setHistorialModalOpen] = useState(false);
@@ -198,6 +145,50 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     navigateTo('menu');
   };
 
+  // --- LÓGICA DE CARGA DE DATOS (FIREBASE) ---
+  const fetchPatrones = useCallback(async () => {
+    setLoading(true);
+    try {
+      const q = query(collection(db, COLLECTION_NAME));
+      const querySnapshot = await getDocs(q);
+      const fetchedData: RegistroPatron[] = [];
+
+      querySnapshot.forEach((doc) => {
+        fetchedData.push({ id: doc.id, ...doc.data() } as RegistroPatron);
+      });
+
+      if (fetchedData.length === 0) {
+        // Lógica de inicialización: Usa patronesData.ts si la colección está vacía.
+        console.log("No hay datos en Firestore. Inicializando con patronesData.ts");
+        
+        const promises = patronesData.map(patron => 
+          addDoc(collection(db, COLLECTION_NAME), patron)
+        );
+        await Promise.all(promises);
+
+        setData(patronesData);
+      } else {
+        setData(fetchedData);
+      }
+    } catch (e) {
+      console.error("Error al cargar o inicializar los patrones: ", e);
+      // Fallback a localStorage si el entorno lo permite
+      const saved = localStorage.getItem('patrones_calibracion');
+      if (saved) {
+        setData(JSON.parse(saved));
+      } else {
+        setData(patronesData); 
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPatrones();
+  }, [fetchPatrones]);
+  // --- FIN CARGA DE DATOS ---
+  
   // ⚙️ FUNCIÓN PARA MANEJAR EL ORDENAMIENTO
   const handleSort = (column: SortableColumn) => {
     if (column === sortColumn) {
@@ -208,46 +199,27 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
 
-  // --- LÓGICA DE CÁLCULO DE ESTADO ---
+  // --- LÓGICA DE CÁLCULO DE ESTADO Y PRIORIDAD ---
   const getStatusInfo = (fecha: string) => {
-    // Lógica se mantiene igual
     if (!fecha || fecha === 'Por Comprar' || fecha === '') {
-      return {
-        status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200',
-        label: 'Pendiente', icon: Info, dias: 0, sortValue: 4 // Nuevo: Valor para ordenar (mayor = menos urgente)
-      };
+      return { status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200', label: 'Pendiente', icon: Info, dias: 0, sortValue: 4 };
     }
     try {
       const fechaVencimiento = parseISO(fecha);
       const dias = differenceInDays(fechaVencimiento, hoy);
 
       if (dias < 0) {
-        return {
-          status: 'vencido', color: 'bg-red-500', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200',
-          label: 'Vencido', icon: AlertTriangle, dias: Math.abs(dias), sortValue: 0 // Más urgente
-        };
+        return { status: 'vencido', color: 'bg-red-500', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200', label: 'Vencido', icon: AlertTriangle, dias: Math.abs(dias), sortValue: 0 };
       }
       if (dias >= 0 && dias <= 7) {
-        return {
-          status: 'critico', color: 'bg-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200',
-          label: 'Crítico', icon: AlertCircle, dias, sortValue: 1 
-        };
+        return { status: 'critico', color: 'bg-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200', label: 'Crítico', icon: AlertCircle, dias, sortValue: 1 };
       }
       if (dias > 7 && dias <= 30) {
-        return {
-          status: 'proximo', color: 'bg-yellow-500', bgColor: 'bg-yellow-50', textColor: 'text-yellow-700', borderColor: 'border-yellow-200',
-          label: 'Próximo', icon: Clock, dias, sortValue: 2
-        };
+        return { status: 'proximo', color: 'bg-yellow-500', bgColor: 'bg-yellow-50', textColor: 'text-yellow-700', borderColor: 'border-yellow-200', label: 'Próximo', icon: Clock, dias, sortValue: 2 };
       }
-      return {
-        status: 'vigente', color: 'bg-green-500', bgColor: 'bg-green-50', textColor: 'text-green-700', borderColor: 'border-green-200',
-        label: 'Vigente', icon: CheckCircle, dias, sortValue: 3 // Menos urgente
-      };
+      return { status: 'vigente', color: 'bg-green-500', bgColor: 'bg-green-50', textColor: 'text-green-700', borderColor: 'border-green-200', label: 'Vigente', icon: CheckCircle, dias, sortValue: 3 };
     } catch (error) {
-       return {
-        status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200',
-        label: 'Error Fecha', icon: Info, dias: 0, sortValue: 5 // Error o pendiente al final
-      };
+       return { status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200', label: 'Error Fecha', icon: Info, dias: 0, sortValue: 5 };
     }
   };
 
@@ -294,10 +266,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
   
-  // --- LÓGICA DE ACCIONES (Se mantiene) ---
+  // --- LÓGICA DE ACCIONES ---
 
   const getAccionesDisponibles = (item: RegistroPatron) => {
-    // Lógica se mantiene igual
     const acciones = [];
 
     if (item.tipoServicio === 'Calibración' && item.estadoProceso === 'operativo') {
@@ -336,7 +307,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     return acciones.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
   };
   
-  // --- MANIPULACIÓN DE DATOS (FIREBASE - Se mantiene) ---
+  // --- MANIPULACIÓN DE DATOS (FIREBASE) ---
   
   const ejecutarAccion = async () => {
     if (!equipoSeleccionado || !accionSeleccionada || !equipoSeleccionado.id) return;
@@ -390,14 +361,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
     
     try {
-      // 1. Quitar el ID para el update (Firestore no necesita el ID en el objeto)
       const { id, ...dataToUpdate } = equipoActualizado;
-      
-      // 2. Ejecutar la actualización en Firebase
       const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
       await updateDoc(docRef, dataToUpdate);
-
-      // 3. Refrescar el estado con los nuevos datos de Firebase
       await fetchPatrones();
 
     } catch (e) {
@@ -414,7 +380,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
   
   const abrirModalAccion = (equipo: RegistroPatron, accion: string) => {
-    // Lógica se mantiene igual, se llamará a ejecutarAccion()
     setEquipoSeleccionado(equipo);
     setAccionSeleccionada(accion);
 
@@ -442,8 +407,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     setHistorialModalOpen(true);
   };
 
-  // --- CRUD BÁSICO (FIREBASE - Se mantiene) ---
-
   const handleGuardar = async () => {
     if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion || !nuevoRegistro.fecha) {
       alert('Por favor complete los campos obligatorios');
@@ -459,13 +422,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     };
     
     try {
-      // 1. Agregar el nuevo documento a Firestore
       await addDoc(collection(db, COLLECTION_NAME), {
         ...nuevoRegistro,
         historial: [nuevaEntradaHistorial]
       });
       
-      // 2. Refrescar el estado con los nuevos datos de Firebase
       await fetchPatrones();
 
     } catch (e) {
@@ -499,14 +460,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     };
 
     try {
-      // 1. Quitar el ID para el update
       const { id, ...dataToUpdate } = equipoConHistorial;
 
-      // 2. Ejecutar la actualización en Firebase
       const docRef = doc(db, COLLECTION_NAME, equipoEditando.id);
       await updateDoc(docRef, dataToUpdate);
       
-      // 3. Refrescar el estado con los nuevos datos de Firebase
       await fetchPatrones();
 
     } catch (e) {
@@ -522,11 +480,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   const handleEliminar = async (id: string) => {
     setLoading(true);
     try {
-        // 1. Eliminar de Firebase
         const docRef = doc(db, COLLECTION_NAME, id);
         await deleteDoc(docRef);
 
-        // 2. Refrescar el estado con los nuevos datos de Firebase
         await fetchPatrones();
 
     } catch (e) {
@@ -536,8 +492,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         setLoading(false);
     }
   };
-
-  // --- LÓGICA DE PROCESOS ESPECÍFICOS (FIREBASE - Se mantiene) ---
 
   const procesarEnvioCalibracion = async () => {
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
@@ -638,7 +592,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
 
-  // --- FILTRADO Y EXPORTACIÓN ---
+  // --- FILTRADO Y ORDENAMIENTO ---
 
   const dataFiltrada = useMemo(() => {
     let filtered = data.filter(item => {
@@ -666,8 +620,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         
         // Si los estados son iguales (ej. ambos Vigentes), usa la fecha como desempate
         if (aValue === bValue) {
-            aValue = parseISO(a.fecha).getTime();
-            bValue = parseISO(b.fecha).getTime();
+            aValue = a.fecha ? parseISO(a.fecha).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
+            bValue = b.fecha ? parseISO(b.fecha).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
         }
 
       } else if (sortColumn === 'fecha' || sortColumn === 'fechaInicioProceso') {
@@ -687,8 +641,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         
       } else {
         // Ordena cadenas (strings)
-        aValue = (a[sortColumn] || '').toLowerCase();
-        bValue = (b[sortColumn] || '').toLowerCase();
+        aValue = (a[sortColumn as keyof RegistroPatron] || '').toLowerCase();
+        bValue = (b[sortColumn as keyof RegistroPatron] || '').toLowerCase();
       }
 
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
@@ -727,15 +681,12 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
 
-  // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS (USADA EN OTRAS SCREENS) ---
+  // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS (MANTENIDA EN MEMORIA POR SI SE USA EN OTRO COMPONENTE) ---
   const getPatronesList = () => {
-      // Mapea a las descripciones y filtra duplicados
       const descripcionesUnicas = Array.from(new Set(data.map(patron => patron.descripcion)));
-      // Filtra cualquier valor vacío o indefinido si lo hubiera
       return descripcionesUnicas.filter(desc => desc && desc !== '');
   };
 
-  // Lista de patrones única para la supuesta 'NormasScreen'
   const patronesUnicos = useMemo(() => getPatronesList(), [data]);
 
   // --- RENDERIZADO (JSX) ---
@@ -805,7 +756,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
           <>
             {/* Dashboard Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              {/* ... (Tus tarjetas de estadísticas) ... */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -975,7 +925,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
                         return (
                           <motion.tr
-                            key={item.id || item.noControl} // Usar el ID de Firestore
+                            key={item.id || item.noControl} 
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}

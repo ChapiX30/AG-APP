@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useForm, useFieldArray, SubmitHandler, Controller, useWatch } from 'react-hook-form';
 import { PDFDocument, rgb, StandardFonts, PDFFont } from 'pdf-lib';
 import { saveAs } from 'file-saver';
+import { differenceInDays, parseISO, format } from 'date-fns'; // Importamos funciones de fecha adicionales
 // --- 1. CAMBIOS DE IMPORTACIÓN ---
 import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
@@ -19,6 +20,10 @@ interface PatronBase {
     marca: string;
     modelo: string;
     serie: string;
+    // NUEVO: Campo para almacenar la fecha de vencimiento
+    fechaVencimiento: string;
+    // NUEVO: Estado del patrón para la UI (vigente, vencido, etc.)
+    status: 'vigente' | 'vencido' | 'critico' | 'proximo' | 'pendiente'; 
 }
 
 // Interfaz completa de RegistroPatron del otro componente
@@ -31,7 +36,7 @@ export interface RegistroPatron {
     modelo: string;
     frecuencia: string;
     tipoServicio: string;
-    fecha: string;
+    fecha: string; // <-- Fecha de vencimiento
     prioridad: 'Alta' | 'Media' | 'Baja';
     ubicacion: string;
     responsable: string;
@@ -90,15 +95,15 @@ const BACKPACK_CATALOG = {
   mochila_Edgar: {
     nombre: 'Mochila 4 (Edgar)',
     items: [
-      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
-      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
-      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' },
+      { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' },
+      { herramienta: 'Destornillador ESD', qty: "3", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/M' },
+      { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2L', serie: 'DT220240700114' },
+      { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' },
     ],
   },
   mochila_Daniel: {
@@ -147,7 +152,29 @@ type FormInputs = {
   companiaDepto: string;
   noEmpleado: string;
   selectedBackpacks: string[];
-  manualTools: ToolItem[];
+  manualTools: ToolItem & { isVencida?: boolean }[]; // Agregamos un indicador de vencimiento al tipo de campo
+};
+
+// ==================================================================
+// --- LÓGICA CRÍTICA DE VENCIMIENTO (NUEVO) ---
+// ==================================================================
+
+const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
+    if (!fecha || fecha === 'Por Comprar' || fecha === '') {
+        return 'pendiente';
+    }
+    const hoy = new Date();
+    try {
+        const fechaVencimiento = parseISO(fecha);
+        const dias = differenceInDays(fechaVencimiento, hoy);
+
+        if (dias < 0) return 'vencido';
+        if (dias >= 0 && dias <= 7) return 'critico';
+        if (dias > 7 && dias <= 30) return 'proximo';
+        return 'vigente';
+    } catch (error) {
+        return 'pendiente';
+    }
 };
 
 // ==================================================================
@@ -267,10 +294,10 @@ const styles = `
     font-size: 1rem;
     background: #fdfdfd;
     transition: border-color 0.3s, box-shadow 0.3s;
-    color: #333 !important; /* <--- CORRECCIÓN 1: Color de texto de la caja principal */
+    color: #333 !important; 
   }
   
-  /* <--- CORRECCIÓN 2: Asegurar el color de texto de las opciones del select ---> */
+  /* Asegurar el color de texto de las opciones del select */
   .form-field select option {
       color: #333 !important;
       background-color: #fff; 
@@ -313,6 +340,29 @@ const styles = `
   .tool-table tbody tr {
     animation: fadeInUp 0.4s ease-out forwards;
     opacity: 0;
+  }
+
+  /* --- COLORES DE ESTADO DE VENCIMIENTO (NUEVO) --- */
+  .tool-row-vencido {
+    background-color: #fcebeb !important; /* Rojo muy pálido */
+    color: #9f1c2b; /* Texto rojo oscuro */
+    font-weight: 600;
+  }
+  .tool-row-vencido td {
+    border-left: 4px solid #dc3545; /* Barra roja */
+  }
+  .tool-row-critico {
+    background-color: #fff8eb !important; /* Naranja/Amarillo pálido */
+    color: #925c0e; 
+  }
+  .tool-row-critico td {
+    border-left: 4px solid #ffc107;
+  }
+  .tool-row-vigente {
+    background-color: #f1fff4 !important; /* Verde pálido */
+  }
+  .tool-row-vigente td {
+    border-left: 4px solid #198754; /* Barra verde */
   }
 
   .tool-table input, .tool-table select { 
@@ -394,8 +444,14 @@ const styles = `
     background-color: #004a99; 
     color: white; 
   }
-  .btn-primary:hover { 
+  .btn-primary:hover:not(:disabled) { 
     background-color: #003366; 
+  }
+  .btn-primary:disabled {
+      background-color: #adb5bd; /* Gris para deshabilitado */
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
   }
   .btn-secondary { 
     background-color: #6c757d; 
@@ -482,7 +538,7 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const xColQty = 270;
     const xColMarca = 310;
     const xColModelo = 400;
-    const xColSerie = 420;
+    const xColSerie = 480;
 
     allTools.forEach((tool, index) => {
       if (index >= 30) return;
@@ -625,7 +681,7 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
 
 
 // =================================================================
-// --- COMPONENTE DEL FORMULARIO (SCREEN) - CON MODIFICACIONES ---
+// --- COMPONENTE DEL FORMULARIO (SCREEN) ---
 // =================================================================
 
 // Tipo para los usuarios de Firebase
@@ -664,22 +720,19 @@ const NormasScreen = () => {
     name: 'manualTools',
   });
 
-  // --- LÓGICA DE FIREBASE PARA CARGAR METRÓLOGOS (CORRECCIÓN APLICADA) ---
+  // --- LÓGICA DE FIREBASE PARA CARGAR METRÓLOGOS ---
   useEffect(() => {
     const fetchMetrologos = async () => {
       try {
-        // CORRECCIÓN APLICADA: Usamos "puesto" y "Metrólogo" (con acento y mayúscula)
         const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
         const querySnapshot = await getDocs(q);
         const usersList: Metrologo[] = [];
         querySnapshot.forEach((doc) => {
-          // Usamos 'name' como campo de nombre visible en el dropdown (Edgar Amador)
           usersList.push({ id: doc.id, nombre: doc.data().name || doc.data().nombre });
         });
         setMetrologos(usersList);
       } catch (error) {
         console.error("Error cargando metrólogos (puesto Metrólogo): ", error);
-        // No alertamos en useEffects pasivos para no molestar al usuario si no es crítico.
       } finally {
         setIsLoadingUsers(false);
       }
@@ -688,7 +741,7 @@ const NormasScreen = () => {
     fetchMetrologos();
   }, []);
   
-  // --- LÓGICA DE FIREBASE PARA CARGAR PATRONES (Mantenida) ---
+  // --- LÓGICA DE FIREBASE PARA CARGAR PATRONES (AÑADIMOS LA LÓGICA DE VENCIMIENTO AQUÍ) ---
   const fetchPatrones = useCallback(async () => {
     setIsLoadingPatrones(true);
     try {
@@ -699,12 +752,18 @@ const NormasScreen = () => {
       querySnapshot.forEach((doc) => {
         const data = doc.data() as RegistroPatron;
         const key = data.descripcion.trim(); 
+        
+        // 🚨 LÓGICA CRÍTICA DE VENCIMIENTO APLICADA EN LA CARGA
+        const status = getVencimientoStatus(data.fecha);
+
         if (key && !patronesMap.has(key)) {
             patronesMap.set(key, { 
                 nombre: key, 
                 marca: data.marca || 'S/M', 
                 modelo: data.modelo || 'S/M', 
-                serie: data.serie || 'S/N' 
+                serie: data.serie || 'S/N',
+                fechaVencimiento: data.fecha, // Guardar la fecha
+                status: status,              // Guardar el estado
             });
         }
       });
@@ -712,7 +771,6 @@ const NormasScreen = () => {
       setPatronesDisponibles(patronesMap);
     } catch (error) {
       console.error("Error cargando patrones de medición: ", error);
-      // No alertamos en useEffects pasivos
     } finally {
       setIsLoadingPatrones(false);
     }
@@ -723,8 +781,14 @@ const NormasScreen = () => {
   }, [fetchPatrones]);
 
 
-  // --- Lógicas de Memo (Mantenidas) ---
+  // --- HOOKS DE VIGILANCIA Y ESTADO DE VALIDACIÓN ---
+  
   const watchedManualTools = watch('manualTools');
+  
+  // 🔄 NUEVO: Hook para rastrear si ALGÚN PATRÓN seleccionado está vencido
+  const isAnyPatronVencido = useMemo(() => {
+    return watchedManualTools.some(tool => tool.isVencida);
+  }, [watchedManualTools]);
   
   // Lista de nombres de herramientas manuales ya seleccionadas
   const selectedManualToolNames = useMemo(() => 
@@ -750,8 +814,14 @@ const NormasScreen = () => {
     [watchedBackpacks]
   );
 
-  // --- Manejador de envío (sin cambios) ---
+  // --- Manejador de envío (Aplicando la regla de negocio) ---
   const handleGeneratePdf = async (type: 'celestica' | 'generic') => {
+    // 🚨 REGLA DE NEGOCIO CRÍTICA: Bloquear si hay algún patrón vencido
+    if (isAnyPatronVencido) {
+        alert('ADVERTENCIA: No se puede generar el PDF. Hay patrones de medición vencidos o críticos en la lista de Herramientas Manuales.');
+        return;
+    }
+    
     const isValid = await trigger();
     if (!isValid) {
       alert('Formulario incompleto. Revisa los campos marcados.');
@@ -759,6 +829,8 @@ const NormasScreen = () => {
     }
     const data = getValues();
     const allTools = [...aggregatedTools, ...data.manualTools];
+    
+    // El resto de la lógica de generación de PDF
     console.log('Datos listos para enviar al PDF:', data);
     console.log('Herramientas combinadas:', allTools);
     if (type === 'celestica') {
@@ -787,7 +859,7 @@ const NormasScreen = () => {
           <h2>Registro de Herramienta y Equipo</h2>
         </div>
 
-        <form className="form-content"> 
+        <form className="form-content" onSubmit={(e) => e.preventDefault()}> 
           
           {/* --- SECCIÓN DATOS DE USUARIO MEJORADA --- */}
           <div className="form-section" style={{ animationDelay: '100ms' }}>
@@ -919,17 +991,22 @@ const NormasScreen = () => {
             </h3>
             
             {/* Botón de Agregar Fila (Movido arriba de la tabla) */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
+                {isAnyPatronVencido && (
+                    <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg">
+                        ⚠️ **ERROR:** Patrón(es) VENCIDO(s)/CRÍTICO(s) seleccionado(s).
+                    </div>
+                )}
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-secondary ml-auto"
                 onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}
                 disabled={isLoadingPatrones}
               >
                 {isLoadingPatrones ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
                 ) : (
-                    '+ Agregar Herramienta Manual'
+                    '+ Agregar Patrón/Herramienta'
                 )}
               </button>
             </div>
@@ -938,7 +1015,8 @@ const NormasScreen = () => {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Herramienta</th>
+                  <th>Patrón de Medición</th>
+                  <th>Estatus Venc.</th>
                   <th>Qty</th>
                   <th>Marca</th>
                   <th>Modelo/Color</th>
@@ -949,15 +1027,29 @@ const NormasScreen = () => {
               <tbody>
                 {fields.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', color: '#888' }}>
-                      {isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado herramientas manuales.'}
+                    <td colSpan={8} style={{ textAlign: 'center', color: '#888' }}>
+                      {isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado patrones manuales.'}
                     </td>
                   </tr>
                 )}
                 {fields.map((item, index) => {
                   const currentToolName = watchedManualTools[index]?.herramienta;
+                  const rowStatus = patronesDisponibles.get(currentToolName)?.status || 'pendiente';
+                  
+                  // Clase dinámica para el color de la fila
+                  let rowClassName = '';
+                  if (rowStatus === 'vencido' || rowStatus === 'critico') {
+                      rowClassName = 'tool-row-vencido';
+                  } else if (rowStatus === 'vigente') {
+                      rowClassName = 'tool-row-vigente';
+                  }
+
                   return (
-                    <tr key={item.id} style={{ animationDelay: `${index * 30}ms` }}>
+                    <tr 
+                      key={item.id} 
+                      className={rowClassName} // Aplicamos la clase aquí
+                      style={{ animationDelay: `${index * 30}ms` }}
+                    >
                       <td style={{ width: '40px', textAlign: 'center', color: '#555' }}>{index + 1}</td>
                       <td>
                         <Controller
@@ -972,38 +1064,46 @@ const NormasScreen = () => {
                                 const selectedToolName = e.target.value;
                                 field.onChange(selectedToolName);
                                 
-                                // OBTENER DATOS DEL PATRÓN DESDE EL MAP DE FIREBASE
                                 const toolData = patronesDisponibles.get(selectedToolName);
                                 
                                 if (toolData) {
-                                  // Usar setValue para actualizar los campos automáticamente
+                                  // 🚨 ACTUALIZAR EL ESTADO DE VENCIMIENTO INTERNO (isVencida)
+                                  const isVencida = (toolData.status === 'vencido' || toolData.status === 'critico');
+                                  
                                   setValue(`manualTools.${index}.qty`, '1');
                                   setValue(`manualTools.${index}.marca`, toolData.marca);
                                   setValue(`manualTools.${index}.modelo`, toolData.modelo);
                                   setValue(`manualTools.${index}.serie`, toolData.serie);
+                                  setValue(`manualTools.${index}.isVencida`, isVencida); // Guardamos el estado
                                 } else {
-                                  setValue(`manualTools.${index}.qty`, '1'); // Default qty 1
+                                  setValue(`manualTools.${index}.qty`, '1'); 
                                   setValue(`manualTools.${index}.marca`, '');
                                   setValue(`manualTools.${index}.modelo`, '');
                                   setValue(`manualTools.${index}.serie`, '');
+                                  setValue(`manualTools.${index}.isVencida`, false); // Si no se selecciona, no está vencida
                                 }
                               }}
                             >
                               <option value="">
                                 {isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}
                               </option>
-                              {/* Opción seleccionada actualmente (si no está en disponibles, se muestra igual) */}
-                              {currentToolName && !availablePatronNames.includes(currentToolName) && currentToolName !== '' && (
-                                <option key={currentToolName} value={currentToolName}>{currentToolName}</option>
-                              )}
-                              
-                              {/* Patrones disponibles de Firebase */}
-                              {availablePatronNames.map(name => (
+                              {/* Opciones disponibles y la seleccionada actualmente */}
+                              {[...availablePatronNames, currentToolName].filter(name => name && name !== '').map(name => (
                                 <option key={name} value={name}>{name}</option>
                               ))}
                             </select>
                           )}
                         />
+                      </td>
+                      {/* NUEVO: Columna de estado de vencimiento */}
+                      <td style={{ width: '120px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
+                          <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
+                            rowStatus === 'vencido' ? 'bg-red-300 text-red-800' : 
+                            rowStatus === 'critico' ? 'bg-orange-300 text-orange-800' : 
+                            rowStatus === 'vigente' ? 'bg-green-300 text-green-800' : 'bg-gray-300 text-gray-800'
+                          }`}>
+                            {rowStatus.toUpperCase()}
+                          </span>
                       </td>
                       <td style={{ width: '80px' }}>
                         <input {...register(`manualTools.${index}.qty`, { required: true })} placeholder="Ej. 1" type="number" />
@@ -1031,16 +1131,20 @@ const NormasScreen = () => {
           
           {/* --- BARRA DE BOTONES INFERIOR --- */}
           <div className="button-bar">
-            <span></span> {/* Placeholder */}
+            {isAnyPatronVencido && (
+                <span className="text-sm font-bold text-red-600">
+                    🔴 Generación de PDF bloqueada por patrones VENCIDOS/CRÍTICOS.
+                </span>
+            )}
             
-            <div className="button-bar-right">
+            <div className="button-bar-right ml-auto">
               <button 
                 type="button" 
                 className="btn btn-primary" 
                 onClick={() => handleGeneratePdf('celestica')}
                 style={{ background: '#004a99' }}
-                title="Generar formato oficial de Celestica"
-                disabled={fields.length === 0 && aggregatedTools.length === 0}
+                title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido' : "Generar formato oficial de Celestica"}
+                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0)}
               >
                 Generar PDF Celestica
               </button>
@@ -1048,8 +1152,8 @@ const NormasScreen = () => {
                 type="button" 
                 className="btn btn-primary" 
                 onClick={() => handleGeneratePdf('generic')}
-                title="Generar formato interno con logo"
-                disabled={fields.length === 0 && aggregatedTools.length === 0}
+                title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido' : "Generar formato interno con logo"}
+                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0)}
               >
                 Generar PDF Genérico
               </button>
