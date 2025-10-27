@@ -42,11 +42,17 @@ const MAGNITUDES_COLORS: Record<string, string> = {
   "Electrica": "#ffee00",
   "Flujo": "#20cde0",
   "Fuerza": "#00e676",
+  "Humedad": "#00b8d4",
+  "Frecuencia": "#ff9100",
+  "Óptica Trazable": "#4a3419ff",
+  "Par Torsional Trazable": "#ff9100",
+  "Reporte Diagnostico": "#806c54ff", 
   "Masa": "#028019",
   "Par Torsional": "#30306D",
   "Presión": "#afafba",
   "Temperatura": "#c87705",
   "Tiempo": "#f33220",
+  "Vibracion Trazable": "#49ae9aff",
 };
 
 // -------- PieChart PRO con Hover Holográfico --------
