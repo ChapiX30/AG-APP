@@ -35,6 +35,8 @@ import {
 // Importa tu hook personalizado de navegación
 import { useNavigation } from '../hooks/useNavigation';
 import { patronesData } from './patronesData'; 
+// *** NUEVA IMPORTACIÓN ***
+import * as ics from 'ics';
 
 // --- IMPORTACIONES DE FIREBASE ---
 import { 
@@ -680,6 +682,70 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     link.click();
   };
 
+  // *** INICIO: NUEVA FUNCIÓN PARA EXPORTAR CALENDARIO ***
+  const handleExportarCalendario = () => {
+    if (data.length === 0) {
+      alert("No hay patrones para exportar.");
+      return;
+    }
+
+    // 1. Mapear los datos de patrones a eventos de calendario
+    const eventos = data
+      .filter(item => item.fecha && item.fecha !== 'Por Comprar') // Filtra los que tienen fecha
+      .map(item => {
+        try {
+          // Usamos UTC para evitar problemas de zona horaria
+          const fechaVencimiento = parseISO(item.fecha);
+          const [year, month, day] = [
+            fechaVencimiento.getUTCFullYear(),
+            fechaVencimiento.getUTCMonth() + 1, // Meses en ics son 1-12
+            fechaVencimiento.getUTCDate()
+          ];
+
+          return {
+            title: `VENCIMIENTO: ${item.descripcion} (${item.noControl})`,
+            start: [year, month, day] as ics.DateArray,
+            duration: { days: 1 }, // Evento de todo el día
+            description: `Patrón: ${item.descripcion}\nNo. Control: ${item.noControl}\nSerie: ${item.serie}\nMarca: ${item.marca}\nServicio: ${item.tipoServicio}`,
+            status: 'CONFIRMED' as ics.EventStatus,
+            busyStatus: 'FREE' as ics.BusyStatus,
+          };
+        } catch (e) {
+          console.error("Error al parsear fecha para ics:", item.fecha);
+          return null; // Omite eventos con fechas inválidas
+        }
+      })
+      .filter(Boolean) as ics.EventAttributes[]; // Filtra nulos
+
+    if (eventos.length === 0) {
+      alert("No hay patrones con fechas válidas para exportar.");
+      return;
+    }
+
+    // 2. Crear el archivo .ics
+    const { error, value } = ics.createEvents(eventos);
+
+    if (error) {
+      console.error("Error al crear archivo ics:", error);
+      alert("Error al generar el archivo de calendario.");
+      return;
+    }
+
+    if (!value) {
+      alert("No se pudo generar el calendario.");
+      return;
+    }
+
+    // 3. Crear el Blob y descargarlo
+    const blob = new Blob([value], { type: 'text/calendar;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `vencimientos_calibracion_${format(new Date(), 'yyyy-MM-dd')}.ics`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+  // *** FIN: NUEVA FUNCIÓN PARA EXPORTAR CALENDARIO ***
+
 
   // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS (MANTENIDA EN MEMORIA POR SI SE USA EN OTRO COMPONENTE) ---
   const getPatronesList = () => {
@@ -886,6 +952,17 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                     <Download className="w-4 h-4" />
                     Exportar
                   </button>
+                  
+                  {/* *** INICIO: NUEVO BOTÓN DE CALENDARIO *** */}
+                  <button
+                    onClick={handleExportarCalendario}
+                    className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Calendario
+                  </button>
+                  {/* *** FIN: NUEVO BOTÓN DE CALENDARIO *** */}
+
                 </div>
               </div>
             </div>
@@ -1436,7 +1513,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Estimada de Regreso</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Estimada de Regreso</label>
                         <input
                           type="date"
                           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"

@@ -48,6 +48,7 @@ export interface RegistroPatron {
 
 const COLLECTION_NAME_PATRONES = "patronesCalibracion"; // Colección de patrones
 
+// --- CATÁLOGO MEJORADO (Datos limpiados de espacios extra) ---
 const BACKPACK_CATALOG = {
   mochila_abraham: {
     nombre: 'Mochila 1 (Abraham)',
@@ -60,7 +61,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/N' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700459' },
     ],
   },
   mochila_Dante: {
@@ -96,7 +97,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' },
-      { herramienta: 'Destornillador ESD', qty: "3", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' },
+      { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' },
       { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/M' },
       { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
@@ -111,10 +112,13 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' },
       { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
       { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
+      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' },
+      { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, // <-- CORREGIDO: Sin espacio al final
+      
     ],
   },
   mochila_Ricardo: {
@@ -290,7 +294,36 @@ const styles = `
     border: 1px solid #ddd; 
     border-radius: 6px; 
     font-size: 0.95rem; /* Ligeramente más grande para mejor tacto */
+    width: 100%; /* Asegura que ocupen todo el ancho del grid */
+    box-sizing: border-box; /* Importante para que el padding no rompa el layout */
+    background-color: #ffffff; /* 🎨 CORRECCIÓN: Asegura fondo blanco */
   }
+  
+  /* 🎨 CORRECCIÓN: Asegurar que las opciones del select también tengan fondo blanco */
+  .form-field select option {
+    background-color: #ffffff;
+    color: #333333;
+  }
+
+  
+  /* --- 🚀 MEJORA: Estilo para mensajes de error --- */
+  .error-message {
+    color: #dc3545; /* Rojo de error */
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 5px;
+    margin-bottom: 0;
+  }
+
+
+  /* --- Estilo para inputs de solo lectura --- */
+  .form-field input.readonly, .tool-table input.readonly {
+    background-color: #f4f4f4;
+    color: #777;
+    cursor: not-allowed;
+    border: 1px solid #eee;
+  }
+
 
   /* --- Estilos de Tabla (CRÍTICO: Scroll Horizontal para Móvil) --- */
   .tool-table-wrapper {
@@ -317,12 +350,41 @@ const styles = `
     font-size: 0.8rem; 
     white-space: nowrap; 
     color: #333; /* <-- CORRECCIÓN APLICADA AQUÍ: Asegura que la fuente sea oscura */
+    border-bottom: 1px solid #f0f0f0; /* Línea sutil entre filas */
   }
   .tool-table th { 
     background-color: #f9f9f9;
     font-size: 0.75rem; 
     color: #333; /* <-- CORRECCIÓN APLICADA AQUÍ: Asegura que el texto del encabezado sea oscuro */
+    text-align: left;
   }
+  .tool-table tbody tr:last-child td {
+      border-bottom: none;
+  }
+  
+  /* Inputs dentro de la tabla */
+  .tool-table input, .tool-table select {
+      width: 100%;
+      padding: 8px;
+      font-size: 0.85rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      /* 🎨 CORRECCIÓN CRÍTICA: Forzar fondo blanco para anular estilos globales */
+      background-color: #ffffff !important; 
+  }
+  .tool-table input:focus, .tool-table select:focus {
+      border-color: #004a99;
+      box-shadow: 0 0 0 2px rgba(0, 74, 153, 0.2);
+      outline: none;
+  }
+  /* 🎨 CORRECCIÓN: Estilo para las opciones del select */
+  .tool-table select option {
+      background-color: #ffffff;
+      color: #333;
+      /* El color de la letra se aplica en línea (inline style) */
+  }
+
 
   /* --- COLORES DE ESTADO DE VENCIMIENTO (Sin cambios, ya definen su color de texto) --- */
   .tool-row-vencido {
@@ -347,11 +409,6 @@ const styles = `
     border-left: 4px solid #198754; 
   }
   
-  .tool-table .btn-danger {
-      padding: 6px 10px;
-      font-size: 0.7rem;
-  }
-
   /* --- Selector de Mochilas Mejorado --- */
   .backpack-selector { 
     display: flex; 
@@ -362,6 +419,15 @@ const styles = `
     padding: 8px 12px; 
     border-radius: 16px;
     font-size: 0.85rem; 
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  /* Ocultar el checkbox real */
+  .backpack-option input {
+    display: none;
   }
   
   /* Asegura que el texto del selector de mochila sea oscuro */
@@ -371,7 +437,78 @@ const styles = `
   }
   .backpack-option input:checked + span { 
     color: #004a99;
+    font-weight: 600;
   }
+  .backpack-option:has(input:checked) {
+      background-color: #e6f0ff;
+      border-color: #004a99;
+  }
+
+
+  /* ======================================================= */
+  /* --- 🚨 SECCIÓN DE CORRECCIÓN DE BOTONES --- */
+  /* ======================================================= */
+  .btn {
+    padding: 10px 15px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    text-decoration: none; /* Por si se usa <a> */
+  }
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  /* Botón Primario (Azul) - Asegura texto blanco */
+  .btn-primary {
+    background-color: #004a99; /* Color que el usuario ya usa */
+    color: #ffffff !important; /* !important para forzar sobre global */
+    border-color: #004a99;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: #003a75; /* Un tono más oscuro */
+  }
+
+  /* Botón Secundario (Gris/Blanco) - Asegura texto oscuro */
+  .btn-secondary {
+    background-color: #f0f0f0; /* Fondo claro */
+    color: #333333 !important; /* !important para forzar texto oscuro */
+    border-color: #ddd;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #e0e0e0;
+  }
+  
+  /* Botón de Peligro (Rojo) - Asegura texto blanco */
+  .btn-danger {
+      background-color: #dc3545;
+      color: #ffffff !important; /* !important para forzar texto blanco */
+      border-color: #dc3545;
+  }
+  .btn-danger:hover:not(:disabled) {
+      background-color: #c82333;
+  }
+  
+  /* Clases de utilidad */
+  .ml-auto {
+      margin-left: auto;
+  }
+  
+  /* Aseguramos que el btn-danger de la tabla se comporte */
+  .tool-table .btn-danger {
+      padding: 6px 10px;
+      font-size: 0.7rem;
+      width: 100%; /* Ocupa el ancho de la celda */
+  }
+  /* --- FIN DE SECCIÓN DE CORRECCIÓN DE BOTONES --- */
+
 
   /* --- Barra de Botones Inferior (Sticky en Móvil) --- */
   .button-bar { 
@@ -388,6 +525,7 @@ const styles = `
     width: 100%;
     box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
     z-index: 10;
+    box-sizing: border-box; /* Asegura que el padding no afecte el ancho */
   }
   
   .button-bar > span { 
@@ -425,10 +563,11 @@ const styles = `
     }
     .button-bar {
       flex-direction: row; 
-      margin: 0 -24px -24px -24px; 
+      /* Quitamos los márgenes negativos para que se alinee con el form-content */
       padding: 16px 24px;
       position: static; 
       box-shadow: none;
+      border-radius: 0 0 12px 12px; /* Redondear esquinas inferiores */
     }
     .button-bar-right {
       flex-direction: row; 
@@ -441,23 +580,78 @@ const styles = `
     .tool-table-wrapper {
         overflow-x: hidden; 
     }
+    .tool-table {
+        min-width: 100%; /* En escritorio, no necesita min-width */
+    }
   }
+
+  /* --- Estilos para Tailwind (si no están cargados) --- */
+  .text-sm { font-size: 0.875rem; }
+  .font-bold { font-weight: 700; }
+  .text-red-700 { color: #b91c1c; }
+  .text-red-600 { color: #dc2626; }
+  .p-2 { padding: 0.5rem; }
+  .bg-red-100 { background-color: #fee2e2; }
+  .border { border-width: 1px; }
+  .border-red-300 { border-color: #fca5a5; }
+  .rounded-lg { border-radius: 0.5rem; }
+  .rounded-full { border-radius: 9999px; }
+  .mb-2 { margin-bottom: 0.5rem; }
+  .w-4 { width: 1rem; }
+  .h-4 { height: 1rem; }
+  .mr-2 { margin-right: 0.5rem; }
+  .inline { display: inline; }
+  .inline-block { display: inline-block; }
+  .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+  .text-xs { font-size: 0.75rem; }
+  .font-semibold { font-weight: 600; }
+  .text-center { text-align: center; }
+  
+  .bg-red-300 { background-color: #fca5a5; }
+  .text-red-800 { color: #991b1b; }
+  .bg-orange-300 { background-color: #fdba74; }
+  .text-orange-800 { color: #9a3412; }
+  .bg-green-300 { background-color: #86efac; }
+  .text-green-800 { color: #166534; }
+  .bg-gray-300 { background-color: #d1d5db; }
+  .text-gray-800 { color: #1f2937; }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .animate-spin { animation: spin 1s linear infinite; }
 `;
 
-// --- LÓGICA DE AGREGACIÓN DE MOCHILAS (Sin cambios) ---
+// --- 🚀 MEJORA: LÓGICA DE AGREGACIÓN DE MOCHILAS MÁS ROBUSTA (ignora espacios) ---
 function aggregateTools(backpackIds: string[]): ToolItem[] {
   const aggregator = new Map<string, ToolItem>();
   for (const id of backpackIds) {
     const backpack = BACKPACK_CATALOG[id];
     if (!backpack) continue;
+    
     for (const item of backpack.items) {
-      const key = `${item.herramienta}|${item.marca}|${item.modelo}|${item.serie}`;
+      // Limpiamos los datos para evitar duplicados por espacios
+      const cleanTool = item.herramienta.trim();
+      const cleanMarca = item.marca.trim();
+      const cleanModelo = item.modelo.trim();
+      const cleanSerie = item.serie.trim();
+      const key = `${cleanTool}|${cleanMarca}|${cleanModelo}|${cleanSerie}`;
+      
       if (aggregator.has(key)) {
         const existing = aggregator.get(key)!;
         const newQty = (Number(existing.qty) || 0) + (Number(item.qty) || 0);
         existing.qty = String(newQty); 
       } else {
-        aggregator.set(key, { ...item, qty: String(item.qty) }); 
+        // Agregamos el item *limpio* al mapa
+        aggregator.set(key, { 
+            herramienta: cleanTool,
+            marca: cleanMarca,
+            modelo: cleanModelo,
+            serie: cleanSerie,
+            qty: String(item.qty) 
+        });
       }
     }
   }
@@ -465,8 +659,12 @@ function aggregateTools(backpackIds: string[]): ToolItem[] {
 }
 
 // =================================================================
-// --- PDF 1: FUNCIÓN PARA GENERAR PDF CELESTICA (Sin cambios) ---
+// --- PDF 1: FUNCIÓN PARA GENERAR PDF CELESTICA ---
 // =================================================================
+
+// 🚀 MEJORA: Constante para "número mágico"
+const MAX_ITEMS_CELESTICA_PDF = 30;
+
 async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
   try {
     const templateUrl = '/template.pdf'; 
@@ -496,7 +694,9 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const xColSerie = 480;
 
     allTools.forEach((tool, index) => {
-      if (index >= 30) return;
+      // Usamos la constante
+      if (index >= MAX_ITEMS_CELESTICA_PDF) return; 
+      
       const y = yStartTable - (index * rowHeight);
       firstPage.drawText(tool.herramienta, { x: xColTool,   y: y, size: fontSize, font, color });
       firstPage.drawText(String(tool.qty), { x: xColQty,    y: y, size: fontSize, font, color });
@@ -654,20 +854,33 @@ const NormasScreen = () => {
   const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   
+  // 🚀 MEJORA: Estado para manejar errores de carga de usuarios
+  const [userFetchError, setUserFetchError] = useState<string | null>(null);
+  
   // --- NUEVOS ESTADOS PARA PATRONES ---
   const [patronesDisponibles, setPatronesDisponibles] = useState<PatronesMap>(new Map());
   const [isLoadingPatrones, setIsLoadingPatrones] = useState(true);
 
 
   // --- 2. HOOK DE FORMULARIO CON VALOR POR DEFECTO ---
-  const { register, control, handleSubmit, setValue, watch, trigger, getValues } = useForm<FormInputs>({
+  // 🚀 MEJORA: Obtenemos "errors" de formState para mostrar mensajes
+  const { 
+    register, 
+    control, 
+    handleSubmit, 
+    setValue, 
+    watch, 
+    trigger, 
+    getValues, 
+    formState: { errors } 
+  } = useForm<FormInputs>({
     defaultValues: {
       fecha: new Date().toISOString().split('T')[0],
       selectedBackpacks: [],
       manualTools: [],
       companiaDepto: 'Equipos y Servicios AG',
     },
-    mode: 'onChange' 
+    mode: 'onChange' // Validar al cambiar
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -678,6 +891,8 @@ const NormasScreen = () => {
   // --- LÓGICA DE FIREBASE PARA CARGAR METRÓLOGOS ---
   useEffect(() => {
     const fetchMetrologos = async () => {
+      // 🚀 MEJORA: Reiniciar el estado de error al intentar cargar
+      setUserFetchError(null); 
       try {
         const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
         const querySnapshot = await getDocs(q);
@@ -688,6 +903,8 @@ const NormasScreen = () => {
         setMetrologos(usersList);
       } catch (error) {
         console.error("Error cargando metrólogos (puesto Metrólogo): ", error);
+        // 🚀 MEJORA: Guardar el mensaje de error para mostrarlo en la UI
+        setUserFetchError("Error al cargar usuarios. Revise la consola.");
       } finally {
         setIsLoadingUsers(false);
       }
@@ -752,24 +969,17 @@ const NormasScreen = () => {
     [watchedManualTools]
   );
   
-  // Lista de patrones disponibles para seleccionar (PatronesDisponibles - Ya Seleccionados)
-  const availablePatronNames = useMemo(() => {
-    const names: string[] = [];
-    patronesDisponibles.forEach((patron, name) => {
-        // Solo lista los patrones que NO están ya en la tabla.
-        // El patrón actual en la fila siempre estará disponible para su propia fila.
-        if (!selectedManualToolNames.has(name)) {
-            names.push(name);
-        }
-    });
-    return names.sort();
-  }, [patronesDisponibles, selectedManualToolNames]);
-
   // Lógica de mochilas se mantiene igual
   const watchedBackpacks = watch('selectedBackpacks');
   const aggregatedTools = useMemo(() => 
     aggregateTools(watchedBackpacks || []), 
     [watchedBackpacks]
+  );
+  
+  // Convertimos el Map de patrones a un Array para poder ordenarlo en el render
+  const allAvailableOptions = useMemo(() => 
+    Array.from(patronesDisponibles.values()).sort((a,b) => a.nombre.localeCompare(b.nombre)),
+    [patronesDisponibles]
   );
 
   // --- Manejador de envío (Aplicando la regla de negocio) ---
@@ -780,11 +990,14 @@ const NormasScreen = () => {
         return;
     }
     
+    // 🚀 MEJORA: trigger() ahora mostrará errores en los campos
     const isValid = await trigger();
     if (!isValid) {
-      alert('Formulario incompleto. Revisa los campos marcados.');
+      console.warn("Formulario inválido. Errores:", errors);
+      alert('Formulario incompleto. Revisa los campos marcados en rojo.');
       return;
     }
+    
     const data = getValues();
     // Aseguramos que solo se incluyan herramientas manuales con un nombre de patrón seleccionado, ya que son los ítems de calibración.
     const validManualTools = data.manualTools.filter(tool => tool.herramienta);
@@ -830,7 +1043,9 @@ const NormasScreen = () => {
               
               <div className="form-field">
                 <label>Fecha</label>
-                <input type="date" {...register('fecha', { required: true })} />
+                {/* 🚀 MEJORA: Mensaje de error personalizado */}
+                <input type="date" {...register('fecha', { required: "La fecha es requerida" })} />
+                {errors.fecha && <p className="error-message">{errors.fecha.message}</p>}
               </div>
 
               {/* --- SELECTOR DE USUARIO (FIREBASE) --- */}
@@ -842,17 +1057,33 @@ const NormasScreen = () => {
                   rules={{ required: "Debes seleccionar un usuario" }}
                   render={({ field }) => (
                     <select {...field} disabled={isLoadingUsers}>
-                      <option value="">
-                        {isLoadingUsers ? 'Cargando usuarios...' : '-- Seleccionar Metrólogo --'}
+                      {/* 🚀 MEJORA: Lógica de carga, error y "no encontrado" */}
+                      <option 
+                        value="" 
+                        style={{ color: '#555555', backgroundColor: '#ffffff' }}
+                      >
+                        {isLoadingUsers 
+                          ? 'Cargando usuarios...' 
+                          : (metrologos.length === 0 ? 'No se encontraron Metrólogos' : '-- Seleccionar Metrólogo --')
+                        }
                       </option>
                       {metrologos.map(user => (
-                        <option key={user.id} value={user.nombre}>
+                        <option 
+                          key={user.id} 
+                          value={user.nombre}
+                          // 🎨 CORRECCIÓN DE ESTILO: Forzar color de texto y fondo
+                          style={{ color: '#333333', backgroundColor: '#ffffff' }}
+                        >
                           {user.nombre}
                         </option>
                       ))}
                     </select>
                   )}
                 />
+                {/* 🚀 MEJORA: Mensaje de error para Controller */}
+                {errors.usuario && <p className="error-message">{errors.usuario.message}</p>}
+                {/* 🚀 MEJORA: Mostrar error de carga de Firebase */}
+                {userFetchError && <p className="error-message">{userFetchError}</p>}
               </div>
               
               <div className="form-field">
@@ -863,7 +1094,8 @@ const NormasScreen = () => {
               {/* --- CAMPO CON VALOR POR DEFECTO --- */}
               <div className="form-field">
                 <label>Compañía y/o Departamento</label>
-                <input type="text" {...register('companiaDepto', { required: true })} />
+                <input type="text" {...register('companiaDepto', { required: "La compañía es requerida" })} />
+                {errors.companiaDepto && <p className="error-message">{errors.companiaDepto.message}</p>}
               </div>
               
               <div className="form-field">
@@ -1014,25 +1246,27 @@ const NormasScreen = () => {
                           className={rowClassName} // Aplicamos la clase aquí
                           style={{ animationDelay: `${index * 30}ms` }}
                         >
-                          <td style={{ width: '40px', textAlign: 'center', color: rowStatus === 'vencido' || rowStatus === 'critico' ? '#9f1c2b' : '#555' }}>{index + 1}</td>
+                          <td style={{ width: '40px', textAlign: 'center' }}>{index + 1}</td>
                           <td>
                             <Controller
                               name={`manualTools.${index}.herramienta`}
                               control={control}
-                              rules={{ required: true }}
+                              rules={{ required: true }} // El error se maneja a nivel de 'trigger'
                               render={({ field }) => (
                                 <select 
                                   {...field}
                                   disabled={isLoadingPatrones}
+                                  // 🎨 APLICAMOS ESTILO AL SELECT SEGÚN EL ESTATUS
+                                  style={{
+                                    // El color de fondo se fuerza con CSS
+                                    color: rowStatus === 'vencido' ? '#9f1c2b' : (rowStatus === 'critico' ? '#925c0e' : '#333'),
+                                    fontWeight: (rowStatus === 'vencido' || rowStatus === 'critico') ? '600' : 'normal',
+                                  }}
                                   onChange={(e) => {
                                     const selectedToolName = e.target.value;
                                     field.onChange(selectedToolName);
                                     
                                     const toolData = patronesDisponibles.get(selectedToolName);
-                                    
-                                    // Aseguramos que solo las opciones NO seleccionadas y el valor actual estén disponibles
-                                    const currentValues = getValues('manualTools').map(t => t.herramienta);
-                                    const alreadySelected = new Set(currentValues.filter((_, i) => i !== index));
                                     
                                     if (toolData) {
                                       // 🚨 ACTUALIZAR EL ESTADO DE VENCIMIENTO INTERNO (isVencida)
@@ -1056,16 +1290,34 @@ const NormasScreen = () => {
                                   <option value="">
                                     {isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}
                                   </option>
-                                  {/* Renderiza solo opciones no seleccionadas previamente y el valor actual */}
-                                  {[...availablePatronNames, currentToolName].filter(name => name && name !== '').map(name => (
-                                    <option 
-                                        key={name} 
-                                        value={name}
-                                        disabled={selectedManualToolNames.has(name) && name !== currentToolName} // Deshabilita si ya fue seleccionado en otra fila
-                                    >
-                                        {name}
-                                    </option>
-                                  ))}
+                                  
+                                  {/* 🎨 Iteramos sobre el array de patrones para aplicar estilo a cada <option> */}
+                                  {allAvailableOptions.map(patron => {
+                                      const isSelectedInAnotherRow = selectedManualToolNames.has(patron.nombre) && patron.nombre !== currentToolName;
+                                      
+                                      // Definir el color para la OPCIÓN
+                                      let optionColor = '#333';
+                                      if (patron.status === 'vencido') optionColor = '#9f1c2b';
+                                      else if (patron.status === 'critico') optionColor = '#925c0e';
+                                      else if (patron.status === 'vigente') optionColor = '#198754';
+
+                                      return (
+                                          <option 
+                                              key={patron.nombre} 
+                                              value={patron.nombre}
+                                              disabled={isSelectedInAnotherRow} // Deshabilita si ya fue seleccionado en otra fila
+                                              style={{ 
+                                                  color: optionColor, 
+                                                  fontWeight: (patron.status === 'vencido' || patron.status === 'critico') ? 'bold' : 'normal',
+                                                  backgroundColor: '#ffffff' // Asegurar fondo blanco en opciones
+                                              }}
+                                          >
+                                              {patron.nombre}
+                                              {patron.status === 'vencido' && ' (Vencido)'}
+                                              {patron.status === 'critico' && ' (Crítico)'}
+                                          </option>
+                                      );
+                                  })}
                                 </select>
                               )}
                             />
@@ -1118,9 +1370,9 @@ const NormasScreen = () => {
                 type="button" 
                 className="btn btn-primary" 
                 onClick={() => handleGeneratePdf('celestica')}
-                style={{ background: '#004a99' }}
                 title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido' : "Generar formato oficial de Celestica"}
-                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0)}
+                // 🚀 MEJORA: Deshabilitado mientras carga datos
+                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0) || isLoadingUsers || isLoadingPatrones}
               >
                 Generar PDF Celestica
               </button>
@@ -1129,7 +1381,8 @@ const NormasScreen = () => {
                 className="btn btn-primary" 
                 onClick={() => handleGeneratePdf('generic')}
                 title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido' : "Generar formato interno con logo"}
-                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0)}
+                // 🚀 MEJORA: Deshabilitado mientras carga datos
+                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0) || isLoadingUsers || isLoadingPatrones}
               >
                 Generar PDF Genérico
               </button>
