@@ -52,7 +52,6 @@ const BACKPACK_CATALOG = {
   mochila_abraham: {
     nombre: 'Mochila 1 (Abraham)',
     items: [
-      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
       { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
@@ -67,7 +66,6 @@ const BACKPACK_CATALOG = {
   mochila_Dante: {
     nombre: 'Mochila 2 (Dante)',
     items: [
-      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
       { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
@@ -81,7 +79,6 @@ const BACKPACK_CATALOG = {
   mochila_Angel: {
     nombre: 'Mochila 3 (Angel)',
     items: [
-      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
       { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
@@ -90,7 +87,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/N' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700192' },
     ],
   },
   mochila_Edgar: {
@@ -110,7 +107,6 @@ const BACKPACK_CATALOG = {
   mochila_Daniel: {
     nombre: 'Mochila 5 (Daniel)',
     items: [
-      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Urrea', modelo: '6-in-1', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' },
       { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
@@ -124,7 +120,6 @@ const BACKPACK_CATALOG = {
   mochila_Ricardo: {
     nombre: 'Mochila 6 (Ricardo)',
     items: [
-      { herramienta: 'Desarmador Plano', qty: "4", marca: 'Klein', modelo: '6-in-1', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
       { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
