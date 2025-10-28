@@ -91,13 +91,11 @@ export interface RegistroPatron {
 // En una app real, esto vendría de un React Context (AuthContext)
 
 // OPCIÓN 1: Usuario Administrador (Puede Editar)
-/*
+// ¡¡ESTÁ ACTIVO POR DEFECTO PARA QUE VEAS QUE CALIDAD SÍ PUEDE EDITAR!!
 const mockCurrentUser = {
   nombre: "Jesús Sustaita",
   puesto: "calidad"
 };
-*/
-
 
 // OPCIÓN 2: Usuario Administrador (Puede Editar)
 // const mockCurrentUser = {
@@ -106,10 +104,13 @@ const mockCurrentUser = {
 // };
 
 // OPCIÓN 3: Usuario Visualizador (No puede editar)
-const mockCurrentUser = {
-nombre: "Abraham Ginez",
-puesto: "Metrólogo"
+// PARA PROBAR, COMENTA LA OPCIÓN 1 Y DESCOMENTA ESTA
+/*
+const mockCurrentUser = {  // <-- ¡CORREGIDO! Ya no tiene [ ]
+  nombre: "Abraham Ginez",
+  puesto: "Metrólogo"
 };
+*/
 // ------------------------------------------
 
 const COLLECTION_NAME = "patronesCalibracion"; // Nombre de tu colección en Firestore
@@ -268,7 +269,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
 
-  // *** CORRECCIÓN AQUI: 'color' -> 'textColor' ***
+  // *** CORRECCIÓN: 'color' -> 'textColor' ***
   const getEstadoProcesoInfo = (estadoProceso: RegistroPatron['estadoProceso']) => {
     switch(estadoProceso) {
       case 'operativo': return { label: 'Operativo', textColor: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: Target, sortValue: 4 };
@@ -2244,6 +2245,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad</label>
+                    {/* *** CORRECCIÓN: </p> -> </option> *** */}
                     <select
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                       value={nuevoRegistro.prioridad}
