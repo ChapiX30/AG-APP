@@ -76,20 +76,20 @@ interface SortConfig {
   direction: 'asc' | 'desc' | null;
 }
 
-// COLUMNAS ESTILO MONDAY.COM CON FOLIO SORTABLE
+// --- MEJORA: COLUMNAS HABILITADAS PARA SER ORDENADAS (SORTABLE) ---
 const DEFAULT_COLUMNS: Column[] = [
   { key: 'folio', label: 'Folio', width: 100, type: "text", sortable: true },
-  { key: 'certificado', label: 'Certificado', width: 120, type: "text" },
-  { key: 'cliente', label: 'Cliente', width: 180, type: "text" },
+  { key: 'certificado', label: 'Certificado', width: 120, type: "text", sortable: true },
+  { key: 'cliente', label: 'Cliente', width: 180, type: "text", sortable: true },
   { key: 'id', label: 'ID', width: 80, type: "text" },
-  { key: 'equipo', label: 'Equipo', width: 150, type: "text" },
+  { key: 'equipo', label: 'Equipo', width: 150, type: "text", sortable: true },
   { key: 'marca', label: 'Marca', width: 120, type: "text" },
   { key: 'modelo', label: 'Modelo', width: 120, type: "text" },
   { key: 'serie', label: 'Serie', width: 100, type: "text" },
-  { key: 'status', label: 'Estado', width: 120, type: "dropdown", options: ["pending","in_progress","completed","cancelled"] },
-  { key: 'priority', label: 'Prioridad', width: 110, type: "dropdown", options: ["low","medium","high","urgent"] },
-  { key: 'assignedTo', label: 'Responsable', width: 140, type: "person" },
-  { key: 'dueDate', label: 'Fecha Límite', width: 130, type: "date" }
+  { key: 'status', label: 'Estado', width: 120, type: "dropdown", options: ["pending","in_progress","completed","cancelled"], sortable: true },
+  { key: 'priority', label: 'Prioridad', width: 110, type: "dropdown", options: ["low","medium","high","urgent"], sortable: true },
+  { key: 'assignedTo', label: 'Responsable', width: 140, type: "person", sortable: true },
+  { key: 'dueDate', label: 'Fecha Límite', width: 130, type: "date", sortable: true }
 ];
 
 const FRIDAY_GROUPS: Group[] = [
@@ -306,7 +306,26 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
             }
             
             if (board.columns) {
-              setColumns(board.columns);
+              // MEJORA: Asegurarse de que las columnas por defecto tengan las propiedades actualizadas
+              const dbColumns = board.columns as Column[];
+              const defaultColumnMap = new Map(DEFAULT_COLUMNS.map(c => [c.key, c]));
+              
+              const mergedColumns = dbColumns.map(dbCol => {
+                const defaultCol = defaultColumnMap.get(dbCol.key);
+                if (defaultCol) {
+                  return { ...defaultCol, ...dbCol }; // Sobrescribir defaults con lo guardado en DB (ej. width, hidden)
+                }
+                return dbCol;
+              });
+              
+              // Añadir columnas default que no estén en la DB (por si se añaden nuevas en el código)
+              DEFAULT_COLUMNS.forEach(defaultCol => {
+                if (!mergedColumns.some(mc => mc.key === defaultCol.key)) {
+                  mergedColumns.push(defaultCol);
+                }
+              });
+
+              setColumns(mergedColumns);
             }
           }
         }, (error) => {
@@ -341,10 +360,9 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
     };
   }, [updateWorksheetInBoard]);
 
-  // --- FUNCIÓN DE ORDENAMIENTO MEJORADA SOLO PARA FOLIO ---
+  // --- MEJORA: FUNCIÓN DE ORDENAMIENTO COMPLETA (NO SOLO FOLIO) ---
   const handleSort = useCallback((columnKey: string) => {
-    // Solo permitir ordenamiento en la columna folio
-    if (columnKey !== 'folio') return;
+    // Quitar la restricción que limitaba solo a 'folio'
     
     setSortConfig(prevConfig => {
       if (prevConfig.key === columnKey) {
@@ -362,11 +380,14 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
     });
   }, []);
 
-  // Aplicar ordenamiento a los grupos
+  // --- MEJORA: APLICAR ORDENAMIENTO "INTELIGENTE" (POR TIPO DE DATO) ---
   const sortedGroups = React.useMemo(() => {
     if (!sortConfig.key || !sortConfig.direction) {
       return groups;
     }
+
+    // Encontrar el tipo de columna para ordenar correctamente
+    const sortColumn = columns.find(c => c.key === sortConfig.key);
 
     return groups.map(group => ({
       ...group,
@@ -377,20 +398,39 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
         if (aVal == null) return 1;
         if (bVal == null) return -1;
         
-        // Conversión a string para comparación consistente
-        const aStr = String(aVal).toLowerCase();
-        const bStr = String(bVal).toLowerCase();
+        let comparison = 0;
+
+        // Lógica de ordenamiento por tipo
+        switch (sortColumn?.type) {
+          case 'date':
+            comparison = new Date(aVal).getTime() - new Date(bVal).getTime();
+            break;
+            
+          case 'number':
+            comparison = parseFloat(aVal) - parseFloat(bVal);
+            break;
+
+          case 'text':
+          case 'dropdown':
+          case 'person':
+          default:
+            const aStr = String(aVal).toLowerCase();
+            const bStr = String(bVal).toLowerCase();
+            if (aStr < bStr) comparison = -1;
+            if (aStr > bStr) comparison = 1;
+            break;
+        }
         
-        if (aStr < bStr) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aStr > bStr) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
+        return sortConfig.direction === 'asc' ? comparison : -comparison;
       })
     }));
-  }, [groups, sortConfig]);
+  }, [groups, sortConfig, columns]); // Añadir columns a las dependencias
 
   // Función para renderizar iconos de ordenamiento EXACTO COMO LA IMAGEN 1
   const renderSortIcon = (columnKey: string) => {
-    if (columnKey !== 'folio') return null;
+    // Solo mostrar ícono si la columna es 'sortable'
+    const col = columns.find(c => c.key === columnKey);
+    if (!col?.sortable) return null;
     
     return (
       <div className="flex flex-col ml-1">
@@ -542,8 +582,6 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
       if (row.id) {
           const docRef = doc(db, "hojasDeTrabajo", row.id);
           
-          // **AJUSTE FINAL:** Si se edita ID, Folio o Certificado, aseguramos que el valor
-          // que se guarda sea el valor editado (finalValue), evitando la reversión.
           const updateData: { [key: string]: any } = { 
             [key]: finalValue,
             lastUpdated: new Date().toISOString()
@@ -651,7 +689,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
       type: addCol.type,
       width: 150,
       options: addCol.options,
-      sortable: false
+      sortable: addCol.type === 'text' || addCol.type === 'number' || addCol.type === 'date' // Hacer sortable por defecto
     };
     
     setColumns(prev => [...prev, newCol]);
@@ -669,6 +707,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
 
   // --- FILTROS ---
   const filteredGroups = React.useMemo(() => {
+    // Usar sortedGroups como base para que el filtro respete el ordenamiento
     return sortedGroups.map(group => ({
       ...group,
       rows: group.rows.filter(row => {
@@ -744,6 +783,31 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
       window.removeEventListener('mouseup', stopResize);
     };
   }, [resizingCol, resizeColumn, stopResize]);
+
+
+  // --- MEJORA: Función para formatear fechas al estilo Monday.com ---
+  const formatMondayDate = (dateString: string) => {
+    if (!dateString) return <span className="text-gray-400">-</span>;
+    try {
+      const date = new Date(dateString);
+      // Ajustar por zona horaria local para evitar "un día antes"
+      const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+      const localDate = new Date(date.getTime() + userTimezoneOffset);
+      
+      const formatted = localDate.toLocaleDateString('es-MX', { 
+        month: 'short', 
+        day: 'numeric' 
+      });
+      // 'es-MX' puede dar "21 sep." -> lo queremos como "sep. 21"
+      const parts = formatted.replace('.', '').split(' ');
+      if (parts.length > 1) {
+        return `${parts[1].substring(0, 3)}. ${parts[0]}`;
+      }
+      return formatted;
+    } catch (e) {
+      return dateString;
+    }
+  };
 
 
   if (!isMobile && sidebarAbierto) {
@@ -890,9 +954,10 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                   {columns.filter(c => !c.hidden).map((col, colIndex) => (
                     <div
                       key={col.key}
-                      className={`column-header-${colIndex} px-3 py-3 border-r border-gray-200 bg-gray-50 font-medium text-gray-700 text-sm select-none flex items-center justify-between relative ${
-                        col.sortable ? 'cursor-pointer hover:bg-gray-100' : ''
-                      }`}
+                      className={clsx(
+                        `column-header-${colIndex} px-3 py-3 border-r border-gray-200 bg-gray-50 font-medium text-gray-700 text-sm select-none flex items-center justify-between relative`,
+                        col.sortable && 'cursor-pointer hover:bg-gray-100'
+                      )}
                       style={{ width: col.width }}
                       draggable
                       onDragStart={(e) => handleDragStart(e, 'column', { columnIndex: colIndex, data: col })}
@@ -921,6 +986,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
               </div>
               
               {/* Grupos y filas ESTILO MONDAY.COM EXACTO */}
+              {/* Usar filteredGroups aquí en lugar de sortedGroups */}
               {filteredGroups.map((group, gidx) => (
                 <div key={group.id}>
                   {/* Header del grupo EXACTO COMO MONDAY.COM */}
@@ -928,7 +994,13 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                     className="bg-white border-b border-gray-100 flex items-center px-4 py-2 cursor-pointer hover:bg-gray-50"
                     onClick={() => {
                       setGroups(prev => prev.map((g, i) => 
-                        i === gidx ? { ...g, collapsed: !g.collapsed } : g
+                        // Referenciar el 'id' del grupo en lugar del 'gidx' para colapsar,
+                        // ya que gidx puede cambiar con el filtrado/sorteo.
+                        // MEJOR: Usar el gidx del map, pero del array 'groups' original.
+                        // Corrección: El gidx de filteredGroups SÍ corresponde al gidx de groups
+                        // si la estructura no cambia, pero 'groups' es el estado fuente.
+                        // Usemos el 'id' del grupo para seguridad.
+                        g.id === group.id ? { ...g, collapsed: !g.collapsed } : g
                       ));
                     }}
                     style={{ minWidth: 'max-content' }}
@@ -944,7 +1016,11 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        addRow(gidx);
+                        // Encontrar el gidx original para 'addRow'
+                        const originalGidx = groups.findIndex(g => g.id === group.id);
+                        if (originalGidx !== -1) {
+                          addRow(originalGidx);
+                        }
                       }}
                       className="ml-auto p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                     >
@@ -953,26 +1029,34 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                   </div>
                   
                   {/* Filas del grupo ESTILO MONDAY.COM EXACTO */}
-                  {!group.collapsed && group.rows.map((row, ridx) => (
+                  {!group.collapsed && group.rows.map((row, ridx) => {
+                    // --- MEJORA: Encontrar los índices originales para edición/selección ---
+                    // Esto es crucial porque 'filteredGroups' tiene índices diferentes a 'groups'
+                    const originalGidx = groups.findIndex(g => g.id === group.id);
+                    const originalRidx = groups[originalGidx]?.rows.findIndex(r => r.id === row.id) ?? -1;
+                    
+                    if (originalRidx === -1) return null; // Fila no encontrada (debería ser raro)
+
+                    return (
                     <div 
-                      key={`${gidx}-${ridx}`} 
+                      key={`${originalGidx}-${originalRidx}`} 
                       className="bg-white border-b border-gray-100 hover:bg-gray-50 flex items-center group"
                       draggable
-                      onDragStart={(e) => handleDragStart(e, 'row', { groupIndex: gidx, rowIndex: ridx, data: row })}
-                      onDragOver={(e) => handleDragOver(e, 'row', { groupIndex: gidx, rowIndex: ridx })}
-                      onDrop={(e) => handleDrop(e, 'row', { groupIndex: gidx, rowIndex: ridx })}
+                      onDragStart={(e) => handleDragStart(e, 'row', { groupIndex: originalGidx, rowIndex: originalRidx, data: row })}
+                      onDragOver={(e) => handleDragOver(e, 'row', { groupIndex: originalGidx, rowIndex: originalRidx })}
+                      onDrop={(e) => handleDrop(e, 'row', { groupIndex: originalGidx, rowIndex: originalRidx })}
                       onDragEnd={handleDragEnd}
                     >
-                      <div className="w-12 px-3 py-2 border-r border-gray-100 flex items-center">
+                      <div className="w-12 px-3 py-2 border-r border-gray-100 flex items-center justify-center">
                         <input 
                           type="checkbox" 
-                          checked={selectedRows.some(sel => sel.gidx === gidx && sel.ridx === ridx)}
+                          checked={selectedRows.some(sel => sel.gidx === originalGidx && sel.ridx === originalRidx)}
                           onChange={(e) => {
                             e.stopPropagation();
                             if (e.target.checked) {
-                              setSelectedRows([...selectedRows, { gidx, ridx }]);
+                              setSelectedRows([...selectedRows, { gidx: originalGidx, ridx: originalRidx }]);
                             } else {
-                              setSelectedRows(selectedRows.filter(sel => !(sel.gidx === gidx && sel.ridx === ridx)));
+                              setSelectedRows(selectedRows.filter(sel => !(sel.gidx === originalGidx && sel.ridx === originalRidx)));
                             }
                           }}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -980,24 +1064,33 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                       </div>
                       
                       {columns.filter(c => !c.hidden).map(col => {
-                        const isEditing = editCell && editCell.gidx === gidx && editCell.ridx === ridx && editCell.key === col.key;
-                        let content = (row as any)[col.key];
+                        const isEditing = editCell && editCell.gidx === originalGidx && editCell.ridx === originalRidx && editCell.key === col.key;
+                        let content: any = (row as any)[col.key];
                         
                         // Renderizado de badges y personas
                         if (col.key === "status") {
                           const s = STATUS_BADGE[(row.status || "pending") as keyof typeof STATUS_BADGE];
-                          content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span>;
+                          content = <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span>;
+                        
                         } else if (col.key === "priority") {
                           const c = PRIORITY_BADGE[(row.priority || "medium") as keyof typeof PRIORITY_BADGE];
-                          content = <span className={`px-2 py-1 rounded-full text-xs font-medium ${c}`}>{row.priority}</span>;
+                          content = <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${c}`}>{row.priority}</span>;
+                        
+                        } else if (col.type === "date") {
+                          content = (
+                            <span className="text-gray-700">
+                              {formatMondayDate(content)}
+                            </span>
+                          );
+                        
                         } else if (col.key === "assignedTo" && col.type === "person") {
                           const met = metrologos.find(m => m.name === row.assignedTo);
                           content = met ? 
-                            <div className="flex items-center">
-                              <div className="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center mr-2 font-medium">
+                            <div className="flex items-center justify-center">
+                              <div className="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center font-medium">
                                 {met.name.charAt(0).toUpperCase()}
                               </div>
-                              <span className="text-sm text-gray-900">{met.name}</span>
+                              {/* <span className="text-sm text-gray-900 ml-2">{met.name}</span> */}
                             </div> : 
                             <span className="text-gray-400 text-sm">-</span>;
                         }
@@ -1005,23 +1098,29 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                         return (
                           <div 
                             key={col.key}
-                            className="border-r border-gray-100 px-3 py-2 text-sm text-gray-900 cursor-pointer relative"
+                            // --- MEJORA: ALINEACIÓN DE CELDA ---
+                            className={clsx(
+                              "border-r border-gray-100 px-3 py-2 text-sm text-gray-900 cursor-pointer relative",
+                              {
+                                "text-center": col.type === 'date' || col.type === 'number' || col.key === 'status' || col.key === 'priority' || col.type === 'person',
+                                "text-left": col.type === 'text' // Asegurar que el texto sea a la izquierda
+                              }
+                            )}
                             style={{ width: col.width }}
                             onClick={(e) => {
                               e.stopPropagation();
                               if (col.type === "dropdown" || col.type === "person" || col.type === "date") {
-                                // Para dropdowns, personas y fechas, al hacer click, activar edición
-                                setEditCell({ gidx, ridx, key: col.key });
+                                setEditCell({ gidx: originalGidx, ridx: originalRidx, key: col.key });
                                 setEditValue((row as any)[col.key] ?? "");
                               } else if (!isEditing) {
-                                setEditCell({ gidx, ridx, key: col.key });
+                                setEditCell({ gidx: originalGidx, ridx: originalRidx, key: col.key });
                                 setEditValue((row as any)[col.key] ?? "");
                               }
                             }}
                           >
                             {isEditing ? (
                               col.type === "dropdown" || col.type === "person" ? (
-                                  <div className="absolute left-0 top-0 w-full bg-white border border-blue-500 rounded shadow-md z-30">
+                                  <div className="absolute left-0 top-0 w-full bg-white border border-blue-500 rounded shadow-md z-30 text-left">
                                     {(col.type === "dropdown" ? col.options : metrologos.map(m => m.name))?.map((option, optionIdx) => (
                                       <div
                                         key={optionIdx}
@@ -1077,7 +1176,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                                     }}
                                     onBlur={(e) => handleSaveCell(e.target.value)} // Pasar valor de input
                                     autoFocus
-                                    className="w-full h-full absolute left-0 top-0 px-2 py-1 border border-blue-500 rounded focus:outline-none bg-white"
+                                    className="w-full h-full absolute left-0 top-0 px-2 py-1 border border-blue-500 rounded focus:outline-none bg-white text-left"
                                   />
                                 ) : (
                                   <input
@@ -1090,12 +1189,16 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                                       if (e.key === "Enter") handleSaveCell();
                                       if (e.key === "Escape") setEditCell(null);
                                     }}
-                                    className="w-full h-full absolute left-0 top-0 px-2 py-1 border border-blue-500 rounded focus:outline-none bg-white"
+                                    className="w-full h-full absolute left-0 top-0 px-2 py-1 border border-blue-500 rounded focus:outline-none bg-white text-left"
                                   />
                                 )
                             ) : (
                               <div
                                 className="min-h-[20px] flex items-center"
+                                // --- MEJORA: ALINEACIÓN DE CONTENIDO ---
+                                style={{ 
+                                  justifyContent: (col.type === 'date' || col.type === 'number' || col.key === 'status' || col.key === 'priority' || col.type === 'person') ? 'center' : 'flex-start' 
+                                }}
                               >
                                 {content || <span className="text-gray-400">-</span>}
                               </div>
@@ -1117,7 +1220,8 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                         </button>
                       </div>
                     </div>
-                  ))}
+                  )}
+                  )}
                   
                   {!group.collapsed && group.rows.length === 0 && (
                     <div className="bg-white border-b border-gray-100">
@@ -1244,6 +1348,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
   }
 
   // VISTA MÓVIL ESTILO MONDAY.COM
+  // (Sin cambios en la vista móvil, las mejoras fueron en la de escritorio)
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header móvil */}
@@ -1291,14 +1396,18 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
       
       {/* Lista móvil estilo Monday.com */}
       <div className="flex-1 overflow-auto">
-        {filteredGroups.map((group, gidx) => (
+        {filteredGroups.map((group, gidx) => {
+          // --- MEJORA MÓVIL: Usar el gidx original para colapsar/agregar ---
+          const originalGidx = groups.findIndex(g => g.id === group.id);
+          
+          return (
           <div key={group.id} className="mb-2">
             {/* Header del grupo móvil */}
             <div 
               className="bg-white mx-4 mt-4 rounded-t-lg px-4 py-3 flex items-center justify-between border-b cursor-pointer"
               onClick={() => {
                 setGroups(prev => prev.map((g, i) => 
-                  i === gidx ? { ...g, collapsed: !g.collapsed } : g
+                  i === originalGidx ? { ...g, collapsed: !g.collapsed } : g
                 ));
               }}
             >
@@ -1315,7 +1424,9 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
-                  addRow(gidx);
+                  if (originalGidx !== -1) {
+                    addRow(originalGidx);
+                  }
                 }}
                 className="p-1 text-gray-400 hover:text-blue-600"
               >
@@ -1326,18 +1437,23 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
             {/* Cards móviles */}
             {!group.collapsed && (
               <div className="bg-white mx-4 rounded-b-lg divide-y">
-                {group.rows.map((row, ridx) => (
-                  <div key={`${gidx}-${ridx}`} className="p-4">
+                {group.rows.map((row, ridx) => {
+                  // --- MEJORA MÓVIL: Encontrar índices originales ---
+                  const originalRidx = groups[originalGidx]?.rows.findIndex(r => r.id === row.id) ?? -1;
+                  if (originalRidx === -1) return null;
+
+                  return (
+                  <div key={`${originalGidx}-${originalRidx}`} className="p-4">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center">
                         <input 
                           type="checkbox" 
-                          checked={selectedRows.some(sel => sel.gidx === gidx && sel.ridx === ridx)}
+                          checked={selectedRows.some(sel => sel.gidx === originalGidx && sel.ridx === originalRidx)}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedRows([...selectedRows, { gidx, ridx }]);
+                              setSelectedRows([...selectedRows, { gidx: originalGidx, ridx: originalRidx }]);
                             } else {
-                              setSelectedRows(selectedRows.filter(sel => !(sel.gidx === gidx && sel.ridx === ridx)));
+                              setSelectedRows(selectedRows.filter(sel => !(sel.gidx === originalGidx && sel.ridx === originalRidx)));
                             }
                           }}
                           className="mr-3"
@@ -1390,7 +1506,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
                       </div>
                     )}
                   </div>
-                ))}
+                )})}
                 
                 {group.rows.length === 0 && (
                   <div className="p-8 text-center text-gray-500">
@@ -1400,7 +1516,7 @@ const FridayScreen: React.FC<FridayScreenProps> = ({ navigate }) => {
               </div>
             )}
           </div>
-        ))}
+        )})}
       </div>
       
       {/* Sidebar móvil */}

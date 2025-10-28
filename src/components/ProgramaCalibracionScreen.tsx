@@ -87,7 +87,31 @@ export interface RegistroPatron {
   historial: HistorialEntry[];
 }
 
-const USUARIO_ACTUAL = "Jesús Sustaita"; // Constante de usuario
+// --- SIMULACIÓN DE CONTEXTO DE USUARIO ---
+// En una app real, esto vendría de un React Context (AuthContext)
+
+// OPCIÓN 1: Usuario Administrador (Puede Editar)
+/*
+const mockCurrentUser = {
+  nombre: "Jesús Sustaita",
+  puesto: "calidad"
+};
+*/
+
+
+// OPCIÓN 2: Usuario Administrador (Puede Editar)
+// const mockCurrentUser = {
+//   nombre: "Viridiana Moreno",
+//   puesto: "calidad"
+// };
+
+// OPCIÓN 3: Usuario Visualizador (No puede editar)
+const mockCurrentUser = {
+nombre: "Abraham Ginez",
+puesto: "Metrólogo"
+};
+// ------------------------------------------
+
 const COLLECTION_NAME = "patronesCalibracion"; // Nombre de tu colección en Firestore
 
 // --- Tipos para el ordenamiento
@@ -125,6 +149,25 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     paqueteria: '', fechaEnvio: format(new Date(), 'yyyy-MM-dd'), fechaEstimadaRegreso: '',
     costo: '', numeroOrden: '', observaciones: '', numeroPaqueteria: '',
   });
+
+  // *** NUEVO ESTADO PARA EL USUARIO ***
+  // Usamos el mock para simular el usuario logueado
+  const [currentUser, setCurrentUser] = useState(mockCurrentUser);
+
+  // *** NUEVA VARIABLE DE PERMISO ***
+  const canEdit = useMemo(() => {
+    if (!currentUser) return false;
+    
+    // La regla es: Puesto "calidad" Y el nombre es uno de los dos.
+    const isAdminName = ['Viridiana Moreno', 'Jesús Sustaita'].includes(currentUser.nombre);
+    const isAdminPuesto = currentUser.puesto === 'calidad';
+    
+    return isAdminName && isAdminPuesto;
+  }, [currentUser]);
+  
+  // *** ACTUALIZAMOS LA CONSTANTE DE USUARIO ***
+  // La usamos para el historial
+  const USUARIO_ACTUAL = currentUser.nombre;
 
   const limpiarDatosEnvio = () => {
     setDatosEnvio({
@@ -225,14 +268,15 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
 
+  // *** CORRECCIÓN AQUI: 'color' -> 'textColor' ***
   const getEstadoProcesoInfo = (estadoProceso: RegistroPatron['estadoProceso']) => {
     switch(estadoProceso) {
-      case 'operativo': return { label: 'Operativo', color: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: Target, sortValue: 4 };
-      case 'programado': return { label: 'Programado', color: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', icon: Calendar, sortValue: 2 };
-      case 'en_proceso': return { label: 'En Proceso', color: 'text-orange-700', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', icon: Wrench, sortValue: 1 };
-      case 'completado': return { label: 'Completado', color: 'text-green-700', bgColor: 'bg-green-50', borderColor: 'border-green-200', icon: CheckCircle2, sortValue: 3 };
-      case 'fuera_servicio': return { label: 'Fuera de Servicio', color: 'text-red-700', bgColor: 'bg-red-50', borderColor: 'border-red-200', icon: XCircle, sortValue: 0 };
-      default: return { label: 'Desconocido', color: 'text-gray-700', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', icon: AlertCircle, sortValue: 5 };
+      case 'operativo': return { label: 'Operativo', textColor: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: Target, sortValue: 4 };
+      case 'programado': return { label: 'Programado', textColor: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', icon: Calendar, sortValue: 2 };
+      case 'en_proceso': return { label: 'En Proceso', textColor: 'text-orange-700', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', icon: Wrench, sortValue: 1 };
+      case 'completado': return { label: 'Completado', textColor: 'text-green-700', bgColor: 'bg-green-50', borderColor: 'border-green-200', icon: CheckCircle2, sortValue: 3 };
+      case 'fuera_servicio': return { label: 'Fuera de Servicio', textColor: 'text-red-700', bgColor: 'bg-red-50', borderColor: 'border-red-200', icon: XCircle, sortValue: 0 };
+      default: return { label: 'Desconocido', textColor: 'text-gray-700', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', icon: AlertCircle, sortValue: 5 };
     }
   };
 
@@ -312,6 +356,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   // --- MANIPULACIÓN DE DATOS (FIREBASE) ---
   
   const ejecutarAccion = async () => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para realizar esta acción.");
+      setAccionModalOpen(false);
+      return;
+    }
+    // **********************************
+
     if (!equipoSeleccionado || !accionSeleccionada || !equipoSeleccionado.id) return;
     setLoading(true);
 
@@ -410,6 +462,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const handleGuardar = async () => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para agregar nuevos patrones.");
+      setModalOpen(false);
+      return;
+    }
+    // **********************************
+
     if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion || !nuevoRegistro.fecha) {
       alert('Por favor complete los campos obligatorios');
       return;
@@ -446,6 +506,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const guardarEdicion = async () => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para editar patrones.");
+      setEditModalOpen(false);
+      return;
+    }
+    // **********************************
+
     if (!equipoEditando || !equipoEditando.id) return;
     setLoading(true);
     
@@ -480,6 +548,13 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
   
   const handleEliminar = async (id: string) => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para eliminar patrones.");
+      return;
+    }
+    // **********************************
+
     setLoading(true);
     try {
         const docRef = doc(db, COLLECTION_NAME, id);
@@ -496,6 +571,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const procesarEnvioCalibracion = async () => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para registrar acciones.");
+      setCalibracionModalOpen(false);
+      return;
+    }
+    // **********************************
+
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
 
@@ -529,6 +612,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const procesarMantenimiento = async () => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para registrar acciones.");
+      setMantenimientoModalOpen(false);
+      return;
+    }
+    // **********************************
+
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
 
@@ -562,6 +653,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const procesarVerificacion = async () => {
+    // *** NUEVA VALIDACIÓN DE PERMISO ***
+    if (!canEdit) {
+      alert("No tiene permisos para registrar acciones.");
+      setVerificacionModalOpen(false);
+      return;
+    }
+    // **********************************
+    
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
 
@@ -938,13 +1037,19 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 </div>
 
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => setModalOpen(true)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Nuevo Patrón
-                  </button>
+                  
+                  {/* *** MODIFICACIÓN: Botón "Nuevo Patrón" solo para Admins *** */}
+                  {canEdit && (
+                    <button
+                      onClick={() => setModalOpen(true)}
+                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Nuevo Patrón
+                    </button>
+                  )}
+                  {/* *** FIN DE MODIFICACIÓN *** */}
+                  
                   <button
                     onClick={handleExportar}
                     className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
@@ -1045,6 +1150,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                               </div>
                             </td>
                             <td className="p-4">
+                              {/* *** CORRECCIÓN: Se usa "textColor" de estadoProcesoInfo *** */}
                               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${estadoProcesoInfo.bgColor} ${estadoProcesoInfo.textColor} ${estadoProcesoInfo.borderColor} border`}>
                                 <EstadoProcesoIcon className="w-3 h-3" />
                                 {estadoProcesoInfo.label}
@@ -1061,45 +1167,51 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                               </span>
                             </td>
                             <td className="p-4">
+                              {/* *** MODIFICACIÓN: Mostrar/Ocultar acciones por permiso *** */}
                               <div className="flex items-center gap-2">
-                                 <div className="relative inline-block text-left">
-                                    <button
-                                      className="group inline-flex justify-center text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 p-2 rounded-lg"
-                                      onClick={(e) => {
-                                          const menu = e.currentTarget.nextElementSibling;
-                                          if (menu) menu.classList.toggle('hidden');
-                                      }}
-                                      onBlur={(e) => {
-                                          if (!e.currentTarget.parentNode?.contains(e.relatedTarget as Node)) {
-                                              e.currentTarget.nextElementSibling?.classList.add('hidden');
-                                          }
-                                      }}
-                                    >
-                                      <Wrench className="w-4 h-4" />
-                                      <ChevronDown className="-mr-1 ml-1 h-4 w-4 flex-shrink-0 text-gray-400 group-hover:text-gray-500" aria-hidden="true" />
-                                    </button>
-                                    <div className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden" role="menu">
-                                        <div className="py-1">
-                                        {accionesDisponibles.map((accion) => {
-                                            const AccionIcon = accion.icon;
-                                            return (
-                                                <button
-                                                    key={accion.id}
-                                                    onClick={(e) => {
-                                                        abrirModalAccion(item, accion.id);
-                                                        (e.currentTarget.closest('[role=menu]') as HTMLElement).classList.add('hidden');
-                                                    }}
-                                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                                >
-                                                    <AccionIcon className="w-4 h-4 inline mr-2" />
-                                                    {accion.label}
-                                                </button>
-                                            );
-                                        })}
-                                        </div>
-                                    </div>
-                                </div>
                                 
+                                {/* El dropdown de Acciones (Wrench) SÓLO para admins */}
+                                {canEdit && (
+                                  <div className="relative inline-block text-left">
+                                      <button
+                                        className="group inline-flex justify-center text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 p-2 rounded-lg"
+                                        onClick={(e) => {
+                                            const menu = e.currentTarget.nextElementSibling;
+                                            if (menu) menu.classList.toggle('hidden');
+                                        }}
+                                        onBlur={(e) => {
+                                            if (!e.currentTarget.parentNode?.contains(e.relatedTarget as Node)) {
+                                                e.currentTarget.nextElementSibling?.classList.add('hidden');
+                                            }
+                                        }}
+                                      >
+                                        <Wrench className="w-4 h-4" />
+                                        <ChevronDown className="-mr-1 ml-1 h-4 w-4 flex-shrink-0 text-gray-400 group-hover:text-gray-500" aria-hidden="true" />
+                                      </button>
+                                      <div className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden" role="menu">
+                                          <div className="py-1">
+                                          {accionesDisponibles.map((accion) => {
+                                              const AccionIcon = accion.icon;
+                                              return (
+                                                  <button
+                                                      key={accion.id}
+                                                      onClick={(e) => {
+                                                          abrirModalAccion(item, accion.id);
+                                                          (e.currentTarget.closest('[role=menu]') as HTMLElement).classList.add('hidden');
+                                                      }}
+                                                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                  >
+                                                      <AccionIcon className="w-4 h-4 inline mr-2" />
+                                                      {accion.label}
+                                                  </button>
+                                              );
+                                          })}
+                                          </div>
+                                      </div>
+                                  </div>
+                                )}
+                                
+                                {/* El botón de Historial es visible para TODOS */}
                                 <button
                                   onClick={() => abrirHistorial(item)}
                                   className="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-lg text-xs transition-all duration-200 hover:shadow-md"
@@ -1107,15 +1219,20 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                                 >
                                   <History className="w-3 h-3" />
                                 </button>
-                                {/* Botón de Eliminar */}
-                                <button 
-                                  onClick={() => item.id && handleEliminar(item.id)}
-                                  className="p-2 text-red-500 hover:text-red-700" 
-                                  title="Eliminar"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+
+                                {/* Botón de Eliminar SÓLO para admins */}
+                                {canEdit && (
+                                  <button 
+                                    onClick={() => item.id && handleEliminar(item.id)}
+                                    className="p-2 text-red-500 hover:text-red-700" 
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                                
                               </div>
+                              {/* *** FIN DE MODIFICACIÓN *** */}
                             </td>
                           </motion.tr>
                         );

@@ -14,22 +14,21 @@ import { ArrowLeft, User, Archive, ListPlus, Loader2 } from 'lucide-react';
 // --- 1. DATOS Y CATÁLOGOS ---
 // ==================================================================
 
-// Interfaz para la herramienta estática de la base de datos (simplificada para el select)
+// 🚨 CAMBIO 1: Interfaz actualizada para incluir noControl
 interface PatronBase {
-    nombre: string;
+    noControl: string; // <-- AÑADIDO
+    nombre: string; // <-- (Ahora será "AG-XXX - Nombre")
     marca: string;
     modelo: string;
     serie: string;
-    // NUEVO: Campo para almacenar la fecha de vencimiento
     fechaVencimiento: string;
-    // NUEVO: Estado del patrón para la UI (vigente, vencido, etc.)
     status: 'vigente' | 'vencido' | 'critico' | 'proximo' | 'pendiente'; 
 }
 
 // Interfaz completa de RegistroPatron del otro componente
 export interface RegistroPatron {
     id?: string;
-    noControl: string;
+    noControl: string; // <-- ESTE ES EL DATO QUE USAREMOS
     descripcion: string;
     serie: string;
     marca: string;
@@ -117,7 +116,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' },
-      { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, // <-- CORREGIDO: Sin espacio al final
+      { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, 
       
     ],
   },
@@ -152,7 +151,7 @@ type FormInputs = {
   companiaDepto: string;
   noEmpleado: string;
   selectedBackpacks: string[];
-  manualTools: ToolItem & { isVencida?: boolean }[]; // Agregamos un indicador de vencimiento al tipo de campo
+  manualTools: ToolItem & { isVencida?: boolean }[]; 
 };
 
 // ==================================================================
@@ -289,6 +288,7 @@ const styles = `
     color: #555; 
     font-size: 0.875rem;
   }
+  /* 🎨 CORRECCIÓN: Forzar fondo blanco y texto oscuro en inputs/selects del formulario */
   .form-field input, .form-field select { 
     padding: 10px; 
     border: 1px solid #ddd; 
@@ -296,10 +296,11 @@ const styles = `
     font-size: 0.95rem; /* Ligeramente más grande para mejor tacto */
     width: 100%; /* Asegura que ocupen todo el ancho del grid */
     box-sizing: border-box; /* Importante para que el padding no rompa el layout */
-    background-color: #ffffff; /* 🎨 CORRECCIÓN: Asegura fondo blanco */
+    background-color: #ffffff !important; 
+    color: #333333 !important; 
   }
   
-  /* 🎨 CORRECCIÓN: Asegurar que las opciones del select también tengan fondo blanco */
+  /* 🎨 CORRECCIÓN: Asegurar que las opciones del select también tengan fondo blanco y texto oscuro */
   .form-field select option {
     background-color: #ffffff;
     color: #333333;
@@ -372,6 +373,8 @@ const styles = `
       box-sizing: border-box;
       /* 🎨 CORRECCIÓN CRÍTICA: Forzar fondo blanco para anular estilos globales */
       background-color: #ffffff !important; 
+      /* 🎨 CORRECCIÓN: Forzar texto oscuro (será sobreescrito por el style={} en el select de patrones) */
+      color: #333333 !important;
   }
   .tool-table input:focus, .tool-table select:focus {
       border-color: #004a99;
@@ -913,7 +916,7 @@ const NormasScreen = () => {
     fetchMetrologos();
   }, []);
   
-  // --- LÓGICA DE FIREBASE PARA CARGAR PATRONES (AÑADIMOS LA LÓGICA DE VENCIMIENTO AQUÍ) ---
+  // 🚨 CAMBIO 2: Lógica de fetchPatrones actualizada
   const fetchPatrones = useCallback(async () => {
     setIsLoadingPatrones(true);
     try {
@@ -923,19 +926,24 @@ const NormasScreen = () => {
 
       querySnapshot.forEach((doc) => {
         const data = doc.data() as RegistroPatron;
-        const key = data.descripcion.trim(); 
+        const descripcion = data.descripcion.trim(); 
+        const noControl = data.noControl || 'S/N'; // <-- Obtenemos el noControl
         
-        // 🚨 LÓGICA CRÍTICA DE VENCIMIENTO APLICADA EN LA CARGA
+        // <-- Creamos el nombre a mostrar
+        const displayName = `${noControl} - ${descripcion}`; 
+        
         const status = getVencimientoStatus(data.fecha);
 
-        if (key && !patronesMap.has(key)) {
-            patronesMap.set(key, { 
-                nombre: key, 
+        // <-- Usamos el displayName como la llave del mapa
+        if (displayName && !patronesMap.has(displayName)) {
+            patronesMap.set(displayName, { 
+                noControl: noControl,
+                nombre: displayName, // <-- Guardamos el nombre combinado
                 marca: data.marca || 'S/M', 
                 modelo: data.modelo || 'S/M', 
                 serie: data.serie || 'S/N',
-                fechaVencimiento: data.fecha, // Guardar la fecha
-                status: status,              // Guardar el estado
+                fechaVencimiento: data.fecha, 
+                status: status,              
             });
         }
       });
@@ -964,6 +972,7 @@ const NormasScreen = () => {
   }, [watchedManualTools]);
   
   // Lista de nombres de herramientas manuales ya seleccionadas
+  // (Ahora contendrá el "AG-XXX - Nombre")
   const selectedManualToolNames = useMemo(() => 
     new Set(watchedManualTools.map(tool => tool.herramienta).filter(Boolean)),
     [watchedManualTools]
@@ -977,6 +986,7 @@ const NormasScreen = () => {
   );
   
   // Convertimos el Map de patrones a un Array para poder ordenarlo en el render
+  // (Sigue funcionando, ya que ordena por `patron.nombre` que ahora es "AG-XXX - ...")
   const allAvailableOptions = useMemo(() => 
     Array.from(patronesDisponibles.values()).sort((a,b) => a.nombre.localeCompare(b.nombre)),
     [patronesDisponibles]
@@ -999,7 +1009,7 @@ const NormasScreen = () => {
     }
     
     const data = getValues();
-    // Aseguramos que solo se incluyan herramientas manuales con un nombre de patrón seleccionado, ya que son los ítems de calibración.
+    // (Ahora `data.manualTools.herramienta` ya tiene el "AG-XXX - Nombre")
     const validManualTools = data.manualTools.filter(tool => tool.herramienta);
     const allTools = [...aggregatedTools, ...validManualTools];
     
@@ -1227,6 +1237,7 @@ const NormasScreen = () => {
                       </tr>
                     )}
                     {fields.map((item, index) => {
+                      // 🚨 CAMBIO 3: `currentToolName` ahora es "AG-XXX - Nombre"
                       const currentToolName = watchedManualTools[index]?.herramienta;
                       const rowStatus = patronesDisponibles.get(currentToolName)?.status || 'pendiente';
                       
@@ -1263,10 +1274,12 @@ const NormasScreen = () => {
                                     fontWeight: (rowStatus === 'vencido' || rowStatus === 'critico') ? '600' : 'normal',
                                   }}
                                   onChange={(e) => {
-                                    const selectedToolName = e.target.value;
+                                    // `selectedToolName` ahora es "AG-XXX - Nombre"
+                                    const selectedToolName = e.target.value; 
                                     field.onChange(selectedToolName);
                                     
-                                    const toolData = patronesDisponibles.get(selectedToolName);
+                                    // Buscamos en el mapa por el "AG-XXX - Nombre"
+                                    const toolData = patronesDisponibles.get(selectedToolName); 
                                     
                                     if (toolData) {
                                       // 🚨 ACTUALIZAR EL ESTADO DE VENCIMIENTO INTERNO (isVencida)
@@ -1293,6 +1306,7 @@ const NormasScreen = () => {
                                   
                                   {/* 🎨 Iteramos sobre el array de patrones para aplicar estilo a cada <option> */}
                                   {allAvailableOptions.map(patron => {
+                                      // `patron.nombre` es "AG-XXX - Nombre"
                                       const isSelectedInAnotherRow = selectedManualToolNames.has(patron.nombre) && patron.nombre !== currentToolName;
                                       
                                       // Definir el color para la OPCIÓN
@@ -1303,16 +1317,16 @@ const NormasScreen = () => {
 
                                       return (
                                           <option 
-                                              key={patron.nombre} 
-                                              value={patron.nombre}
-                                              disabled={isSelectedInAnotherRow} // Deshabilita si ya fue seleccionado en otra fila
+                                              key={patron.nombre} // <-- Usamos el nombre combinado como key
+                                              value={patron.nombre} // <-- Usamos el nombre combinado como value
+                                              disabled={isSelectedInAnotherRow} // Deshabilita si ya seleccionado en otra fila
                                               style={{ 
                                                   color: optionColor, 
                                                   fontWeight: (patron.status === 'vencido' || patron.status === 'critico') ? 'bold' : 'normal',
                                                   backgroundColor: '#ffffff' // Asegurar fondo blanco en opciones
                                               }}
                                           >
-                                              {patron.nombre}
+                                              {patron.nombre} {/* <-- Mostramos el nombre combinado */}
                                               {patron.status === 'vencido' && ' (Vencido)'}
                                               {patron.status === 'critico' && ' (Crítico)'}
                                           </option>
