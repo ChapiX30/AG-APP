@@ -17,7 +17,7 @@ import {
 } from 'firebase/storage';
 import { getFcmToken, onForegroundMessage } from '../utils/firebase';
 
-// ============= CONFIGURACIÓN DE MENÚ =============
+// ============= CONFIGURACIÓN DE MENÚ (MODIFICADA) =============
 const menuItems = [
   { 
     id: 'calendario', 
@@ -78,28 +78,29 @@ const menuItems = [
   { 
     id: 'hojas-trabajo', 
     title: 'Hojas de Trabajo', 
-    icon: FileText, 
-    gradient: 'from-slate-600 to-slate-700',
-    description: 'Próximamente',
-    available: false 
+    icon: FileText, // Icono actualizado
+    gradient: 'from-indigo-500 via-purple-500 to-pink-500', // Gradiente actualizado
+    description: 'Gestión de documentos de trabajo', // Descripción actualizada
+    available: false // Actualizado a true
   },
   { 
     id: 'normas', 
     title: 'Hojas de Herramienta', 
-    icon: BookOpen, 
-    gradient: 'from-slate-600 to-slate-700',
-    description: 'Próximamente',
+    icon: BookOpen, // Icono actualizado
+    gradient: 'from-rose-500 via-red-500 to-orange-500', // Gradiente actualizado
+    description: 'Acceso a normativas y guías', // Descripción actualizada
     available: true 
   },
   { 
     id: 'programa-calibracion', 
     title: 'Patrones', 
-    icon: Settings, 
-    gradient: 'from-slate-600 to-slate-700',
-    description: 'Próximamente',
-    available: true 
+    icon: Award, // Icono actualizado
+    gradient: 'from-yellow-500 via-amber-500 to-orange-500', // Gradiente actualizado
+    description: 'Administración de patrones de referencia', // Descripción actualizada
+    available: true // Actualizado a true
   },
 ];
+
 
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
@@ -183,7 +184,7 @@ export const MainMenu: React.FC = () => {
     return () => unsub();
   }, [uid, editName]);
 
-  // Efecto para el Tip del Metrólogo (MODIFICADO)
+  // Efecto para el Tip del Metrólogo
   useEffect(() => {
     // Si es Metrólogo y tiene un contador, mostrar el tip
     if (isMetrologo && equipmentCount > 0) {
@@ -192,8 +193,6 @@ export const MainMenu: React.FC = () => {
       // Si no, ocultarlo (si el contador baja a 0 o cambia de rol)
       setShowMetrologoTip(false);
     }
-    // Ya no hay timer de 8 segundos. Se queda visible hasta que el usuario lo cierre
-    // o las condiciones dejen de cumplirse.
   }, [isMetrologo, equipmentCount]);
 
   // Efecto para servicios asignados y notificaciones
@@ -316,7 +315,7 @@ export const MainMenu: React.FC = () => {
 
   // ============= COMPONENTES DE UI =============
   
-  // Componente Modal de Perfil (sin cambios)
+  // Componente Modal de Perfil
   const ProfileModal = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-md bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
@@ -414,7 +413,7 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // Componente Banner de Asignados (sin cambios)
+  // Componente Banner de Asignados
   const AssignedBanner = () => (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 animate-slideDown">
       <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500/90 via-teal-500/90 to-cyan-500/90 backdrop-blur-xl border border-white/20 shadow-2xl">
@@ -428,29 +427,58 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // ============= LÓGICA DE NIVELES =============
-  // Definición de niveles y títulos
+  // ============= LÓGICA DE NIVELES (CON COLORES) =============
   const levelDefinitions = [
-    { min: 0, title: 'Grado I' },
-    { min: 10, title: 'Grado II' },
-    { min: 25, title: 'Grado III' },
-    { min: 50, title: 'Grado IV' },
-    { min: 75, title: 'Grado V' },
-    { min: 100, title: 'Grado VI' },
-    { min: 150, title: 'Grado Leyenda' } // Nivel superior
+    // Nivel 1 (Azul/Cian)
+    { min: 0, title: 'I', 
+      badge: 'bg-gradient-to-r from-cyan-500 to-blue-500', 
+      titleColor: 'text-cyan-300', 
+      progress: 'from-cyan-500 via-blue-500 to-indigo-500' },
+    // Nivel 2 (Verde/Esmeralda)
+    { min: 10, title: 'II', 
+      badge: 'bg-gradient-to-r from-emerald-500 to-green-500', 
+      titleColor: 'text-emerald-300', 
+      progress: 'from-emerald-500 via-green-500 to-teal-500' },
+    // Nivel 3 (Amarillo/Ámbar)
+    { min: 25, title: 'III', 
+      badge: 'bg-gradient-to-r from-amber-500 to-yellow-500', 
+      titleColor: 'text-amber-300', 
+      progress: 'from-amber-500 via-yellow-500 to-orange-500' },
+    // Nivel 4 (Naranja/Rojo)
+    { min: 50, title: 'IV', 
+      badge: 'bg-gradient-to-r from-orange-500 to-red-500', 
+      titleColor: 'text-orange-300', 
+      progress: 'from-orange-500 via-red-500 to-rose-500' },
+    // Nivel 5 (Púrpura/Violeta)
+    { min: 75, title: 'V', 
+      badge: 'bg-gradient-to-r from-purple-500 to-violet-500', 
+      titleColor: 'text-purple-300', 
+      progress: 'from-purple-500 via-violet-500 to-fuchsia-500' },
+    // Nivel 6 (Fucsia/Rosa)
+    { min: 100, title: 'VI', 
+      badge: 'bg-gradient-to-r from-fuchsia-500 to-pink-500', 
+      titleColor: 'text-fuchsia-300', 
+      progress: 'from-fuchsia-500 via-pink-500 to-rose-500' },
+    // Nivel 7 (Legendario - Fuego/Oro)
+    { min: 150, title: 'Leyenda', 
+      badge: 'bg-gradient-to-r from-amber-500 to-red-600', 
+      titleColor: 'text-amber-300', 
+      progress: 'from-amber-500 via-red-500 to-rose-600' }
   ];
 
-  // Componente de Progreso de Metrólogo (MODIFICADO)
+
+  // Componente de Progreso de Metrólogo (CON COLORES)
   const MetrologoProgressTip = () => {
-    // No mostrar si no es metrólogo, si el estado de visibilidad es falso, o si el contador es 0
-    // El useEffect padre se encarga de esto, pero doble chequeo
     if (!isMetrologo || !showMetrologoTip || equipmentCount === 0) return null;
     
     // --- Lógica de Niveles ---
     const currentLevelData = [...levelDefinitions].reverse().find(l => equipmentCount >= l.min)!;
     const currentLevelIndex = levelDefinitions.findIndex(l => l.title === currentLevelData.title);
     const level = currentLevelIndex + 1;
-    const title = currentLevelData.title;
+    
+    // Extraemos los nuevos valores de color
+    const { title, badge, titleColor, progress: progressGradient } = currentLevelData;
+    
     const nextLevelData = levelDefinitions[currentLevelIndex + 1];
     
     // --- Cálculo de Progreso ---
@@ -470,13 +498,11 @@ export const MainMenu: React.FC = () => {
 
     // --- Renderizado del Componente ---
     return (
-      // MODIFICADO: Ajuste de ancho responsivo para móviles
       <div className="fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100%-3rem)] animate-fadeInUp">
         <div className="relative px-5 py-4 rounded-2xl bg-slate-900/90 backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300">
           
-          {/* NUEVO: Botón de cerrar */}
           <button
-            onClick={() => setShowMetrologoTip(false)} // Llama al setter del estado
+            onClick={() => setShowMetrologoTip(false)}
             className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white text-xl font-bold flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 leading-none pb-0.5"
             aria-label="Cerrar notificación de progreso"
           >
@@ -486,26 +512,26 @@ export const MainMenu: React.FC = () => {
           {/* Encabezado */}
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-bold text-lg text-white">Progreso Mensual</h4>
-            <span className="px-3 py-1 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-xs font-bold text-white shadow-lg">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${badge}`}>
               NIVEL {level}
             </span>
           </div>
           
           {/* Título de Rango */}
           <div className="flex items-center gap-2 mb-3">
-            <Award className="w-5 h-5 text-cyan-400" />
-            <p className="text-base font-semibold text-cyan-300">{title}</p>
+            <Award className={`w-5 h-5 ${titleColor}`} />
+            <p className={`text-base font-semibold ${titleColor}`}>{title}</p>
           </div>
 
           {/* Barra de Progreso */}
           <div className="w-full bg-slate-700/50 rounded-full h-3 mb-1 border border-white/10 overflow-hidden">
             <div 
-              className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 transition-all duration-500 ease-out" 
+              className={`h-full rounded-full bg-gradient-to-r ${progressGradient} transition-all duration-500 ease-out`} 
               style={{ width: `${progress}%` }}
             ></div>
           </div>
           
-          {/* Texto de Progreso (debajo de la barra) */}
+          {/* Texto de Progreso */}
           <div className="flex justify-between items-baseline mb-3">
             <span className="text-xs font-medium text-white/60">
               {isMaxLevel ? '¡Nivel Máximo!' : `Próximo: ${nextLevelData.title}`}
@@ -540,7 +566,7 @@ export const MainMenu: React.FC = () => {
     );
   };
   
-  // ============= LAYOUT DESKTOP (sin cambios) =============
+  // ============= LAYOUT DESKTOP =============
   const DesktopLayout = () => (
     <div className="hidden lg:block min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Efectos de fondo */}
@@ -668,7 +694,7 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // ============= LAYOUT MOBILE (sin cambios) =============
+  // ============= LAYOUT MOBILE =============
   const MobileLayout = () => (
     <div className="lg:hidden min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Efectos de fondo mobile */}
@@ -774,8 +800,6 @@ export const MainMenu: React.FC = () => {
       {showProfile && <ProfileModal />}
       {showAssignedBanner && <AssignedBanner />}
       
-      {/* Tip de Progreso (ahora con botón de cerrar) */}
-      {/* El 'showMetrologoTip' es controlado por el useEffect y el nuevo botón 'X' */}
       {showMetrologoTip && <MetrologoProgressTip />} 
       
       <DesktopLayout />
