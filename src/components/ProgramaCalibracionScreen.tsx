@@ -93,7 +93,7 @@ export interface RegistroPatron {
 // OPCIÓN 1: Usuario Administrador (Puede Editar)
 // ¡¡ESTÁ ACTIVO POR DEFECTO PARA QUE VEAS QUE CALIDAD SÍ PUEDE EDITAR!!
 const mockCurrentUser = {
-  nombre: "Jesús Sustaita",
+  nombre: "Viridiana Moreno",
   puesto: "calidad"
 };
 

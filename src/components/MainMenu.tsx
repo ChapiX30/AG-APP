@@ -112,7 +112,7 @@ export const MainMenu: React.FC = () => {
     ((u?.role ?? "").trim().toLowerCase()) || "";
 
   const isJefe = getRole(user) === "administrativo";
-  const isMetrologo = getRole(user) === "metrólogo"; // 👈 Nuevo rol para la lógica del tip
+  const isMetrologo = getRole(user) === "metrólogo"; // 👈 Rol para la lógica del tip
 
   const menuItemsFiltered = menuItems.filter(item => {
     if (item.id === "calibration-stats") return isJefe;
@@ -125,10 +125,9 @@ export const MainMenu: React.FC = () => {
   // ============= ESTADOS =============
   const [showProfile, setShowProfile] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showEquipmentCounter, setShowEquipmentCounter] = useState(true);
   const [showAssignedBanner, setShowAssignedBanner] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showMetrologoTip, setShowMetrologoTip] = useState(false); // 👈 Nuevo estado para el tip
+  const [showMetrologoTip, setShowMetrologoTip] = useState(false); // 👈 Estado para el tip
 
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -184,18 +183,17 @@ export const MainMenu: React.FC = () => {
     return () => unsub();
   }, [uid, editName]);
 
-  // Efecto para el Tip del Metrólogo (NEW)
+  // Efecto para el Tip del Metrólogo (MODIFICADO)
   useEffect(() => {
-    // Si no es Metrólogo o el contador es 0 (aún no se carga), no hacer nada
-    if (!isMetrologo || equipmentCount === 0) return;
-    
-    // Mostrar el tip por 8 segundos
-    setShowMetrologoTip(true);
-    const timer = setTimeout(() => {
+    // Si es Metrólogo y tiene un contador, mostrar el tip
+    if (isMetrologo && equipmentCount > 0) {
+      setShowMetrologoTip(true);
+    } else {
+      // Si no, ocultarlo (si el contador baja a 0 o cambia de rol)
       setShowMetrologoTip(false);
-    }, 8000); 
-
-    return () => clearTimeout(timer); // Limpieza
+    }
+    // Ya no hay timer de 8 segundos. Se queda visible hasta que el usuario lo cierre
+    // o las condiciones dejen de cumplirse.
   }, [isMetrologo, equipmentCount]);
 
   // Efecto para servicios asignados y notificaciones
@@ -430,76 +428,118 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // Componente Tip de Metrólogo (NEW)
-  const MetrologoTip = () => {
+  // ============= LÓGICA DE NIVELES =============
+  // Definición de niveles y títulos
+  const levelDefinitions = [
+    { min: 0, title: 'Grado I' },
+    { min: 10, title: 'Grado II' },
+    { min: 25, title: 'Grado III' },
+    { min: 50, title: 'Grado IV' },
+    { min: 75, title: 'Grado V' },
+    { min: 100, title: 'Grado VI' },
+    { min: 150, title: 'Grado Leyenda' } // Nivel superior
+  ];
+
+  // Componente de Progreso de Metrólogo (MODIFICADO)
+  const MetrologoProgressTip = () => {
+    // No mostrar si no es metrólogo, si el estado de visibilidad es falso, o si el contador es 0
+    // El useEffect padre se encarga de esto, pero doble chequeo
     if (!isMetrologo || !showMetrologoTip || equipmentCount === 0) return null;
-
-    let message: string;
-    let iconClass: string;
-    let gradient: string;
-    let iconComponent: React.ElementType = Check; // Default
-
-    // Lógica de mensajes basada en el contador
-    if (equipmentCount < 50) {
-      message = `¡Vas muy bien, ${equipmentCount} calibraciones este mes! Sigue así. 💪`;
-      iconClass = "text-yellow-400";
-      gradient = "from-yellow-500/90 via-amber-500/90 to-orange-500/90";
-      iconComponent = TrendingUp;
-    } else if (equipmentCount >= 50 && equipmentCount < 100) {
-      message = `¡Excelente! Ya llevas ${equipmentCount} calibraciones. Mantén el ritmo. 🚀`;
-      iconClass = "text-green-400";
-      gradient = "from-emerald-500/90 via-teal-500/90 to-cyan-500/90";
-      iconComponent = Award;
-    } else {
-      message = `¡WOW! Superaste las 100 con ${equipmentCount} calibraciones. ¡Eres imparable! 🌟`;
-      iconClass = "text-fuchsia-400";
-      gradient = "from-violet-500/90 via-purple-500/90 to-fuchsia-600/90";
-      iconComponent = Sparkles;
-    }
     
-    const Icon = iconComponent; // Usa el componente de icono elegido
+    // --- Lógica de Niveles ---
+    const currentLevelData = [...levelDefinitions].reverse().find(l => equipmentCount >= l.min)!;
+    const currentLevelIndex = levelDefinitions.findIndex(l => l.title === currentLevelData.title);
+    const level = currentLevelIndex + 1;
+    const title = currentLevelData.title;
+    const nextLevelData = levelDefinitions[currentLevelIndex + 1];
+    
+    // --- Cálculo de Progreso ---
+    let progress = 100;
+    let remaining = 0;
+    let goal = currentLevelData.min;
+    let isMaxLevel = !nextLevelData;
+    
+    if (!isMaxLevel) {
+      const base = currentLevelData.min;
+      goal = nextLevelData.min;
+      const range = goal - base;
+      const progressInLevel = equipmentCount - base;
+      progress = Math.max(0, Math.min(100, Math.floor((progressInLevel / range) * 100)));
+      remaining = goal - equipmentCount;
+    }
 
+    // --- Renderizado del Componente ---
     return (
-      <div className="fixed bottom-24 right-6 z-50 animate-fadeInUp"> {/* Posición arriba del contador */}
-        <div className={`px-6 py-4 rounded-2xl bg-gradient-to-r ${gradient} backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300`}>
-          <div className="flex items-center gap-3 text-white">
-            <Icon className={`w-6 h-6 animate-pulse ${iconClass}`} />
-            <p className="font-semibold text-base">
-              {message}
-            </p>
+      // MODIFICADO: Ajuste de ancho responsivo para móviles
+      <div className="fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100%-3rem)] animate-fadeInUp">
+        <div className="relative px-5 py-4 rounded-2xl bg-slate-900/90 backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300">
+          
+          {/* NUEVO: Botón de cerrar */}
+          <button
+            onClick={() => setShowMetrologoTip(false)} // Llama al setter del estado
+            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white text-xl font-bold flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 leading-none pb-0.5"
+            aria-label="Cerrar notificación de progreso"
+          >
+            &times;
+          </button>
+
+          {/* Encabezado */}
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-bold text-lg text-white">Progreso Mensual</h4>
+            <span className="px-3 py-1 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-xs font-bold text-white shadow-lg">
+              NIVEL {level}
+            </span>
           </div>
+          
+          {/* Título de Rango */}
+          <div className="flex items-center gap-2 mb-3">
+            <Award className="w-5 h-5 text-cyan-400" />
+            <p className="text-base font-semibold text-cyan-300">{title}</p>
+          </div>
+
+          {/* Barra de Progreso */}
+          <div className="w-full bg-slate-700/50 rounded-full h-3 mb-1 border border-white/10 overflow-hidden">
+            <div 
+              className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 transition-all duration-500 ease-out" 
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          
+          {/* Texto de Progreso (debajo de la barra) */}
+          <div className="flex justify-between items-baseline mb-3">
+            <span className="text-xs font-medium text-white/60">
+              {isMaxLevel ? '¡Nivel Máximo!' : `Próximo: ${nextLevelData.title}`}
+            </span>
+            <span className="text-sm font-bold text-white">
+              {equipmentCount} / {isMaxLevel ? '∞' : goal}
+            </span>
+          </div>
+
+          {/* Mensaje Motivacional */}
+          {!isMaxLevel && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-white/5 border border-white/10">
+              <TrendingUp className="w-5 h-5 text-green-400 flex-shrink-0" />
+              <p className="text-xs text-white/80">
+                ¡Sigue así! Solo te {remaining === 1 ? 'falta 1 equipo' : `faltan ${remaining} equipos`} para el Nivel {level + 1}.
+              </p>
+            </div>
+          )}
+          
+          {/* Mensaje de Nivel Máximo */}
+          {isMaxLevel && (
+             <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-400/30">
+              <Sparkles className="w-5 h-5 text-violet-300 flex-shrink-0" />
+              <p className="text-xs text-white/90 font-semibold">
+                ¡Has alcanzado el rango más alto este mes! Excelente trabajo.
+              </p>
+            </div>
+          )}
+
         </div>
       </div>
     );
   };
   
-  // Componente Contador de Calibraciones (sin cambios mayores)
-  const EquipmentCounter = () => (
-    <div className="fixed bottom-6 right-6 z-30 animate-fadeIn">
-      <div className="relative group">
-        <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
-        <div className="relative px-6 py-4 rounded-2xl bg-slate-900/90 backdrop-blur-xl border border-white/20 shadow-2xl">
-          <button
-            onClick={() => setShowEquipmentCounter(false)}
-            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white text-xs font-bold flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110"
-          >
-            ×
-          </button>
-          <div className="flex items-center gap-4">
-            <Award className="w-8 h-8 text-violet-400" />
-            <div>
-              <p className="text-xs font-semibold text-white/60 uppercase tracking-wider">Calibraciones</p>
-              <p className="text-3xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
-                {equipmentCount}
-              </p>
-              <p className="text-xs text-white/50">{new Date().toLocaleString('es-MX', { month: 'long' })}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   // ============= LAYOUT DESKTOP (sin cambios) =============
   const DesktopLayout = () => (
     <div className="hidden lg:block min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -733,10 +773,11 @@ export const MainMenu: React.FC = () => {
     <>
       {showProfile && <ProfileModal />}
       {showAssignedBanner && <AssignedBanner />}
-      {/* Nuevo Tip visible para Metrólogos */}
-      {isMetrologo && showMetrologoTip && <MetrologoTip />} 
-      {/* El contador original sigue visible para todos (o quien tenga count > 0) */}
-      {showEquipmentCounter && <EquipmentCounter />}
+      
+      {/* Tip de Progreso (ahora con botón de cerrar) */}
+      {/* El 'showMetrologoTip' es controlado por el useEffect y el nuevo botón 'X' */}
+      {showMetrologoTip && <MetrologoProgressTip />} 
+      
       <DesktopLayout />
       <MobileLayout />
 
@@ -755,7 +796,6 @@ export const MainMenu: React.FC = () => {
             transform: translate(-50%, 0);
           }
         }
-        // NUEVA ANIMACIÓN para el push-up
         @keyframes fadeInUp { 
           from { 
             opacity: 0; 

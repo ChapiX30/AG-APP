@@ -74,6 +74,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVEPNEU0017947' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X1Y00150' },
     ],
   },
   mochila_Angel: {
@@ -97,7 +98,7 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' },
       { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' },
       { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'S/M' },
+      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' },
       { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
@@ -662,7 +663,37 @@ function aggregateTools(backpackIds: string[]): ToolItem[] {
 }
 
 // =================================================================
-// --- PDF 1: FUNCIÓN PARA GENERAR PDF CELESTICA ---
+// --- 🚀 FUNCIÓN HELPER ACTUALIZADA PARA LIMPIAR NOMBRES DE PATRÓN ---
+// =================================================================
+
+/**
+ * Quita prefijos "AG-XXX - " y "** - " de los nombres de patrones.
+ * Ej: "AG-059 - Bloques Patron" -> "Bloques Patron"
+ * Ej: "** - Bomba Druck" -> "Bomba Druck"
+ * Ej: "Perica" -> "Perica"
+ */
+const cleanToolNameForPdf = (name: string): string => {
+  if (!name) return '';
+  
+  // 1. Quitar prefijo "AG-XXX - "
+  const regexAg = /^AG-\d+\s+-\s+/; 
+  if (regexAg.test(name)) {
+    return name.replace(regexAg, '');
+  }
+  
+  // 2. Quitar prefijo "* - " o "** - " (y espacios)
+  const regexAsterisk = /^\*+\s*-\s+/;
+  if (regexAsterisk.test(name)) {
+    return name.replace(regexAsterisk, '');
+  }
+
+  // Si no coincide, devuelve el nombre original
+  return name;
+};
+
+
+// =================================================================
+// --- PDF 1: FUNCIÓN PARA GENERAR PDF CELESTICA (MODIFICADA) ---
 // =================================================================
 
 // 🚀 MEJORA: Constante para "número mágico"
@@ -701,7 +732,11 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
       if (index >= MAX_ITEMS_CELESTICA_PDF) return; 
       
       const y = yStartTable - (index * rowHeight);
-      firstPage.drawText(tool.herramienta, { x: xColTool,   y: y, size: fontSize, font, color });
+
+      // 🚀 MODIFICACIÓN: Limpiamos el nombre de la herramienta antes de dibujarlo
+      const toolName = cleanToolNameForPdf(tool.herramienta);
+
+      firstPage.drawText(toolName,         { x: xColTool,   y: y, size: fontSize, font, color }); // <-- Se usa toolName
       firstPage.drawText(String(tool.qty), { x: xColQty,    y: y, size: fontSize, font, color });
       firstPage.drawText(tool.marca,       { x: xColMarca,  y: y, size: fontSize, font, color });
       firstPage.drawText(tool.modelo,      { x: xColModelo, y: y, size: fontSize, font, color });
@@ -719,7 +754,7 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
 }
 
 // =================================================================
-// --- PDF 2: NUEVA FUNCIÓN PARA PDF GENÉRICO (Sin cambios) ---
+// --- PDF 2: NUEVA FUNCIÓN PARA PDF GENÉRICO (MODIFICADA) ---
 // =================================================================
 async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
   try {
@@ -804,8 +839,11 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
         drawTableHeader(page);
       }
 
+      // 🚀 MODIFICACIÓN: Limpiamos el nombre de la herramienta antes de agregarlo
+      const toolName = cleanToolNameForPdf(tool.herramienta);
+
       const rowData = [
-        String(tool.herramienta),
+        String(toolName), // <-- Se usa toolName
         String(tool.qty),
         String(tool.marca),
         String(tool.modelo),
@@ -852,7 +890,7 @@ type Metrologo = {
 type PatronesMap = Map<string, PatronBase>;
 
 const NormasScreen = () => {
-  // --- 1. HOOKS PARA NAVEGACIÓN Y FIREBASE ---
+  // --- 1. HOOKS PARA NAVEGACION Y USUARIOS ---
   const { navigateTo } = useNavigation();
   const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
