@@ -8,7 +8,7 @@ import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
 import { db } from '../utils/firebase';
 // Importamos los iconos
-import { ArrowLeft, User, Archive, ListPlus, Loader2 } from 'lucide-react'; 
+import { ArrowLeft, User, Archive, ListPlus, Loader2, AlertCircle } from 'lucide-react'; // 🚨 IMPORTAMOS AlertCircle
 
 // ==================================================================
 // --- 1. DATOS Y CATÁLOGOS ---
@@ -23,6 +23,8 @@ interface PatronBase {
     serie: string;
     fechaVencimiento: string;
     status: 'vigente' | 'vencido' | 'critico' | 'proximo' | 'pendiente'; 
+    // 🚨 CAMBIO DE INTERFAZ: Añadimos el estado del proceso
+    estadoProceso: 'operativo' | 'programado' | 'en_calibracion' | 'completado' | 'fuera_servicio'; 
 }
 
 // Interfaz completa de RegistroPatron del otro componente
@@ -39,7 +41,7 @@ export interface RegistroPatron {
     prioridad: 'Alta' | 'Media' | 'Baja';
     ubicacion: string;
     responsable: string;
-    estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio';
+    estadoProceso: 'operativo' | 'programado' | 'en_calibracion' | 'completado' | 'fuera_servicio';
     fechaInicioProceso?: string;
     observaciones?: string;
     historial: any[];
@@ -143,6 +145,8 @@ type ToolItem = {
   marca: string;
   modelo: string;
   serie: string;
+  // 🚨 NUEVO: Añadimos el estado de proceso para mostrarlo
+  estadoProceso?: PatronBase['estadoProceso']; 
 };
 
 type FormInputs = {
@@ -152,7 +156,8 @@ type FormInputs = {
   companiaDepto: string;
   noEmpleado: string;
   selectedBackpacks: string[];
-  manualTools: ToolItem & { isVencida?: boolean }[]; 
+  // 🚨 ACTUALIZACIÓN: isVencida e isFueraDeServicio
+  manualTools: ToolItem & { isVencida?: boolean, isUnavailable?: boolean }[]; 
 };
 
 // ==================================================================
@@ -413,7 +418,18 @@ const styles = `
     border-left: 4px solid #198754; 
   }
   
-  /* --- Selector de Mochilas Mejorado --- */
+  /* --- 🚨 NUEVO: ESTILO PARA PATRÓN EN CALIBRACION / FUERA DE SERVICIO (NO DISPONIBLE) --- */
+  .tool-row-unavailable {
+    background-color: #f6f6f6 !important; 
+    color: #a8a29e !important; /* Gris para indicar indisponibilidad */
+    font-style: italic;
+  }
+  .tool-row-unavailable td {
+    border-left: 4px solid #a8a29e;
+    text-decoration: line-through;
+  }
+  
+  /* Selector de Mochilas Mejorado */
   .backpack-selector { 
     display: flex; 
     flex-wrap: wrap;
@@ -620,6 +636,10 @@ const styles = `
   .text-green-800 { color: #166534; }
   .bg-gray-300 { background-color: #d1d5db; }
   .text-gray-800 { color: #1f2937; }
+  /* 🚨 NUEVO COLOR PARA EN CALIBRACION / FUERA DE SERVICIO */
+  .bg-slate-300 { background-color: #cbd5e1; }
+  .text-slate-800 { color: #1e293b; }
+
 
   @keyframes spin {
     from { transform: rotate(0deg); }
@@ -727,7 +747,14 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const xColModelo = 400;
     const xColSerie = 480;
 
-    allTools.forEach((tool, index) => {
+    // 🚨 FILTRAR HERRAMIENTAS NO DISPONIBLES ANTES DE DIBUJAR
+    const availableTools = allTools.filter(tool => 
+        tool.estadoProceso !== 'en_proceso' && 
+        tool.estadoProceso !== 'fuera_servicio'
+    );
+    // --------------------------------------------------------
+
+    availableTools.forEach((tool, index) => {
       // Usamos la constante
       if (index >= MAX_ITEMS_CELESTICA_PDF) return; 
       
@@ -742,6 +769,18 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
       firstPage.drawText(tool.modelo,      { x: xColModelo, y: y, size: fontSize, font, color });
       firstPage.drawText(tool.serie,       { x: xColSerie,  y: y, size: fontSize, font, color });
     });
+    
+    // 🚨 AVISO EN PDF SI SE EXCLUYERON HERRAMIENTAS
+    if (allTools.length > availableTools.length) {
+        firstPage.drawText(`* NOTA: ${allTools.length - availableTools.length} equipo(s) excluido(s) por estado 'En CALIBRACION' o 'Fuera de Servicio'.`, { 
+            x: xColTool, 
+            y: margin + 30, // Posición fija al final
+            size: fontSize + 1, 
+            font: font, 
+            color: rgb(0.5, 0.5, 0.5) 
+        });
+    }
+    // ----------------------------------------------------
 
     const pdfBytes = await pdfDoc.save();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -808,12 +847,14 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
     const rowHeight = 20;
     const tableMargin = margin - 10;
 
+    // 🚨 NUEVA COLUMNA DE ESTADO DE PROCESO
     const cols = [
-      { header: 'Herramienta', x: tableMargin, width: 170 },
-      { header: 'Qty', x: tableMargin + 170, width: 30 },
-      { header: 'Marca', x: tableMargin + 200, width: 110 },
-      { header: 'Modelo/Color', x: tableMargin + 310, width: 120 },
-      { header: 'Serie', x: tableMargin + 430, width: 120 },
+      { header: 'Herramienta', x: tableMargin, width: 140 }, // Reducir ancho
+      { header: 'Qty', x: tableMargin + 140, width: 30 },
+      { header: 'Marca', x: tableMargin + 170, width: 80 },
+      { header: 'Modelo/Color', x: tableMargin + 250, width: 90 },
+      { header: 'Serie', x: tableMargin + 340, width: 100 },
+      { header: 'Estado', x: tableMargin + 440, width: 80 }, // Nueva columna
     ];
 
     const drawTableHeader = (currentPage: any) => {
@@ -841,6 +882,9 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
 
       // 🚀 MODIFICACIÓN: Limpiamos el nombre de la herramienta antes de agregarlo
       const toolName = cleanToolNameForPdf(tool.herramienta);
+      
+      // 🚨 Obtener el estado del proceso para el PDF
+      const estadoLabel = tool.estadoProceso ? tool.estadoProceso.toUpperCase().replace('_', ' ') : 'OPERATIVO';
 
       const rowData = [
         String(toolName), // <-- Se usa toolName
@@ -848,6 +892,7 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
         String(tool.marca),
         String(tool.modelo),
         String(tool.serie),
+        String(estadoLabel), // Nuevo campo
       ];
       
       cols.forEach((col, i) => {
@@ -971,6 +1016,7 @@ const NormasScreen = () => {
         const displayName = `${noControl} - ${descripcion}`; 
         
         const status = getVencimientoStatus(data.fecha);
+        const estadoProceso = data.estadoProceso || 'operativo'; // 🚨 OBTENER ESTADO
 
         // <-- Usamos el displayName como la llave del mapa
         if (displayName && !patronesMap.has(displayName)) {
@@ -981,7 +1027,8 @@ const NormasScreen = () => {
                 modelo: data.modelo || 'S/M', 
                 serie: data.serie || 'S/N',
                 fechaVencimiento: data.fecha, 
-                status: status,              
+                status: status,
+                estadoProceso: estadoProceso, // 🚨 GUARDAMOS ESTADO DEL PROCESO
             });
         }
       });
@@ -1003,10 +1050,10 @@ const NormasScreen = () => {
   
   const watchedManualTools = watch('manualTools');
   
-  // 🔄 NUEVO: Hook para rastrear si ALGÚN PATRÓN seleccionado está vencido
+  // 🔄 NUEVO: Hook para rastrear si ALGÚN PATRÓN seleccionado está vencido o no disponible
   const isAnyPatronVencido = useMemo(() => {
     // Considera vencido/crítico como riesgo
-    return watchedManualTools.some(tool => tool.isVencida);
+    return watchedManualTools.some(tool => tool.isVencida || tool.isUnavailable);
   }, [watchedManualTools]);
   
   // Lista de nombres de herramientas manuales ya seleccionadas
@@ -1023,8 +1070,15 @@ const NormasScreen = () => {
     [watchedBackpacks]
   );
   
-  // Convertimos el Map de patrones a un Array para poder ordenarlo en el render
-  // (Sigue funcionando, ya que ordena por `patron.nombre` que ahora es "AG-XXX - ...")
+  // 🚨 FILTRADO CRÍTICO: SOLO PATRONES DISPONIBLES (operativo o programado)
+  const availablePatrones = useMemo(() => 
+    Array.from(patronesDisponibles.values()).filter(patron => 
+        patron.estadoProceso === 'operativo' || patron.estadoProceso === 'programado' || patron.estadoProceso === 'completado'
+    ).sort((a,b) => a.nombre.localeCompare(b.nombre)),
+    [patronesDisponibles]
+  );
+
+  // Lista COMPLETA (para rellenar la tabla)
   const allAvailableOptions = useMemo(() => 
     Array.from(patronesDisponibles.values()).sort((a,b) => a.nombre.localeCompare(b.nombre)),
     [patronesDisponibles]
@@ -1032,9 +1086,9 @@ const NormasScreen = () => {
 
   // --- Manejador de envío (Aplicando la regla de negocio) ---
   const handleGeneratePdf = async (type: 'celestica' | 'generic') => {
-    // 🚨 REGLA DE NEGOCIO CRÍTICA: Bloquear si hay algún patrón vencido
+    // 🚨 REGLA DE NEGOCIO CRÍTICA: Bloquear si hay algún patrón vencido o no disponible
     if (isAnyPatronVencido) {
-        alert('ADVERTENCIA: No se puede generar el PDF. Hay patrones de medición vencidos o críticos en la lista de Herramientas Manuales.');
+        alert('ADVERTENCIA: No se puede generar el PDF. Hay patrones de medición vencidos, críticos, o NO DISPONIBLES (En calibracion/Fuera de Servicio) en la lista de Herramientas Manuales.');
         return;
     }
     
@@ -1048,7 +1102,14 @@ const NormasScreen = () => {
     
     const data = getValues();
     // (Ahora `data.manualTools.herramienta` ya tiene el "AG-XXX - Nombre")
-    const validManualTools = data.manualTools.filter(tool => tool.herramienta);
+    // 🚨 MODIFICACIÓN: Pasamos el estado de proceso para filtrar en el PDF.
+    const validManualTools = data.manualTools
+        .filter(tool => tool.herramienta)
+        .map(tool => ({
+            ...tool, 
+            estadoProceso: patronesDisponibles.get(tool.herramienta)?.estadoProceso || 'operativo'
+        }));
+        
     const allTools = [...aggregatedTools, ...validManualTools];
     
     console.log('Datos listos para enviar al PDF:', data);
@@ -1234,14 +1295,15 @@ const NormasScreen = () => {
             {/* Botón de Agregar Fila (Movido arriba de la tabla) */}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {isAnyPatronVencido && (
-                    <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg mb-2">
-                        ⚠️ **ERROR:** Patrón(es) VENCIDO(s)/CRÍTICO(s) seleccionado(s).
+                    <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg mb-2 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        ⚠️ **ERROR:** Patrón(es) VENCIDO(s)/CRÍTICO(s) o **NO DISPONIBLE** seleccionado(s).
                     </div>
                 )}
               <button
                 type="button"
                 className="btn btn-secondary ml-auto"
-                onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '', isVencida: false })}
+                onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '', isVencida: false, isUnavailable: false })}
                 disabled={isLoadingPatrones}
               >
                 {isLoadingPatrones ? (
@@ -1259,6 +1321,7 @@ const NormasScreen = () => {
                       <th>#</th>
                       <th>Patrón de Medición</th>
                       <th>Estatus Venc.</th>
+                      <th>Estatus Proceso</th>
                       <th style={{ width: '60px' }}>Qty</th>
                       <th>Marca</th>
                       <th>Modelo/Color</th>
@@ -1269,7 +1332,7 @@ const NormasScreen = () => {
                   <tbody>
                     {fields.length === 0 && (
                       <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', color: '#888' }}>
+                        <td colSpan={9} style={{ textAlign: 'center', color: '#888' }}>
                           {isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado patrones manuales.'}
                         </td>
                       </tr>
@@ -1277,11 +1340,20 @@ const NormasScreen = () => {
                     {fields.map((item, index) => {
                       // 🚨 CAMBIO 3: `currentToolName` ahora es "AG-XXX - Nombre"
                       const currentToolName = watchedManualTools[index]?.herramienta;
-                      const rowStatus = patronesDisponibles.get(currentToolName)?.status || 'pendiente';
+                      const toolData = patronesDisponibles.get(currentToolName);
                       
+                      // 🚨 NUEVO: Obtenemos Estatus de Vencimiento y Proceso
+                      const rowStatus = toolData?.status || 'pendiente';
+                      const rowEstadoProceso = toolData?.estadoProceso || 'operativo';
+
                       // Clase dinámica para el color de la fila
                       let rowClassName = '';
-                      if (rowStatus === 'vencido') {
+                      // 🚨 REGLA CRÍTICA DE INDISPONIBILIDAD
+                      const isUnavailable = rowEstadoProceso === 'en_proceso' || rowEstadoProceso === 'fuera_servicio';
+                      
+                      if (isUnavailable) {
+                          rowClassName = 'tool-row-unavailable';
+                      } else if (rowStatus === 'vencido') {
                           rowClassName = 'tool-row-vencido';
                       } else if (rowStatus === 'critico') {
                           rowClassName = 'tool-row-critico';
@@ -1308,8 +1380,9 @@ const NormasScreen = () => {
                                   // 🎨 APLICAMOS ESTILO AL SELECT SEGÚN EL ESTATUS
                                   style={{
                                     // El color de fondo se fuerza con CSS
-                                    color: rowStatus === 'vencido' ? '#9f1c2b' : (rowStatus === 'critico' ? '#925c0e' : '#333'),
-                                    fontWeight: (rowStatus === 'vencido' || rowStatus === 'critico') ? '600' : 'normal',
+                                    color: isUnavailable ? '#a8a29e' : (rowStatus === 'vencido' ? '#9f1c2b' : (rowStatus === 'critico' ? '#925c0e' : '#333')),
+                                    fontWeight: (rowStatus === 'vencido' || rowStatus === 'critico' || isUnavailable) ? '600' : 'normal',
+                                    backgroundColor: isUnavailable ? '#f4f4f4' : '#ffffff',
                                   }}
                                   onChange={(e) => {
                                     // `selectedToolName` ahora es "AG-XXX - Nombre"
@@ -1317,24 +1390,27 @@ const NormasScreen = () => {
                                     field.onChange(selectedToolName);
                                     
                                     // Buscamos en el mapa por el "AG-XXX - Nombre"
-                                    const toolData = patronesDisponibles.get(selectedToolName); 
+                                    const newToolData = patronesDisponibles.get(selectedToolName); 
                                     
-                                    if (toolData) {
-                                      // 🚨 ACTUALIZAR EL ESTADO DE VENCIMIENTO INTERNO (isVencida)
-                                      const isVencida = (toolData.status === 'vencido' || toolData.status === 'critico');
-                                      
+                                    if (newToolData) {
+                                      // 🚨 ACTUALIZAR LOS ESTADOS INTERNOS
+                                      const isVencida = (newToolData.status === 'vencido' || newToolData.status === 'critico');
+                                      const isUnavailable = (newToolData.estadoProceso === 'en_proceso' || newToolData.estadoProceso === 'fuera_servicio');
+
                                       setValue(`manualTools.${index}.qty`, '1');
-                                      setValue(`manualTools.${index}.marca`, toolData.marca);
-                                      setValue(`manualTools.${index}.modelo`, toolData.modelo);
-                                      setValue(`manualTools.${index}.serie`, toolData.serie);
+                                      setValue(`manualTools.${index}.marca`, newToolData.marca);
+                                      setValue(`manualTools.${index}.modelo`, newToolData.modelo);
+                                      setValue(`manualTools.${index}.serie`, newToolData.serie);
                                       setValue(`manualTools.${index}.isVencida`, isVencida); // Guardamos el estado
+                                      setValue(`manualTools.${index}.isUnavailable`, isUnavailable); // 🚨 GUARDAMOS INDISPONIBILIDAD
                                     } else {
                                       // Si se deselecciona o es la opción inicial
                                       setValue(`manualTools.${index}.qty`, '1'); 
                                       setValue(`manualTools.${index}.marca`, '');
                                       setValue(`manualTools.${index}.modelo`, '');
                                       setValue(`manualTools.${index}.serie`, '');
-                                      setValue(`manualTools.${index}.isVencida`, false); 
+                                      setValue(`manualTools.${index}.isVencida`, false);
+                                      setValue(`manualTools.${index}.isUnavailable`, false); 
                                     }
                                   }}
                                 >
@@ -1345,34 +1421,47 @@ const NormasScreen = () => {
                                   {/* 🎨 Iteramos sobre el array de patrones para aplicar estilo a cada <option> */}
                                   {allAvailableOptions.map(patron => {
                                       // `patron.nombre` es "AG-XXX - Nombre"
+                                      // 🚨 Regla de deshabilitar si ya seleccionado O NO DISPONIBLE
                                       const isSelectedInAnotherRow = selectedManualToolNames.has(patron.nombre) && patron.nombre !== currentToolName;
+                                      const isUnavailableOption = patron.estadoProceso === 'en_proceso' || patron.estadoProceso === 'fuera_servicio';
                                       
                                       // Definir el color para la OPCIÓN
                                       let optionColor = '#333';
-                                      if (patron.status === 'vencido') optionColor = '#9f1c2b';
+                                      if (isUnavailableOption) optionColor = '#a8a29e';
+                                      else if (patron.status === 'vencido') optionColor = '#9f1c2b';
                                       else if (patron.status === 'critico') optionColor = '#925c0e';
                                       else if (patron.status === 'vigente') optionColor = '#198754';
+                                      
+                                      const isDisabled = isSelectedInAnotherRow || isUnavailableOption; // 🚨 NUEVA REGLA
 
                                       return (
                                           <option 
                                               key={patron.nombre} // <-- Usamos el nombre combinado como key
                                               value={patron.nombre} // <-- Usamos el nombre combinado como value
-                                              disabled={isSelectedInAnotherRow} // Deshabilita si ya seleccionado en otra fila
+                                              disabled={isDisabled} // Deshabilita si ya seleccionado o no disponible
                                               style={{ 
                                                   color: optionColor, 
-                                                  fontWeight: (patron.status === 'vencido' || patron.status === 'critico') ? 'bold' : 'normal',
+                                                  fontWeight: (patron.status === 'vencido' || patron.status === 'critico' || isUnavailableOption) ? 'bold' : 'normal',
                                                   backgroundColor: '#ffffff' // Asegurar fondo blanco en opciones
                                               }}
                                           >
                                               {patron.nombre} {/* <-- Mostramos el nombre combinado */}
                                               {patron.status === 'vencido' && ' (Vencido)'}
                                               {patron.status === 'critico' && ' (Crítico)'}
+                                              {isUnavailableOption && ` (${patron.estadoProceso.toUpperCase().replace('_', ' ')})`} {/* 🚨 MUESTRA ESTADO */}
                                           </option>
                                       );
                                   })}
                                 </select>
                               )}
                             />
+                            {/* 🚨 Mensaje de advertencia si la herramienta no está disponible */}
+                            {isUnavailable && (
+                                <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3 inline" /> 
+                                    NO DISPONIBLE
+                                </p>
+                            )}
                           </td>
                           {/* Columna de estado de vencimiento */}
                           <td style={{ width: '120px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
@@ -1384,8 +1473,19 @@ const NormasScreen = () => {
                                 {rowStatus.toUpperCase()}
                               </span>
                           </td>
+                          {/* 🚨 NUEVA COLUMNA: ESTADO DE PROCESO */}
+                          <td style={{ width: '140px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
+                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
+                                rowEstadoProceso === 'en_proceso' ? 'bg-orange-300 text-orange-800' : 
+                                rowEstadoProceso === 'fuera_servicio' ? 'bg-red-300 text-red-800' : 
+                                rowEstadoProceso === 'operativo' ? 'bg-green-300 text-green-800' : 'bg-gray-300 text-gray-800'
+                              }`}>
+                                {rowEstadoProceso.toUpperCase().replace('_', ' ')}
+                              </span>
+                          </td>
                           <td style={{ width: '80px' }}>
-                            <input {...register(`manualTools.${index}.qty`, { required: true, valueAsNumber: true })} placeholder="1" type="number" min="1" />
+                            {/* Deshabilitar la cantidad si no está disponible */}
+                            <input {...register(`manualTools.${index}.qty`, { required: true, valueAsNumber: true })} placeholder="1" type="number" min="1" disabled={isUnavailable} />
                           </td>
                           <td>
                             <input {...register(`manualTools.${index}.marca`)} placeholder="Marca" readOnly tabIndex={-1} className="readonly" />
@@ -1413,7 +1513,7 @@ const NormasScreen = () => {
           <div className="button-bar">
             {isAnyPatronVencido && (
                 <span className="text-sm font-bold text-red-600">
-                    🔴 Generación de PDF bloqueada por patrones VENCIDOS/CRÍTICOS.
+                    🔴 Generación de PDF bloqueada por patrones VENCIDOS/CRÍTICOS o NO DISPONIBLES.
                 </span>
             )}
             
@@ -1422,8 +1522,8 @@ const NormasScreen = () => {
                 type="button" 
                 className="btn btn-primary" 
                 onClick={() => handleGeneratePdf('celestica')}
-                title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido' : "Generar formato oficial de Celestica"}
-                // 🚀 MEJORA: Deshabilitado mientras carga datos
+                title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido o no disponible' : "Generar formato oficial de Celestica"}
+                // 🚀 MEJORA: Deshabilitado mientras carga datos O si hay riesgo/indisponibilidad
                 disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0) || isLoadingUsers || isLoadingPatrones}
               >
                 Generar PDF Celestica
@@ -1432,8 +1532,8 @@ const NormasScreen = () => {
                 type="button" 
                 className="btn btn-primary" 
                 onClick={() => handleGeneratePdf('generic')}
-                title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido' : "Generar formato interno con logo"}
-                // 🚀 MEJORA: Deshabilitado mientras carga datos
+                title={isAnyPatronVencido ? 'Acción bloqueada: Patrón vencido o no disponible' : "Generar formato interno con logo"}
+                // 🚀 MEJORA: Deshabilitado mientras carga datos O si hay riesgo/indisponibilidad
                 disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0) || isLoadingUsers || isLoadingPatrones}
               >
                 Generar PDF Genérico

@@ -106,17 +106,45 @@ export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { logout, user } = useAuth();
   
-  // ============= IDENTIFICACIÓN DE ROLES MEJORADA =============
+  // ============= IDENTIFICACIÓN DE ROLES (MODIFICADO) =============
   const getRole = (u: any) => 
     ((u?.puesto ?? "").trim().toLowerCase()) ||
     ((u?.position ?? "").trim().toLowerCase()) ||
     ((u?.role ?? "").trim().toLowerCase()) || "";
 
-  const isJefe = getRole(user) === "administrativo";
-  const isMetrologo = getRole(user) === "metrólogo"; // 👈 Rol para la lógica del tip
+  const userRole = getRole(user); // Obtenemos el rol una sola vez
+  
+  // Obtenemos el nombre del usuario (asumiendo que está en el objeto 'user' de useAuth)
+  const userName = ((user as any)?.name || "").trim().toLowerCase(); 
+  
+  // Variables de Rol
+  const isJefe = userRole === "administrativo";
+  const isMetrologo = userRole === "metrólogo";
+  
+  // --- REGLA ESPECÍFICA PARA JESUS SUSTAITA (CALIDAD) ---
+  // Revisa el nombre Y el rol (puesto)
+  const isJesusSustaitaCalidad = (userName === "jesus sustaita" && userRole === "calidad");
+  // ---
 
+  // ============= FILTRADO DE MENÚ (MODIFICADO) =============
   const menuItemsFiltered = menuItems.filter(item => {
-    if (item.id === "calibration-stats") return isJefe;
+    
+    // --- LÓGICA PARA JESUS SUSTAITA ---
+    // Si es Jesus Sustaita (calidad), solo muéstrale "Patrones"
+    if (isJesusSustaitaCalidad) {
+      // "Patrones" tiene el id 'programa-calibracion' en tu array
+      return item.id === 'programa-calibracion'; 
+    }
+    // ---
+    
+    // Lógica existente para 'Jefe' (administrativo)
+    // Solo el jefe puede ver 'Estadísticas'
+    if (item.id === "calibration-stats") {
+      return isJefe;
+    }
+    
+    // Para todos los demás (que no son Jesus Sustaita),
+    // muestra todos los demás ítems.
     return true;
   });
 
