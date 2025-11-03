@@ -37,22 +37,23 @@ const METROLOGOS_ORDER_COLOR = [
 ];
 const FALLBACK_COLORS = ["#ff9100", "#1b1a1a", "#1B9CFC", "#B10DC9", "#607D8B"];
 const MAGNITUDES_COLORS: Record<string, string> = {
-  "Acustica": "#00e6bf",
+  "Acustica": "#b6cfcbff",
   "Dimensional": "#001e78",
   "Electrica": "#ffee00",
   "Flujo": "#20cde0",
-  "Fuerza": "#00e676",
-  "Humedad": "#00b8d4",
+  "Fuerza": "#835700ff",
+  "Humedad": "#6f888cff",
   "Frecuencia": "#ff9100",
-  "Óptica Trazable": "#4a3419ff",
-  "Par Torsional Trazable": "#ff9100",
+  "Optica Trazable": "#4a3419ff",
+  "Par Torsional Trazable": "#00ff2fff",
   "Reporte Diagnostico": "#806c54ff", 
   "Masa": "#028019",
   "Par Torsional": "#30306D",
-  "Presión": "#afafba",
-  "Temperatura": "#c87705",
+  "Presión": "#6c6cfaff",
+  "Temperatura": "#bd0101ff",
   "Tiempo": "#f33220",
   "Vibracion Trazable": "#49ae9aff",
+  "Vacio": "#bebebeff",
 };
 
 // -------- PieChart PRO con Hover Holográfico --------
