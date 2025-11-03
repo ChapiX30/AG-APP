@@ -419,12 +419,12 @@ const FridayServiciosScreen: React.FC = () => {
   const [cargandoArchivo, setCargandoArchivo] = useState<boolean>(false);
   const [errorArchivo, setErrorArchivo] = useState<string>('');
   
-  // **MEJORA: Estado para contenido de texto**
+  // Estado para contenido de texto
   const [contenidoTexto, setContenidoTexto] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // **MEJORA: Ref para el contenedor de comentarios**
+  // Ref para el contenedor de comentarios
   const comentariosContainerRef = useRef<HTMLDivElement>(null);
 
 
@@ -549,7 +549,7 @@ const FridayServiciosScreen: React.FC = () => {
         }));
         setUsuarios(usuariosData);
 
-        // Filtrar metrólogos
+        // Filtrar metrólogos (como estaba, maneja 'puesto' y 'position')
         const metrologosData = usuariosData.filter(usuario => {
           const position = usuario.position?.toLowerCase();
           const puesto = usuario.puesto?.toLowerCase();
@@ -583,7 +583,7 @@ const FridayServiciosScreen: React.FC = () => {
     cargarDatos();
   }, []);
 
-  // **MEJORA: Cargar comentarios y hacer scroll automático**
+  // Cargar comentarios y hacer scroll automático
   useEffect(() => {
     if (servicioSeleccionado) {
       const comentariosQuery = query(
@@ -604,7 +604,7 @@ const FridayServiciosScreen: React.FC = () => {
     }
   }, [servicioSeleccionado]);
 
-  // **MEJORA: Scroll automático al final de los comentarios**
+  // Scroll automático al final de los comentarios
   useEffect(() => {
       if (comentariosContainerRef.current) {
           comentariosContainerRef.current.scrollTop = comentariosContainerRef.current.scrollHeight;
@@ -687,7 +687,7 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
-  // **MEJORA: Función para ver archivos con soporte extendido**
+  // Función para ver archivos con soporte extendido
   const verArchivo = useCallback(async (archivoUrl: string) => {
     setCargandoArchivo(true);
     setErrorArchivo('');
@@ -702,8 +702,8 @@ const FridayServiciosScreen: React.FC = () => {
         const urlAcceso = await crearUrlAcceso(archivoUrl);
         setArchivoViendose(urlAcceso);
         setPaginaPDF(1);
-        setEscalaZoom(isMobile ? 0.5 : 1);
-        setRotacionPDF(0);
+        setEscalaZoom(isMobile ? 0.5 : 1); // Reset de zoom
+        setRotacionPDF(0); // Reset de rotación
 
         const extension = obtenerExtensionArchivo(urlAcceso);
         const textExtensions = ['txt', 'csv', 'log', 'md'];
@@ -719,13 +719,13 @@ const FridayServiciosScreen: React.FC = () => {
         console.error('Error al cargar archivo:', error);
         setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
         toast.error('Error al cargar el archivo');
-        setArchivoViendose(archivoUrl);
+        setArchivoViendose(archivoUrl); // Mostrar URL original si falla
     } finally {
         setCargandoArchivo(false);
     }
   }, [isMobile]);
 
-  // Crear servicio (sin cambios)
+  // Crear servicio
   const crearServicio = async () => {
     if (!nuevoServicio.titulo.trim()) {
       toast.error('El título es requerido');
@@ -816,7 +816,7 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
-  // Agregar comentario (sin cambios)
+  // Agregar comentario
   const agregarComentario = async () => {
     if (!mensajeNuevo.trim() || !servicioSeleccionado) return;
 
@@ -838,9 +838,6 @@ const FridayServiciosScreen: React.FC = () => {
       toast.error('Error al agregar comentario');
     }
   };
-
-  // Resto del código... (actualizarEstado, eliminarServicio, editarServicio, y los componentes de renderizado)
-  // ... sin cambios en la lógica de estas funciones ...
   
   // Actualizar estado del servicio
   const actualizarEstado = async (servicioId: string, nuevoEstado: string) => {
@@ -1729,7 +1726,6 @@ const FridayServiciosScreen: React.FC = () => {
         {/* Modal de detalles del servicio responsive */}
         {servicioSeleccionado && !mostrarFormulario && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 lg:p-4">
-            {/* **MEJORA: Contenedor más ancho para evitar recorte** */}
             <div className={`bg-white rounded-2xl shadow-2xl w-full max-h-[95vh] ${
               isMobile ? 'flex flex-col' : 'max-w-screen-xl flex overflow-hidden'
             }`}>
@@ -2031,7 +2027,9 @@ const FridayServiciosScreen: React.FC = () => {
           </div>
         )}
 
-        {/* **MEJORA: Visor de archivos optimizado y con más capacidades** */}
+        {/* ====================================================================== */}
+        {/* ============ MEJORA: Visor de archivos optimizado ==================== */}
+        {/* ====================================================================== */}
         {archivoViendose && (
             <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-2 lg:p-4">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
@@ -2055,9 +2053,74 @@ const FridayServiciosScreen: React.FC = () => {
                             const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
                             const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 
+                            // === INICIO DE LA MEJORA DEL VISOR PDF ===
                             if (extension === 'pdf') {
-                                return <Document file={archivoViendose} options={pdfOptions}><Page pageNumber={paginaPDF} scale={1.5} /></Document>;
+                                return (
+                                  <div className="relative w-full h-full flex flex-col items-center">
+                                    {/* --- Barra de Controles de PDF --- */}
+                                    <div className="bg-gray-800 text-white p-2 rounded-lg flex items-center gap-2 lg:gap-4 z-10 sticky top-2 shadow-lg text-xs lg:text-sm">
+                                      {/* Navegación de Página */}
+                                      <button 
+                                        onClick={() => setPaginaPDF(p => Math.max(1, p - 1))} 
+                                        disabled={paginaPDF <= 1}
+                                        className="p-1 rounded-full hover:bg-gray-700 disabled:opacity-50"
+                                        title="Página anterior"
+                                      >
+                                        <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
+                                      </button>
+                                      <span>Página {paginaPDF} de {totalPaginasPDF || '...'}</span>
+                                      <button 
+                                        onClick={() => setPaginaPDF(p => Math.min(totalPaginasPDF, p + 1))} 
+                                        disabled={!totalPaginasPDF || paginaPDF >= totalPaginasPDF}
+                                        className="p-1 rounded-full hover:bg-gray-700 disabled:opacity-50"
+                                        title="Página siguiente"
+                                      >
+                                        <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
+                                      </button>
+                                      
+                                      <div className="border-l border-gray-600 h-6 mx-1 lg:mx-2"></div>
+
+                                      {/* Zoom */}
+                                      <button onClick={() => setEscalaZoom(z => Math.max(0.2, z - 0.2))} className="p-1 rounded-full hover:bg-gray-700" title="Alejar">
+                                        <ZoomOut className="h-4 w-4 lg:h-5 lg:w-5" />
+                                      </button>
+                                      <span>{(escalaZoom * 100).toFixed(0)}%</span>
+                                      <button onClick={() => setEscalaZoom(z => z + 0.2)} className="p-1 rounded-full hover:bg-gray-700" title="Acercar">
+                                        <ZoomIn className="h-4 w-4 lg:h-5 lg:w-5" />
+                                      </button>
+                                      
+                                      <div className="border-l border-gray-600 h-6 mx-1 lg:mx-2"></div>
+                                      
+                                      {/* Rotación */}
+                                      <button onClick={() => setRotacionPDF(r => (r + 90) % 360)} className="p-1 rounded-full hover:bg-gray-700" title="Rotar 90°">
+                                        <RotateCw className="h-4 w-4 lg:h-5 lg:w-5" />
+                                      </button>
+                                    </div>
+
+                                    {/* --- Contenedor del Documento PDF --- */}
+                                    <div className="overflow-auto w-full h-full p-4 flex justify-center">
+                                      <Document
+                                        file={archivoViendose}
+                                        options={pdfOptions}
+                                        onLoadSuccess={({ numPages }) => {
+                                          setTotalPaginasPDF(numPages);
+                                          setPaginaPDF(1); // Resetear a página 1 en cada carga
+                                        }}
+                                        onLoadError={(error) => setErrorArchivo(`Error al cargar PDF: ${error.message}`)}
+                                        loading={<Loader2 className="h-8 w-8 animate-spin text-blue-500" />}
+                                      >
+                                        <Page
+                                          pageNumber={paginaPDF}
+                                          scale={escalaZoom}
+                                          rotate={rotacionPDF}
+                                        />
+                                      </Document>
+                                    </div>
+                                  </div>
+                                );
                             }
+                            // === FIN DE LA MEJORA DEL VISOR PDF ===
+
                             if (imageExtensions.includes(extension)) {
                                 return <img src={archivoViendose} alt="Vista previa" className="max-w-full max-h-full object-contain" />;
                             }
@@ -2067,6 +2130,7 @@ const FridayServiciosScreen: React.FC = () => {
                             if (officeExtensions.includes(extension)) {
                                 return <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(archivoViendose)}`} width='100%' height='100%' frameBorder='0'></iframe>;
                             }
+                            // Fallback para otros archivos
                             return (
                                 <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-sm">
                                     <FileText className="h-16 w-16 lg:h-24 lg:w-24 text-gray-400 mx-auto mb-4" />

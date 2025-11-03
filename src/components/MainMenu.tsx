@@ -153,21 +153,22 @@ export const MainMenu: React.FC = () => {
 
   // ============= ESTADOS =============
   const [showProfile, setShowProfile] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [showAssignedBanner, setShowAssignedBanner] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showMetrologoTip, setShowMetrologoTip] = useState(false); // 👈 Estado para el tip
+  
+  // --- MEJORA: Estado de carga para el perfil ---
+  const [profileLoading, setProfileLoading] = useState(true);
 
+  // Estados para *mostrar* la información del perfil (se cargan desde Firebase)
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editPosition, setEditPosition] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  
+  // Estados para contadores
   const [equipmentCount, setEquipmentCount] = useState(0);
   const [assignedCount, setAssignedCount] = useState(0);
-  
-  const inputFileRef = useRef<HTMLInputElement>(null);
 
   // ============= EFECTOS =============
   
@@ -181,6 +182,8 @@ export const MainMenu: React.FC = () => {
       setEditPhone(d.phone || "");
       setEditPosition(d.position || "");
       setPhotoUrl(d.photoUrl || "");
+      // --- MEJORA: Ocultar el 'esqueleto' de carga ---
+      setProfileLoading(false);
     });
     return () => unsub();
   }, [uid, user]);
@@ -301,147 +304,169 @@ export const MainMenu: React.FC = () => {
   }, [uid, email]);
 
   // ============= HANDLERS =============
-  const handleProfileSave = async () => {
-    if (!uid) return;
-    setSaving(true);
-    try {
-      let newPhotoUrl = photoUrl;
-      if (photoFile) {
-        const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
-        await uploadBytes(storageReference, photoFile);
-        newPhotoUrl = await getDownloadURL(storageReference);
-        setPhotoUrl(newPhotoUrl);
-      }
-      await setDoc(doc(db, "usuarios", uid), {
-        name: editName, 
-        email: editEmail, 
-        phone: editPhone, 
-        position: editPosition, 
-        photoUrl: newPhotoUrl,
-      }, { merge: true });
-      setShowProfile(false);
-      setPhotoFile(null);
-    } catch (error) {
-      console.error("Error al guardar perfil:", error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setPhotoFile(e.target.files[0]);
-      setPhotoUrl(URL.createObjectURL(e.target.files[0]));
-    }
-  };
+  
+  // --- MEJORA: La lógica de guardar y cambiar foto se movió DENTRO de ProfileModal ---
 
   const handleMenuClick = (item: any) => {
     if (!item.available) return;
-    setMobileMenuOpen(false);
+    // --- MEJORA: Se quitó setMobileMenuOpen(false) ---
     navigateTo(item.id);
   };
 
   // ============= COMPONENTES DE UI =============
   
-  // Componente Modal de Perfil
-  const ProfileModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-md bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
-        {/* Header con efecto glassmorphism */}
-        <div className="relative px-6 pt-6 pb-4 bg-gradient-to-r from-violet-600/20 via-purple-600/20 to-fuchsia-600/20 backdrop-blur-xl border-b border-white/10">
-          <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-violet-400" />
-              Editar Perfil
-            </h3>
-            <button
-              onClick={() => setShowProfile(false)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-all duration-200 text-white/70 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+  // --- MEJORA: Componente Modal de Perfil con estado aislado ---
+  const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () => void }) => {
+    
+    // Estados locales para el formulario
+    const { uid, name, email, phone, position, photoUrl: initialPhotoUrl } = currentUser;
+    const [localName, setLocalName] = useState(name || '');
+    const [localEmail, setLocalEmail] = useState(email || '');
+    const [localPhone, setLocalPhone] = useState(phone || '');
+    const [localPosition, setLocalPosition] = useState(position || '');
+    const [localPhotoUrl, setLocalPhotoUrl] = useState(initialPhotoUrl || '');
+    const [localPhotoFile, setLocalPhotoFile] = useState<File | null>(null);
+    const [saving, setSaving] = useState(false);
+    const inputFileRef = useRef<HTMLInputElement>(null);
 
-        <form onSubmit={(e) => { e.preventDefault(); handleProfileSave(); }} className="p-6 space-y-5">
-          {/* Avatar con glassmorphism */}
-          <div className="flex flex-col items-center space-y-3">
-            <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
-              <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-white/20 bg-gradient-to-br from-slate-700 to-slate-800 shadow-2xl">
-                {photoUrl ? (
-                  <img src={photoUrl} alt="Perfil" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <User className="w-12 h-12 text-white/40" />
-                  </div>
-                )}
-              </div>
+    // Lógica de guardado (ahora local al modal)
+    const handleProfileSave = async () => {
+      if (!uid) return;
+      setSaving(true);
+      try {
+        let newPhotoUrl = localPhotoUrl;
+        if (localPhotoFile) {
+          const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
+          await uploadBytes(storageReference, localPhotoFile);
+          newPhotoUrl = await getDownloadURL(storageReference);
+        }
+        // Guarda los datos locales en Firestore
+        await setDoc(doc(db, "usuarios", uid), {
+          name: localName, 
+          email: localEmail, 
+          phone: localPhone, 
+          position: localPosition, 
+          photoUrl: newPhotoUrl,
+        }, { merge: true });
+        
+        // Cierra el modal
+        onClose(); 
+        setLocalPhotoFile(null);
+      } catch (error) {
+        console.error("Error al guardar perfil:", error);
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    // Lógica de cambio de foto (ahora local al modal)
+    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+        setLocalPhotoFile(e.target.files[0]);
+        // Crea una URL temporal para previsualizar la imagen
+        setLocalPhotoUrl(URL.createObjectURL(e.target.files[0]));
+      }
+    };
+    
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
+        <div className="relative w-full max-w-md bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
+          {/* Header con efecto glassmorphism */}
+          <div className="relative px-6 pt-6 pb-4 bg-gradient-to-r from-violet-600/20 via-purple-600/20 to-fuchsia-600/20 backdrop-blur-xl border-b border-white/10">
+            <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-violet-400" />
+                Editar Perfil
+              </h3>
+              <button
+                onClick={onClose} // <-- Usa onClose
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-all duration-200 text-white/70 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <input
-              type="file"
-              ref={inputFileRef}
-              onChange={handlePhotoChange}
-              accept="image/*"
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => inputFileRef.current?.click()}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
-            >
-              Cambiar foto
-            </button>
           </div>
 
-          {/* Campos con glassmorphism */}
-          <div className="space-y-4">
-            {[
-              { label: "Nombre", type: "text", value: editName, setter: setEditName, placeholder: "Tu nombre completo", icon: User },
-              { label: "Correo", type: "email", value: editEmail, setter: setEditEmail, placeholder: "tu@correo.com", icon: Bell },
-              { label: "Teléfono", type: "tel", value: editPhone, setter: setEditPhone, placeholder: "222-123-4567", icon: Activity },
-              { label: "Puesto / Cargo", type: "text", value: editPosition, setter: setEditPosition, placeholder: "Ej. Metrólogo", icon: Award },
-            ].map((field, idx) => (
-              <div key={idx} className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-semibold text-white/90">
-                  <field.icon className="w-4 h-4 text-violet-400" />
-                  {field.label}
-                </label>
-                <input
-                  type={field.type}
-                  value={field.value}
-                  onChange={(e) => field.setter(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl text-white placeholder-white/30 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/50 focus:outline-none transition-all duration-200"
-                  placeholder={field.placeholder}
-                />
+          <form onSubmit={(e) => { e.preventDefault(); handleProfileSave(); }} className="p-6 space-y-5">
+            {/* Avatar con glassmorphism */}
+            <div className="flex flex-col items-center space-y-3">
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-white/20 bg-gradient-to-br from-slate-700 to-slate-800 shadow-2xl">
+                  {localPhotoUrl ? ( // <-- Usa localPhotoUrl
+                    <img src={localPhotoUrl} alt="Perfil" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User className="w-12 h-12 text-white/40" />
+                    </div>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
+              <input
+                type="file"
+                ref={inputFileRef}
+                onChange={handlePhotoChange} // <-- Usa handlePhotoChange local
+                accept="image/*"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => inputFileRef.current?.click()}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+              >
+                Cambiar foto
+              </button>
+            </div>
 
-          {/* Botones */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={() => setShowProfile(false)}
-              disabled={saving}
-              className="flex-1 px-5 py-3 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-white/80 font-semibold hover:bg-white/10 transition-all duration-200"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? "Guardando..." : "Guardar Cambios"}
-            </button>
-          </div>
-        </form>
+            {/* Campos con glassmorphism (usando estados locales) */}
+            <div className="space-y-4">
+              {[
+                { label: "Nombre", type: "text", value: localName, setter: setLocalName, placeholder: "Tu nombre completo", icon: User },
+                { label: "Correo", type: "email", value: localEmail, setter: setLocalEmail, placeholder: "tu@correo.com", icon: Bell },
+                { label: "Teléfono", type: "tel", value: localPhone, setter: setLocalPhone, placeholder: "222-123-4567", icon: Activity },
+                { label: "Puesto / Cargo", type: "text", value: localPosition, setter: setLocalPosition, placeholder: "Ej. Metrólogo", icon: Award },
+              ].map((field, idx) => (
+                <div key={idx} className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-white/90">
+                    <field.icon className="w-4 h-4 text-violet-400" />
+                    {field.label}
+                  </label>
+                  <input
+                    type={field.type}
+                    value={field.value}
+                    onChange={(e) => field.setter(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl text-white placeholder-white/30 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/50 focus:outline-none transition-all duration-200"
+                    placeholder={field.placeholder}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose} // <-- Usa onClose
+                disabled={saving}
+                className="flex-1 px-5 py-3 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-white/80 font-semibold hover:bg-white/10 transition-all duration-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? "Guardando..." : "Guardar Cambios"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // Componente Banner de Asignados
+  // Componente Banner de Asignados (Sin cambios)
   const AssignedBanner = () => (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 animate-slideDown">
       <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500/90 via-teal-500/90 to-cyan-500/90 backdrop-blur-xl border border-white/20 shadow-2xl">
@@ -495,7 +520,7 @@ export const MainMenu: React.FC = () => {
   ];
 
 
-  // Componente de Progreso de Metrólogo (CON COLORES)
+  // Componente de Progreso de Metrólogo (CON COLORES) (Sin cambios)
   const MetrologoProgressTip = () => {
     if (!isMetrologo || !showMetrologoTip || equipmentCount === 0) return null;
     
@@ -622,27 +647,42 @@ export const MainMenu: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Perfil */}
+              
+              {/* --- MEJORA: Perfil con Skeleton Loader --- */}
               <button
                 onClick={() => setShowProfile(true)}
-                className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 transition-all duration-200 group"
+                className="flex items-center gap-3 px-4 py-2.5 min-h-[58px] rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 transition-all duration-200 group"
               >
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full blur opacity-50 group-hover:opacity-75 transition-opacity"></div>
-                  <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 bg-gradient-to-br from-slate-700 to-slate-800">
-                    {photoUrl ? (
-                      <img src={photoUrl} alt="Perfil" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <User className="w-5 h-5 text-white/40" />
-                      </div>
-                    )}
+                {profileLoading ? (
+                  // Skeleton Loader
+                  <div className="flex items-center gap-3 animate-pulse">
+                    <div className="w-10 h-10 rounded-full bg-slate-700"></div>
+                    <div className="space-y-2">
+                      <div className="h-4 bg-slate-700 rounded w-24"></div>
+                      <div className="h-3 bg-slate-700 rounded w-16"></div>
+                    </div>
                   </div>
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-white">{editName || 'Usuario'}</p>
-                  <p className="text-xs text-white/50">{editPosition || 'Sin cargo'}</p>
-                </div>
+                ) : (
+                  // Contenido real del perfil
+                  <>
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full blur opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 bg-gradient-to-br from-slate-700 to-slate-800">
+                        {photoUrl ? (
+                          <img src={photoUrl} alt="Perfil" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-white/40" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-white">{editName || 'Usuario'}</p>
+                      <p className="text-xs text-white/50">{editPosition || 'Sin cargo'}</p>
+                    </div>
+                  </>
+                )}
               </button>
 
               {/* Logout */}
@@ -665,14 +705,18 @@ export const MainMenu: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          
+          {/* --- MEJORA: Accesibilidad (Cambiado de 'div' a 'button') --- */}
           {menuItemsFiltered.map((item, idx) => (
-            <div
+            <button
+              type="button"
               key={item.id}
               onClick={() => handleMenuClick(item)}
-              className={`group relative overflow-hidden rounded-2xl transition-all duration-300 ${
-                !item.available 
-                  ? 'opacity-50 cursor-not-allowed' 
-                  : 'cursor-pointer hover:scale-[1.02] hover:-translate-y-1'
+              disabled={!item.available} // <-- Prop 'disabled'
+              className={`group relative w-full text-left overflow-hidden rounded-2xl transition-all duration-300 ${
+                item.available 
+                  ? 'cursor-pointer hover:scale-[1.02] hover:-translate-y-1' // Estilos si está disponible
+                  : 'opacity-50 cursor-not-allowed' // Estilos si NO está disponible
               }`}
               style={{ animationDelay: `${idx * 50}ms` }}
             >
@@ -715,7 +759,7 @@ export const MainMenu: React.FC = () => {
                   <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/10 via-transparent to-transparent"></div>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </main>
@@ -744,11 +788,13 @@ export const MainMenu: React.FC = () => {
                 <p className="text-xs text-white/50">Panel Principal</p>
               </div>
             </div>
+
+            {/* --- MEJORA: Botón de menú cambiado a botón de Perfil --- */}
             <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              onClick={() => setShowProfile(true)}
               className="p-2.5 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-white hover:bg-white/10 transition-all"
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <MenuIcon className="w-5 h-5" />}
+              <User className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -825,7 +871,19 @@ export const MainMenu: React.FC = () => {
 
   return (
     <>
-      {showProfile && <ProfileModal />}
+      {/* --- MEJORA: Pasando props al Modal --- */}
+      {showProfile && <ProfileModal 
+        currentUser={{
+          uid: uid,
+          name: editName,
+          email: editEmail,
+          phone: editPhone,
+          position: editPosition,
+          photoUrl: photoUrl
+        }}
+        onClose={() => setShowProfile(false)}
+      />}
+
       {showAssignedBanner && <AssignedBanner />}
       
       {showMetrologoTip && <MetrologoProgressTip />} 
@@ -833,6 +891,7 @@ export const MainMenu: React.FC = () => {
       <DesktopLayout />
       <MobileLayout />
 
+      {/* Estilos (sin cambios) */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
