@@ -269,6 +269,7 @@ const unidadesPorMagnitud: Record<string, any> = {
   Tiempo: ["s", "min", "h"],
   Velocidad: ["m/s", "km/h"],
   Vacio: ["atm", "Psi", "mbar", "Torr", "mmHg", "micron", "inHg"],
+  Vibracion: ["g", "rad/s"],
   "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
 };
 
