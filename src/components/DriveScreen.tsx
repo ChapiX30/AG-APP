@@ -301,6 +301,41 @@ const getUserDisplayName = async (user: any): Promise<string> => {
   return 'Usuario desconocido';
 };
 
+// =================================================================
+// ===== NUEVA FUNCIÓN DE AYUDA PARA ACTUALIZACIÓN INSTANTÁNEA =====
+// =================================================================
+// Helper function to update a file in the nested tree state
+const updateFileInTree = (
+  folder: DriveFolder,
+  filePath: string,
+  updates: Partial<DriveFile>
+): DriveFolder => {
+  // Check files in the current folder
+  const fileIndex = folder.files.findIndex(f => f.fullPath === filePath);
+  if (fileIndex > -1) {
+    const updatedFiles = [...folder.files];
+    updatedFiles[fileIndex] = { ...updatedFiles[fileIndex], ...updates };
+    return { ...folder, files: updatedFiles };
+  }
+
+  // Recursively check subfolders
+  const folderIndex = folder.folders.findIndex(f => filePath.startsWith(f.fullPath));
+  if (folderIndex > -1) {
+    const updatedFolders = [...folder.folders];
+    updatedFolders[folderIndex] = updateFileInTree(
+      updatedFolders[folderIndex],
+      filePath,
+      updates
+    );
+    return { ...folder, folders: updatedFolders };
+  }
+
+  return folder;
+};
+// =================================================================
+// =================================================================
+
+
 const filterFoldersByPermissions = (folders: DriveFolder[], userIsQuality: boolean, userName: string): DriveFolder[] => {
   if (userIsQuality) return folders;
   const userNameLower = userName.toLowerCase();
@@ -608,27 +643,49 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     await logActivity('download', file.name);
   };
 
+  // =================================================================
+  // ===== FUNCIÓN MODIFICADA (1 de 3) - ACTUALIZACIÓN INSTANTÁNEA =====
+  // =================================================================
   const handleToggleStar = async (file: DriveFile) => {
-    if (!user) return;
+    if (!user || !tree) return; // <-- Aseguramos que tree exista
     try {
       const metadataId = file.fullPath.replace(/\//g, '_');
       const metadataRef = doc(db, 'fileMetadata', metadataId);
       const newStarredState = !file.starred;
       await setDoc(metadataRef, { starred: newStarredState }, { merge: true });
       await logActivity(newStarredState ? 'star' : 'unstar', file.name);
-      reloadTree();
+
+      // ----- AQUÍ ESTÁ EL CAMBIO -----
+      // Actualiza el estado local en lugar de recargar todo
+      const localUpdates: Partial<DriveFile> = {
+        starred: newStarredState
+      };
+      
+      setTree(prevTree => {
+        if (!prevTree) return null;
+        // Usa la función de ayuda para actualizar el estado
+        return updateFileInTree(prevTree, file.fullPath, localUpdates);
+      });
+      // ---------------------------------
+
     } catch (error) {
       console.error("Error toggling star:", error);
       setError("Error al marcar el archivo");
+      reloadTree(); // <-- Mantenemos reloadTree() como fallback en caso de error
     }
   };
+  // =================================================================
+  // =================================================================
 
   const getAllFilesFromTree = (folder: DriveFolder): DriveFile[] => {
     return folder.files.concat(...folder.folders.map(getAllFilesFromTree));
   };
 
+  // =================================================================
+  // ===== FUNCIÓN MODIFICADA (2 de 3) - ACTUALIZACIÓN INSTANTÁNEA =====
+  // =================================================================
   const handleMarkReviewed = async (file: DriveFile) => {
-    if (!user) return;
+    if (!user || !tree) return; // <-- Aseguramos que tree exista
     try {
       const metadataId = file.fullPath.replace(/\//g, '_');
       const metadataRef = doc(db, 'fileMetadata', metadataId);
@@ -649,15 +706,37 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         undefined,
         `Estado cambiado por ${userName}`
       );
-      reloadTree();
+      
+      // ----- AQUÍ ESTÁ EL CAMBIO -----
+      // Actualiza el estado local en lugar de recargar todo
+      const localUpdates: Partial<DriveFile> = {
+        reviewed: newReviewedState,
+        reviewedBy: newReviewedState ? user.email : null,
+        reviewedByName: newReviewedState ? userName : null,
+        reviewedAt: newReviewedState ? new Date().toISOString() : undefined
+      };
+      
+      setTree(prevTree => {
+        if (!prevTree) return null;
+        // Usa la función de ayuda para actualizar el estado
+        return updateFileInTree(prevTree, file.fullPath, localUpdates);
+      });
+      // ---------------------------------
+
     } catch (error) {
       console.error("Error updating review status:", error);
       setError("Error al actualizar el estado de revisión");
+      reloadTree(); // <-- Mantenemos reloadTree() como fallback en caso de error
     }
   };
+  // =================================================================
+  // =================================================================
 
+  // =================================================================
+  // ===== FUNCIÓN MODIFICADA (3 de 3) - ACTUALIZACIÓN INSTANTÁNEA =====
+  // =================================================================
   const handleMarkCompleted = async (file: DriveFile) => {
-    if (!user) return;
+    if (!user || !tree) return; // <-- Aseguramos que tree exista
     try {
       const metadataId = file.fullPath.replace(/\//g, '_');
       const metadataRef = doc(db, 'fileMetadata', metadataId);
@@ -678,12 +757,32 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         undefined,
         `Estado cambiado por ${userName}`
       );
-      reloadTree();
+      
+      // ----- AQUÍ ESTÁ EL CAMBIO -----
+      // Actualiza el estado local en lugar de recargar todo
+      const localUpdates: Partial<DriveFile> = {
+        completed: newCompletedState,
+        completedBy: newCompletedState ? user.email : null,
+        completedByName: newCompletedState ? userName : null,
+        completedAt: newCompletedState ? new Date().toISOString() : undefined
+      };
+      
+      setTree(prevTree => {
+        if (!prevTree) return null;
+        // Usa la función de ayuda para actualizar el estado
+        return updateFileInTree(prevTree, file.fullPath, localUpdates);
+      });
+      // ---------------------------------
+
     } catch (error) {
       console.error("Error updating completed status:", error);
       setError("Error al actualizar el estado de realización");
+      reloadTree(); // <-- Mantenemos reloadTree() como fallback en caso de error
     }
   };
+  // =================================================================
+  // =================================================================
+
 
   const handleFileSelection = (filePath: string, event: React.ChangeEvent<HTMLInputElement>) => {
     event.stopPropagation();
