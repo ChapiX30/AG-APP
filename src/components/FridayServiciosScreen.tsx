@@ -22,17 +22,23 @@ import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Worker de PDF.js con configuración mejorada
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// === MI CORRECCIÓN DEFINITIVA (FIX 8): Usar el worker local ===
+// Se carga el worker desde la carpeta /public que copiaste.
+// Esto garantiza que la versión SIEMPRE coincida con la de tu librería.
+pdfjs.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.js`;
 
-// Configuración para PDFs con problemas de CORS
+// === MI CORRECCIÓN (FIX 9): Eliminar pdfOptions ===
+// Estas opciones también causaban conflictos de versión.
+// Al usar el worker local, ya no son necesarias.
+/*
 const pdfOptions = {
-  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+  cMapUrl: '...',
   cMapPacked: true,
-  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
+  standardFontDataUrl: '...',
   withCredentials: false,
   httpHeaders: {}
 };
+*/
 
 // Hook para detectar dispositivos móviles
 const useIsMobile = () => {
@@ -167,9 +173,13 @@ const extraerNombreArchivo = (url: string): string => {
   }
 };
 
-// Función para obtener extensión
+// === MEJORA (FIX 1): Función para obtener extensión (limpia los query params) ===
+// Esta función ahora quita el "?alt=media&token=..." antes de buscar la extensión.
 const obtenerExtensionArchivo = (fileName: string): string => {
-  return fileName.split('.').pop()?.toLowerCase() || '';
+  // 1. Quitar los parámetros de consulta (query parameters)
+  const nombreSinQuery = fileName.split('?')[0];
+  // 2. Obtener la extensión del nombre limpio
+  return nombreSinQuery.split('.').pop()?.toLowerCase() || '';
 };
 
 // Función para crear URL con token de acceso válido
@@ -260,6 +270,7 @@ const FilePreview = ({
     }
     
     setFileName(name);
+    // Usamos la función corregida aquí también por si acaso
     setExtension(obtenerExtensionArchivo(name));
   }, [file, isUrl]);
 
@@ -598,6 +609,12 @@ const FridayServiciosScreen: React.FC = () => {
           ...doc.data()
         }));
         setMensajes(comentariosData);
+      }, (error) => { // Manejo de error para la query de comentarios
+          console.error("Error en listener de comentarios: ", error);
+          // Este es el error de índice que ves en la consola
+          if (error.code === 'failed-precondition') {
+            toast.error('Error de base de datos: Se requiere un índice. Revisa la consola.');
+          }
       });
 
       return () => unsubscribe();
@@ -705,7 +722,7 @@ const FridayServiciosScreen: React.FC = () => {
         setEscalaZoom(isMobile ? 0.5 : 1); // Reset de zoom
         setRotacionPDF(0); // Reset de rotación
 
-        const extension = obtenerExtensionArchivo(urlAcceso);
+        const extension = obtenerExtensionArchivo(urlAcceso); // Usa la función corregida
         const textExtensions = ['txt', 'csv', 'log', 'md'];
 
         if (textExtensions.includes(extension)) {
@@ -715,9 +732,14 @@ const FridayServiciosScreen: React.FC = () => {
             setContenidoTexto(textContent);
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error al cargar archivo:', error);
-        setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
+        // Mostrar el error específico de PDF si es el caso
+        if (error.message.includes('pdf')) {
+          setErrorArchivo(`Error al cargar PDF: ${error.message}`);
+        } else {
+          setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
+        }
         toast.error('Error al cargar el archivo');
         setArchivoViendose(archivoUrl); // Mostrar URL original si falla
     } finally {
@@ -1729,8 +1751,10 @@ const FridayServiciosScreen: React.FC = () => {
             <div className={`bg-white rounded-2xl shadow-2xl w-full max-h-[95vh] ${
               isMobile ? 'flex flex-col' : 'max-w-screen-xl flex overflow-hidden'
             }`}>
-              {/* Panel principal de detalles */}
-              <div className="flex-1 flex flex-col">
+              
+              {/* === MEJORA (FIX 2): Panel principal de detalles === */}
+              {/* Se añade "min-h-0" para forzar el cálculo correcto de altura en flexbox y permitir el scroll en móvil */}
+              <div className="flex-1 flex flex-col min-h-0">
                 {/* Header */}
                 <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4">
                   <div className="flex items-start justify-between">
@@ -1769,6 +1793,7 @@ const FridayServiciosScreen: React.FC = () => {
                 </div>
 
                 {/* Contenido principal scrolleable */}
+                {/* Este div ahora debería scrollear correctamente gracias al "min-h-0" de su padre */}
                 <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
                   {/* Descripción */}
                   <div className="bg-gray-50 rounded-xl p-4 lg:p-6">
@@ -2027,9 +2052,7 @@ const FridayServiciosScreen: React.FC = () => {
           </div>
         )}
 
-        {/* ====================================================================== */}
-        {/* ============ MEJORA: Visor de archivos optimizado ==================== */}
-        {/* ====================================================================== */}
+        {/* Visor de archivos optimizado */}
         {archivoViendose && (
             <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-2 lg:p-4">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
@@ -2049,15 +2072,14 @@ const FridayServiciosScreen: React.FC = () => {
                         ) : errorArchivo ? (
                             <div className="text-center text-red-500 p-8">{errorArchivo}</div>
                         ) : (() => {
-                            const extension = obtenerExtensionArchivo(archivoViendose);
+                            const extension = obtenerExtensionArchivo(archivoViendose); // Usa la función corregida
                             const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
                             const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 
-                            // === INICIO DE LA MEJORA DEL VISOR PDF ===
                             if (extension === 'pdf') {
                                 return (
                                   <div className="relative w-full h-full flex flex-col items-center">
-                                    {/* --- Barra de Controles de PDF --- */}
+                                    {/* Barra de Controles de PDF */}
                                     <div className="bg-gray-800 text-white p-2 rounded-lg flex items-center gap-2 lg:gap-4 z-10 sticky top-2 shadow-lg text-xs lg:text-sm">
                                       {/* Navegación de Página */}
                                       <button 
@@ -2097,11 +2119,11 @@ const FridayServiciosScreen: React.FC = () => {
                                       </button>
                                     </div>
 
-                                    {/* --- Contenedor del Documento PDF --- */}
+                                    {/* Contenedor del Documento PDF */}
                                     <div className="overflow-auto w-full h-full p-4 flex justify-center">
                                       <Document
                                         file={archivoViendose}
-                                        options={pdfOptions}
+                                        // options={pdfOptions} // <--- Ya no se necesita
                                         onLoadSuccess={({ numPages }) => {
                                           setTotalPaginasPDF(numPages);
                                           setPaginaPDF(1); // Resetear a página 1 en cada carga
@@ -2119,8 +2141,8 @@ const FridayServiciosScreen: React.FC = () => {
                                   </div>
                                 );
                             }
-                            // === FIN DE LA MEJORA DEL VISOR PDF ===
 
+                            // Ahora 'png' coincidirá aquí
                             if (imageExtensions.includes(extension)) {
                                 return <img src={archivoViendose} alt="Vista previa" className="max-w-full max-h-full object-contain" />;
                             }
