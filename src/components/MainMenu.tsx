@@ -226,45 +226,104 @@ export const MainMenu: React.FC = () => {
     }
   }, [isMetrologo, equipmentCount]);
 
-  // Efecto para servicios asignados y notificaciones
+  // ========================================================================
+  // === BLOQUE MODIFICADO: Efecto para servicios asignados y notificaciones ===
+  // ========================================================================
   useEffect(() => {
     if (!uid && !email) return;
+
     const key = `notifiedServicios:${uid || email}`;
     let notifiedSet = new Set<string>();
-    try { notifiedSet = new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch {}
+    try { 
+      notifiedSet = new Set(JSON.parse(localStorage.getItem(key) || '[]')); 
+    } catch {}
+
     const unsub = onSnapshot(collection(db, 'servicios'), (snap) => {
       const servicios = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-      const asignados = servicios.filter(s => {
+
+      // --- MEJORA 1: FILTRAR SERVICIOS ACTIVOS ---
+      // Filtramos primero todos los servicios que NO estén finalizados.
+      // (Asumiendo que tu campo de estado se llama 'estado')
+      //
+      const serviciosActivos = servicios.filter(s => {
+        const estado = (s.estado || '').toString().toLowerCase().trim();
+        return estado !== 'finalizado' && estado !== 'completado';
+      });
+      // ---
+
+      
+      // Filtramos los servicios asignados sobre la lista de *activos*.
+      const asignados = serviciosActivos.filter(s => {
         const personas = Array.isArray(s.personas) ? s.personas : [];
         const personasLower = personas.map((p: any) => (p || '').toString().toLowerCase());
         const emailLower = (email || '').toLowerCase();
         return personas.includes(uid) || (email && personasLower.includes(emailLower));
       });
+
       const nuevos = asignados.filter(s => !notifiedSet.has(s.id));
-      setAssignedCount(asignados.length);
+      
+      // El contador ahora solo refleja los servicios activos.
+      setAssignedCount(asignados.length); 
+
       if (nuevos.length > 0) {
         setShowAssignedBanner(true);
         setTimeout(() => setShowAssignedBanner(false), 6000);
+        
         if ('Notification' in window) {
+          
+          // --- MEJORA 2: NOTIFICACIÓN DESCRIPTIVA (CORREGIDA) ---
+          // Usamos los campos 'titulo' y 'cliente' de FridayServiciosScreen
+          //
           const title = 'Nuevo servicio asignado';
-          const body = nuevos.length === 1 ? `Se te asignó: ${nuevos[0].elemento || 'Servicio'}`
-            : `Se te asignaron ${nuevos.length} servicios`;
-          const show = () => { try { new Notification(title, { body, icon: '/bell.png' }); } catch {} };
+          let body = '';
+
+          if (nuevos.length === 1) {
+            const s = nuevos[0];
+            
+            // Usamos s.titulo
+            const titulo = s.titulo || 'un servicio'; 
+            
+            // Usamos s.cliente
+            const cliente = s.cliente ? ` para ${s.cliente}` : '';
+            
+            body = `Se te asignó: ${titulo}${cliente}.`;
+          } else {
+            body = `Se te asignaron ${nuevos.length} nuevos servicios. Revísalos en la app.`;
+          }
+          // ---
+
+          const show = () => { 
+            try { 
+              new Notification(title, { body, icon: '/bell.png' }); 
+            } catch {} 
+          };
+          
           if (Notification.permission === 'granted') show();
           else if (Notification.permission !== 'denied') {
             Notification.requestPermission().then(p => { if (p === 'granted') show(); });
           }
         }
+        
         nuevos.forEach(s => notifiedSet.add(s.id));
-        try { localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet))); } catch {}
+        try { 
+          localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet))); 
+        } catch {}
       } else {
-        try { localStorage.setItem(key, JSON.stringify(asignados.map(s => s.id))); } catch {}
+        // Actualizamos el localStorage solo con los IDs de los servicios activos
+        try { 
+          localStorage.setItem(key, JSON.stringify(asignados.map(s => s.id))); 
+        } catch {}
       }
     }, (err) => {
       console.error('onSnapshot servicios error:', err);
     });
+
     return () => unsub();
   }, [uid, email]);
+  // ========================================================================
+  // === FIN DEL BLOQUE MODIFICADO ===
+  // ========================================================================
+
 
   // Efecto para FCM Token
   useEffect(() => {
@@ -473,6 +532,7 @@ export const MainMenu: React.FC = () => {
         <div className="flex items-center gap-3 text-white">
           <Bell className="w-6 h-6 animate-bounce" />
           <p className="font-bold text-lg">
+            {/* El contador (assignedCount) ahora solo muestra servicios activos */}
             ¡Tienes {assignedCount} servicio{assignedCount !== 1 ? 's' : ''} nuevo{assignedCount !== 1 ? 's' : ''}!
           </p>
         </div>
@@ -884,7 +944,7 @@ export const MainMenu: React.FC = () => {
         onClose={() => setShowProfile(false)}
       />}
 
-      {showAssignedBanner && <AssignedBanner />}
+      {showAssignedBanner && assignedCount > 0 && <AssignedBanner />}
       
       {showMetrologoTip && <MetrologoProgressTip />} 
       

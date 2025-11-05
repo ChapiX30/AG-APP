@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import SidebarFriday from './SidebarFriday';
 import { Document, Page, pdfjs } from 'react-pdf';
+
+// === MI CORRECCIÓN (FIX 10): Importar el worker para VITE ===
+// Añadimos "?url" para que Vite nos dé la URL del worker.
+'pdfjs-dist/build/pdf.worker.min.js?url';
+
 import { 
   ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check, Repeat, 
   Download, Trash2, XCircle, Search, Filter, Eye, Edit3, Zap, Clock, 
@@ -22,19 +27,19 @@ import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// === MI CORRECCIÓN DEFINITIVA (FIX 8): Usar el worker local ===
-// Se carga el worker desde la carpeta /public que copiaste.
-// Esto garantiza que la versión SIEMPRE coincida con la de tu librería.
-pdfjs.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.js`;
+// === MI CORRECCIÓN (FIX 11): Asignar el worker importado ===
+// Ya no se usa CDN ni un archivo en /public.
+// Se usa el worker importado que Vite procesa automáticamente.
+pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
-// === MI CORRECCIÓN (FIX 9): Eliminar pdfOptions ===
+// === MI CORRECCIÓN (FIX 12): Eliminar pdfOptions ===
 // Estas opciones también causaban conflictos de versión.
-// Al usar el worker local, ya no son necesarias.
+// Al usar el worker importado, ya no son necesarias.
 /*
 const pdfOptions = {
-  cMapUrl: '...',
+  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
   cMapPacked: true,
-  standardFontDataUrl: '...',
+  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
   withCredentials: false,
   httpHeaders: {}
 };
@@ -613,7 +618,8 @@ const FridayServiciosScreen: React.FC = () => {
           console.error("Error en listener de comentarios: ", error);
           // Este es el error de índice que ves en la consola
           if (error.code === 'failed-precondition') {
-            toast.error('Error de base de datos: Se requiere un índice. Revisa la consola.');
+            // No inundar al usuario con toasts, pero sí loguearlo
+            console.error("Error de Firebase: Se requiere un índice. Haz clic en el enlace de la consola para crearlo.");
           }
       });
 
