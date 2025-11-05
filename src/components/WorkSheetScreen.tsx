@@ -485,11 +485,13 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
   doc.line(marginLeft, y, marginRight, y);
   y += 20;
 
-  // Información general
+  // ====================================================================
+  // 4. (FIX) Corrección de Fecha de Recepción
+  // ====================================================================
   const infoPairs = [
     ["Lugar de Calibración", formData.lugarCalibracion],
     ["N.Certificado", formData.certificado],
-    ["Fecha de Recepción", formData.fecha],
+    ["Fecha de Recepción", formData.fechaRecepcion], // <-- CORREGIDO (antes era formData.fecha)
     ["Cliente", formData.cliente],
     ["Equipo", formData.equipo],
     ["ID", formData.id],
@@ -556,8 +558,11 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
           doc.text(value || "-", marginLeft + 150, y);
           y += lineHeight;
       }
-      y += 10; // Espacio extra después de las mediciones de masa
-
+      // ====================================================================
+      // 3. (FIX) Corrección del espaciado de "Masa"
+      // ====================================================================
+      y += 30; // <-- CORREGIDO (antes era 10)
+      
   } else {
       // Lógica original para otras magnitudes (Medición Patrón / Instrumento)
       doc.rect(marginLeft, tableTop, colWidth, rowHeight, "FD");
@@ -608,10 +613,17 @@ export const WorkSheetScreen: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [isCelestica, setIsCelestica] = useState(false);
 
+  // ====================================================================
+  // 1. (MEJORA) Añadimos el estado para la URL del preview
+  // ====================================================================
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   const [formData, setFormData] = useState<any>({ // Usar 'any' para manejar la estructura dinámica
     lugarCalibracion: "",
     frecuenciaCalibracion: "",
     fecha: getLocalISODate(), // FIX: Usa la función local para evitar desfase de fecha
+    // (FIX) Asegurarse de que fechaRecepcion esté en el estado inicial
+    fechaRecepcion: "", 
     certificado: "",
     nombre: "",
     cliente: "",
@@ -649,22 +661,29 @@ export const WorkSheetScreen: React.FC = () => {
   // FIX: Se inicializa en DC
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
 
-  // FIX: Implementación de la lógica de validación usando la frecuencia del registro ANTERIOR
+  // ====================================================================
+  // 2. (FIX) Lógica de validación CORREGIDA
+  // ====================================================================
   const validarIdEnPeriodo = useCallback(async () => {
+    // FIX: Si la excepción está marcada, limpia los estados de bloqueo y sal.
+    if (permitirExcepcion) {
+      setIdBlocked(false);
+      setIdErrorMessage("");
+      return;
+    }
+
+    // Resetea en cada ejecución normal
     setIdBlocked(false);
     setIdErrorMessage("");
 
     const id = formData.id?.trim();
     const cliente = formData.cliente;
 
-    // Si la excepción está marcada, no realizamos el bloqueo.
-    if (permitirExcepcion) return; 
-
     if (!id || !cliente) return;
 
     // 1. Buscar registros anteriores para este ID y Cliente
     const q = query(
-      collection(db, "hojasDeTrabajo"), 
+      collection(db, "hojasDeTrabajo"),
       where("id", "==", id),
       where("cliente", "==", cliente)
     );
@@ -686,7 +705,7 @@ export const WorkSheetScreen: React.FC = () => {
       const parts = f.split('-');
       const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
 
-      if (!isNaN(dateObj.getTime())) { 
+      if (!isNaN(dateObj.getTime())) {
         if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) {
           maxFecha = dateObj;
           frecuenciaAnterior = freq;
@@ -700,7 +719,7 @@ export const WorkSheetScreen: React.FC = () => {
     // 3. CALCULAR la próxima fecha permitida usando la FRECUENCIA ANTERIOR
     const nextAllowed = calcularSiguienteFecha(maxFechaString!, frecuenciaAnterior);
 
-    if (!nextAllowed) return; 
+    if (!nextAllowed) return;
 
     const hoy = new Date();
     // 4. Comparar con la fecha actual
@@ -711,6 +730,7 @@ export const WorkSheetScreen: React.FC = () => {
       );
     }
   }, [formData.id, formData.cliente, permitirExcepcion]); // La frecuencia actual no afecta el bloqueo, pero el cliente sí.
+
 
   // Ejecutar validación cuando cambian los campos relevantes o la excepción
   useEffect(() => {
@@ -973,6 +993,42 @@ export const WorkSheetScreen: React.FC = () => {
   }, [valid, formData, idBlocked, permitirExcepcion, currentUser, user, goBack, autoTransferEnabled]);
 
 
+  // ====================================================================
+  // 3. (MEJORA) Nueva función para manejar el toggle de la vista previa
+  // ====================================================================
+  const handleTogglePreview = useCallback(async () => {
+    const newShowPreview = !showPreview;
+    setShowPreview(newShowPreview);
+
+    // Si vamos a mostrarlo, generamos el PDF
+    if (newShowPreview) {
+      // Limpiamos el anterior (si existe)
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+
+      try {
+        const { jsPDF } = await import("jspdf");
+        // (FIX) Pasamos el formData actualizado para que el preview sea correcto
+        const pdfDoc = generateTemplatePDF(formData, jsPDF); 
+        const blob = pdfDoc.output("blob");
+        const url = URL.createObjectURL(blob);
+        setPreviewUrl(url);
+      } catch (e) {
+        console.error("Error al generar vista previa:", e);
+        setPreviewUrl(null);
+      }
+    } else {
+      // Si lo ocultamos, limpiamos la URL para liberar memoria
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
+    }
+    // (FIX) Añadimos formData como dependencia para que el preview se regenere
+  }, [showPreview, previewUrl, formData]); 
+
+
   const handleCancel = () => goBack();
   const esMagnitudMasa = (m: string) => m === "Masa";
 
@@ -1019,8 +1075,12 @@ export const WorkSheetScreen: React.FC = () => {
               <Zap className="w-4 h-4" />
               <span className="text-sm">Auto → Friday</span>
             </button>
+            
+            {/* ==================================================================== */}
+            {/* 4. (MEJORA) Botón de preview actualizado                               */}
+            {/* ==================================================================== */}
             <button
-              onClick={() => setShowPreview(!showPreview)}
+              onClick={handleTogglePreview} // <-- USA LA NUEVA FUNCIÓN
               className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2"
             >
               <Edit3 className="w-4 h-4" />
@@ -1537,99 +1597,35 @@ export const WorkSheetScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Vista Previa */}
+            {/* ==================================================================== */}
+            {/* 5. (MEJORA) Bloque de vista previa REEMPLAZADO por el <iframe>       */}
+            {/* ==================================================================== */}
             {showPreview && (
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden h-full min-h-[1000px]">
                 <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
-                  <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF</h2>
+                  <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF Real</h2>
                   <p className="text-gray-600 text-sm">
-                    El PDF se generará siguiendo exactamente este formato
+                    Esto es exactamente lo que se guardará.
                   </p>
                 </div>
 
-                <div className="p-8 bg-white" style={{ fontFamily: 'Arial, sans-serif' }}>
-                  {/* Header simulado */}
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 border-2 border-blue-600 rounded-full flex items-center justify-center">
-                        <span className="text-xs font-bold text-blue-600"></span>
-                      </div>
-                      <div>
-                        <div className="font-bold text-blue-600">Equipos y Servicios</div>
-                        <div className="text-sm text-blue-600">Especializados AG, S.A. de C.V.</div>
-                      </div>
+                <div className="h-full w-full">
+                  {previewUrl ? (
+                    <iframe
+                      src={previewUrl}
+                      width="100%"
+                      // Se ajusta la altura para que el contenedor padre la controle
+                      className="h-full min-h-[900px]" 
+                      style={{ border: 'none' }}
+                      title="Vista Previa PDF"
+                    />
+                  ) : (
+                    // Centrar el loader en el espacio disponible
+                    <div className="p-8 flex items-center justify-center h-[900px]">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                      <span className="ml-3 text-gray-700">Generando vista previa...</span>
                     </div>
-                    <div className="text-right text-black space-y-1">
-                      <div><strong>Fecha:</strong> {formData.fecha}</div>
-                      <div><strong>Nombre:</strong> {formData.nombre}</div>
-                    </div>
-                  </div>
-
-                  <div className="text-2xl font-bold text-blue-600 mb-4">Hoja de trabajo</div>
-
-                  <div className="text-center mb-4 text-black">
-                    {formData.lugarCalibracion}
-                  </div>
-
-                  <div className="space-y-2 text-sm text-black">
-                    <div><strong>N.Certificado:</strong> {formData.certificado}</div>
-                    <div><strong>Fecha de Recepción:</strong> {formData.fecha}</div>
-                    <div className="flex space-x-8 text-black mb-4">
-                      <div><strong>Cliente:</strong> <span className="text-black">{formData.cliente}</span></div>
-                      <div><strong>Equipo:</strong> {formData.equipo}</div>
-                    </div>
-                    <div className="flex space-x-8 text-black">
-                      <div><strong>ID:</strong> {formData.id}</div>
-                      <div><strong>Marca:</strong> {formData.marca}</div>
-                    </div>
-                    <div><strong>Modelo:</strong> {formData.modelo}</div>
-                    <div><strong>Numero de Serie:</strong> {formData.numeroSerie}</div>
-                    <div className="flex space-x-8 text-black">
-                      {/* Muestra las unidades seleccionadas separadas por coma */}
-                      <div><strong>Unidad:</strong> {(formData.unidad || []).join(', ')}</div>
-                      <div><strong>Alcance:</strong> {formData.alcance}</div>
-                    </div>
-                    <div className="flex space-x-8 text-black">
-                      <div><strong>Resolucion:</strong> {formData.resolucion}</div>
-                      <div><strong>Frecuencia de Calibración:</strong> {formData.frecuenciaCalibracion}</div>
-                    </div>
-                    <div className="flex space-x-8 text-black">
-                      <div><strong>Temp:</strong> {formData.tempAmbiente}°C</div>
-                      <div><strong>HR:</strong> {formData.humedadRelativa}%</div>
-                    </div>
-                  </div>
-
-                  {/* Tabla de mediciones / Masa (Vista Previa) */}
-                  <div className="mt-6 border border-gray-400">
-                    {esMagnitudMasa(formData.magnitud) ? (
-                      // Vista previa para Masa
-                      <div className="p-2 text-sm text-black space-y-1">
-                          <div><strong>Excentricidad:</strong> {formData.excentricidad || '-'}</div>
-                          <div><strong>Linealidad:</strong> {formData.linealidad || '-'}</div>
-                          <div><strong>Repetibilidad:</strong> {formData.repetibilidad || '-'}</div>
-                      </div>
-                    ) : (
-                      // Vista previa para otras magnitudes
-                      <>
-                      <div className="grid grid-cols-2 border-b border-gray-400">
-                          <div className="p-2 border-r border-gray-400 bg-gray-50 font-bold text-black">Medición Patrón:</div>
-                          <div className="p-2 bg-gray-50 font-bold text-black">Medición Instrumento:</div>
-                      </div>
-                      <div className="grid grid-cols-2 min-h-[100px]">
-                          <div className="p-2 border-r border-gray-400 text-xs text-black">
-                            {formData.medicionPatron}
-                          </div>
-                          <div className="p-2 text-xs text-black">
-                            {formData.medicionInstrumento}
-                          </div>
-                      </div>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="mt-4 text-sm text-black">
-                    <strong>Notas:</strong> {formData.notas}
-                  </div>
+                  )}
                 </div>
               </div>
             )}
