@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import SidebarFriday from './SidebarFriday';
-import { Document, Page, pdfjs } from 'react-pdf';
+// === INICIO DE LA REFACORIZACIÓN ===
+// 1. Importamos tu nuevo componente
+import { FileViewer } from './FileViewer'; // Asegúrate que esta ruta sea correcta
 
-// === CORRECCIÓN para error de resolución de módulo en VITE (Plugin Import Analysis) ===
-// 1. Importamos el módulo para que el bundler sepa que debe incluirlo.
-// 2. Usamos una ruta relativa desde node_modules (esto es lo que se resuelve mejor).
-// 3. Ya no usamos la importación nombrada con 'pdfWorkerUrl' para evitar el error 'Cannot resolve'.
-pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
+// 2. Eliminamos las importaciones de react-pdf (Document, Page, pdfjs)
+// ya que FileViewer.tsx las maneja
+// 3. Eliminamos la configuración del worker de pdfjs
+// === FIN DE LA REFACORIZACIÓN ===
 
 import { 
   ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check, Repeat, 
@@ -29,22 +30,10 @@ import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// === CORRECCIÓN (FIX 11 revisado): Asignar el worker importado ===
-// Para resolver el error de "Cannot resolve" en Vite, a menudo se necesita
-// la importación simple o usar la URL de la CDN/unpkg si el sistema de módulos falla.
-// Probaremos con la importación simple primero:
-// pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker; // Usando la importación de arriba
-
-// Si la importación de módulo anterior falla, esta es la solución más robusta para Vite:
-
-// === MI CORRECCIÓN (FIX 12): Eliminar pdfOptions (se mantiene como comentario) ===
+// 4. Eliminamos pdfOptions ya que FileViewer lo maneja
 /*
 const pdfOptions = {
-  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
-  cMapPacked: true,
-  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
-  withCredentials: false,
-  httpHeaders: {}
+  // ...
 };
 */
 
@@ -181,12 +170,9 @@ const extraerNombreArchivo = (url: string): string => {
   }
 };
 
-// === MEJORA (FIX 1): Función para obtener extensión (limpia los query params) ===
-// Esta función ahora quita el "?alt=media&token=..." antes de buscar la extensión.
+// Función para obtener extensión (limpia los query params)
 const obtenerExtensionArchivo = (fileName: string): string => {
-  // 1. Quitar los parámetros de consulta (query parameters)
   const nombreSinQuery = fileName.split('?')[0];
-  // 2. Obtener la extensión del nombre limpio
   return nombreSinQuery.split('.').pop()?.toLowerCase() || '';
 };
 
@@ -278,7 +264,6 @@ const FilePreview = ({
     }
     
     setFileName(name);
-    // Usamos la función corregida aquí también por si acaso
     setExtension(obtenerExtensionArchivo(name));
   }, [file, isUrl]);
 
@@ -429,18 +414,20 @@ const FridayServiciosScreen: React.FC = () => {
   // Estados de UI
   const [archivosSubiendo, setArchivosSubiendo] = useState<boolean>(false);
   const [archivoViendose, setArchivoViendose] = useState<string | null>(null);
-  const [escalaZoom, setEscalaZoom] = useState<number>(isMobile ? 0.5 : 1);
-  const [paginaPDF, setPaginaPDF] = useState<number>(1);
-  const [totalPaginasPDF, setTotalPaginasPDF] = useState<number>(0);
-  const [rotacionPDF, setRotacionPDF] = useState<number>(0);
   const [mensajeNuevo, setMensajeNuevo] = useState<string>('');
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [cargandoArchivo, setCargandoArchivo] = useState<boolean>(false);
   const [errorArchivo, setErrorArchivo] = useState<string>('');
-  
-  // Estado para contenido de texto
-  const [contenidoTexto, setContenidoTexto] = useState<string | null>(null);
 
+  // === INICIO DE LA REFACORIZACIÓN ===
+  // 5. Eliminamos los estados de PDF y Texto
+  // const [escalaZoom, setEscalaZoom] = useState<number>(isMobile ? 0.5 : 1);
+  // const [paginaPDF, setPaginaPDF] = useState<number>(1);
+  // const [totalPaginasPDF, setTotalPaginasPDF] = useState<number>(0);
+  // const [rotacionPDF, setRotacionPDF] = useState<number>(0);
+  // const [contenidoTexto, setContenidoTexto] = useState<string | null>(null);
+  // === FIN DE LA REFACORIZACIÓN ===
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Ref para el contenedor de comentarios
@@ -502,10 +489,8 @@ const FridayServiciosScreen: React.FC = () => {
       setVistaActual('lista');
     }
     setSidebarAbierto(!isMobile);
-    if (isMobile) {
-      setEscalaZoom(0.5);
-    }
-  }, [isMobile]);
+    // 6. Eliminamos el setEscalaZoom de aquí
+  }, [isMobile, vistaActual]); // [isMobile] se convierte en [isMobile, vistaActual]
 
   // Cargar información del usuario actual
   useEffect(() => {
@@ -713,48 +698,31 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
-  // Función para ver archivos con soporte extendido
+  // === INICIO DE LA REFACORIZACIÓN ===
+  // 7. Simplificamos la función verArchivo
   const verArchivo = useCallback(async (archivoUrl: string) => {
     setCargandoArchivo(true);
     setErrorArchivo('');
-    setContenidoTexto(null);
-    setArchivoViendose(null);
+    setArchivoViendose(null); // Limpia para que el loader aparezca
 
     try {
         if (!archivoUrl || typeof archivoUrl !== 'string') {
             throw new Error('URL del archivo no válida');
         }
-
+        // Obtenemos la URL de acceso segura
         const urlAcceso = await crearUrlAcceso(archivoUrl);
-        setArchivoViendose(urlAcceso);
-        setPaginaPDF(1);
-        setEscalaZoom(isMobile ? 0.5 : 1); // Reset de zoom
-        setRotacionPDF(0); // Reset de rotación
-
-        const extension = obtenerExtensionArchivo(urlAcceso); // Usa la función corregida
-        const textExtensions = ['txt', 'csv', 'log', 'md'];
-
-        if (textExtensions.includes(extension)) {
-            const response = await fetch(urlAcceso);
-            if (!response.ok) throw new Error('No se pudo cargar el contenido del archivo.');
-            const textContent = await response.text();
-            setContenidoTexto(textContent);
-        }
-
+        // Simplemente establecemos la URL que verá el FileViewer
+        setArchivoViendose(urlAcceso); 
     } catch (error: any) {
         console.error('Error al cargar archivo:', error);
-        // Mostrar el error específico de PDF si es el caso
-        if (error.message.includes('pdf')) {
-          setErrorArchivo(`Error al cargar PDF: ${error.message}`);
-        } else {
-          setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
-        }
+        setErrorArchivo('No se pudo cargar el archivo. Verifica los permisos de acceso.');
         toast.error('Error al cargar el archivo');
         setArchivoViendose(archivoUrl); // Mostrar URL original si falla
     } finally {
         setCargandoArchivo(false);
     }
-  }, [isMobile]);
+  }, []); // Quitamos [isMobile] de las dependencias
+  // === FIN DE LA REFACORIZACIÓN ===
 
   // Crear servicio
   const crearServicio = async () => {
@@ -2061,7 +2029,8 @@ const FridayServiciosScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Visor de archivos optimizado */}
+        {/* === INICIO DE LA REFACORIZACIÓN === */}
+        {/* 8. Reemplazamos el visor de archivos por el componente FileViewer */}
         {archivoViendose && (
             <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-2 lg:p-4">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
@@ -2075,109 +2044,28 @@ const FridayServiciosScreen: React.FC = () => {
                             <button onClick={() => setArchivoViendose(null)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="Cerrar"><X className="h-4 w-4" /></button>
                         </div>
                     </header>
-                    <main className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center">
+                    
+                    {/* Contenido principal del visor */}
+                    <main className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
                         {cargandoArchivo ? (
                             <div className="text-center"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
                         ) : errorArchivo ? (
                             <div className="text-center text-red-500 p-8">{errorArchivo}</div>
-                        ) : (() => {
-                            const extension = obtenerExtensionArchivo(archivoViendose); // Usa la función corregida
-                            const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
-                            const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-
-                            if (extension === 'pdf') {
-                                return (
-                                  <div className="relative w-full h-full flex flex-col items-center">
-                                    {/* Barra de Controles de PDF */}
-                                    <div className="bg-gray-800 text-white p-2 rounded-lg flex items-center gap-2 lg:gap-4 z-10 sticky top-2 shadow-lg text-xs lg:text-sm">
-                                      {/* Navegación de Página */}
-                                      <button 
-                                        onClick={() => setPaginaPDF(p => Math.max(1, p - 1))} 
-                                        disabled={paginaPDF <= 1}
-                                        className="p-1 rounded-full hover:bg-gray-700 disabled:opacity-50"
-                                        title="Página anterior"
-                                      >
-                                        <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
-                                      </button>
-                                      <span>Página {paginaPDF} de {totalPaginasPDF || '...'}</span>
-                                      <button 
-                                        onClick={() => setPaginaPDF(p => Math.min(totalPaginasPDF, p + 1))} 
-                                        disabled={!totalPaginasPDF || paginaPDF >= totalPaginasPDF}
-                                        className="p-1 rounded-full hover:bg-gray-700 disabled:opacity-50"
-                                        title="Página siguiente"
-                                      >
-                                        <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
-                                      </button>
-                                      
-                                      <div className="border-l border-gray-600 h-6 mx-1 lg:mx-2"></div>
-
-                                      {/* Zoom */}
-                                      <button onClick={() => setEscalaZoom(z => Math.max(0.2, z - 0.2))} className="p-1 rounded-full hover:bg-gray-700" title="Alejar">
-                                        <ZoomOut className="h-4 w-4 lg:h-5 lg:w-5" />
-                                      </button>
-                                      <span>{(escalaZoom * 100).toFixed(0)}%</span>
-                                      <button onClick={() => setEscalaZoom(z => z + 0.2)} className="p-1 rounded-full hover:bg-gray-700" title="Acercar">
-                                        <ZoomIn className="h-4 w-4 lg:h-5 lg:w-5" />
-                                      </button>
-                                      
-                                      <div className="border-l border-gray-600 h-6 mx-1 lg:mx-2"></div>
-                                      
-                                      {/* Rotación */}
-                                      <button onClick={() => setRotacionPDF(r => (r + 90) % 360)} className="p-1 rounded-full hover:bg-gray-700" title="Rotar 90°">
-                                        <RotateCw className="h-4 w-4 lg:h-5 lg:w-5" />
-                                      </button>
-                                    </div>
-
-                                    {/* Contenedor del Documento PDF */}
-                                    <div className="overflow-auto w-full h-full p-4 flex justify-center">
-                                      <Document
-                                        file={archivoViendose}
-                                        // options={pdfOptions} // <--- Ya no se necesita
-                                        onLoadSuccess={({ numPages }) => {
-                                          setTotalPaginasPDF(numPages);
-                                          setPaginaPDF(1); // Resetear a página 1 en cada carga
-                                        }}
-                                        onLoadError={(error) => setErrorArchivo(`Error al cargar PDF: ${error.message}`)}
-                                        loading={<Loader2 className="h-8 w-8 animate-spin text-blue-500" />}
-                                      >
-                                        <Page
-                                          pageNumber={paginaPDF}
-                                          scale={escalaZoom}
-                                          rotate={rotacionPDF}
-                                        />
-                                      </Document>
-                                    </div>
-                                  </div>
-                                );
-                            }
-
-                            // Ahora 'png' coincidirá aquí
-                            if (imageExtensions.includes(extension)) {
-                                return <img src={archivoViendose} alt="Vista previa" className="max-w-full max-h-full object-contain" />;
-                            }
-                            if (contenidoTexto !== null) {
-                                return <pre className="whitespace-pre-wrap text-sm p-4 bg-white rounded-md w-full h-full overflow-auto">{contenidoTexto}</pre>;
-                            }
-                            if (officeExtensions.includes(extension)) {
-                                return <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(archivoViendose)}`} width='100%' height='100%' frameBorder='0'></iframe>;
-                            }
-                            // Fallback para otros archivos
-                            return (
-                                <div className="text-center py-8 lg:py-12 px-4 lg:px-6 bg-white rounded-lg shadow-lg max-w-sm">
-                                    <FileText className="h-16 w-16 lg:h-24 lg:w-24 text-gray-400 mx-auto mb-4" />
-                                    <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-2">Vista previa no disponible</h3>
-                                    <p className="text-gray-500 mb-4 text-sm lg:text-base">Este tipo de archivo ({extension.toUpperCase()}) no se puede previsualizar.</p>
-                                    <a href={archivoViendose} download className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto text-sm lg:text-base">
-                                        <Download className="h-4 w-4" />
-                                        Descargar archivo
-                                    </a>
-                                </div>
-                            );
-                        })()}
+                        ) : (
+                            // ¡Aquí usamos tu nuevo componente!
+                            <FileViewer 
+                              url={archivoViendose} 
+                              fileName={extraerNombreArchivo(archivoViendose)}
+                              maxHeight="calc(95vh - 70px)" // Altura dinámica para ajustarse al modal
+                              style={{ width: '100%', height: '100%' }}
+                            />
+                        )}
                     </main>
                 </div>
             </div>
         )}
+        {/* === FIN DE LA REFACORIZACIÓN === */}
+
 
         {/* Botón flotante para agregar servicio en móvil */}
         {isMobile && (
