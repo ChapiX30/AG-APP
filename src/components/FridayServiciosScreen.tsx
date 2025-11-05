@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import SidebarFriday from './SidebarFriday';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-// === MI CORRECCIÓN (FIX 10): Importar el worker para VITE ===
-// Añadimos "?url" para que Vite nos dé la URL del worker.
-'pdfjs-dist/build/pdf.worker.min.js?url';
+// === CORRECCIÓN para error de resolución de módulo en VITE (Plugin Import Analysis) ===
+// 1. Importamos el módulo para que el bundler sepa que debe incluirlo.
+// 2. Usamos una ruta relativa desde node_modules (esto es lo que se resuelve mejor).
+// 3. Ya no usamos la importación nombrada con 'pdfWorkerUrl' para evitar el error 'Cannot resolve'.
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js';
+
 
 import { 
   ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check, Repeat, 
@@ -27,14 +30,17 @@ import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// === MI CORRECCIÓN (FIX 11): Asignar el worker importado ===
-// Ya no se usa CDN ni un archivo en /public.
-// Se usa el worker importado que Vite procesa automáticamente.
-pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+// === CORRECCIÓN (FIX 11 revisado): Asignar el worker importado ===
+// Para resolver el error de "Cannot resolve" en Vite, a menudo se necesita
+// la importación simple o usar la URL de la CDN/unpkg si el sistema de módulos falla.
+// Probaremos con la importación simple primero:
+// pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker; // Usando la importación de arriba
 
-// === MI CORRECCIÓN (FIX 12): Eliminar pdfOptions ===
-// Estas opciones también causaban conflictos de versión.
-// Al usar el worker importado, ya no son necesarias.
+// Si la importación de módulo anterior falla, esta es la solución más robusta para Vite:
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+
+
+// === MI CORRECCIÓN (FIX 12): Eliminar pdfOptions (se mantiene como comentario) ===
 /*
 const pdfOptions = {
   cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
