@@ -6,8 +6,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 // 1. Importamos el módulo para que el bundler sepa que debe incluirlo.
 // 2. Usamos una ruta relativa desde node_modules (esto es lo que se resuelve mejor).
 // 3. Ya no usamos la importación nombrada con 'pdfWorkerUrl' para evitar el error 'Cannot resolve'.
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js';
-
+pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
 import { 
   ArrowLeft, Plus, Calendar, Bell, FileText, FileUp, X, Check, Repeat, 
@@ -37,8 +36,6 @@ import 'react-toastify/dist/ReactToastify.css';
 // pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker; // Usando la importación de arriba
 
 // Si la importación de módulo anterior falla, esta es la solución más robusta para Vite:
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-
 
 // === MI CORRECCIÓN (FIX 12): Eliminar pdfOptions (se mantiene como comentario) ===
 /*
