@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useReducer } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
   ArrowLeft,
@@ -14,50 +14,93 @@ import {
   Loader2,
   NotebookPen,
   Edit3,
-  Zap, // NUEVO: Icono para indicar transferencia automática
-  Search, // Icono para el buscador
+  Zap,
+  Search,
 } from "lucide-react";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import type { jsPDF } from "jspdf"; // Importar solo el tipo para TS
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc, setDoc } from "firebase/firestore";
+import { collection, addDoc, query, getDocs, where, doc, updateDoc, getDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import {
-  set,
   isBefore, 
   format, 
   addMonths, 
   addYears, 
 } from "date-fns"; 
 
+// ====================================================================
+// 2.A: DEFINICIÓN DE TIPOS ESTRICTOS (INTERFACES)
+// ====================================================================
+
 type ClienteRecord = {
   id: string;
   nombre: string;
 }
 
-type CelesticaRecord = {
+type MasterRecord = {
   A: string; // ID
-  B: string; // Equipo
+  B: string; // Equipo/Nombre
   C: string; // Marca
   D: string; // Modelo
-  E: string; // Número de Serie
+  E: string; // Serie
 };
 
-type TechopsRecord = {
-  A: string; // ID
-  B: string; // NOMBRE (equipo)
-  C: string; // MARCA
-  D: string; // MODELO
-  E: string; // SERIE
+// Interfaz para el Estado Completo del Formulario
+interface WorksheetState {
+  lugarCalibracion: "Sitio" | "Laboratorio" | "";
+  frecuenciaCalibracion: string;
+  fecha: string;
+  fechaRecepcion: string;
+  certificado: string;
+  nombre: string;
+  cliente: string;
+  id: string;
+  equipo: string;
+  marca: string;
+  modelo: string;
+  numeroSerie: string;
+  magnitud: string;
+  unidad: string[];
+  alcance: string;
+  resolucion: string;
+  medicionPatron: string;
+  medicionInstrumento: string;
+  excentricidad: string;
+  linealidad: string;
+  repetibilidad: string;
+  notas: string;
+  tempAmbiente: string | number;
+  humedadRelativa: string | number;
+  // Estados de UI internos del reducer
+  idBlocked: boolean;
+  idErrorMessage: string;
+  permitirExcepcion: boolean;
+  isMasterData: boolean;
+  fieldsLocked: boolean;
 }
 
+// Tipos para las Acciones del Reducer (Discriminated Union)
+type WorksheetAction =
+  | { type: 'SET_FIELD'; field: keyof WorksheetState; payload: string | string[] | number | boolean }
+  | { type: 'SET_USER_NAME'; payload: string }
+  | { type: 'SET_CONSECUTIVE'; consecutive: string; magnitud: string }
+  | { type: 'SET_MAGNITUD'; payload: string }
+  | { type: 'SET_CLIENTE'; payload: string }
+  | { type: 'AUTOCOMPLETE_SUCCESS'; payload: Partial<WorksheetState> }
+  | { type: 'AUTOCOMPLETE_FAIL' }
+  | { type: 'SET_ID_BLOCKED'; message: string }
+  | { type: 'CLEAR_ID_BLOCK' }
+  | { type: 'SET_EXCEPCION'; payload: boolean }
+  | { type: 'RESTORE_BACKUP'; payload: WorksheetState }; // Nueva acción para restaurar respaldo
+
 // ====================================================================
-// Componente de búsqueda para clientes MEJORADO (Agrupación por letra)
+// FIN DEFINICIÓN DE TIPOS
 // ====================================================================
+
 interface ClienteSearchSelectProps {
     clientes: ClienteRecord[];
     onSelect: (cliente: string) => void;
@@ -69,7 +112,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // Filtra y agrupa los clientes por la primera letra de su nombre
     const filteredAndGroupedClientes = React.useMemo(() => {
         const term = searchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
         const grouped: Record<string, ClienteRecord[]> = {};
@@ -97,7 +139,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
         setIsOpen(false);
     };
     
-    // Cierra el desplegable si se hace clic fuera
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
@@ -110,7 +151,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
         };
     }, []);
 
-    // Sincroniza el searchTerm con currentValue cuando cambia externamente
     useEffect(() => {
         setSearchTerm(currentValue);
     }, [currentValue]);
@@ -119,7 +159,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
 
     return (
         <div className="relative" ref={wrapperRef}>
-            {/* Input de búsqueda */}
             <div className="relative">
                 <input
                     type="text"
@@ -133,30 +172,23 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                     className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
                         isOpen ? 'rounded-b-none border-b-0' : ''
                     }`}
-                    aria-label="Buscar cliente"
                 />
                 <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             </div>
-
-            {/* Desplegable de resultados con grupos */}
             {isOpen && (
                 <div className="absolute z-20 w-full bg-white border border-gray-300 max-h-80 overflow-y-auto rounded-b-lg shadow-xl">
                     {sortedLetters.length > 0 ? (
                         sortedLetters.map(letter => (
                             <div key={letter}>
-                                {/* Encabezado de la letra: Sticky para mejor UX */}
                                 <div className="sticky top-0 bg-gray-100 px-3 py-2 text-sm font-bold text-blue-700 border-b border-gray-200 shadow-sm">
                                     {letter}
                                 </div>
-                                {/* Lista de clientes para la letra */}
                                 <ul>
                                     {filteredAndGroupedClientes[letter].map(cliente => (
                                         <li
                                             key={cliente.id}
                                             className="px-4 py-3 cursor-pointer hover:bg-blue-50 text-gray-800 text-sm truncate transition-colors duration-150"
                                             onClick={() => handleSelect(cliente.nombre)}
-                                            role="option"
-                                            aria-selected={searchTerm === cliente.nombre}
                                         >
                                             {cliente.nombre}
                                         </li>
@@ -173,12 +205,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     );
 };
 
-// ====================================================================
-// FIN del Componente ClienteSearchSelect
-// ====================================================================
-
-
-// Helper para obtener la fecha local en formato YYYY-MM-DD (FIX DE FECHA)
 const getLocalISODate = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -187,74 +213,30 @@ const getLocalISODate = () => {
     return `${year}-${month}-${day}`;
 };
 
-// Helper para sacar el nombre automáticamente del usuario logueado
 const getUserName = (user: any) => {
   if (!user) return "Sin Usuario";
-  const name =
-    user.displayName ||
-    user.name ||
-    user.nombre ||
-    user.firstName ||
-    user.given_name ||
-    user.profile?.name ||
-    user.profile?.displayName ||
-    (user.email
-      ? user.email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())
-      : null) ||
-    user.uid ||
-    "Sin Usuario";
-  return name;
+  return user.displayName || user.name || user.email?.split("@")[0] || "Sin Usuario";
 };
 
-// Mapea el código del consecutivo a la magnitud
 const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   if (!consecutivo) return "";
   const m: Record<string, string> = {
-    AGAC: "Acustica",
-    AGD: "Dimensional",
-    AGF: "Fuerza",
-    AGP: "Presión",
-    AGEL: "Electrica",
-    AGT: "Temperatura",
-    AGM: "Masa",
-    AGVBT: "Vibracion",
-    AGQ: "Quimica",
-    AGOT: "Optica",
-    AGFL: "Flujo",
-    AGRD: "Reporte de Diagnostico",
-    AGTI: "Tiempo",
-    VE: "Velocidad",
-    AGPT: "Par Torsional",
+    AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", AGEL: "Electrica",
+    AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", AGQ: "Quimica", AGOT: "Optica",
+    AGFL: "Flujo", AGRD: "Reporte de Diagnostico", AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional",
   };
   const parts = consecutivo.split("-");
-  if (parts.length >= 2 && m[parts[1]]) {
-    return m[parts[1]];
-  }
-  // fallback: buscar substring
+  if (parts.length >= 2 && m[parts[1]]) return m[parts[1]];
   for (const [code, mag] of Object.entries(m)) {
     if (consecutivo.includes(code)) return mag;
-    }
+  }
   return "";
 };
 
 const magnitudesDisponibles = [
-  "Acustica",
-  "Dimensional",
-  "Fuerza",
-  "Flujo",
-  "Frecuencia",
-  "Presión",
-  "Quimica",
-  "Electrica",
-  "Temperatura",
-  "Masa",
-  "Optica",
-  "Reporte de Diagnostico",
-  "Tiempo",
-  "Velocidad",
-  "Vacio",
-  "Vibracion",
-  "Par Torsional",
+  "Acustica", "Dimensional", "Fuerza", "Flujo", "Frecuencia", "Presión", "Quimica",
+  "Electrica", "Temperatura", "Masa", "Optica", "Reporte de Diagnostico", "Tiempo",
+  "Velocidad", "Vacio", "Vibracion", "Par Torsional",
 ];
 
 const unidadesPorMagnitud: Record<string, any> = {
@@ -268,7 +250,7 @@ const unidadesPorMagnitud: Record<string, any> = {
   Electrica: {
     DC: ["mV", "V", "A", "µA", "mA", "Ω"],
     AC: ["mV", "V", "A", "µA", "mA", "Ω"],
-    Otros: ["Hz", "kHz", "MHz"], // Si necesitas frecuencia
+    Otros: ["Hz", "kHz", "MHz"],
   },
   Temperatura: ["°C", "°F", "°K"],
   Optica: ["BRIX", "°"],
@@ -281,30 +263,18 @@ const unidadesPorMagnitud: Record<string, any> = {
   "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
 };
 
-const findTechopsById = (id: string): TechopsRecord | null => {
+const findTechopsById = (id: string): MasterRecord | null => {
   if (!id) return null;
   const normalized = String(id).trim();
-  const records = (masterTechops as TechopsRecord[]).filter(
-    (r) => String(r.A ?? "").trim() === normalized
-  );
-  if (records.length === 0) return null;
-  if (records.length > 1) {
-    console.warn(`Multiple Techops records found for ID "${id}"`, records);
-  }
-  return records[0];
+  const records = (masterTechops as MasterRecord[]).filter((r) => String(r.A ?? "").trim() === normalized);
+  return records.length > 0 ? records[0] : null;
 };
 
-const findCelesticaById = (id: string): CelesticaRecord | null => {
+const findCelesticaById = (id: string): MasterRecord | null => {
   if (!id) return null;
   const normalized = String(id).trim();
-  const records = (masterCelestica as CelesticaRecord[]).filter(
-    (r) => String(r.A ?? "").trim() === normalized
-  );
-  if (records.length === 0) return null;
-  if (records.length > 1) {
-    console.warn(`Multiple Celestica records found for ID "${id}"`, records);
-  }
-  return records[0];
+  const records = (masterCelestica as MasterRecord[]).filter((r) => String(r.A ?? "").trim() === normalized);
+  return records.length > 0 ? records[0] : null;
 };
 
 const isMexicoMROClient = (cliente?: string) => {
@@ -313,165 +283,98 @@ const isMexicoMROClient = (cliente?: string) => {
   return (n.includes("mexico") || n.includes("mx")) && n.includes("mro");
 };
 
-// FIX: Lógica de calcularSiguienteFecha ajustada para crear fechas sin desfase de zona horaria
 function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date | null {
-  // Manejo de valores nulos o vacíos
   if (!fechaUltima || !frecuencia) return null;
-
-  // FIX: Se interpreta la fecha de la última calibración de forma segura (YYYY, MM-1, DD)
   const parts = fechaUltima.split('-');
   if (parts.length !== 3) return null;
   const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  if (isNaN(date.getTime())) return null;
 
-  if (isNaN(date.getTime())) return null; // Si la fecha no es válida
-
-  // Normalizar la frecuencia para asegurar el match
   const lowerFrecuencia = frecuencia.toLowerCase();
-
   if (lowerFrecuencia.includes("mes")) {
-    // Determinar el número de meses
-    let meses = 0;
-    if (lowerFrecuencia.includes("3")) meses = 3;
-    else if (lowerFrecuencia.includes("6")) meses = 6;
-    else return null; // Frecuencia de meses no reconocida
-
-    // Usar addMonths de date-fns
-    return addMonths(date, meses);
+    let meses = lowerFrecuencia.includes("3") ? 3 : lowerFrecuencia.includes("6") ? 6 : 0;
+    return meses > 0 ? addMonths(date, meses) : null;
   }
-
   if (lowerFrecuencia.includes("año") || lowerFrecuencia.includes("ano")) {
-    // Determinar el número de años
-    let años = 0;
-    if (lowerFrecuencia.includes("2")) años = 2;
-    else if (lowerFrecuencia.includes("3")) años = 3;
-    else if (lowerFrecuencia.includes("1")) años = 1;
-    else años = 1; // Por defecto 1 año si dice 'año' o 'ano' sin número
-
-    // Usar addYears de date-fns
+    let años = lowerFrecuencia.includes("2") ? 2 : lowerFrecuencia.includes("3") ? 3 : 1;
     return addYears(date, años);
   }
-
   return null;
 }
 
-// NUEVO: Función para transferir worksheet a Friday
-const transferToFriday = async (formData: any, userId: string, user: any) => {
+// 2.A: Tipado estricto para formData en la transferencia
+const transferToFriday = async (formData: WorksheetState, userId: string, user: any) => {
   try {
-    console.log('Datos que se intentan transferir a Friday:', formData);
-
-    // 1. Obtener el tablero principal
+    console.log('Transferencia a Friday iniciada');
     const boardRef = doc(db, "tableros", "principal");
     const boardSnap = await getDoc(boardRef);
 
     if (!boardSnap.exists()) {
-      alert("Tablero principal no existe, no se puede transferir");
+      alert("Tablero principal no existe");
       return false;
     }
 
     const boardData = boardSnap.data();
     let { groups = [] } = boardData;
 
-    // 2. DETERMINA EL GRUPO DESTINO
     const lugar = (formData.lugarCalibracion || "").toLowerCase();
-    let destinoGroupId = "laboratorio";
-    let destinoGroupName = "Equipos en Laboratorio";
-    let destinoColorIdx = 1;
-    if (lugar === "sitio") {
-      destinoGroupId = "sitio";
-      destinoGroupName = "Servicio en Sitio";
-      destinoColorIdx = 0;
-    }
+    let destinoGroupId = lugar === "sitio" ? "sitio" : "laboratorio";
+    let destinoGroupName = lugar === "sitio" ? "Servicio en Sitio" : "Equipos en Laboratorio";
+    let destinoColorIdx = lugar === "sitio" ? 0 : 1;
 
-    // 3. Busca o crea el grupo correcto
     let destinoGroup = groups.find((g: any) => g.id === destinoGroupId);
     if (!destinoGroup) {
-      destinoGroup = {
-      id: destinoGroupId,
-      name: destinoGroupName,
-      colorIdx: destinoColorIdx,
-      collapsed: false,
-      rows: [],
-      };
+      destinoGroup = { id: destinoGroupId, name: destinoGroupName, colorIdx: destinoColorIdx, collapsed: false, rows: [] };
       groups.push(destinoGroup);
     }
     const groupIndex = groups.findIndex((g: any) => g.id === destinoGroupId);
 
-    const getLocalDateString = () => {
-      const hoy = new Date();
-      const year = hoy.getFullYear();
-      const month = String(hoy.getMonth() + 1).padStart(2, "0");
-      const day = String(hoy.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    };
-
-    // 4. Genera el objeto newRow con los CAMPOS CORRECTOS para FridayScreen
     const newRow = {
       certificado: formData.certificado || "",
-      cliente: formData.cliente || formData.clienteSeleccionado || "Sin especificar",
+      cliente: formData.cliente || "Sin especificar",
       id: formData.id || "",
       equipo: formData.equipo || "Sin especificar",
       marca: formData.marca || "",
       modelo: formData.modelo || "",
       serie: formData.numeroSerie || "",
-      lugarCalibracion: (formData.lugarCalibracion || "").toLowerCase() === "sitio" ? "sitio" : "laboratorio",
+      lugarCalibracion: destinoGroupId,
       status: "pending",
       priority: "medium",
-      assignedTo: user?.uid || "unknown",
-      dueDate: formData.fecha || getLocalDateString(),
-      createdAt: getLocalDateString(),
-      lastUpdated: getLocalDateString(),
+      assignedTo: userId || "unknown",
+      dueDate: formData.fecha || getLocalISODate(),
+      createdAt: getLocalISODate(),
+      lastUpdated: getLocalISODate(),
     };
 
-    // 5. Inserta la fila al grupo correcto
     if (groupIndex !== -1) {
       groups[groupIndex].rows.push(newRow);
-    } else {
-      alert("No se encontró el grupo destino para insertar la fila.");
-      return false;
     }
 
-    // 6. Justo antes de actualizar, log de debug
-    console.log("Grupos antes de updateDoc:", JSON.stringify(groups, null, 2));
-
-    // 7. Actualizar el tablero en Firestore
-    await updateDoc(boardRef, {
-      groups,
-      columns: boardData.columns || [],
-      updatedAt: Date.now(),
-    });
-
-    alert("Transferencia exitosa al tablero Friday");
+    await updateDoc(boardRef, { groups, columns: boardData.columns || [], updatedAt: Date.now() });
     return true;
   } catch (error) {
-    console.error("❌ Error al transferir al tablero Friday:", error);
-    alert("Error al transferir al tablero Friday: " + error);
-    return false;
+    console.error("Error transferencia Friday:", error);
+    return false; // Retornamos false pero no lanzamos error para no bloquear el guardado principal
   }
 };
 
-
-// FIX: Se modifica la función para generar PDF (mejor maquetación y sin logo roto)
-const generateTemplatePDF = (formData: any, JsPDF: any) => {
-  // Ajuste de formato para mejor uso del espacio
-  const doc = new jsPDF({ orientation:"p", unit: "pt", format: "a4" });
+// 2.A: Tipado estricto para formData en PDF
+const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
+  // @ts-ignore - Ignoramos error de tipo si JsPDF viene como any en tiempo de ejecución
+  const doc = new JsPDF({ orientation:"p", unit: "pt", format: "a4" });
   
   const marginLeft = 50;
   const marginRight = 550;
   const lineHeight = 18;
-  let y = 50; // Posición inicial
+  let y = 50;
   
   doc.setFont("helvetica", "normal");
   doc.setTextColor(0, 0, 0);
-
-  // ❌ Se elimina la línea del logo roto.
-
-  // Título del laboratorio
-  doc.setFontSize(16); // Tamaño un poco más grande
+  doc.setFontSize(16);
   doc.setFont(undefined, "bold");
   doc.text("Equipos y Servicios Especializados AG", marginLeft, y);
   y += 20;
 
-  // Fecha y nombre (ajustados para quedar en línea)
   doc.setFontSize(11);
   doc.setFont(undefined, "normal");
   doc.text(`Fecha: ${formData.fecha}`, marginRight - 100, y);
@@ -479,26 +382,21 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
   doc.text(`Nombre: ${formData.nombre}`, marginRight - 100, y + 15);
   y += 35;
 
-  // Línea separadora
   doc.setDrawColor(160);
   doc.setLineWidth(0.5);
   doc.line(marginLeft, y, marginRight, y);
   y += 20;
 
-  // ====================================================================
-  // 4. (FIX) Corrección de Fecha de Recepción
-  // ====================================================================
   const infoPairs = [
     ["Lugar de Calibración", formData.lugarCalibracion],
     ["N.Certificado", formData.certificado],
-    ["Fecha de Recepción", formData.fechaRecepcion], // <-- CORREGIDO (antes era formData.fecha)
+    ["Fecha de Recepción", formData.fechaRecepcion],
     ["Cliente", formData.cliente],
     ["Equipo", formData.equipo],
     ["ID", formData.id],
     ["Marca", formData.marca],
     ["Modelo", formData.modelo],
     ["Número de Serie", formData.numeroSerie],
-    // FIX: Asegura que el array de unidades se muestre correctamente
     ["Unidad", Array.isArray(formData.unidad) ? formData.unidad.join(', ') : formData.unidad],
     ["Alcance", formData.alcance],
     ["Resolucion", formData.resolucion],
@@ -508,1161 +406,491 @@ const generateTemplatePDF = (formData: any, JsPDF: any) => {
   ];
 
   doc.setFontSize(11);
-  const col1Width = 150; // Ancho para las etiquetas
-  const col2X = marginLeft + col1Width; // Posición para los valores
+  const col2X = marginLeft + 150;
   
-  for (let i = 0; i < infoPairs.length; i++) {
-    const [label, value] = infoPairs[i];
+  infoPairs.forEach(([label, value]) => {
     doc.setFont(undefined, "bold");
     doc.text(`${label}:`, marginLeft, y);
     doc.setFont(undefined, "normal");
-    doc.text(`${value || "-"}`, col2X, y); // Uso del ancho de columna fijo
+    doc.text(`${value || "-"}`, col2X, y);
     y += lineHeight;
-  }
+  });
 
   y += 20;
-
-  // --- Tabla de mediciones ---
   const tableTop = y;
   const tableWidth = 500;
   const colWidth = tableWidth / 2;
   const rowHeight = 24;
   const valueHeight = 60;
-  
   const isMasa = formData.magnitud === "Masa";
 
-  // Header con fondo gris
   doc.setFillColor(230);
   doc.setDrawColor(180);
   
   if (isMasa) {
-      // Si es Masa, cambiamos la estructura para mostrar los 3 campos uno debajo del otro
       doc.rect(marginLeft, tableTop, tableWidth, rowHeight, "FD");
       doc.setFont(undefined, "bold");
       doc.text("Mediciones de Masa:", marginLeft + 5, tableTop + 16);
-      
       y = tableTop + rowHeight + 10;
-
-      // FIX: Agregar campos de Masa al PDF
       const masaPairs = [
           ["Excentricidad:", formData.excentricidad],
           ["Linealidad:", formData.linealidad],
           ["Repetibilidad:", formData.repetibilidad],
       ];
-      
-      for (let i = 0; i < masaPairs.length; i++) {
-          const [label, value] = masaPairs[i];
+      masaPairs.forEach(([label, value]) => {
           doc.setFont(undefined, "bold");
           doc.text(label, marginLeft, y);
           doc.setFont(undefined, "normal");
           doc.text(value || "-", marginLeft + 150, y);
           y += lineHeight;
-      }
-      // ====================================================================
-      // 3. (FIX) Corrección del espaciado de "Masa"
-      // ====================================================================
-      y += 30; // <-- CORREGIDO (antes era 10)
-      
+      });
+      y += 30;
   } else {
-      // Lógica original para otras magnitudes (Medición Patrón / Instrumento)
       doc.rect(marginLeft, tableTop, colWidth, rowHeight, "FD");
       doc.rect(marginLeft + colWidth, tableTop, colWidth, rowHeight, "FD");
       doc.setFont(undefined, "bold");
       doc.text("Medición Patrón:", marginLeft + 5, tableTop + 16);
       doc.text("Medición Instrumento:", marginLeft + colWidth + 5, tableTop + 16);
-
-      // Contenido
       const valTop = tableTop + rowHeight;
       doc.setFont(undefined, "normal");
       doc.rect(marginLeft, valTop, colWidth, valueHeight);
       doc.rect(marginLeft + colWidth, valTop, colWidth, valueHeight);
-
-      const splitPatron = doc.splitTextToSize(formData.medicionPatron || "-", colWidth - 10);
-      const splitInst = doc.splitTextToSize(formData.medicionInstrumento || "-", colWidth - 10);
-
-      doc.text(splitPatron, marginLeft + 5, valTop + 15);
-      doc.text(splitInst, marginLeft + colWidth + 5, valTop + 15);
+      doc.text(doc.splitTextToSize(formData.medicionPatron || "-", colWidth - 10), marginLeft + 5, valTop + 15);
+      doc.text(doc.splitTextToSize(formData.medicionInstrumento || "-", colWidth - 10), marginLeft + colWidth + 5, valTop + 15);
       y = valTop + valueHeight + 30;
   }
   
-  // --- Notas ---
   doc.setFont(undefined, "bold");
   doc.setFontSize(12);
   doc.text("Notas:", marginLeft, y);
   y += lineHeight;
-
   doc.setFont(undefined, "normal");
   const splitNotas = doc.splitTextToSize(formData.notas || "-", 500);
   doc.text(splitNotas, marginLeft, y);
-  y += splitNotas.length * lineHeight;
-
-  // --- Pie de página ---
   doc.setFontSize(10);
   doc.setFont(undefined, "italic");
-  doc.text("AG-CAL-F39-00", marginLeft, 790); // Se fija a 790 para el pie de página
-
+  doc.text("AG-CAL-F39-00", marginLeft, 790);
   return doc;
 };
+
+const initialState: WorksheetState = {
+  lugarCalibracion: "",
+  frecuenciaCalibracion: "",
+  fecha: getLocalISODate(),
+  fechaRecepcion: "", 
+  certificado: "",
+  nombre: "",
+  cliente: "",
+  id: "",
+  equipo: "",
+  marca: "",
+  modelo: "",
+  numeroSerie: "",
+  magnitud: "",
+  unidad: [],
+  alcance: "",
+  resolucion: "",
+  medicionPatron: "",
+  medicionInstrumento: "",
+  excentricidad: "",
+  linealidad: "",
+  repetibilidad: "",
+  notas: "",
+  tempAmbiente: "",
+  humedadRelativa: "",
+  idBlocked: false,
+  idErrorMessage: "",
+  permitirExcepcion: false,
+  isMasterData: false,
+  fieldsLocked: false,
+};
+
+function worksheetReducer(state: WorksheetState, action: WorksheetAction): WorksheetState {
+  switch (action.type) {
+    case 'SET_FIELD':
+      return { ...state, [action.field]: action.payload };
+    case 'SET_USER_NAME':
+      return { ...state, nombre: action.payload };
+    case 'SET_CONSECUTIVE':
+      return { ...state, certificado: action.consecutive, magnitud: action.magnitud, unidad: [] };
+    case 'SET_MAGNITUD':
+      return { ...state, magnitud: action.payload, unidad: [] };
+    case 'SET_CLIENTE':
+      const cel = (action.payload || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("celestica");
+      return {
+        ...state,
+        cliente: action.payload,
+        id: cel ? "EP-" : "",
+        equipo: "", marca: "", modelo: "", numeroSerie: "",
+        fieldsLocked: false,
+      };
+    case 'AUTOCOMPLETE_SUCCESS':
+      return { ...state, ...action.payload, isMasterData: true, fieldsLocked: true };
+    case 'AUTOCOMPLETE_FAIL':
+      const isCelestica = state.cliente.toLowerCase().includes("celestica");
+      return {
+        ...state,
+        isMasterData: false, fieldsLocked: false,
+        equipo: (isCelestica && !state.id) ? "" : state.equipo,
+        marca: (isCelestica && !state.id) ? "" : state.marca,
+        modelo: (isCelestica && !state.id) ? "" : state.modelo,
+        numeroSerie: (isCelestica && !state.id) ? "" : state.numeroSerie,
+      };
+    case 'SET_ID_BLOCKED':
+      return { ...state, idBlocked: true, idErrorMessage: action.message };
+    case 'CLEAR_ID_BLOCK':
+      return { ...state, idBlocked: false, idErrorMessage: "" };
+    case 'SET_EXCEPCION':
+      return { ...state, permitirExcepcion: action.payload };
+    case 'RESTORE_BACKUP':
+      return { ...action.payload };
+    default:
+      return state;
+  }
+}
 
 export const WorkSheetScreen: React.FC = () => {
   const { currentConsecutive, goBack, currentUser, currentMagnitude } = useNavigation();
   const { user } = useAuth();
-  const formRef = useRef<HTMLDivElement>(null);
-
+  const [state, dispatch] = useReducer(worksheetReducer, initialState);
   const [isSaving, setIsSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [isCelestica, setIsCelestica] = useState(false);
-
-  // ====================================================================
-  // 1. (MEJORA) Añadimos el estado para la URL del preview
-  // ====================================================================
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  const [formData, setFormData] = useState<any>({ // Usar 'any' para manejar la estructura dinámica
-    lugarCalibracion: "",
-    frecuenciaCalibracion: "",
-    fecha: getLocalISODate(), // FIX: Usa la función local para evitar desfase de fecha
-    // (FIX) Asegurarse de que fechaRecepcion esté en el estado inicial
-    fechaRecepcion: "", 
-    certificado: "",
-    nombre: "",
-    cliente: "",
-    id: "",
-    equipo: "",
-    marca: "",
-    modelo: "",
-    numeroSerie: "",
-    magnitud: "",
-    unidad: [], // Inicializar unidad como array para manejo de múltiples unidades
-    alcance: "",
-    resolucion: "",
-    medicionPatron: "",
-    medicionInstrumento: "",
-    excentricidad: "",
-    linealidad: "",
-    repetibilidad: "",
-    notas: "",
-    tempAmbiente: "",
-    humedadRelativa: "",
-    excepcion: false,
-  });
-
-  const [idBlocked, setIdBlocked] = useState(false);
-  const [idErrorMessage, setIdErrorMessage] = useState("");
-  const [permitirExcepcion, setPermitirExcepcion] = useState(false); // Estado para permitir excepción
-  const [isMasterData, setIsMasterData] = useState(false);
-  const [fieldsLocked, setFieldsLocked] = useState(false);
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
-  // NUEVO: Estado para auto-transferencia
-  const [autoTransferEnabled, setAutoTransferEnabled] = useState(() =>
-    localStorage.getItem('autoTransferWorksheets') === 'true'
-  );
-
-  // FIX: Se inicializa en DC
+  const [autoTransferEnabled, setAutoTransferEnabled] = useState(() => localStorage.getItem('autoTransferWorksheets') === 'true');
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
 
-  // ====================================================================
-  // 2. (FIX) Lógica de validación CORREGIDA
-  // ====================================================================
+  // 2.C: Recuperación básica de respaldo local si existe
+  useEffect(() => {
+    const backup = localStorage.getItem('backup_worksheet_data');
+    if (backup) {
+      try {
+        const parsedBackup = JSON.parse(backup) as WorksheetState;
+        // Opcional: preguntar al usuario si quiere restaurar
+        if (window.confirm("Se encontró una hoja de trabajo no guardada. ¿Desea restaurarla?")) {
+           dispatch({ type: 'RESTORE_BACKUP', payload: parsedBackup });
+        }
+        localStorage.removeItem('backup_worksheet_data'); // Limpiar tras restaurar o rechazar
+      } catch (e) {
+        console.error("Error al restaurar respaldo local", e);
+        localStorage.removeItem('backup_worksheet_data');
+      }
+    }
+  }, []);
+
   const validarIdEnPeriodo = useCallback(async () => {
-    // FIX: Si la excepción está marcada, limpia los estados de bloqueo y sal.
-    if (permitirExcepcion) {
-      setIdBlocked(false);
-      setIdErrorMessage("");
+    if (state.permitirExcepcion) {
+      dispatch({ type: 'CLEAR_ID_BLOCK' });
       return;
     }
-
-    // Resetea en cada ejecución normal
-    setIdBlocked(false);
-    setIdErrorMessage("");
-
-    const id = formData.id?.trim();
-    const cliente = formData.cliente;
-
+    dispatch({ type: 'CLEAR_ID_BLOCK' });
+    const id = state.id?.trim();
+    const cliente = state.cliente;
     if (!id || !cliente) return;
 
-    // 1. Buscar registros anteriores para este ID y Cliente
-    const q = query(
-      collection(db, "hojasDeTrabajo"),
-      where("id", "==", id),
-      where("cliente", "==", cliente)
-    );
+    const q = query(collection(db, "hojasDeTrabajo"), where("id", "==", id), where("cliente", "==", cliente));
     const docs = await getDocs(q);
-
     if (docs.empty) return;
 
-    // 2. Encontrar la fecha y FRECUENCIA de última calibración (más reciente)
     let maxFecha: Date | null = null;
     let frecuenciaAnterior: string | undefined = undefined;
     let maxFechaString: string | undefined = undefined;
 
     docs.forEach(doc => {
       const data = doc.data();
-      const f = data.fecha;
-      const freq = data.frecuenciaCalibracion; // <-- EXTRAEMOS LA FRECUENCIA GUARDADA
-
-      // FIX: Crea la fecha de forma segura (YYYY, MM-1, DD)
-      const parts = f.split('-');
+      const parts = data.fecha.split('-');
       const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-
       if (!isNaN(dateObj.getTime())) {
         if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) {
           maxFecha = dateObj;
-          frecuenciaAnterior = freq;
-          maxFechaString = f;
+          frecuenciaAnterior = data.frecuenciaCalibracion;
+          maxFechaString = data.fecha;
         }
       }
     });
 
     if (!maxFecha || !frecuenciaAnterior) return;
-
-    // 3. CALCULAR la próxima fecha permitida usando la FRECUENCIA ANTERIOR
     const nextAllowed = calcularSiguienteFecha(maxFechaString!, frecuenciaAnterior);
-
     if (!nextAllowed) return;
 
-    const hoy = new Date();
-    // 4. Comparar con la fecha actual
-    if (isBefore(hoy, nextAllowed)) {
-      setIdBlocked(true);
-      setIdErrorMessage(
-        `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")} (Frecuencia: ${frecuenciaAnterior}). La próxima calibración permitida es después de ${format(nextAllowed, "dd/MM/yyyy")}. Active la excepción si es necesario.`
-      );
+    if (isBefore(new Date(), nextAllowed)) {
+      dispatch({ type: 'SET_ID_BLOCKED', message: `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")} (Frecuencia: ${frecuenciaAnterior}). Próxima calibración permitida: ${format(nextAllowed, "dd/MM/yyyy")}.` });
     }
-  }, [formData.id, formData.cliente, permitirExcepcion]); // La frecuencia actual no afecta el bloqueo, pero el cliente sí.
+  }, [state.id, state.cliente, state.permitirExcepcion]);
 
+  useEffect(() => { validarIdEnPeriodo(); }, [validarIdEnPeriodo]);
 
-  // Ejecutar validación cuando cambian los campos relevantes o la excepción
-  useEffect(() => {
-    validarIdEnPeriodo();
-  }, [validarIdEnPeriodo]);
-
-
-  // Las demás funciones (handleIdChange, cargarEmpresas, etc.) se mantienen igual.
-  
-  // Cuando cambia el cliente: aplica EP- si es Celestica y limpia
-  const handleClienteChange = (value: string) => {
-    const cel = (value || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .includes("celestica");
-
-    setIsCelestica(cel);
-
-    setFormData((prev: any) => ({
-      ...prev,
-      cliente: value,
-      id: cel ? "EP-" : "",
-      equipo: "",
-      marca: "",
-      modelo: "",
-      numeroSerie: "",
-    }));
-
-    setFieldsLocked(false);
-  };
-  
-  // Cuando cambia el ID: autocompleta o limpia
-  const handleIdChange = (value: string) => {
-    setFormData((prev: any) => ({ ...prev, id: value }));
-  };
-
-  // Carga lista de clientes
   const cargarEmpresas = async () => {
     try {
       const qs = await getDocs(collection(db, "clientes"));
       setListaClientes(qs.docs.map((d) => ({ id: d.id, nombre: d.data().nombre || "Sin nombre" })));
     } catch {
-      // fallback estático
-      setListaClientes([
-        { id: "1", nombre: "CELESTICA DE MONTERREY (ESTANDARD)" },
-        { id: "2", nombre: "CELESTICA DE MONTERREY (MEDICO)" },
-        { id: "3", nombre: "CELESTICA DE MONTERREY (EDIFICIO E)" },
-        { id: "4", nombre: "CELESTICA DE MONTERREY (EDIFICIO L)" }, 
-      ]);
+      setListaClientes([{ id: "1", nombre: "ERROR AL CARGAR CLIENTES" }]);
     }
   };
 
-  // Extrae nombre de usuario al montar
   useEffect(() => {
     const u = currentUser || user;
-    setFormData((prev: any) => ({ ...prev, nombre: getUserName(u) }));
+    dispatch({ type: 'SET_USER_NAME', payload: getUserName(u) });
     cargarEmpresas();
   }, [currentUser, user]);
 
-  // Cuando cambia el consecutivo, guarda y auto-detecta magnitud
   useEffect(() => {
     const cert = currentConsecutive || "";
-    const mag = extractMagnitudFromConsecutivo(cert);
-    setFormData((prev: any) => ({
-      ...prev,
-      certificado: cert,
-      magnitud: mag,
-      unidad: [], // limpia unidad
-    }));
+    dispatch({ type: 'SET_CONSECUTIVE', consecutive: cert, magnitud: extractMagnitudFromConsecutivo(cert) });
   }, [currentConsecutive]);
 
-  // Si hay un currentMagnitude explícito, lo aplica (mantiene tu lógica previa)
   useEffect(() => {
-    if (currentMagnitude) {
-      setFormData((prev: any) => ({
-        ...prev,
-        magnitud: currentMagnitude,
-        unidad: [],
-      }));
-    }
+    if (currentMagnitude) dispatch({ type: 'SET_MAGNITUD', payload: currentMagnitude });
   }, [currentMagnitude]);
 
-  // Cada vez que magnitud cambia manual o automáticamente, limpia unidad
-  const handleMagnitudChange = (value: string) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      magnitud: value,
-      unidad: [],
-    }));
-  };
+  const valid = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad"]
+    .every(k => {
+       const val = state[k as keyof WorksheetState];
+       return Array.isArray(val) ? val.length > 0 : !!val && String(val).trim() !== "";
+    });
 
-  const handleInputChange = (field: string, value: any) =>
-    setFormData((prev: any) => ({ ...prev, [field]: value }));
-
-  const camposObligatorios = [
-    "lugarCalibracion",
-    "certificado",
-    "nombre",
-    "cliente",
-    "id",
-    "equipo",
-    "marca",
-    "magnitud",
-    "unidad",
-  ];
-  const valid = camposObligatorios.every((k) => {
-    const val = formData[k];
-    if (Array.isArray(val)) {
-      return val.length > 0;
-    }
-    return !!val && typeof val === "string" ? val.trim() !== "" : !!val;
-  });
-  const magnitudReadOnly = !!currentMagnitude;
-
-  // Modificado para usar unidades seleccionadas en la pre-visualización si es Electricidad
   const unidadesDisponibles = React.useMemo(() => {
-    if (formData.magnitud === "Electrica") {
-      // Retorna el array de todas las unidades eléctricas (para el select múltiple)
-      return [...unidadesPorMagnitud.Electrica.DC, ...unidadesPorMagnitud.Electrica.AC, ...unidadesPorMagnitud.Electrica.Otros] as string[];
-    } else if (formData.magnitud && unidadesPorMagnitud[formData.magnitud]) {
-      return unidadesPorMagnitud[formData.magnitud] as string[];
-    }
-    return [];
-  }, [formData.magnitud]);
-
+    if (state.magnitud === "Electrica") return [...unidadesPorMagnitud.Electrica.DC, ...unidadesPorMagnitud.Electrica.AC, ...unidadesPorMagnitud.Electrica.Otros] as string[];
+    return (state.magnitud && unidadesPorMagnitud[state.magnitud]) ? unidadesPorMagnitud[state.magnitud] as string[] : [];
+  }, [state.magnitud]);
 
   const handleIdBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
     const newId = String(e.target.value || "").trim();
-    setFormData((prev: any) => {
-      const clienteVal = (prev.cliente || (prev as any).clienteSeleccionado || "").toString();
-      const updated = { ...prev, id: newId };
-
-      let masterFound = false;
-
-      // Lógica de autocompletado para Celestica
-      if (clienteVal.toLowerCase().includes("celestica") && newId) {
-        const rec = findCelesticaById(newId);
-        if (rec) {
-          masterFound = true;
-          return {
-            ...updated,
-            equipo: rec.B ?? "",
-            marca: rec.C ?? "",
-            modelo: rec.D ?? "",
-            numeroSerie: rec.E ?? "",
-          };
-        }
+    let masterFound = false;
+    if (state.cliente.toLowerCase().includes("celestica") && newId) {
+      const rec = findCelesticaById(newId);
+      if (rec) {
+        masterFound = true;
+        dispatch({ type: 'AUTOCOMPLETE_SUCCESS', payload: { equipo: rec.B ?? "", marca: rec.C ?? "", modelo: rec.D ?? "", numeroSerie: rec.E ?? "" }});
       }
-
-      // Lógica de autocompletado para Mexico MRO
-      if (isMexicoMROClient(clienteVal) && newId && !masterFound) {
-        const rec = findTechopsById(newId);
-        if (rec) {
-          masterFound = true;
-          return {
-            ...updated,
-            equipo: rec.B ?? "",
-            marca: rec.C ?? "",
-            modelo: rec.D ?? "",
-            numeroSerie: rec.E ?? "",
-          };
-        }
+    }
+    if (isMexicoMROClient(state.cliente) && newId && !masterFound) {
+      const rec = findTechopsById(newId);
+      if (rec) {
+        masterFound = true;
+        dispatch({ type: 'AUTOCOMPLETE_SUCCESS', payload: { equipo: rec.B ?? "", marca: rec.C ?? "", modelo: rec.D ?? "", numeroSerie: rec.E ?? "" }});
       }
-
-      setIsMasterData(masterFound);
-      setFieldsLocked(masterFound); // Bloquear si se encontró
-      return masterFound ? updated : { // Desbloquear si no se encontró y limpiar si es Celestica y se borró
-        ...updated,
-        equipo: (isCelestica && !newId) ? "" : prev.equipo,
-        marca: (isCelestica && !newId) ? "" : prev.marca,
-        modelo: (isCelestica && !newId) ? "" : prev.modelo,
-        numeroSerie: (isCelestica && !newId) ? "" : prev.numeroSerie,
-      };
-    });
-    // Llamar la función de validación aquí para que el bloqueo se actualice inmediatamente después del autocompletado/blur.
-    validarIdEnPeriodo(); 
+    }
+    if (!masterFound) dispatch({ type: 'AUTOCOMPLETE_FAIL' });
+    validarIdEnPeriodo();
   };
 
-  // MODIFICADO: handleSave con integración automática
+  // 2.C: Manejo de Errores Robusto en Red (con respaldo local)
   const handleSave = useCallback(async () => {
-    if (!valid) {
-      alert("⚠️ Completa todos los campos obligatorios");
-      return;
-    }
-
-    // Verificar bloqueo por frecuencia
-    if (idBlocked && !permitirExcepcion) {
-      alert("❌ No se puede guardar. El equipo requiere calibración después del periodo establecido. Active la excepción si tiene aprobación.");
-      return;
-    }
+    if (!valid) return alert("⚠️ Completa todos los campos obligatorios");
+    if (state.idBlocked && !state.permitirExcepcion) return alert("❌ Equipo bloqueado por periodo de calibración.");
 
     setIsSaving(true);
     try {
-      // Paso 4.1 – Validar si el certificado ya existe en Firestore
-      const certificado = formData.certificado;
-      const q = query(
-        collection(db, "hojasDeTrabajo"), // Colección donde se guardan las hojas
-        where("certificado", "==", certificado)
-      );
-      const existingDocs = await getDocs(q);
-
-      if (!existingDocs.empty) {
-        alert("❌ Este certificado ya existe. Intenta con otro consecutivo.");
-        setIsSaving(false);
-        return;
+      // Verificación previa de red básica
+      if (!navigator.onLine) {
+         throw new Error("offline");
       }
 
-      // Paso 4.2 - Generar PDF
-      const { jsPDF } = await import("jspdf");
-      const pdfDoc = generateTemplatePDF(formData, jsPDF);
-      const blob = (pdfDoc as any).output("blob");
+      const q = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
+      if (!(await getDocs(q)).empty) {
+         setIsSaving(false);
+         return alert("❌ Certificado ya existe.");
+      }
 
-      const fecha = new Date().toISOString().split("T")[0];
-      const carpeta = getUserName(currentUser || user);
-      const nombreArchivo = `worksheets/${carpeta}/${formData.certificado}_${formData.id || "SINID"}.pdf`;
+      const { jsPDF } = await import("jspdf");
+      const pdfDoc = generateTemplatePDF(state, jsPDF as any); // Cast necesario si la librería no exporta tipos perfectos
+      const blob = pdfDoc.output("blob");
+      const nombreArchivo = `worksheets/${getUserName(currentUser || user)}/${state.certificado}_${state.id || "SINID"}.pdf`;
       const pdfRef = ref(storage, nombreArchivo);
 
       await uploadBytes(pdfRef, blob);
-      const pdfDownloadURL = await getDownloadURL(pdfRef);
+      const pdfURL = await getDownloadURL(pdfRef);
 
-      // Agregar timestamp para tracking
-      const worksheetDataWithTimestamp = {
-        ...formData,
-        pdfURL: pdfDownloadURL, // Guardar el link del PDF
-        timestamp: Date.now(),
-        userId: currentUser?.uid || user?.uid || "unknown"
-      };
+      const fullData = { ...state, pdfURL, timestamp: Date.now(), userId: currentUser?.uid || user?.uid || "unknown" };
+      await addDoc(collection(db, "hojasDeTrabajo"), fullData);
 
-      await addDoc(collection(db, "hojasDeTrabajo"), worksheetDataWithTimestamp); // Usando 'hojasDeTrabajo' como en tu código
-
-      // 🚀 NUEVA FUNCIONALIDAD: Auto-transferencia al tablero Friday
       if (autoTransferEnabled) {
-        try {
-          const transferSuccess = await transferToFriday(
-            worksheetDataWithTimestamp,
-            currentUser?.uid || user?.uid || "unknown",
-            user // Pasamos el objeto de usuario
-          );
-
-          if (transferSuccess) {
-            alert("✅ Guardado exitoso y transferido automáticamente al tablero Friday");
-          } else {
-            alert("✅ Guardado exitoso (transferencia manual disponible en Friday)");
-          }
-        } catch (transferError) {
-          console.error("Error en auto-transferencia:", transferError);
-          alert("✅ Guardado exitoso (error en transferencia automática)");
-        }
+        const transferred = await transferToFriday(state, fullData.userId, user);
+        alert(transferred ? "✅ Guardado y transferido a Friday" : "✅ Guardado (Error en transferencia a Friday)");
       } else {
         alert("✅ Guardado exitoso");
       }
 
+      // Limpiar respaldo si existía uno por error previo
+      localStorage.removeItem('backup_worksheet_data');
       goBack();
+
     } catch (e: any) {
-      alert("❌ Error: " + (e.message || "Error desconocido al guardar."));
+      console.error("Error al guardar:", e);
+      
+      // 2.C: Guardar respaldo local si falla por red u otro error crítico
+      localStorage.setItem('backup_worksheet_data', JSON.stringify(state));
+      
+      let msg = "Error desconocido al guardar.";
+      if (e.message === "offline" || e.code === "unavailable" || e.message.includes("network")) {
+         msg = "⚠️ ERROR DE RED: No hay conexión. Se ha guardado una COPIA LOCAL. No cierre la sesión e intente guardar nuevamente cuando recupere la conexión.";
+      } else {
+         msg = `❌ Error: ${e.message || e}. Se guardó una copia de respaldo local.`;
+      }
+      alert(msg);
+
     } finally {
       setIsSaving(false);
     }
-  }, [valid, formData, idBlocked, permitirExcepcion, currentUser, user, goBack, autoTransferEnabled]);
+  }, [valid, state, currentUser, user, goBack, autoTransferEnabled]);
 
-
-  // ====================================================================
-  // 3. (MEJORA) Nueva función para manejar el toggle de la vista previa
-  // ====================================================================
   const handleTogglePreview = useCallback(async () => {
-    const newShowPreview = !showPreview;
-    setShowPreview(newShowPreview);
-
-    // Si vamos a mostrarlo, generamos el PDF
-    if (newShowPreview) {
-      // Limpiamos el anterior (si existe)
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
-
+    const newShow = !showPreview;
+    setShowPreview(newShow);
+    if (newShow) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       try {
         const { jsPDF } = await import("jspdf");
-        // (FIX) Pasamos el formData actualizado para que el preview sea correcto
-        const pdfDoc = generateTemplatePDF(formData, jsPDF); 
-        const blob = pdfDoc.output("blob");
-        const url = URL.createObjectURL(blob);
-        setPreviewUrl(url);
-      } catch (e) {
-        console.error("Error al generar vista previa:", e);
-        setPreviewUrl(null);
-      }
-    } else {
-      // Si lo ocultamos, limpiamos la URL para liberar memoria
-      if (previewUrl) {
+        setPreviewUrl(URL.createObjectURL(generateTemplatePDF(state, jsPDF as any).output("blob")));
+      } catch (e) { console.error(e); setPreviewUrl(null); }
+    } else if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
         setPreviewUrl(null);
-      }
     }
-    // (FIX) Añadimos formData como dependencia para que el preview se regenere
-  }, [showPreview, previewUrl, formData]); 
+  }, [showPreview, previewUrl, state]);
 
-
-  const handleCancel = () => goBack();
-  const esMagnitudMasa = (m: string) => m === "Masa";
-
-  // NUEVO: Toggle para auto-transferencia
   const toggleAutoTransfer = () => {
-    const newValue = !autoTransferEnabled;
-    setAutoTransferEnabled(newValue);
-    localStorage.setItem('autoTransferWorksheets', newValue.toString());
+    setAutoTransferEnabled(prev => {
+       localStorage.setItem('autoTransferWorksheets', (!prev).toString());
+       return !prev;
+    });
   };
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
       <div className="bg-gradient-to-r from-indigo-600 to-blue-700 text-white shadow-lg">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <button onClick={goBack} className="p-2 hover:bg-white/10 rounded-lg">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+            <button onClick={goBack} className="p-2 hover:bg-white/10 rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                <Tag className="w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Hoja de Trabajo</h1>
-                <p className="text-blue-100 text-sm">
-                  Consecutivo: {formData.certificado || "SIN CERTIFICADO"}
-                </p>
-              </div>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><Tag className="w-6 h-6" /></div>
+              <div><h1 className="text-xl font-bold">Hoja de Trabajo</h1><p className="text-blue-100 text-sm">Consecutivo: {state.certificado || "SIN CERTIFICADO"}</p></div>
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            {/* NUEVO: Toggle de auto-transferencia */}
-            <button
-              onClick={toggleAutoTransfer}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all ${
-                autoTransferEnabled
-                  ? 'bg-green-500/20 text-green-200 border border-green-400/50'
-                  : 'bg-white/10 text-white border border-white/20'
-              }`}
-              title={autoTransferEnabled ? "Auto-transferencia activada" : "Auto-transferencia desactivada"}
-            >
-              <Zap className="w-4 h-4" />
-              <span className="text-sm">Auto → Friday</span>
+            <button onClick={toggleAutoTransfer} className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all ${autoTransferEnabled ? 'bg-green-500/20 text-green-200 border border-green-400/50' : 'bg-white/10 text-white border border-white/20'}`}>
+              <Zap className="w-4 h-4" /><span className="text-sm">Auto → Friday</span>
             </button>
-            
-            {/* ==================================================================== */}
-            {/* 4. (MEJORA) Botón de preview actualizado                               */}
-            {/* ==================================================================== */}
-            <button
-              onClick={handleTogglePreview} // <-- USA LA NUEVA FUNCIÓN
-              className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2"
-            >
-              <Edit3 className="w-4 h-4" />
-              <span>{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
+            <button onClick={handleTogglePreview} className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2">
+              <Edit3 className="w-4 h-4" /><span>{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Contenido */}
       <div className="p-6">
         <div className={`grid gap-8 ${showPreview ? "lg:grid-cols-2" : "lg:grid-cols-1 max-w-4xl mx-auto"}`}>
-          {/* Formulario */}
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
             <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
               <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
               <p className="text-gray-600 mt-1">Complete los datos para generar la hoja de trabajo</p>
-              {/* NUEVO: Indicador de auto-transferencia */}
-              {autoTransferEnabled && (
-                <div className="mt-3 flex items-center space-x-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg">
-                  <Zap className="w-4 h-4" />
-                  <span className="text-sm font-medium">Se transferirá automáticamente al tablero Friday</span>
-                </div>
-              )}
+              {autoTransferEnabled && <div className="mt-3 flex items-center space-x-2 text-green-700 bg-green-50 px-3 py-2 rounded-lg"><Zap className="w-4 h-4" /><span className="text-sm font-medium">Se transferirá automáticamente al tablero Friday</span></div>}
             </div>
             <div className="p-8 space-y-8">
-              {/* 1. Lugar de Calibración */}
               <div>
-                <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                  <MapPin className="w-4 h-4 text-orange-500" />
-                  <span>Lugar de Calibración*</span>
-                </label>
+                <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><MapPin className="w-4 h-4 text-orange-500" /><span>Lugar de Calibración*</span></label>
                 <div className="grid grid-cols-3 gap-4 text-gray-700">
                   {["Sitio", "Laboratorio"].map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => handleInputChange("lugarCalibracion", opt)}
-                      className={`py-3 px-4 rounded-lg border-2 font-medium transition-all ${
-                        formData.lugarCalibracion === opt
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                      }`}
-                    >
-                      {opt}
-                    </button>
+                    <button key={opt} onClick={() => dispatch({ type: 'SET_FIELD', field: 'lugarCalibracion', payload: opt })}
+                      className={`py-3 px-4 rounded-lg border-2 font-medium transition-all ${state.lugarCalibracion === opt ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>{opt}</button>
                   ))}
                 </div>
               </div>
-
-              {formData.lugarCalibracion === "Laboratorio" && (
+              {state.lugarCalibracion === "Laboratorio" && (
                 <div className="mt-4">
-                  <label className="block font-semibold text-sm text-gray-700 mb-1">
-                    Fecha de Recepción
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    value={formData.fechaRecepcion || ""}
-                    onChange={(e) =>
-                      handleInputChange("fechaRecepcion", e.target.value)
-                    }
-                  />
+                  <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
+                  <input type="date" className="w-full border rounded px-3 py-2 text-sm" value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
                 </div>
               )}
-              {/* 2. Frecuencia y Fecha */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Calendar className="w-4 h-4 text-green-500" />
-                    <span>Frecuencia*</span>
-                  </label>
-                  <select
-                    value={formData.frecuenciaCalibracion}
-                    onChange={(e) => handleInputChange("frecuenciaCalibracion", e.target.value)}
-                    className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Seleccionar...</option>
-                    <option value="3 meses">3 meses</option>
-                    <option value="6 meses">6 meses</option>
-                    <option value="1 año">1 año</option>
-                    <option value="2 años">2 años</option>
-                    <option value="3 años">3 años</option>
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
+                  <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
                   </select>
                 </div>
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Calendar className="w-4 h-4 text-blue-500" />
-                    <span>Fecha*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.fecha}
-                    onChange={(e) => handleInputChange("fecha", e.target.value)}
-                    className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
+                  <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
-
-              {/* 3. Certificado y Nombre */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label><input type="text" value={state.certificado} readOnly className="w-full p-4 border rounded-lg bg-gray-50 text-gray-800" placeholder="Automático" /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Mail className="w-4 h-4 text-red-500" /><span>Nombre*</span></label><input type="text" value={state.nombre} readOnly className="w-full p-4 border rounded-lg bg-gray-50 text-gray-800" /></div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => dispatch({ type: 'SET_CLIENTE', payload: v })} currentValue={state.cliente} /></div>
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Hash className="w-4 h-4 text-purple-500" />
-                    <span>N.Certificado*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.certificado}
-                    readOnly
-                    className="w-full p-4 border rounded-lg bg-gray-50 text-gray-800"
-                    placeholder="Se asignará automáticamente"
-                  />
-                </div>
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Mail className="w-4 h-4 text-red-500" />
-                    <span>Nombre*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.nombre}
-                    readOnly
-                    className="w-full p-4 border rounded-lg bg-gray-50 text-gray-800"
-                    placeholder="Técnico"
-                  />
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
+                  <input type="text" value={state.id} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value })} onBlur={handleIdBlur} className={`w-full p-4 border-2 rounded-lg transition-all ${state.idBlocked && !state.permitirExcepcion ? "border-red-500 bg-red-50 text-red-700" : "border-gray-200 focus:ring-blue-500"}`} placeholder="ID" />
+                  {state.idBlocked && !state.permitirExcepcion && <p className="mt-2 text-sm font-medium text-red-600 animate-pulse">{state.idErrorMessage}</p>}
+                  <div className="mt-3"><label className="flex items-center gap-2"><input type="checkbox" checked={state.permitirExcepcion} onChange={(e) => dispatch({ type: 'SET_EXCEPCION', payload: e.target.checked })} className="rounded text-blue-600" disabled={!state.idBlocked} /><span className={`text-sm ${state.idBlocked ? 'text-red-700 font-bold' : 'text-gray-500'}`}>Permitir excepción</span></label></div>
                 </div>
               </div>
-
-              {/* 4. Cliente & ID */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Building2 className="w-4 h-4 text-indigo-500" />
-                    <span>Cliente*</span>
-                  </label>
-                  {/* FIX: Usando el componente de búsqueda MEJORADO */}
-                  <ClienteSearchSelect
-                    clientes={listaClientes}
-                    onSelect={handleClienteChange}
-                    currentValue={formData.cliente}
-                  />
-                </div>
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Hash className="w-4 h-4 text-gray-500" />
-                    <span>ID*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.id || ""}
-                    onChange={(e) => handleIdChange(e.target.value)}
-                    onBlur={handleIdBlur}
-                    className={`w-full p-4 border-2 rounded-lg transition-all ${
-                      idBlocked && !permitirExcepcion
-                        ? "border-red-500 bg-red-50 text-red-700 placeholder-red-400 focus:ring-red-500"
-                        : "border-gray-200 text-gray-900 focus:ring-blue-500"
-                    }`}
-                    placeholder="ID"
-                  />
-                  {/* Mensaje de error/bloqueo */}
-                  {idBlocked && !permitirExcepcion && (
-                    <p className="mt-2 text-sm font-medium text-red-600 animate-pulse">
-                      {idErrorMessage}
-                    </p>
-                  )}
-                  {/* Permitir Excepción (Lógica corregida) */}
-                  <div className="mt-3">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={permitirExcepcion}
-                        onChange={(e) => setPermitirExcepcion(e.target.checked)}
-                        className="rounded text-blue-600 focus:ring-blue-500"
-                        // 🌟 CORRECCIÓN DE LÓGICA: Solo se habilita si hay bloqueo.
-                        disabled={!idBlocked} 
-                      />
-                      <span className={`text-sm ${idBlocked ? 'text-red-700 font-bold' : 'text-gray-500'}`}>
-                        Permitir excepción de calibración (requiere aprobación)
-                      </span>
-                    </label>
-                  </div>
-                </div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label><input type="text" value={state.equipo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg" /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label><input type="text" value={state.marca} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg" /></div>
               </div>
-
-              {/* 5. Equipo & Marca */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Wrench className="w-4 h-4 text-yellow-500" />
-                    <span>Equipo*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.equipo || ""}
-                    onChange={(e) => handleInputChange("equipo", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className="w-full p-4 border rounded-lg"
-                    placeholder="Equipo"
-                  />
-                </div>
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Tag className="w-4 h-4 text-pink-500" />
-                    <span>Marca*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.marca || ""}
-                    onChange={(e) => handleInputChange("marca", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className="w-full p-4 border rounded-lg"
-                    placeholder="Marca"
-                  />
-                </div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label><input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg" /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg" /></div>
               </div>
-
-              {/* 6. Modelo & Serie */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Hash className="w-4 h-4 text-teal-500" />
-                    <span>Modelo</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.modelo || ""}
-                    onChange={(e) => handleInputChange("modelo", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className="w-full p-4 border rounded-lg"
-                    placeholder="Modelo"
-                  />
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-blue-500" /><span>Magnitud*</span></label>
+                  {currentMagnitude ? <div className="relative"><input type="text" value={state.magnitud} readOnly className="w-full p-4 border rounded-lg bg-gray-50 font-semibold" /><div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">Auto</div></div> :
+                    <select value={state.magnitud} onChange={(e) => dispatch({ type: 'SET_MAGNITUD', payload: e.target.value })} className="w-full p-4 border rounded-lg"><option value="">Seleccionar...</option>{magnitudesDisponibles.map(m => <option key={m} value={m}>{m}</option>)}</select>}
                 </div>
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <NotebookPen className="w-4 h-4 text-purple-500" />
-                    <span>Nº Serie</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.numeroSerie || ""}
-                    onChange={(e) => handleInputChange("numeroSerie", e.target.value)}
-                    readOnly={fieldsLocked}
-                    className="w-full p-4 border rounded-lg"
-                    placeholder="Número de Serie"
-                  />
-                </div>
-              </div>
-
-              {/* 7. Magnitud, Unidad, Alcance & Resolución */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Tag className="w-4 h-4 text-blue-500" />
-                    <span>Magnitud*</span>
-                  </label>
-                  {magnitudReadOnly ? (
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={formData.magnitud}
-                        readOnly
-                        className="w-full p-4 border rounded-lg bg-gray-50 font-semibold"
-                      />
-                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">
-                        Auto
-                      </div>
-                    </div>
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-violet-500" /><span>Unidad*</span></label>
+                  {state.magnitud === "Electrica" ? (
+                    <div className="mb-4 space-y-3 p-4 border rounded-lg bg-gray-50"><div className="font-bold text-gray-700">Tipo Eléctrico</div><Tabs value={tipoElectrica} onValueChange={(v) => setTipoElectrica(v as any)}><TabsList className="grid w-full grid-cols-3"><TabsTrigger value="DC">DC</TabsTrigger><TabsTrigger value="AC">AC</TabsTrigger><TabsTrigger value="Otros">Otros</TabsTrigger></TabsList></Tabs><div className="mt-3 grid grid-cols-3 gap-2">{unidadesPorMagnitud.Electrica[tipoElectrica].map((u: string) => (<label key={u} className="flex items-center space-x-2 text-sm"><input type="checkbox" checked={state.unidad.includes(u)} onChange={() => { const newU = state.unidad.includes(u) ? state.unidad.filter(x => x !== u) : [...state.unidad, u]; dispatch({ type: 'SET_FIELD', field: 'unidad', payload: newU }); }} className="rounded text-blue-600" /><span>{u}</span></label>))}</div></div>
                   ) : (
-                    <select
-                      value={formData.magnitud}
-                      onChange={(e) => handleMagnitudChange(e.target.value)}
-                      className="w-full p-4 border rounded-lg"
-                    >
-                      <option value="">Seleccionar...</option>
-                      {magnitudesDisponibles.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Tag className="w-4 h-4 text-violet-500" />
-                    <span>Unidad*</span>
-                  </label>
-                  {formData.magnitud === "Electrica" && (
-                    <div className="mb-4 space-y-3 p-4 border rounded-lg bg-gray-50">
-                      <div className="font-bold text-gray-700">Tipo Eléctrico</div>
-                      <Tabs value={tipoElectrica} onValueChange={(v) => setTipoElectrica(v as "DC" | "AC" | "Otros")}>
-                        <TabsList className="grid w-full grid-cols-3 bg-white/50">
-                          <TabsTrigger value="DC" className="font-semibold text-gray-800 data-[state=active]:bg-blue-200">DC</TabsTrigger>
-                          <TabsTrigger value="AC" className="font-semibold text-gray-800 data-[state=active]:bg-blue-200">AC</TabsTrigger>
-                          <TabsTrigger value="Otros" className="font-semibold text-gray-800 data-[state=active]:bg-blue-200">Otros</TabsTrigger>
-                        </TabsList>
-                      </Tabs>
-                      {/* Contenido de Pestañas (Renderiza Checkboxes) */}
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        {/* FIX: Se usa el estado del tipo eléctrico actual para renderizar los checkboxes */}
-                        {unidadesPorMagnitud.Electrica[tipoElectrica].map((unidad: string) => {
-                          // Se verifica si la unidad ya está seleccionada en el estado global 
-                          const isSelected = (formData.unidad || []).includes(unidad);
-                          return (
-                            <label key={unidad} className="flex items-center space-x-2 text-sm text-gray-700">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {
-                                  let newUnits = [...(formData.unidad || [])];
-                                  if (isSelected) {
-                                    // Deseleccionar: remover la unidad
-                                    newUnits = newUnits.filter((u: string) => u !== unidad);
-                                  } else {
-                                    // Seleccionar: agregar la unidad
-                                    newUnits.push(unidad);
-                                  }
-                                  setFormData((prev: any) => ({ ...prev, unidad: newUnits }));
-                                }}
-                                className="rounded text-blue-600"
-                              />
-                              <span>{unidad}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {formData.magnitud !== "Electrica" && (
-                    <select
-                      multiple
-                      value={formData.unidad || []}
-                      onChange={(e) =>
-                        setFormData((prev: any) => ({
-                          ...prev,
-                          unidad: Array.from(e.target.selectedOptions, (option) => option.value)
-                        }))
-                      }
-                      disabled={!formData.magnitud}
-                      className="w-full p-4 border rounded-lg"
-                      required
-                    >
-                      <option value="" disabled>
-                        {formData.magnitud ? "Seleccionar..." : "Seleccionar magnitud primero"}
-                      </option>
-                      {unidadesDisponibles.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {formData.magnitud && unidadesDisponibles.length === 0 && (
-                    <p className="text-sm text-amber-600 mt-1">Sin unidades definidas</p>
+                    <select multiple value={state.unidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'unidad', payload: Array.from(e.target.selectedOptions, o => o.value) })} disabled={!state.magnitud} className="w-full p-4 border rounded-lg"><option value="" disabled>{state.magnitud ? "Seleccionar..." : "Seleccione magnitud"}</option>{unidadesDisponibles.map(u => <option key={u} value={u}>{u}</option>)}</select>
                   )}
                 </div>
               </div>
-
-              {/* Alcance */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Alcance</label>
-                <input
-                  type="text"
-                  className="w-full p-4 border rounded-lg"
-                  value={formData.alcance}
-                  onChange={e => handleInputChange("alcance", e.target.value)}
-                  placeholder="Ej: 10"
-                  autoComplete="off"
-                  spellCheck={false}
-                  required
-                />
-              </div>
-
-              {/* Resolución */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Resolución</label>
-                <input
-                  type="text"
-                  className="w-full p-4 border rounded-lg"
-                  value={formData.resolucion}
-                  onChange={e => handleInputChange("resolucion", e.target.value)}
-                  placeholder="Ej: 0.01"
-                  autoComplete="off"
-                  spellCheck={false}
-                  required
-                />
-              </div>
-
-              {/* 8. Medición o Excentricidad/Linealidad/Repetibilidad */}
-              {esMagnitudMasa(formData.magnitud) ? (
+              <div><label className="block text-sm font-medium text-gray-700 mb-3">Alcance</label><input type="text" className="w-full p-4 border rounded-lg" value={state.alcance} onChange={e => dispatch({ type: 'SET_FIELD', field: 'alcance', payload: e.target.value })} required /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-3">Resolución</label><input type="text" className="w-full p-4 border rounded-lg" value={state.resolucion} onChange={e => dispatch({ type: 'SET_FIELD', field: 'resolucion', payload: e.target.value })} required /></div>
+              {state.magnitud === "Masa" ? (
                 <>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                      <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                        <NotebookPen className="w-4 h-4 text-purple-400" />
-                        <span>Excentricidad</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.excentricidad}
-                        onChange={(e) => handleInputChange("excentricidad", e.target.value)}
-                        className="w-full p-4 border rounded-lg"
-                        placeholder="Excentricidad"
-                      />
-                    </div>
-                    <div>
-                      <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                        <NotebookPen className="w-4 h-4 text-pink-400" />
-                        <span>Linealidad</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.linealidad}
-                        onChange={(e) => handleInputChange("linealidad", e.target.value)}
-                        className="w-full p-4 border rounded-lg"
-                        placeholder="Linealidad"
-                      />
-                    </div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-400" /><span>Excentricidad</span></label><input type="text" value={state.excentricidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: e.target.value })} className="w-full p-4 border rounded-lg" /></div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>Linealidad</span></label><input type="text" value={state.linealidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} className="w-full p-4 border rounded-lg" /></div>
                   </div>
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                      <NotebookPen className="w-4 h-4 text-orange-400" />
-                      <span>Repetibilidad</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.repetibilidad}
-                      onChange={(e) => handleInputChange("repetibilidad", e.target.value)}
-                      className="w-full p-4 border rounded-lg"
-                      placeholder="Repetibilidad"
-                    />
-                  </div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-orange-400" /><span>Repetibilidad</span></label><input type="text" value={state.repetibilidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} className="w-full p-4 border rounded-lg" /></div>
                 </>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                      <NotebookPen className="w-4 h-4 text-teal-400" />
-                      <span>Medición Patrón</span>
-                    </label>
-                    <textarea
-                      value={formData.medicionPatron}
-                      onChange={(e) => handleInputChange("medicionPatron", e.target.value)}
-                      rows={4}
-                      // 🌟 CORRECCIÓN DE UX MÓVIL: Se agrega scroll y altura máxima.
-                      className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40"
-                      placeholder="Ingrese los datos de medición del patrón aquí..."
-                    />
-                  </div>
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                      <NotebookPen className="w-4 h-4 text-blue-400" />
-                      <span>Medición Instrumento</span>
-                    </label>
-                    <textarea
-                      value={formData.medicionInstrumento}
-                      onChange={(e) => handleInputChange("medicionInstrumento", e.target.value)}
-                      rows={4}
-                      // 🌟 CORRECCIÓN DE UX MÓVIL: Se agrega scroll y altura máxima.
-                      className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40"
-                      placeholder="Ingrese los datos de medición del instrumento aquí..."
-                    />
-                  </div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40" /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40" /></div>
                 </div>
               )}
-
-              {/* 9. Notas */}
-              <div>
-                <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                  <NotebookPen className="w-4 h-4 text-gray-400" />
-                    <span>Notas</span>
-                  </label>
-                  <textarea
-                    value={formData.notas}
-                    onChange={(e) => handleInputChange("notas", e.target.value)}
-                    className="w-full p-4 border rounded-lg resize-none"
-                    rows={2}
-                    placeholder="Notas adicionales"
-                  />
-                </div>
-
-                {/* 10. Temp & HR */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                      <NotebookPen className="w-4 h-4 text-sky-400" />
-                      <span>Temp. Ambiente (°C)</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.tempAmbiente}
-                      onChange={(e) => handleInputChange("tempAmbiente", e.target.value)}
-                      className="w-full p-4 border rounded-lg"
-                      placeholder="22.5"
-                    />
-                  </div>
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                      <NotebookPen className="w-4 h-4 text-pink-400" />
-                      <span>HR%</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.humedadRelativa}
-                      onChange={(e) => handleInputChange("humedadRelativa", e.target.value)}
-                      className="w-full p-4 border rounded-lg"
-                      placeholder="45"
-                      min={0}
-                      max={100}
-                    />
-                  </div>
-                </div>
+              <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-none" rows={2} /></div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className="w-full p-4 border rounded-lg" /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className="w-full p-4 border rounded-lg" /></div>
               </div>
             </div>
-
-            {/* ==================================================================== */}
-            {/* 5. (MEJORA) Bloque de vista previa REEMPLAZADO por el <iframe>       */}
-            {/* ==================================================================== */}
             {showPreview && (
               <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden h-full min-h-[1000px]">
-                <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200">
-                  <h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF Real</h2>
-                  <p className="text-gray-600 text-sm">
-                    Esto es exactamente lo que se guardará.
-                  </p>
-                </div>
-
-                <div className="h-full w-full">
-                  {previewUrl ? (
-                    <iframe
-                      src={previewUrl}
-                      width="100%"
-                      // Se ajusta la altura para que el contenedor padre la controle
-                      className="h-full min-h-[900px]" 
-                      style={{ border: 'none' }}
-                      title="Vista Previa PDF"
-                    />
-                  ) : (
-                    // Centrar el loader en el espacio disponible
-                    <div className="p-8 flex items-center justify-center h-[900px]">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                      <span className="ml-3 text-gray-700">Generando vista previa...</span>
-                    </div>
-                  )}
-                </div>
+                <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200"><h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF Real</h2></div>
+                <div className="h-full w-full">{previewUrl ? <iframe src={previewUrl} width="100%" className="h-full min-h-[900px]" style={{ border: 'none' }} title="Vista Previa PDF" /> : <div className="p-8 flex items-center justify-center h-[900px]"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><span className="ml-3 text-gray-700">Generando vista previa...</span></div>}</div>
               </div>
             )}
           </div>
         </div>
-
-        {/* Botones */}
         <div className="bg-gray-50 px-8 py-6 border-t border-gray-200">
           <div className="flex justify-end space-x-4">
-            <button
-              onClick={handleCancel}
-              className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2"
-              disabled={isSaving}
-            >
-              <X className="w-4 h-4" />
-              <span>Cancelar</span>
-            </button>
-            <button
-              onClick={handleSave}
-              // MODIFICADO: Deshabilita si isBlocked es true Y permitirExcepcion es false
-              disabled={isSaving || !valid || (idBlocked && !permitirExcepcion)}
-              className={`px-6 py-3 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg ${
-                isSaving || !valid || (idBlocked && !permitirExcepcion)
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-blue-600 to-indigo-700'
-              }`}
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              <span>{isSaving ? "Guardando..." : "Guardar"}</span>
-            </button>
+            <button onClick={() => goBack()} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2" disabled={isSaving}><X className="w-4 h-4" /><span>Cancelar</span></button>
+            <button onClick={handleSave} disabled={isSaving || !valid || (state.idBlocked && !state.permitirExcepcion)} className={`px-6 py-3 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg ${isSaving || !valid || (state.idBlocked && !state.permitirExcepcion) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-700'}`}>{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}<span>{isSaving ? "Guardando..." : "Guardar"}</span></button>
           </div>
         </div>
       </div>
-    );
+    </div>
+  );
 };
+
 export default WorkSheetScreen;
