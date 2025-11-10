@@ -1,539 +1,291 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
-import { Eye, EyeOff, Lock, Mail, Sparkles, ArrowRight, Fingerprint } from 'lucide-react';
-import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
+import { Eye, EyeOff, Lock, Mail, ArrowRight, ScanFace } from 'lucide-react';
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { getAuth, sendPasswordResetEmail } from "firebase/auth";
+import { getFirestore, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import labLogo from '../assets/lab_logo.png';
 
-const fetchUserName = async (email: string): Promise<{ name: string; initial: string } | null> => {
-  if (email.toLowerCase() === 'admin@ese-ag.mx') {
-    return new Promise(resolve => 
-      setTimeout(() => resolve({ name: 'Admin', initial: 'A' }), 700)
-    );
-  }
+interface UserGreeting {
+  name: string;
+  initial: string;
+  photoUrl?: string | null;
+}
+
+const fetchUserProfile = async (email: string): Promise<UserGreeting | null> => {
+  if (!email || !email.includes('@') || email.length < 5) return null;
+  try {
+    const db = getFirestore();
+    const q = query(collection(db, 'usuarios'), where('email', '==', email.toLowerCase()), limit(1));
+    const s = await getDocs(q);
+    if (!s.empty) {
+      const d = s.docs[0].data();
+      const name = d.nombre || d.name || 'Usuario';
+      return { name, initial: name.charAt(0).toUpperCase(), photoUrl: d.photoUrl || d.photoURL || null };
+    }
+  } catch (e) { console.log(e); }
   return null;
 };
 
-export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ 
-  onNavigateToRegister 
-}) => {
+export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ onNavigateToRegister }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPass, setShowPass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [userName, setUserName] = useState('');
-  const [userInitial, setUserInitial] = useState('');
-  const [isFetchingName, setIsFetchingName] = useState(false);
-  const [focusedField, setFocusedField] = useState<string | null>(null);
-
+  const [user, setUser] = useState<UserGreeting | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [focused, setFocused] = useState<string | null>(null);
+  
   const { login } = useAuth();
   const { navigateTo } = useNavigation();
 
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
-  
-  // Nuevo: MotionValue para simular un movimiento sutil en móvil/tiempo
-  const mobileBgShift = useMotionValue(0); 
+  const lastGreetedUser = useRef<string | null>(null);
+  // NUEVO: Ref para saber si ya desbloqueamos el audio
+  const audioUnlocked = useRef(false);
+  const isFormReady = email.length > 0 && password.length > 0;
+
+  // --- EFECTO TILT 3D ---
+  const ref = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15 });
+  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 15 });
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    x.set((e.clientX - rect.left) / rect.width - 0.5);
+    y.set((e.clientY - rect.top) / rect.height - 0.5);
+  };
+
+  // --- NUEVO: FUNCIÓN PARA DESBLOQUEAR AUDIO ---
+  // Se llama en el primer onFocus o clic para satisfacer la política del navegador
+  const unlockAudioEngine = () => {
+    if (!audioUnlocked.current && 'speechSynthesis' in window) {
+      const emptyUtterance = new SpeechSynthesisUtterance('');
+      emptyUtterance.volume = 0; // Silencio total
+      window.speechSynthesis.speak(emptyUtterance);
+      audioUnlocked.current = true;
+    }
+  };
+
+  const getBestSpanishVoice = () => {
+    const voices = window.speechSynthesis.getVoices();
+    let bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Microsoft')));
+    if (!bestVoice) bestVoice = voices.find(v => v.lang === 'es-MX');
+    if (!bestVoice) bestVoice = voices.find(v => v.lang.startsWith('es'));
+    return bestVoice || null;
+  };
 
   useEffect(() => {
     if (!email) {
-      setUserName('');
-      setUserInitial('');
+      setUser(null);
+      lastGreetedUser.current = null;
       return;
     }
 
-    const debounceTimer = setTimeout(async () => {
-      setIsFetchingName(true);
-      const userData = await fetchUserName(email);
-      if (userData) {
-        setUserName(userData.name);
-        setUserInitial(userData.initial);
-      } else {
-        setUserName('');
-        setUserInitial('');
+    const t = setTimeout(async () => {
+      setFetching(true);
+      const u = await fetchUserProfile(email);
+      setUser(u);
+
+      if (u && u.name && lastGreetedUser.current !== email.toLowerCase()) {
+        if ('speechSynthesis' in window) {
+          // Intentamos hablar solo si creemos que el audio está desbloqueado o si el usuario ya está interactuando
+          if (window.speechSynthesis.getVoices().length === 0) {
+             window.speechSynthesis.onvoiceschanged = () => speakGreeting(u.name);
+          } else {
+             speakGreeting(u.name);
+          }
+        }
       }
-      setIsFetchingName(false);
+      setFetching(false);
     }, 500);
 
-    return () => clearTimeout(debounceTimer);
+    return () => clearTimeout(t);
   }, [email]);
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseX.set(e.clientX);
-      mouseY.set(e.clientY);
-    };
+  const speakGreeting = (userName: string) => {
+    if (lastGreetedUser.current === email.toLowerCase()) return;
+
+    // Aseguramos que se cancele lo anterior
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(`Bienvenido de nuevo, ${userName}`);
+    const bestVoice = getBestSpanishVoice();
     
-    // Listener para seguimiento de mouse (principalmente escritorio)
-    window.addEventListener('mousemove', handleMouseMove);
-
-    // Animación de shift de fondo constante para móvil/tiempo
-    const animateShift = () => {
-      // Simular un movimiento lento y cíclico
-      mobileBgShift.set(Math.sin(Date.now() / 10000) * 20); // Valor entre -20 y 20
-      requestAnimationFrame(animateShift);
-    };
-
-    const animationId = requestAnimationFrame(animateShift);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      cancelAnimationFrame(animationId);
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+      utterance.rate = 0.95; 
+      utterance.pitch = 1.0;
+    } else {
+      utterance.lang = 'es-MX';
+      utterance.rate = 0.9; 
     }
-  }, [mouseX, mouseY, mobileBgShift]);
+    
+    utterance.volume = 0.8;
+    // Pequeño delay para dar tiempo al navegador a registrar interacciones recientes
+    setTimeout(() => {
+       window.speechSynthesis.speak(utterance);
+    }, 100);
+    
+    lastGreetedUser.current = email.toLowerCase();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-
-    const ok = await login(email, password);
-    if (ok) {
-      navigateTo('menu');
-    } else {
-      setError('Credenciales inválidas.');
-    }
+    e.preventDefault(); setIsLoading(true); setError('');
+    if (await login(email, password)) navigateTo('menu');
+    else setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
     setIsLoading(false);
   };
 
-  const handlePasswordReset = () => {
-    const auth = getAuth();
-    const targetEmail = email || prompt(
-      "Por favor, ingresa tu correo electrónico para restablecer la contraseña:"
-    );
-
-    if (targetEmail) {
-      sendPasswordResetEmail(auth, targetEmail)
-        .then(() => {
-          alert(
-            "✅ ¡Excelente! Revisa tu bandeja de entrada. Te hemos enviado un enlace para restablecer tu contraseña."
-          );
-        })
-        .catch((error) => {
-          const errorCode = error.code;
-          if (errorCode === 'auth/user-not-found') {
-            alert("🚨 Error: No se encontró ningún usuario con ese correo electrónico.");
-          } else {
-            alert(`🚨 Ocurrió un error: ${error.message}`);
-          }
-        });
+  const handlePasswordResetRequest = async () => {
+    const emailToReset = email || prompt("Ingresa tu correo para recuperar contraseña:");
+    if (emailToReset && emailToReset.includes('@')) {
+      try {
+        await sendPasswordResetEmail(getAuth(), emailToReset);
+        alert(`✅ Correo de recuperación enviado a ${emailToReset}`);
+      } catch (err: any) {
+        alert("❌ Error: " + (err.code === 'auth/user-not-found' ? "Usuario no encontrado" : err.message));
+      }
     }
   };
 
-  // Usa mouseX/mouseY para desktop, y mobileBgShift como fallback sutil
-  const isDesktop = typeof window !== 'undefined' && window.innerWidth > 768;
-  const bgX = useTransform(mouseX, [0, window.innerWidth], [-20, 20]);
-  const bgY = useTransform(mouseY, [0, window.innerHeight], [-20, 20]);
-  
   return (
-    <div className="min-h-screen w-full relative overflow-hidden bg-black">
-      {/* MESH GRADIENT BACKGROUND - Sin recuadros, fluido */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div
-          // AJUSTE CLAVE para móvil: Animación de "respiración" constante si no es desktop (o siempre, combinándose con el mouse)
-          animate={{
-            x: [0, 10, -5, 0],
-            y: [0, -5, 10, 0]
-          }}
-          transition={{
-            duration: 30, // Movimiento lento
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-          style={{ 
-            x: isDesktop ? bgX : undefined, // Usar mouseX solo en desktop
-            y: isDesktop ? bgY : undefined, // Usar mouseY solo en desktop
-          }}
-          className="absolute inset-0 opacity-60"
-        >
-          {/* Mesh gradient fluido */}
-          <div className="absolute top-0 left-0 w-[800px] h-[800px] rounded-full bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 blur-[150px] opacity-50 animate-blob" />
-          <div className="absolute top-0 right-0 w-[700px] h-[700px] rounded-full bg-gradient-to-br from-violet-600 via-fuchsia-600 to-blue-600 blur-[150px] opacity-50 animate-blob animation-delay-2000" />
-          <div className="absolute bottom-0 left-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-cyan-600 via-blue-600 to-purple-600 blur-[150px] opacity-50 animate-blob animation-delay-4000" />
-        </motion.div>
-
-        {/* Animated grain texture */}
-        <div className="absolute inset-0 opacity-[0.02] mix-blend-overlay">
-          <svg className="w-full h-full">
-            <filter id="noise">
-              <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" />
-            </filter>
-            <rect width="100%" height="100%" filter="url(#noise)" />
-          </svg>
-        </div>
+    // Agregamos unlockAudioEngine al contenedor principal por si hacen clic en cualquier lado
+    <div 
+      className="min-h-screen w-full relative overflow-hidden bg-[#030712] text-white flex items-center justify-center perspective-1000"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => { x.set(0); y.set(0); }}
+      onClick={unlockAudioEngine} // <--- INTENTO DE DESBLOQUEO GLOBAL
+      ref={ref}
+    >
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <motion.div animate={{ scale: [1, 1.15, 1], rotate: [0, 90, 0] }} transition={{ duration: 50, repeat: Infinity, ease: "easeInOut" }} className="absolute -top-[20%] -left-[20%] w-[80vw] h-[80vw] bg-blue-700/15 rounded-full blur-[140px] mix-blend-screen" />
+        <motion.div animate={{ scale: [1, 1.25, 1], rotate: [0, -90, 0] }} transition={{ duration: 45, repeat: Infinity, ease: "easeInOut" }} className="absolute -bottom-[30%] -right-[20%] w-[80vw] h-[80vw] bg-violet-800/15 rounded-full blur-[160px] mix-blend-screen" />
       </div>
+      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.04] mix-blend-overlay pointer-events-none" />
 
-      {/* CONTENEDOR PRINCIPAL */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-8">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="w-full max-w-[440px]"
-        >
-          {/* LOGO CON EFECTO FLOTANTE */}
-          <motion.div
-            initial={{ opacity: 0, y: -30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="text-center mb-12"
-          >
-            <motion.div
-              animate={{ 
-                y: [0, -10, 0],
-                rotateY: [0, 5, 0, -5, 0]
-              }}
-              transition={{ 
-                duration: 6, 
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-              className="inline-block mb-6 relative"
-            >
-              {/* Halo glow effect */}
-              <motion.div
-                animate={{
-                  scale: [1, 1.3, 1],
-                  opacity: [0.3, 0.6, 0.3],
-                }}
-                transition={{
-                  duration: 3,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-                className="absolute inset-0 bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 rounded-full blur-3xl"
-              />
-              <div className="relative">
-                <img
-                  src={labLogo}
-                  alt="Lab Logo"
-                  className="h-20 w-20 sm:h-24 sm:w-24 object-contain relative z-10 drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]"
-                />
-              </div>
-            </motion.div>
+      <motion.div 
+        style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
+        initial={{ opacity: 0, scale: 0.95, y: 40 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: "spring", bounce: 0.2, duration: 0.8 }}
+        className="w-full max-w-[460px] relative z-10 mx-4"
+      >
+        <div className="backdrop-blur-2xl bg-white/[0.02] border border-white/[0.06] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] p-8 sm:p-10 rounded-[36px] relative overflow-hidden">
+          
+          <div className="text-center mb-8 relative z-10" style={{ transform: "translateZ(30px)" }}>
+            <motion.img initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }} src={labLogo} alt="Logo" className="h-24 mx-auto mb-6 drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]" />
+            <h1 className="text-4xl font-bold tracking-tight text-white mb-2 drop-shadow-lg">Bienvenido</h1>
+            <p className="text-slate-400 font-medium">Portal de Acceso Seguro</p>
+          </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.6 }}
-            >
-              <h1 className="text-4xl sm:text-5xl font-bold mb-3 bg-gradient-to-r from-white via-blue-100 to-purple-100 bg-clip-text text-transparent leading-tight">
-                Bienvenido
-              </h1>
-              <p className="text-gray-400 text-base">
-                Sistema de Gestión Profesional
-              </p>
-            </motion.div>
-          </motion.div>
-
-          {/* SALUDO PERSONALIZADO - Sin bordes */}
           <AnimatePresence mode="wait">
-            {userName && (
+            {user && (
               <motion.div
-                initial={{ opacity: 0, y: -20, filter: "blur(10px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -10, filter: "blur(10px)" }}
-                transition={{ duration: 0.4 }}
-                className="mb-8 relative"
+                initial={{ opacity: 0, height: 0, y: -20 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -20 }}
+                className="mb-8"
+                style={{ transform: "translateZ(40px)" }}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-xl" />
-                <div className="relative backdrop-blur-xl bg-white/[0.03] px-6 py-4 rounded-3xl">
-                  <div className="flex items-center gap-4">
-                    <motion.div
-                      initial={{ scale: 0, rotate: -180 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      transition={{ type: "spring", duration: 0.8 }}
-                      className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/30"
-                    >
-                      {userInitial}
-                    </motion.div>
-                    <div className="flex-1">
-                      <p className="text-white font-semibold">¡Hola de nuevo!</p>
-                      <p className="text-gray-400 text-sm">{userName}</p>
-                    </div>
-                    <motion.div
-                      animate={{ 
-                        rotate: [0, 10, -10, 0],
-                        scale: [1, 1.1, 1]
-                      }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                    >
-                      <Sparkles className="w-5 h-5 text-yellow-400" />
-                    </motion.div>
+                <div className="relative bg-gradient-to-r from-blue-950/40 to-slate-900/40 rounded-2xl p-4 border border-blue-500/20 flex items-center gap-5 overflow-hidden">
+                  <motion.div animate={{ x: ['-100%', '200%'] }} transition={{ duration: 2.5, repeat: Infinity, ease: "linear", delay: 1 }} className="absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/5 to-transparent w-1/2 pointer-events-none" />
+                  <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center overflow-hidden border-2 border-white/10 shadow-2xl relative z-10 shrink-0">
+                    {user.photoUrl ? <img src={user.photoUrl} className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display='none')} /> : <span className="text-2xl font-bold text-white">{user.initial}</span>}
+                  </div>
+                  <div className="flex-1 relative z-10 min-w-0">
+                    <p className="text-blue-300 text-xs font-bold uppercase tracking-wider mb-1">Hola de nuevo</p>
+                    <h2 className="text-2xl font-bold text-white leading-tight break-words">{user.name}</h2>
                   </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* FORMULARIO - Sin recuadros visibles */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* EMAIL FIELD */}
-            <motion.div
-              initial={{ opacity: 0, x: -30, filter: "blur(10px)" }}
-              animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-              transition={{ delay: 0.6, duration: 0.5 }} // AJUSTE DE DELAY para mejor staggering
-            >
-              <motion.label
-                animate={{ x: focusedField === 'email' ? 4 : 0 }}
-                className="block text-sm font-medium text-gray-300 mb-3 ml-1"
-              >
-                Correo Electrónico
-              </motion.label>
-              <div className="relative group">
-                {/* Glow effect on focus */}
-                <motion.div
-                  animate={{
-                    opacity: focusedField === 'email' ? 0.4 : 0,
-                    scale: focusedField === 'email' ? 1 : 0.8
-                  }}
-                  className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 blur-2xl rounded-3xl"
+          <form onSubmit={handleSubmit} className="space-y-6 relative z-10" style={{ transform: "translateZ(20px)" }}>
+            <motion.div initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="relative group">
+              <motion.div animate={{ opacity: focused === 'email' ? 1 : 0, scale: focused === 'email' ? 1.02 : 0.98 }} transition={{ duration: 0.3 }} className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-violet-500 rounded-2xl blur opacity-0 transition duration-1000 group-hover:opacity-30 group-hover:duration-200" />
+              <div className="relative">
+                <Mail className={`absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-300 ${focused === 'email' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-slate-500'}`} />
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={e => setEmail(e.target.value)} 
+                  onFocus={() => {
+                    setFocused('email');
+                    unlockAudioEngine(); // <--- DESBLOQUEO AL HACER FOCO
+                  }} 
+                  onBlur={() => setFocused(null)} 
+                  placeholder="Correo electrónico" required
+                  className="w-full h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-12 text-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07] transition-all relative z-10"
                 />
-                
-                <div className="relative">
-                  <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10 pointer-events-none transition-colors duration-300 group-hover:text-blue-400" />
-                  <motion.input
-                    whileFocus={{ scale: 1.01 }}
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onFocus={() => setFocusedField('email')}
-                    onBlur={() => setFocusedField(null)}
-                    placeholder="nombre@ejemplo.com"
-                    required
-                    className="w-full h-14 pl-14 pr-5 bg-white/[0.03] backdrop-blur-xl text-white placeholder-gray-500 rounded-2xl focus:outline-none transition-all duration-300 border-0 focus:bg-white/[0.05]"
-                    style={{
-                      boxShadow: focusedField === 'email' 
-                        ? '0 0 0 1px rgba(59, 130, 246, 0.5), 0 10px 40px -10px rgba(59, 130, 246, 0.4)' // Más saturado en focus
-                        : '0 0 0 1px rgba(255, 255, 255, 0.08)' // Línea base más visible en móvil
-                    }}
-                  />
-                  {isFetchingName && (
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full"
-                    />
-                  )}
-                </div>
+                {fetching && <div className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-blue-500/30 border-t-blue-400 rounded-full animate-spin z-20" />}
               </div>
             </motion.div>
 
-            {/* PASSWORD FIELD */}
-            <motion.div
-              initial={{ opacity: 0, x: -30, filter: "blur(10px)" }}
-              animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-              transition={{ delay: 0.7, duration: 0.5 }} // AJUSTE DE DELAY para mejor staggering
-            >
-              <motion.label
-                animate={{ x: focusedField === 'password' ? 4 : 0 }}
-                className="block text-sm font-medium text-gray-300 mb-3 ml-1"
-              >
-                Contraseña
-              </motion.label>
-              <div className="relative group">
-                <motion.div
-                  animate={{
-                    opacity: focusedField === 'password' ? 0.4 : 0,
-                    scale: focusedField === 'password' ? 1 : 0.8
+            <motion.div initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.5 }} className="relative group">
+              <motion.div animate={{ opacity: focused === 'password' ? 1 : 0, scale: focused === 'password' ? 1.02 : 0.98 }} transition={{ duration: 0.3 }} className="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl blur opacity-0" />
+              <div className="relative">
+                <Lock className={`absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-300 ${focused === 'password' ? 'text-violet-400 drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]' : 'text-slate-500'}`} />
+                <input 
+                  type={showPass ? "text" : "password"} 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  onFocus={() => {
+                    setFocused('password');
+                    unlockAudioEngine(); // <--- DESBLOQUEO TAMBIÉN AQUÍ
                   }}
-                  className="absolute inset-0 bg-gradient-to-r from-purple-500 to-pink-500 blur-2xl rounded-3xl"
+                  onBlur={() => setFocused(null)} 
+                  placeholder="Contraseña" required
+                  className="w-full h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-14 text-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.07] transition-all relative z-10"
                 />
-                
-                <div className="relative">
-                  <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10 pointer-events-none transition-colors duration-300 group-hover:text-purple-400" />
-                  <motion.input
-                    whileFocus={{ scale: 1.01 }}
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onFocus={() => setFocusedField('password')}
-                    onBlur={() => setFocusedField(null)}
-                    placeholder="••••••••••"
-                    required
-                    className="w-full h-14 pl-14 pr-14 bg-white/[0.03] backdrop-blur-xl text-white placeholder-gray-500 rounded-2xl focus:outline-none transition-all duration-300 border-0 focus:bg-white/[0.05]"
-                    style={{
-                      boxShadow: focusedField === 'password' 
-                        ? '0 0 0 1px rgba(168, 85, 247, 0.5), 0 10px 40px -10px rgba(168, 85, 247, 0.4)' // Más saturado en focus
-                        : '0 0 0 1px rgba(255, 255, 255, 0.08)' // Línea base más visible en móvil
-                    }}
-                  />
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.95 }}
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors z-10"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </motion.button>
-                </div>
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors z-20 p-1 outline-none">
+                  {showPass ? <EyeOff size={22} /> : <Eye size={22} />}
+                </button>
               </div>
-
-              <motion.button
-                whileHover={{ x: 4 }}
-                type="button"
-                onClick={handlePasswordReset}
-                className="text-xs text-gray-400 hover:text-blue-400 mt-3 ml-1 transition-colors inline-block"
-              >
-                ¿Olvidaste tu contraseña?
-              </motion.button>
             </motion.div>
 
-            {/* ERROR MESSAGE */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="flex justify-end -mt-2">
+              <button type="button" onClick={handlePasswordResetRequest} className="text-sm font-medium text-slate-400 hover:text-blue-400 transition-colors outline-none">¿Olvidaste tu contraseña?</button>
+            </motion.div>
+
             <AnimatePresence>
               {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10, height: 0 }}
-                  animate={{ opacity: 1, y: 0, height: 'auto' }}
-                  exit={{ opacity: 0, y: -10, height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 to-pink-500/20 blur-xl" />
-                    <div className="relative backdrop-blur-xl bg-red-500/10 px-5 py-4 rounded-2xl">
-                      <p className="text-red-300 text-sm text-center font-medium">
-                        {error}
-                      </p>
-                    </div>
-                  </div>
+                <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                  <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-200 text-center mb-4 backdrop-blur-md font-medium">{error}</div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* LOGIN BUTTON */}
-            <motion.div
-              initial={{ opacity: 0, y: 20, filter: "blur(10px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ delay: 0.8, duration: 0.5 }} // AJUSTE DE DELAY para mejor staggering
-            >
+            <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.7 }}>
               <motion.button
-                whileHover={{ scale: 1.02, y: -2 }}
-                whileTap={{ scale: 0.98 }}
-                type="submit"
-                disabled={isLoading}
-                className="relative w-full h-14 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white font-semibold rounded-2xl overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  boxShadow: '0 10px 40px -10px rgba(139, 92, 246, 0.6)'
-                }}
+                type="submit" disabled={isLoading}
+                animate={isFormReady && !isLoading ? { scale: [1, 1.02, 1], boxShadow: ["0 0 0 0px rgba(79, 70, 229, 0)", "0 0 25px 3px rgba(79, 70, 229, 0.5)", "0 0 0 0px rgba(79, 70, 229, 0)"] } : {}}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                className="w-full h-16 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 rounded-2xl font-bold text-lg text-white relative overflow-hidden group disabled:opacity-50 transition-all duration-300 shadow-[0_0_40px_-10px_rgba(79,70,229,0.5)] hover:shadow-[0_0_60px_-10px_rgba(79,70,229,0.7)] active:scale-[0.98]"
               >
-                {/* Animated gradient overlay */}
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                />
-                
-                {/* Shimmer effect */}
-                <motion.div
-                  animate={{
-                    x: ['-200%', '200%'],
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "linear"
-                  }}
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12"
-                />
-
-                <span className="relative flex items-center justify-center gap-3">
-                  {isLoading ? (
-                    <>
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                      />
-                      <span>Iniciando sesión...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Iniciar Sesión</span>
-                      <motion.div
-                        animate={{ x: [0, 5, 0] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                      >
-                        <ArrowRight className="w-5 h-5" />
-                      </motion.div>
-                    </>
-                  )}
+                <div className="absolute inset-0 w-[200%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)] opacity-0 group-hover:opacity-30 transition-opacity mix-blend-overlay" style={{ left: '-50%', top: '-50%' }}/>
+                <span className="relative flex items-center justify-center gap-3 z-10">
+                  {isLoading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>Accediendo...</span></> : <>Iniciar Sesión <ArrowRight className="group-hover:translate-x-1 transition-transform" /></>}
                 </span>
               </motion.button>
             </motion.div>
-
-            {/* BIOMETRIC HINT */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.9 }} // AJUSTE DE DELAY
-              className="flex items-center justify-center gap-2 text-gray-500 text-xs"
-            >
-              <Fingerprint className="w-4 h-4" />
-              <span>Autenticación biométrica disponible próximamente</span>
-            </motion.div>
-
-            {/* DIVIDER */}
-            <div className="relative my-8">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full h-px bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="px-4 text-xs text-gray-500 bg-black">
-                  ¿Primera vez aquí?
-                </span>
-              </div>
-            </div>
-
-            {/* REGISTER BUTTON */}
-            <motion.button
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1 }} // AJUSTE DE DELAY
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              type="button"
-              onClick={onNavigateToRegister}
-              className="w-full h-14 bg-white/[0.03] backdrop-blur-xl text-white font-medium rounded-2xl hover:bg-white/[0.06] transition-all duration-300"
-              style={{
-                boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.08)' // Línea base más visible en móvil
-              }}
-            >
-              Crear Nueva Cuenta
-            </motion.button>
           </form>
 
-          {/* FOOTER */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.1 }} // AJUSTE DE DELAY
-            className="mt-12 text-center"
-          >
-            <p className="text-xs text-gray-600">
-              © 2025 ESE-AG Lab. Todos los derechos reservados.
-            </p>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="mt-10 pt-6 border-t border-white/5 flex flex-col items-center gap-4">
+            <div className="flex items-center gap-2 text-slate-400 text-sm px-4 py-2 rounded-full bg-black/20 border border-white/5">
+              <ScanFace size={16} className="text-blue-400" /><span>Acceso Seguro Verificado</span>
+            </div>
+            <button onClick={onNavigateToRegister} className="text-slate-400 hover:text-white transition-colors py-2 outline-none">¿No tienes cuenta? <span className="text-blue-400 font-semibold ml-1 hover:underline">Regístrate aquí</span></button>
           </motion.div>
-        </motion.div>
-      </div>
-
-      {/* ANIMATED CSS */}
-      <style>{`
-        @keyframes blob {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(30px, -50px) scale(1.1); }
-          66% { transform: translate(-20px, 20px) scale(0.9); }
-        }
-        .animate-blob {
-          animation: blob 20s infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-      }
-      `}</style>
+        </div>
+      </motion.div>
     </div>
   );
 };

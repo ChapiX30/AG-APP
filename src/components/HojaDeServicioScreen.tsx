@@ -579,6 +579,7 @@ export default function HojaDeServicioScreen() {
 
     setSavingService(true);
     try {
+      // 1. Generar BLOB para guardar en Firebase
       const pdfBlob = await generarPDFFormal({
         campos,
         firmaTecnico,
@@ -591,15 +592,49 @@ export default function HojaDeServicioScreen() {
         throw new Error("No se pudo generar el archivo PDF.");
       }
 
+      // 2. Subir a Firebase Storage
       const storagePath = `worksheets/Hojas de Servicio/${campos.folio}.pdf`;
       const storageRef = ref(storage, storagePath);
 
-      const uploadResult = await uploadBytes(storageRef, pdfBlob);
+      const uploadResult = await uploadBytes(storageRef, pdfBlob as Blob);
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
+      // 3. Guardar registro en Firestore
       await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
       
-      alert(`✅ Hoja de servicio guardada exitosamente con folio: ${campos.folio}. El PDF se ha subido al Drive.`);
+      // --- NUEVA FUNCIONALIDAD DE CORREO MANUAL ---
+      const confirmManual = window.confirm(
+        `✅ Servicio guardado correctamente.\n\n¿Deseas descargar el PDF y abrir el correo para adjuntarlo manualmente?`
+      );
+
+      if (confirmManual) {
+        // A. Forzar descarga del PDF
+        await generarPDFFormal({
+            campos,
+            firmaTecnico,
+            firmaCliente,
+            equiposCalibrados,
+            outputType: 'save' // Dispara la descarga en el navegador
+        });
+
+        // B. Preparar y abrir la plantilla de correo
+        const subject = `Hoja de Servicio ${campos.folio} - ${campos.empresa}`;
+        // Cuerpo del mensaje sin link de descarga, listo para adjuntar el archivo
+        const body = `Buenos días,
+
+Adjunto encontrará la hoja de servicio correspondiente al día ${formatDate(campos.fecha)}.
+
+Quedo pendiente de cualquier cosa.
+Gracias.`;
+
+        const mailtoLink = `mailto:${campos.correo || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+        // Pequeño retraso para que la descarga inicie antes de cambiar de ventana
+        setTimeout(() => {
+            window.location.href = mailtoLink;
+        }, 1000);
+      }
+      // --------------------------------------------
 
     } catch (error: any) {
       console.error("Error al guardar:", error);
