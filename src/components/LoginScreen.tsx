@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
-import { Eye, EyeOff, Lock, Mail, ArrowRight, ScanFace } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, ScanFace, X, CheckCircle, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { getAuth, sendPasswordResetEmail } from "firebase/auth";
 import { getFirestore, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import labLogo from '../assets/lab_logo.png';
 
+// --- INTERFACES Y UTILIDADES ---
 interface UserGreeting {
   name: string;
   initial: string;
@@ -17,37 +18,69 @@ const fetchUserProfile = async (email: string): Promise<UserGreeting | null> => 
   if (!email || !email.includes('@') || email.length < 5) return null;
   try {
     const db = getFirestore();
-    const q = query(collection(db, 'usuarios'), where('email', '==', email.toLowerCase()), limit(1));
-    const s = await getDocs(q);
-    if (!s.empty) {
-      const d = s.docs[0].data();
-      const name = d.nombre || d.name || 'Usuario';
-      return { name, initial: name.charAt(0).toUpperCase(), photoUrl: d.photoUrl || d.photoURL || null };
+    const userQuery = query(collection(db, 'usuarios'), where('email', '==', email.toLowerCase()), limit(1));
+    const snapshot = await getDocs(userQuery);
+    if (!snapshot.empty) {
+      const userData = snapshot.docs[0].data();
+      const name = userData.nombre || userData.name || 'Usuario';
+      return {
+        name,
+        initial: name.charAt(0).toUpperCase(),
+        photoUrl: userData.photoUrl || userData.photoURL || null
+      };
     }
-  } catch (e) { console.log(e); }
+  } catch (e) { console.error("Error fetching user profile:", e); }
   return null;
 };
 
+const getFriendlyErrorMessage = (errorCode: string): string => {
+  switch (errorCode) {
+    case 'auth/user-not-found': return 'No existe una cuenta con este correo electrónico.';
+    case 'auth/wrong-password': return 'La contraseña es incorrecta.';
+    case 'auth/invalid-email': return 'El formato del correo electrónico no es válido.';
+    case 'auth/user-disabled': return 'Esta cuenta ha sido deshabilitada.';
+    case 'auth/too-many-requests': return 'Demasiados intentos fallidos. Intenta más tarde.';
+    case 'auth/network-request-failed': return 'Error de conexión. Verifica tu internet.';
+    case 'auth/invalid-credential': return 'Credenciales inválidas. Verifica tu correo y contraseña.';
+    default: return 'Ocurrió un error inesperado. Intenta nuevamente.';
+  }
+};
+
+const getTimeBasedGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Buenos días";
+  if (hour < 19) return "Buenas tardes";
+  return "Buenas noches";
+};
+
 export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ onNavigateToRegister }) => {
+  // --- ESTADOS DEL FORMULARIO ---
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loginAttempts, setLoginAttempts] = useState(0);
+
+  // --- ESTADOS DE UX/UI ---
   const [user, setUser] = useState<UserGreeting | null>(null);
-  const [fetching, setFetching] = useState(false);
-  const [focused, setFocused] = useState<string | null>(null);
-  
+  const [fetchingUser, setFetchingUser] = useState(false);
+  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStatus, setResetStatus] = useState<{ success: boolean; msg: string } | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [darkMode, setDarkMode] = useState(true);
+
+  // --- HOOKS Y REFS ---
   const { login } = useAuth();
   const { navigateTo } = useNavigation();
-
   const lastGreetedUser = useRef<string | null>(null);
-  // NUEVO: Ref para saber si ya desbloqueamos el audio
   const audioUnlocked = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debouncedFetchRef = useRef<NodeJS.Timeout | null>(null);
   const isFormReady = email.length > 0 && password.length > 0;
 
   // --- EFECTO TILT 3D ---
-  const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15 });
@@ -56,236 +89,454 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
   const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     x.set((e.clientX - rect.left) / rect.width - 0.5);
     y.set((e.clientY - rect.top) / rect.height - 0.5);
   };
 
-  // --- NUEVO: FUNCIÓN PARA DESBLOQUEAR AUDIO ---
-  // Se llama en el primer onFocus o clic para satisfacer la política del navegador
+  // --- AUDIO ENGINE ---
   const unlockAudioEngine = () => {
     if (!audioUnlocked.current && 'speechSynthesis' in window) {
-      const emptyUtterance = new SpeechSynthesisUtterance('');
-      emptyUtterance.volume = 0; // Silencio total
-      window.speechSynthesis.speak(emptyUtterance);
+      const empty = new SpeechSynthesisUtterance('');
+      empty.volume = 0;
+      window.speechSynthesis.speak(empty);
       audioUnlocked.current = true;
     }
   };
 
-  const getBestSpanishVoice = () => {
-    const voices = window.speechSynthesis.getVoices();
-    let bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Microsoft')));
-    if (!bestVoice) bestVoice = voices.find(v => v.lang === 'es-MX');
-    if (!bestVoice) bestVoice = voices.find(v => v.lang.startsWith('es'));
-    return bestVoice || null;
+const speakGreeting = (userName: string) => {
+  if (!voiceEnabled || lastGreetedUser.current === email.toLowerCase() || !('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const salutation = getTimeBasedGreeting();
+  const utterance = new SpeechSynthesisUtterance(`${salutation}, ${userName}. Bienvenido de nuevo.`);
+  const voices = window.speechSynthesis.getVoices();
+  const bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Microsoft')))
+    || voices.find(v => v.lang === 'es-MX')
+    || voices.find(v => v.lang.startsWith('es'));
+  
+  if (bestVoice) {
+    utterance.voice = bestVoice;
+    utterance.rate = 1.3; // ⚡ Velocidad mejorada - más natural y dinámica
+    utterance.pitch = 1.1;
+  } else {
+    utterance.lang = 'es-MX';
+    utterance.rate = 1.3; // ⚡ Importante: también aquí para voces por defecto
+  }
+  utterance.volume = 0.8;
+  setTimeout(() => window.speechSynthesis.speak(utterance), 100);
+  lastGreetedUser.current = email.toLowerCase();
+};
+
+
+  // --- LÓGICA DE FETCH REFACTORIZADA ---
+  const runFetchLogic = async (emailToFetch: string) => {
+    if (fetchingUser || lastGreetedUser.current === emailToFetch.toLowerCase()) return;
+    setFetchingUser(true);
+    const foundUser = await fetchUserProfile(emailToFetch);
+    setUser(foundUser);
+    if (foundUser?.name) {
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => speakGreeting(foundUser.name);
+      } else {
+        speakGreeting(foundUser.name);
+      }
+    }
+    setFetchingUser(false);
   };
 
+  // --- EFECTOS ---
   useEffect(() => {
     if (!email) {
       setUser(null);
       lastGreetedUser.current = null;
+      if (debouncedFetchRef.current) clearTimeout(debouncedFetchRef.current);
       return;
     }
 
-    const t = setTimeout(async () => {
-      setFetching(true);
-      const u = await fetchUserProfile(email);
-      setUser(u);
+    if (debouncedFetchRef.current) {
+      clearTimeout(debouncedFetchRef.current);
+    }
 
-      if (u && u.name && lastGreetedUser.current !== email.toLowerCase()) {
-        if ('speechSynthesis' in window) {
-          // Intentamos hablar solo si creemos que el audio está desbloqueado o si el usuario ya está interactuando
-          if (window.speechSynthesis.getVoices().length === 0) {
-             window.speechSynthesis.onvoiceschanged = () => speakGreeting(u.name);
-          } else {
-             speakGreeting(u.name);
-          }
-        }
-      }
-      setFetching(false);
+    debouncedFetchRef.current = setTimeout(() => {
+      runFetchLogic(email);
     }, 500);
 
-    return () => clearTimeout(t);
+    return () => {
+      if (debouncedFetchRef.current) {
+        clearTimeout(debouncedFetchRef.current);
+      }
+    };
   }, [email]);
 
-  const speakGreeting = (userName: string) => {
-    if (lastGreetedUser.current === email.toLowerCase()) return;
-
-    // Aseguramos que se cancele lo anterior
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(`Bienvenido de nuevo, ${userName}`);
-    const bestVoice = getBestSpanishVoice();
-    
-    if (bestVoice) {
-      utterance.voice = bestVoice;
-      utterance.rate = 0.95; 
-      utterance.pitch = 1.0;
-    } else {
-      utterance.lang = 'es-MX';
-      utterance.rate = 0.9; 
-    }
-    
-    utterance.volume = 0.8;
-    // Pequeño delay para dar tiempo al navegador a registrar interacciones recientes
-    setTimeout(() => {
-       window.speechSynthesis.speak(utterance);
-    }, 100);
-    
-    lastGreetedUser.current = email.toLowerCase();
-  };
-
+  // --- HANDLERS ---
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setIsLoading(true); setError('');
-    if (await login(email, password)) navigateTo('menu');
-    else setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
+    e.preventDefault();
+    setIsLoading(true); 
+    setError('');
+    try {
+      const success = await login(email, password);
+      if (success) {
+        navigateTo('menu');
+      } else {
+        setLoginAttempts(prev => prev + 1);
+        setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
+      }
+    } catch (err: any) {
+      setLoginAttempts(prev => prev + 1);
+      setError(getFriendlyErrorMessage(err.code || ''));
+    }
     setIsLoading(false);
   };
 
-  const handlePasswordResetRequest = async () => {
-    const emailToReset = email || prompt("Ingresa tu correo para recuperar contraseña:");
-    if (emailToReset && emailToReset.includes('@')) {
-      try {
-        await sendPasswordResetEmail(getAuth(), emailToReset);
-        alert(`✅ Correo de recuperación enviado a ${emailToReset}`);
-      } catch (err: any) {
-        alert("❌ Error: " + (err.code === 'auth/user-not-found' ? "Usuario no encontrado" : err.message));
-      }
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !email.includes('@')) {
+      setResetStatus({ success: false, msg: 'Por favor ingresa un correo válido.' });
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(getAuth(), email);
+      setResetStatus({ success: true, msg: `Enlace de recuperación enviado a ${email}` });
+      setTimeout(() => { setShowResetModal(false); setResetStatus(null); }, 3000);
+    } catch (err: any) {
+      setResetStatus({ success: false, msg: getFriendlyErrorMessage(err.code) });
     }
   };
 
+  // --- RENDER ---
   return (
-    // Agregamos unlockAudioEngine al contenedor principal por si hacen clic en cualquier lado
     <div 
-      className="min-h-screen w-full relative overflow-hidden bg-[#030712] text-white flex items-center justify-center perspective-1000"
+      className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 ${darkMode ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950' : 'bg-gradient-to-br from-slate-100 via-white to-slate-100'}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { x.set(0); y.set(0); }}
-      onClick={unlockAudioEngine} // <--- INTENTO DE DESBLOQUEO GLOBAL
-      ref={ref}
+      onClick={unlockAudioEngine}
+      ref={containerRef}
     >
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <motion.div animate={{ scale: [1, 1.15, 1], rotate: [0, 90, 0] }} transition={{ duration: 50, repeat: Infinity, ease: "easeInOut" }} className="absolute -top-[20%] -left-[20%] w-[80vw] h-[80vw] bg-blue-700/15 rounded-full blur-[140px] mix-blend-screen" />
-        <motion.div animate={{ scale: [1, 1.25, 1], rotate: [0, -90, 0] }} transition={{ duration: 45, repeat: Infinity, ease: "easeInOut" }} className="absolute -bottom-[30%] -right-[20%] w-[80vw] h-[80vw] bg-violet-800/15 rounded-full blur-[160px] mix-blend-screen" />
+      {/* Background FX */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <motion.div 
+          className={`absolute w-96 h-96 ${darkMode ? 'bg-blue-500/10' : 'bg-blue-500/20'} rounded-full blur-3xl`}
+          animate={{ x: [-100, 100], y: [-50, 50] }}
+          transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
+        />
+        <motion.div 
+          className={`absolute right-0 w-96 h-96 ${darkMode ? 'bg-violet-500/10' : 'bg-violet-500/20'} rounded-full blur-3xl`}
+          animate={{ x: [100, -100], y: [50, -50] }}
+          transition={{ duration: 15, repeat: Infinity, repeatType: "reverse" }}
+        />
       </div>
-      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.04] mix-blend-overlay pointer-events-none" />
 
-      <motion.div 
-        style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
-        initial={{ opacity: 0, scale: 0.95, y: 40 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: "spring", bounce: 0.2, duration: 0.8 }}
-        className="w-full max-w-[460px] relative z-10 mx-4"
+      {/* Voice & Theme Toggle */}
+      <div className="absolute top-6 right-6 flex gap-3 z-50">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setVoiceEnabled(!voiceEnabled)}
+          className={`p-3 rounded-xl ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-200/80 hover:bg-slate-300/80'} border ${darkMode ? 'border-white/10' : 'border-slate-300'} transition-all`}
+          aria-label={voiceEnabled ? "Desactivar voz" : "Activar voz"}
+        >
+          {voiceEnabled ? <Volume2 className={darkMode ? "text-blue-400" : "text-blue-600"} size={20} /> : <VolumeX className={darkMode ? "text-slate-500" : "text-slate-600"} size={20} />}
+        </motion.button>
+        
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setDarkMode(!darkMode)}
+          className={`p-3 rounded-xl ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-200/80 hover:bg-slate-300/80'} border ${darkMode ? 'border-white/10' : 'border-slate-300'} transition-all`}
+          aria-label={darkMode ? "Modo claro" : "Modo oscuro"}
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </motion.button>
+      </div>
+
+      {/* Main Card */}
+      <motion.div
+        className={`relative w-full max-w-md ${darkMode ? 'bg-white/[0.02]' : 'bg-white/80'} backdrop-blur-2xl rounded-3xl shadow-2xl ${darkMode ? 'border border-white/[0.05]' : 'border border-slate-200'} p-8`}
+        style={{ 
+          rotateX, 
+          rotateY,
+          transformStyle: "preserve-3d"
+        }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
       >
-        <div className="backdrop-blur-2xl bg-white/[0.02] border border-white/[0.06] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] p-8 sm:p-10 rounded-[36px] relative overflow-hidden">
-          
-          <div className="text-center mb-8 relative z-10" style={{ transform: "translateZ(30px)" }}>
-            <motion.img initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }} src={labLogo} alt="Logo" className="h-24 mx-auto mb-6 drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]" />
-            <h1 className="text-4xl font-bold tracking-tight text-white mb-2 drop-shadow-lg">Bienvenido</h1>
-            <p className="text-slate-400 font-medium">Portal de Acceso Seguro</p>
+        {/* Header & Logo */}
+        <div className="flex flex-col items-center mb-8" style={{ transform: "translateZ(40px)" }}>
+          <motion.img 
+            src={labLogo} 
+            alt="Lab Logo" 
+            className="w-20 h-20 mb-4"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 15 }}
+          />
+          <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'} mb-2`}>Bienvenido</h1>
+          <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'} flex items-center gap-2`}>
+            <Lock size={14} />
+            Portal de Acceso Seguro
+          </p>
+        </div>
+
+        {/* User Greeting Card */}
+        <AnimatePresence mode="wait">
+          {user && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className={`mb-6 p-4 rounded-2xl ${darkMode ? 'bg-gradient-to-r from-blue-500/10 to-violet-500/10 border border-blue-500/20' : 'bg-gradient-to-r from-blue-100 to-violet-100 border border-blue-300'}`}
+              style={{ transform: "translateZ(60px)" }}
+            >
+              <div className="flex items-center gap-3">
+                {user.photoUrl ? (
+                  <img 
+                    src={user.photoUrl} 
+                    alt={user.name}
+                    className="w-12 h-12 rounded-full border-2 border-blue-400 object-cover"
+                    onError={(e) => (e.currentTarget.style.display='none')}
+                  />
+                ) : (
+                  <div className={`w-12 h-12 rounded-full ${darkMode ? 'bg-gradient-to-br from-blue-500 to-violet-600' : 'bg-gradient-to-br from-blue-400 to-violet-500'} flex items-center justify-center text-white font-bold text-lg`}>
+                    {user.initial}
+                  </div>
+                )}
+                <div>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Hola de nuevo</p>
+                  <p className={`font-semibold ${darkMode ? 'text-white' : 'text-slate-900'}`}>{user.name}</p>
+                </div>
+                <ScanFace className={`ml-auto ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} size={20} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-5" style={{ transform: "translateZ(40px)" }}>
+          {/* Email Input */}
+          <div className="relative">
+            <Mail 
+              className={`absolute left-5 top-1/2 -translate-y-1/2 z-10 transition-colors ${
+                focusedField === 'email' 
+                  ? (darkMode ? 'text-blue-400' : 'text-blue-600')
+                  : (darkMode ? 'text-slate-600' : 'text-slate-400')
+              }`} 
+              size={20} 
+            />
+            <motion.input
+              whileFocus={{ scale: 1.01 }}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => { setFocusedField('email'); unlockAudioEngine(); }}
+              onBlur={() => setFocusedField(null)}
+              placeholder="Correo electrónico"
+              aria-label="Correo electrónico"
+              className={`w-full h-16 ${darkMode ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-slate-300'} border rounded-2xl pl-14 pr-12 text-lg ${darkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'} focus:outline-none ${darkMode ? 'focus:border-blue-500/50 focus:bg-white/[0.07]' : 'focus:border-blue-500 focus:bg-white'} transition-all relative z-10`}
+            />
+            {fetchingUser && <div className={`absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 border-2 ${darkMode ? 'border-blue-400' : 'border-blue-600'} border-t-transparent rounded-full animate-spin`} />}
           </div>
 
-          <AnimatePresence mode="wait">
-            {user && (
+          {/* Password Input */}
+          <div className="relative">
+            <Lock 
+              className={`absolute left-5 top-1/2 -translate-y-1/2 z-10 transition-colors ${
+                focusedField === 'password' 
+                  ? (darkMode ? 'text-violet-400' : 'text-violet-600')
+                  : (darkMode ? 'text-slate-600' : 'text-slate-400')
+              }`} 
+              size={20} 
+            />
+            <motion.input
+              whileFocus={{ scale: 1.01 }}
+              type={showPass ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onFocus={() => {
+                setFocusedField('password');
+                unlockAudioEngine();
+                if (email && !user && !fetchingUser) {
+                  if (debouncedFetchRef.current) {
+                    clearTimeout(debouncedFetchRef.current);
+                  }
+                  runFetchLogic(email);
+                }
+              }}
+              onBlur={() => setFocusedField(null)}
+              placeholder="Contraseña"
+              aria-label="Contraseña"
+              className={`w-full h-16 ${darkMode ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-slate-300'} border rounded-2xl pl-14 pr-14 text-lg ${darkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'} focus:outline-none ${darkMode ? 'focus:border-violet-500/50 focus:bg-white/[0.07]' : 'focus:border-violet-500 focus:bg-white'} transition-all relative z-10`}
+            />
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              type="button" 
+              onClick={() => setShowPass(!showPass)} 
+              aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"} 
+              className={`absolute right-5 top-1/2 -translate-y-1/2 ${darkMode ? 'text-slate-500 hover:text-white' : 'text-slate-400 hover:text-slate-700'} transition-colors z-20 p-1 outline-none`}
+            >
+              {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
+            </motion.button>
+          </div>
+
+          {/* Forgot Password Link */}
+          <div className="flex justify-end">
+            <button 
+              type="button" 
+              onClick={() => setShowResetModal(true)} 
+              className={`text-sm font-medium ${darkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-600 hover:text-blue-600'} transition-colors outline-none focus-visible:underline`}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
+
+          {/* Error Message with Attempts Counter */}
+          <AnimatePresence>
+            {error && (
               <motion.div
-                initial={{ opacity: 0, height: 0, y: -20 }}
-                animate={{ opacity: 1, height: "auto", y: 0 }}
-                exit={{ opacity: 0, height: 0, y: -20 }}
-                className="mb-8"
-                style={{ transform: "translateZ(40px)" }}
+                initial={{ opacity: 0, y: -10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className={`p-4 rounded-xl ${darkMode ? 'bg-red-500/10 border border-red-500/30' : 'bg-red-50 border border-red-300'} flex items-start gap-3`}
               >
-                <div className="relative bg-gradient-to-r from-blue-950/40 to-slate-900/40 rounded-2xl p-4 border border-blue-500/20 flex items-center gap-5 overflow-hidden">
-                  <motion.div animate={{ x: ['-100%', '200%'] }} transition={{ duration: 2.5, repeat: Infinity, ease: "linear", delay: 1 }} className="absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/5 to-transparent w-1/2 pointer-events-none" />
-                  <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center overflow-hidden border-2 border-white/10 shadow-2xl relative z-10 shrink-0">
-                    {user.photoUrl ? <img src={user.photoUrl} className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display='none')} /> : <span className="text-2xl font-bold text-white">{user.initial}</span>}
-                  </div>
-                  <div className="flex-1 relative z-10 min-w-0">
-                    <p className="text-blue-300 text-xs font-bold uppercase tracking-wider mb-1">Hola de nuevo</p>
-                    <h2 className="text-2xl font-bold text-white leading-tight break-words">{user.name}</h2>
-                  </div>
+                <AlertCircle className={darkMode ? "text-red-400" : "text-red-600"} size={20} />
+                <div className="flex-1">
+                  <p className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
+                  {loginAttempts >= 3 && (
+                    <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'} mt-1`}>
+                      Has intentado {loginAttempts} veces. Considera recuperar tu contraseña.
+                    </p>
+                  )}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          <form onSubmit={handleSubmit} className="space-y-6 relative z-10" style={{ transform: "translateZ(20px)" }}>
-            <motion.div initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="relative group">
-              <motion.div animate={{ opacity: focused === 'email' ? 1 : 0, scale: focused === 'email' ? 1.02 : 0.98 }} transition={{ duration: 0.3 }} className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-violet-500 rounded-2xl blur opacity-0 transition duration-1000 group-hover:opacity-30 group-hover:duration-200" />
-              <div className="relative">
-                <Mail className={`absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-300 ${focused === 'email' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-slate-500'}`} />
-                <input 
-                  type="email" 
-                  value={email} 
-                  onChange={e => setEmail(e.target.value)} 
-                  onFocus={() => {
-                    setFocused('email');
-                    unlockAudioEngine(); // <--- DESBLOQUEO AL HACER FOCO
-                  }} 
-                  onBlur={() => setFocused(null)} 
-                  placeholder="Correo electrónico" required
-                  className="w-full h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-12 text-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07] transition-all relative z-10"
-                />
-                {fetching && <div className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-blue-500/30 border-t-blue-400 rounded-full animate-spin z-20" />}
-              </div>
-            </motion.div>
+          {/* Submit Button */}
+          <motion.button
+            whileHover={isFormReady && !isLoading ? { scale: 1.02, boxShadow: darkMode ? "0 0 30px rgba(59, 130, 246, 0.3)" : "0 0 20px rgba(59, 130, 246, 0.4)" } : {}}
+            whileTap={isFormReady && !isLoading ? { scale: 0.98 } : {}}
+            type="submit"
+            disabled={!isFormReady || isLoading}
+            className={`w-full h-14 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 transition-all relative overflow-hidden ${
+              isFormReady && !isLoading
+                ? 'bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 shadow-lg'
+                : darkMode ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {isLoading ? (
+              <>
+                <div className={`w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin`} />
+                Accediendo...
+              </>
+            ) : (
+              <>
+                Iniciar Sesión
+                <ArrowRight size={20} />
+              </>
+            )}
+          </motion.button>
+        </form>
 
-            <motion.div initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.5 }} className="relative group">
-              <motion.div animate={{ opacity: focused === 'password' ? 1 : 0, scale: focused === 'password' ? 1.02 : 0.98 }} transition={{ duration: 0.3 }} className="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl blur opacity-0" />
-              <div className="relative">
-                <Lock className={`absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-300 ${focused === 'password' ? 'text-violet-400 drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]' : 'text-slate-500'}`} />
-                <input 
-                  type={showPass ? "text" : "password"} 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                  onFocus={() => {
-                    setFocused('password');
-                    unlockAudioEngine(); // <--- DESBLOQUEO TAMBIÉN AQUÍ
-                  }}
-                  onBlur={() => setFocused(null)} 
-                  placeholder="Contraseña" required
-                  className="w-full h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-14 text-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.07] transition-all relative z-10"
-                />
-                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors z-20 p-1 outline-none">
-                  {showPass ? <EyeOff size={22} /> : <Eye size={22} />}
-                </button>
-              </div>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="flex justify-end -mt-2">
-              <button type="button" onClick={handlePasswordResetRequest} className="text-sm font-medium text-slate-400 hover:text-blue-400 transition-colors outline-none">¿Olvidaste tu contraseña?</button>
-            </motion.div>
-
-            <AnimatePresence>
-              {error && (
-                <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                  <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-200 text-center mb-4 backdrop-blur-md font-medium">{error}</div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.7 }}>
-              <motion.button
-                type="submit" disabled={isLoading}
-                animate={isFormReady && !isLoading ? { scale: [1, 1.02, 1], boxShadow: ["0 0 0 0px rgba(79, 70, 229, 0)", "0 0 25px 3px rgba(79, 70, 229, 0.5)", "0 0 0 0px rgba(79, 70, 229, 0)"] } : {}}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                className="w-full h-16 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 rounded-2xl font-bold text-lg text-white relative overflow-hidden group disabled:opacity-50 transition-all duration-300 shadow-[0_0_40px_-10px_rgba(79,70,229,0.5)] hover:shadow-[0_0_60px_-10px_rgba(79,70,229,0.7)] active:scale-[0.98]"
-              >
-                <div className="absolute inset-0 w-[200%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)] opacity-0 group-hover:opacity-30 transition-opacity mix-blend-overlay" style={{ left: '-50%', top: '-50%' }}/>
-                <span className="relative flex items-center justify-center gap-3 z-10">
-                  {isLoading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>Accediendo...</span></> : <>Iniciar Sesión <ArrowRight className="group-hover:translate-x-1 transition-transform" /></>}
-                </span>
-              </motion.button>
-            </motion.div>
-          </form>
-
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="mt-10 pt-6 border-t border-white/5 flex flex-col items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-400 text-sm px-4 py-2 rounded-full bg-black/20 border border-white/5">
-              <ScanFace size={16} className="text-blue-400" /><span>Acceso Seguro Verificado</span>
-            </div>
-            <button onClick={onNavigateToRegister} className="text-slate-400 hover:text-white transition-colors py-2 outline-none">¿No tienes cuenta? <span className="text-blue-400 font-semibold ml-1 hover:underline">Regístrate aquí</span></button>
-          </motion.div>
+        {/* Footer */}
+        <div className="mt-8 text-center space-y-3">
+          <p className={`text-xs ${darkMode ? 'text-slate-600' : 'text-slate-500'} flex items-center justify-center gap-2`}>
+            <CheckCircle size={14} />
+            Acceso Seguro Verificado
+          </p>
+          <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+            ¿No tienes cuenta?{' '}
+            <button 
+              type="button" 
+              onClick={onNavigateToRegister} 
+              className={`font-semibold ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'} transition-colors outline-none focus-visible:underline`}
+            >
+              Regístrate aquí
+            </button>
+          </p>
         </div>
       </motion.div>
+
+      {/* --- MODAL OLVIDÉ CONTRASEÑA --- */}
+      <AnimatePresence>
+        {showResetModal && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={`fixed inset-0 ${darkMode ? 'bg-black/60' : 'bg-black/40'} backdrop-blur-sm z-50`}
+              onClick={() => setShowResetModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md ${darkMode ? 'bg-slate-900' : 'bg-white'} rounded-3xl shadow-2xl p-8 z-50 ${darkMode ? 'border border-white/10' : 'border border-slate-200'}`}
+            >
+              <button 
+                onClick={() => setShowResetModal(false)} 
+                className={`absolute right-4 top-4 ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} p-1 transition-colors`}
+                aria-label="Cerrar modal"
+              >
+                <X size={24} />
+              </button>
+              
+              <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'} mb-2`}>Recuperar Contraseña</h2>
+              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'} mb-6`}>Te enviaremos un enlace para restablecerla.</p>
+              
+              <form onSubmit={handlePasswordReset} className="space-y-5">
+                <div className="relative">
+                  <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`} size={18} />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Tu correo electrónico"
+                    className={`w-full h-12 ${darkMode ? 'bg-white/[0.05] border-white/[0.1]' : 'bg-slate-100 border-slate-300'} border rounded-xl pl-12 pr-4 ${darkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'} focus:outline-none ${darkMode ? 'focus:border-blue-500/50' : 'focus:border-blue-500'} transition-all`}
+                    autoFocus
+                    aria-label="Correo para recuperación"
+                  />
+                </div>
+
+                <AnimatePresence>
+                  {resetStatus && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`p-4 rounded-xl flex items-start gap-3 ${
+                        resetStatus.success 
+                          ? (darkMode ? 'bg-green-500/10 border border-green-500/30' : 'bg-green-50 border border-green-300')
+                          : (darkMode ? 'bg-red-500/10 border border-red-500/30' : 'bg-red-50 border border-red-300')
+                      }`}
+                    >
+                      {resetStatus.success ? <CheckCircle className={darkMode ? "text-green-400" : "text-green-600"} size={20} /> : <AlertCircle className={darkMode ? "text-red-400" : "text-red-600"} size={20} />}
+                      <p className={`text-sm ${resetStatus.success ? (darkMode ? 'text-green-300' : 'text-green-700') : (darkMode ? 'text-red-300' : 'text-red-700')}`}>
+                        {resetStatus.msg}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-semibold rounded-xl transition-all shadow-lg"
+                >
+                  Enviar Enlace
+                </motion.button>
+              </form>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

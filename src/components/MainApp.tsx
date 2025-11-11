@@ -11,10 +11,12 @@ import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
 import SplashScreen from "./SplashScreen";
 
-// --- CARGA DIFERIDA OPTIMIZADA ---
+// --- **CORRECCIÓN PRINCIPAL** ---
+// Ajustamos React.lazy para que funcione con "named exports" (export const RegisterScreen)
+// Esto soluciona el error "Cannot convert object to primitive value".
 const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
 
-// Screens GRANDES
+// Screens GRANDES en lazy loading
 const WorkSheetScreen = lazy(() => import('./WorkSheetScreen'));
 const FridayScreen = lazy(() => import('./FridayScreen'));
 const FridayServiciosScreen = lazy(() => import('./FridayServiciosScreen'));
@@ -28,46 +30,58 @@ const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
 
-// Loader visual PRO (Ajustado al tema oscuro para evitar flash blanco aquí también)
+// --- **NOTA** --- 
+// El componente TablerosScreen no estaba importado, lo comenté para evitar un error.
+// Deberás importarlo de forma similar a los demás si lo vas a usar.
+// const TablerosScreen = lazy(() => import('./TablerosScreen'));
+
+
+// Loader visual PRO
 const Loader = () => (
-  <div className="w-full h-screen flex flex-col items-center justify-center bg-[#030712] z-50 fixed top-0 left-0">
-    <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-    <span className="text-blue-400 text-lg font-medium animate-pulse">Cargando módulo...</span>
+  <div className="w-full h-screen flex flex-col items-center justify-center bg-white/80 z-50 fixed top-0 left-0">
+    <svg className="animate-spin h-10 w-10 text-blue-700" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+    </svg>
+    <span className="mt-4 text-blue-700 text-xl font-semibold">Cargando módulo...</span>
   </div>
 );
 
 export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
+
   const [loading, setLoading] = useState(true);
 
+  // Notificaciones push
   usePushNotifications(
     user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
     user?.email || localStorage.getItem('usuario.email') || ''
   );
 
+  // SplashScreen de arranque
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 3200);
     return () => clearTimeout(timeout);
   }, []);
 
-  if (loading) return <SplashScreen />;
+  if (loading) {
+    return <SplashScreen />;
+  }
 
-  // --- TRANSICIÓN PROFESIONAL LOGIN <-> REGISTER ---
   if (!isAuthenticated) {
+    // La lógica de navegación aquí está bien, el problema era cómo se cargaba el componente.
     return (
-      // Usamos el mismo fondo oscuro base para evitar destellos
-      <div className="fixed inset-0 bg-[#030712] overflow-hidden">
-        <AnimatePresence mode="wait" initial={false}>
+      <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
+        <AnimatePresence mode="wait">
           {currentScreen === 'register' ? (
             <motion.div
               key="register"
-              // Entra desde la derecha (+20), sale hacia la derecha (+20)
-              initial={{ opacity: 0, x: 20, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 0.98 }}
-              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }} // Curva de aceleración profesional
-              className="w-full h-full"
+              initial={{ x: 500, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 500, opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeInOut" }}
+              className="w-full" // Ajustado para ocupar el ancho completo
             >
               <Suspense fallback={<Loader />}>
                 <RegisterScreen onNavigateToLogin={() => navigateTo('login')} />
@@ -76,12 +90,11 @@ export const MainApp: React.FC = () => {
           ) : (
             <motion.div
               key="login"
-              // Entra desde la izquierda (-20), sale hacia la izquierda (-20)
-              initial={{ opacity: 0, x: -20, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -20, scale: 0.98 }}
-              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-              className="w-full h-full"
+              initial={{ x: 0, opacity: 0 }} // Ajustado para un fade-in centrado
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 0, opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeInOut" }}
+              className="w-full"
             >
               <LoginScreen onNavigateToRegister={() => navigateTo('register')} />
             </motion.div>
@@ -91,36 +104,103 @@ export const MainApp: React.FC = () => {
     );
   }
 
-  // --- SCREENS AUTENTICADAS ---
-  // Se envuelven en un contenedor base oscuro también por si acaso
-  return (
-    <div className="min-h-screen bg-[#0f172a]"> 
-       {/* Nota: #0f172a es un buen fondo para la app interna, 
-           pero si quieres que TODO sea super oscuro usa #030712 aquí también */}
-      <Suspense fallback={<Loader />}>
-        {(() => {
-          switch (currentScreen) {
-            case 'menu': return <MainMenu />;
-            case 'consecutivos': return <ConsecutivosScreen />;
-            case 'magnitude-detail': return <MagnitudeDetailScreen />;
-            case 'work-sheet': return <WorkSheetScreen />;
-            case 'empresas': return <EmpresasScreen />;
-            case 'calendario': return <CalendarScreen />;
-            case 'hoja-servicio': return <HojaDeServicioScreen />;
-            case 'calibration-manager': return <CalibrationManager />;
-            case 'drive': return <DriveScreen />;
-            case 'calibration-stats':
-              const role = (user?.puesto || user?.position || user?.role || "").trim().toLowerCase();
-              return role === "administrativo" ? <CalibrationStatsScreen /> : <MainMenu />;
-            case 'programa-calibracion': return <ProgramaCalibracionScreen />;
-            case 'friday-servicios': return <FridayServiciosScreen />;
-            case 'normas': return <NormasScreen />;
-            case 'check-list': return <InventoryProScreen />;
-            case 'friday': return <FridayScreen />;
-            default: return <MainMenu />;
-          }
-        })()}
-      </Suspense>
-    </div>
-  );
+  // Screens autenticadas
+  switch (currentScreen) {
+    case 'menu':
+      return <MainMenu />;
+    case 'consecutivos':
+      return <ConsecutivosScreen />;
+    case 'magnitude-detail':
+      return <MagnitudeDetailScreen />;
+    case 'work-sheet':
+      return (
+        <Suspense fallback={<Loader />}>
+          <WorkSheetScreen />
+        </Suspense>
+      );
+    case 'empresas':
+      return (
+        <Suspense fallback={<Loader />}>
+          <EmpresasScreen />
+        </Suspense>
+      );
+    case 'calendario':
+      return (
+        <Suspense fallback={<Loader />}>
+          <CalendarScreen />
+        </Suspense>
+      );
+    case 'hoja-servicio':
+      return (
+        <Suspense fallback={<Loader />}>
+          <HojaDeServicioScreen />
+        </Suspense>
+      );
+    case 'calibration-manager':
+      return (
+        <Suspense fallback={<Loader />}>
+          <CalibrationManager />
+        </Suspense>
+      );
+    case 'drive':
+      return (
+        <Suspense fallback={<Loader />}>
+          <DriveScreen />
+        </Suspense>
+      );
+    case 'tableros':
+      // Asegúrate de importar TablerosScreen si lo vas a usar.
+      // return (
+      //   <Suspense fallback={<Loader />}>
+      //     <TablerosScreen />
+      //   </Suspense>
+      // );
+      return <MainMenu />; // Temporalmente redirige a menu
+    case 'calibration-stats':
+      if (
+        ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
+        ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
+        ((user?.role ?? "").trim().toLowerCase() === "administrativo")
+      ) {
+        return (
+          <Suspense fallback={<Loader />}>
+            <CalibrationStatsScreen />
+          </Suspense>
+        );
+      } else {
+        return <MainMenu />;
+      }
+    case 'programa-calibracion':
+      return (
+        <Suspense fallback={<Loader />}>
+          <ProgramaCalibracionScreen />
+        </Suspense>
+      );
+    case 'friday-servicios':
+      return (
+        <Suspense fallback={<Loader />}>
+          <FridayServiciosScreen />
+        </Suspense>
+      );
+    case 'normas':
+      return (
+        <Suspense fallback={<Loader />}>
+          <NormasScreen />
+        </Suspense>
+      );
+    case 'check-list':
+      return (
+        <Suspense fallback={<Loader />}>
+          <InventoryProScreen />
+        </Suspense>
+      );
+    case 'friday':
+      return (
+        <Suspense fallback={<Loader />}>
+          <FridayScreen />
+        </Suspense>
+      );
+    default:
+      return <MainMenu />;
+  }
 };

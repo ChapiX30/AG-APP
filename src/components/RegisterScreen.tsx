@@ -1,16 +1,32 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { setDoc, doc } from "firebase/firestore";
-import { auth, db } from "../utils/firebase";
-import { Eye, EyeOff, Lock, User, Mail, Briefcase, ChevronDown, ArrowRight, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
-import labLogo from '../assets/lab_logo.png'; // Asegúrate de tener este logo o elimínalo si no lo usas aquí
+import { auth, db } from "../utils/firebase"; // Asegúrate que la ruta a tu configuración de firebase sea correcta
+import { Eye, EyeOff, Lock, User, Mail, Briefcase, Microscope, ArrowLeft, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from "framer-motion";
 
+// --- Interfaz de Props ---
 interface RegisterScreenProps {
   onNavigateToLogin: () => void;
 }
 
+// --- Función para Mensajes de Error de Firebase ---
+const getFirebaseErrorMessage = (error: any): string => {
+  switch (error.code) {
+    case 'auth/email-already-in-use':
+      return 'Este correo electrónico ya está registrado.';
+    case 'auth/invalid-email':
+      return 'El formato del correo electrónico no es válido.';
+    case 'auth/weak-password':
+      return 'La contraseña debe tener al menos 6 caracteres.';
+    default:
+      return 'Error al registrar. Revisa los datos e intenta de nuevo.';
+  }
+};
+
+// --- Componente Principal RegisterScreen ---
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogin }) => {
+  // --- Estados del Componente ---
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
@@ -19,179 +35,245 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [focused, setFocused] = useState<string | null>(null);
 
-  // Detectar si el formulario es válido para animar el botón
-  const isFormReady = nombre.length > 0 && correo.includes('@') && password.length >= 6 && puesto !== "";
-
-  // --- EFECTO TILT 3D (Igual que LoginScreen) ---
-  const ref = useRef<HTMLDivElement>(null);
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15 });
-  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 15 });
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    x.set((e.clientX - rect.left) / rect.width - 0.5);
-    y.set((e.clientY - rect.top) / rect.height - 0.5);
-  };
-
+  // --- Manejador del Registro ---
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(""); setSuccess("");
+    setError("");
+    setSuccess("");
 
-    if (!puesto) { setError("Selecciona tu puesto de trabajo."); return; }
+    if (!puesto) {
+      setError("Por favor, selecciona tu puesto de trabajo.");
+      return;
+    }
 
     setIsLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, correo, password);
-      // Guardar datos adicionales en Firestore
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
-        nombre, correo, puesto, creado: new Date(), uid: userCredential.user.uid
+        nombre,
+        correo,
+        puesto,
+        creado: new Date()
       });
-      setSuccess("¡Cuenta creada con éxito!");
-      setTimeout(() => onNavigateToLogin(), 1500);
+      setSuccess("¡Usuario registrado exitosamente! Redirigiendo...");
+      setTimeout(() => onNavigateToLogin(), 2000);
     } catch (err: any) {
-      // Simplificación de manejo de errores para este ejemplo
-      if (err.code === 'auth/email-already-in-use') setError('Este correo ya está registrado.');
-      else if (err.code === 'auth/weak-password') setError('La contraseña es muy débil (mín. 6 caracteres).');
-      else setError('Error al registrar. Intenta nuevamente.');
+      setError(getFirebaseErrorMessage(err));
+    } finally {
       setIsLoading(false);
     }
   };
 
-  // Componente reutilizable para envolver inputs con el efecto de brillo
-  const InputWrapper = ({ id, children, icon: Icon }: { id: string, children: React.ReactNode, icon: any }) => (
-    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="relative group">
-      <motion.div 
-        animate={{ opacity: focused === id ? 1 : 0, scale: focused === id ? 1.02 : 0.98 }} 
-        transition={{ duration: 0.3 }} 
-        className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-violet-500 rounded-2xl blur opacity-0 transition duration-1000 group-hover:opacity-30 group-hover:duration-200" 
-      />
-      <div className="relative">
-        <Icon className={`absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-300 ${focused === id ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-slate-500'}`} />
-        {children}
-      </div>
-    </motion.div>
-  );
-
+  // --- Renderizado del Componente ---
   return (
-    <div 
-      className="min-h-screen w-full relative overflow-hidden bg-[#030712] text-white flex items-center justify-center perspective-1000 py-10"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => { x.set(0); y.set(0); }}
-      ref={ref}
+    <div
+      className="min-h-screen w-screen relative overflow-hidden flex items-center justify-center p-4"
+      style={{ background: "linear-gradient(135deg, #102347 0%, #134974 75%, #4ea4d9 100%)" }}
     >
-      {/* Fondo Animado idéntico a Login */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, 90, 0] }} transition={{ duration: 50, repeat: Infinity, ease: "easeInOut" }} className="absolute -top-[20%] -left-[20%] w-[80vw] h-[80vw] bg-blue-700/10 rounded-full blur-[140px] mix-blend-screen" />
-        <motion.div animate={{ scale: [1, 1.2, 1], rotate: [0, -90, 0] }} transition={{ duration: 45, repeat: Infinity, ease: "easeInOut" }} className="absolute -bottom-[30%] -right-[20%] w-[80vw] h-[80vw] bg-violet-800/10 rounded-full blur-[160px] mix-blend-screen" />
-      </div>
-      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
+      {/* Efectos de fondo animados */}
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0.3 }}
+        animate={{ scale: 1.2, opacity: 0.6 }}
+        transition={{ repeat: Infinity, repeatType: "mirror", duration: 4, ease: "easeInOut" }}
+        className="absolute top-1/4 left-1/4 w-[25rem] h-[25rem] rounded-full bg-radial-gradient(circle, #8dc6f166, #1d406133, transparent) pointer-events-none blur-md z-0"
+      />
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0.2 }}
+        animate={{ scale: 1.1, opacity: 0.4 }}
+        transition={{ repeat: Infinity, repeatType: "mirror", duration: 5, ease: "easeInOut", delay: 1 }}
+        className="absolute bottom-1/4 right-1/4 w-[22rem] h-[22rem] rounded-full bg-radial-gradient(circle, #4ea4d955, #13497422, transparent) pointer-events-none blur-lg z-0"
+      />
+      <div className="absolute left-0 bottom-0 w-full h-60 pointer-events-none bg-radial-gradient(ellipse at 50% 140%, #fff9 8%, #48aaff22 25%, transparent) z-0" />
 
-      <motion.div 
-        style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
-        initial={{ opacity: 0, scale: 0.95, y: 40 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: "spring", bounce: 0.2, duration: 0.8 }}
-        className="w-full max-w-[500px] relative z-10 mx-4"
+      {/* Contenedor Principal (Tarjeta) */}
+      <motion.div
+        initial={{ opacity: 0, y: 50 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="relative z-10 w-full max-w-6xl mx-auto flex flex-col lg:flex-row rounded-3xl overflow-hidden bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl"
       >
-        <div className="backdrop-blur-2xl bg-white/[0.02] border border-white/[0.06] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] p-8 sm:p-10 rounded-[36px] relative overflow-hidden">
-          
-          <div className="text-center mb-8 relative z-10" style={{ transform: "translateZ(30px)" }}>
-            {/* Opcional: Si quieres usar el logo también aquí */}
-            {/* <img src={labLogo} alt="Logo" className="h-16 mx-auto mb-4 opacity-80" /> */}
-            <h1 className="text-3xl font-bold tracking-tight text-white mb-2 drop-shadow-lg">Crear Cuenta</h1>
-            <p className="text-slate-400">Únete al equipo de ESE-AG</p>
-          </div>
-
-          <form onSubmit={handleRegister} className="space-y-5 relative z-10" style={{ transform: "translateZ(20px)" }}>
-            
-            <InputWrapper id="nombre" icon={User}>
-              <input 
-                type="text" value={nombre} onChange={e => setNombre(e.target.value)} onFocus={() => setFocused('nombre')} onBlur={() => setFocused(null)} placeholder="Nombre completo" required
-                className="w-full h-14 sm:h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.05] transition-all"
-              />
-            </InputWrapper>
-
-            <InputWrapper id="email" icon={Mail}>
-              <input 
-                type="email" value={correo} onChange={e => setCorreo(e.target.value)} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} placeholder="Correo electrónico" required
-                className="w-full h-14 sm:h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.05] transition-all"
-              />
-            </InputWrapper>
-
-            <InputWrapper id="puesto" icon={Briefcase}>
-               <select
-                  value={puesto} onChange={(e) => setPuesto(e.target.value as any)} onFocus={() => setFocused('puesto')} onBlur={() => setFocused(null)} required
-                  className="appearance-none w-full h-14 sm:h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-10 text-white focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.05] transition-all [&>option]:bg-slate-900 [&>option]:text-white"
-                  style={{ color: puesto ? 'white' : 'rgb(71 85 105)' }} // slate-600 si está vacío
-                >
-                  <option value="" disabled>Selecciona tu puesto</option>
-                  <option value="Metrólogo">Metrólogo</option>
-                  <option value="Calidad">Calidad</option>
-                  <option value="Logistica">Logística</option>
-                  <option value="Administrativo">Administrativo</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-            </InputWrapper>
-
-            <InputWrapper id="password" icon={Lock}>
-              <input 
-                type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} placeholder="Contraseña (mín. 6 caracteres)" required minLength={6}
-                className="w-full h-14 sm:h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl pl-14 pr-14 text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.05] transition-all"
-              />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors p-1">
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </InputWrapper>
-
-            <AnimatePresence mode="wait">
-              {error && (
-                <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-red-400 text-center text-sm bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
-                  {error}
-                </motion.div>
-              )}
-              {success && (
-                <motion.div initial={{ opacity: 0, y: -10, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-green-400 text-center text-sm bg-green-500/10 border border-green-500/20 p-3 rounded-xl">
-                  {success}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="pt-2">
-              <motion.button
-                type="submit" disabled={isLoading || success !== ""}
-                animate={isFormReady && !isLoading && !success ? {
-                  scale: [1, 1.02, 1],
-                  boxShadow: ["0 0 0 0px rgba(79, 70, 229, 0)", "0 0 20px 2px rgba(79, 70, 229, 0.3)", "0 0 0 0px rgba(79, 70, 229, 0)"]
-                } : {}}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                className="w-full h-16 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 rounded-2xl font-bold text-lg text-white relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-[0_0_40px_-10px_rgba(79,70,229,0.5)] hover:shadow-[0_0_60px_-10px_rgba(79,70,229,0.7)] active:scale-[0.98]"
-              >
-                <span className="relative flex items-center justify-center gap-3 z-10">
-                  {isLoading ? (
-                    <><Loader2 className="w-5 h-5 animate-spin" /> Registrando...</>
-                  ) : success ? (
-                    "¡Bienvenido!"
-                  ) : (
-                    <>Crear Cuenta <ArrowRight className="group-hover:translate-x-1 transition-transform" /></>
-                  )}
-                </span>
-              </motion.button>
+        
+        {/* Panel Izquierdo (Informativo) */}
+        <div className="hidden lg:flex flex-1 p-8 sm:p-12 flex-col justify-center">
+          <div className="flex items-center mb-8">
+            <motion.div
+              initial={{ scale: 0.8, rotate: -10 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ duration: 0.6, type: "spring", bounce: 0.3 }}
+              className="w-16 h-16 bg-gradient-to-br from-white/20 to-white/10 rounded-2xl flex items-center justify-center mr-4 backdrop-blur-sm border border-white/20"
+            >
+              <Microscope className="w-8 h-8 text-white" />
             </motion.div>
-          </form>
+            <h1 className="text-4xl font-bold text-white">ESE-AG</h1>
+          </div>
+          <motion.h2
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="text-5xl md:text-6xl font-extrabold text-white mb-6 leading-tight"
+          >
+            Únete a nuestro
+            <span className="block bg-gradient-to-r from-blue-300 to-white bg-clip-text text-transparent">equipo</span>
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="text-lg text-white/90 mb-10 leading-relaxed max-w-2xl"
+          >
+            Crea tu cuenta y accede a la plataforma más avanzada para la gestión de equipos y servicios de laboratorio.
+          </motion.p>
+        </div>
 
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mt-8 text-center">
-            <button onClick={onNavigateToLogin} className="text-slate-400 hover:text-white transition-colors text-sm py-2">
-              ¿Ya tienes una cuenta? <span className="text-blue-400 font-semibold ml-1 hover:underline">Inicia Sesión</span>
-            </button>
-          </motion.div>
+        {/* Panel Derecho (Formulario) */}
+        <div className="flex-1 p-8 sm:p-12 bg-white/5">
+          <div className="w-full max-w-md mx-auto">
+            <div className="text-center mb-8">
+              <h3 className="text-3xl font-bold text-white mb-2">Crear Cuenta</h3>
+              <p className="text-white/70">Sistema Equipos y Servicios AG</p>
+            </div>
 
+            <form onSubmit={handleRegister} className="space-y-5">
+              
+              {/* --- Campo Nombre --- */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.6 }}>
+                <label className="block text-white/90 text-sm font-medium mb-2">Nombre completo</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                  <input
+                    type="text"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    placeholder="Tu nombre completo"
+                    required
+                    autoFocus
+                  />
+                </div>
+              </motion.div>
+
+              {/* --- Campo Correo --- */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.7 }}>
+                <label className="block text-white/90 text-sm font-medium mb-2">Correo electrónico</label>
+                <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                    <input
+                      type="email"
+                      value={correo}
+                      onChange={(e) => setCorreo(e.target.value)}
+                      className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                      placeholder="ejemplo@ese-ag.com"
+                      required
+                    />
+                </div>
+              </motion.div>
+
+              {/* --- Campo Contraseña --- */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.8 }}>
+                <label className="block text-white/90 text-sm font-medium mb-2">Contraseña</label>
+                <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-12 pr-12 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                      placeholder="Mínimo 6 caracteres"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                </div>
+              </motion.div>
+
+              {/* --- Campo Puesto --- */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.9 }}>
+                  <label className="block text-white/90 text-sm font-medium mb-2">Puesto de trabajo</label>
+                  <div className="relative">
+                    <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                    <select
+                      value={puesto}
+                      onChange={(e) => setPuesto(e.target.value as typeof puesto)}
+                      className="appearance-none w-full pl-12 pr-12 py-3 bg-white/5 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                      required
+                    >
+                      <option value="" disabled className="bg-slate-800 text-gray-400">Selecciona tu puesto…</option>
+                      <option value="Metrólogo" className="bg-slate-800 text-white">Metrólogo</option>
+                      <option value="Calidad" className="bg-slate-800 text-white">Calidad</option>
+                      <option value="Logistica" className="bg-slate-800 text-white">Logística</option>
+                      <option value="Administrativo" className="bg-slate-800 text-white">Administrativo</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
+                  </div>
+              </motion.div>
+
+              {/* --- Alertas de Éxito y Error --- */}
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-red-500/20 border border-red-400/30 text-red-200 rounded-xl p-3 text-center flex items-center justify-center text-sm"
+                  >
+                    <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span>{error}</span>
+                  </motion.div>
+                )}
+                {success && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-green-500/20 border border-green-400/30 text-green-200 rounded-xl p-3 text-center flex items-center justify-center text-sm"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span>{success}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* --- Botón de Envío --- */}
+              <motion.button
+                type="submit"
+                disabled={isLoading}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 1.0 }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-gray-900"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                    Creando cuenta...
+                  </>
+                ) : (
+                  'Crear cuenta'
+                )}
+              </motion.button>
+              
+              {/* --- Navegación a Login --- */}
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 1.2 }} className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={onNavigateToLogin}
+                  className="text-white/70 hover:text-white font-medium transition-colors flex items-center justify-center mx-auto text-sm"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-1" />
+                  ¿Ya tienes cuenta? Inicia sesión
+                </button>
+              </motion.div>
+            </form>
+          </div>
         </div>
       </motion.div>
     </div>
