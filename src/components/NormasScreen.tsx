@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useForm, useFieldArray, SubmitHandler, Controller, useWatch } from 'react-hook-form';
 import { PDFDocument, rgb, StandardFonts, PDFFont } from 'pdf-lib';
 import { saveAs } from 'file-saver';
@@ -8,7 +8,10 @@ import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
 import { db } from '../utils/firebase';
 // Importamos los iconos
-import { ArrowLeft, User, Archive, ListPlus, Loader2, AlertCircle } from 'lucide-react'; // 🚨 IMPORTAMOS AlertCircle
+import { ArrowLeft, User, Archive, ListPlus, Loader2, AlertCircle, Camera, XCircle } from 'lucide-react'; // 🚨 IMPORTAMOS MÁS ICONOS
+
+// --- 🚀 NUEVO: Importación del lector de códigos de barras ---
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 
 // ==================================================================
 // --- 1. DATOS Y CATÁLOGOS ---
@@ -646,6 +649,48 @@ const styles = `
     to { transform: rotate(360deg); }
   }
   .animate-spin { animation: spin 1s linear infinite; }
+
+  /* --- 🚀 NUEVO: ESTILOS PARA EL MODAL DEL ESCÁNER --- */
+  .scanner-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  .scanner-content {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    text-align: center;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+  }
+  .scanner-content h3 {
+    margin-top: 0;
+    color: #333;
+  }
+  
+  .scanner-video {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background: #000;
+  }
+  
+  .scanner-content .btn-danger {
+      margin-top: 15px;
+      background-color: #dc3545;
+      color: #fff !important;
+  }
 `;
 
 // --- 🚀 MEJORA: LÓGICA DE AGREGACIÓN DE MOCHILAS MÁS ROBUSTA (ignora espacios) ---
@@ -749,7 +794,7 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
 
     // 🚨 FILTRAR HERRAMIENTAS NO DISPONIBLES ANTES DE DIBUJAR
     const availableTools = allTools.filter(tool => 
-        tool.estadoProceso !== 'en_proceso' && 
+        tool.estadoProceso !== 'en_calibracion' && 
         tool.estadoProceso !== 'fuera_servicio'
     );
     // --------------------------------------------------------
@@ -772,6 +817,7 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     
     // 🚨 AVISO EN PDF SI SE EXCLUYERON HERRAMIENTAS
     if (allTools.length > availableTools.length) {
+        const margin = 50; // Definimos margin aquí para usarlo
         firstPage.drawText(`* NOTA: ${allTools.length - availableTools.length} equipo(s) excluido(s) por estado 'En CALIBRACION' o 'Fuera de Servicio'.`, { 
             x: xColTool, 
             y: margin + 30, // Posición fija al final
@@ -931,8 +977,9 @@ type Metrologo = {
   nombre: string;
 };
 
-// Tipo simplificado para guardar los patrones disponibles (Herramienta: Datos)
-type PatronesMap = Map<string, PatronBase>;
+// 🔧 MODIFICADO: Ahora definimos dos tipos de Mapas
+type PatronesMapDropdown = Map<string, PatronBase>; // Clave: "AG-XXX - Nombre"
+type PatronesMapScanner = Map<string, PatronBase>;  // Clave: "AG-XXX"
 
 const NormasScreen = () => {
   // --- 1. HOOKS PARA NAVEGACION Y USUARIOS ---
@@ -943,9 +990,19 @@ const NormasScreen = () => {
   // 🚀 MEJORA: Estado para manejar errores de carga de usuarios
   const [userFetchError, setUserFetchError] = useState<string | null>(null);
   
-  // --- NUEVOS ESTADOS PARA PATRONES ---
-  const [patronesDisponibles, setPatronesDisponibles] = useState<PatronesMap>(new Map());
+  // --- 🔧 MODIFICADO: ESTADOS PARA PATRONES (AHORA DOS MAPAS) ---
+  // Para el <select> (Clave: "AG-XXX - Nombre")
+  const [patronesDisponibles, setPatronesDisponibles] = useState<PatronesMapDropdown>(new Map());
+  // 🚀 NUEVO: Para el Escáner (Clave: "AG-XXX")
+  const [patronesPorNoControl, setPatronesPorNoControl] = useState<PatronesMapScanner>(new Map());
+  
   const [isLoadingPatrones, setIsLoadingPatrones] = useState(true);
+
+  // --- 🚀 NUEVO: ESTADOS Y REFS PARA EL ESCÁNER ---
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  // Guardará los controles del escáner (para poder detenerlo)
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
 
 
   // --- 2. HOOK DE FORMULARIO CON VALOR POR DEFECTO ---
@@ -1005,7 +1062,10 @@ const NormasScreen = () => {
     try {
       const q = query(collection(db, COLLECTION_NAME_PATRONES));
       const querySnapshot = await getDocs(q);
-      const patronesMap: PatronesMap = new Map();
+      
+      // Creamos los dos mapas
+      const patronesMapDropdown: PatronesMapDropdown = new Map();
+      const patronesMapScanner: PatronesMapScanner = new Map(); // 🚀 NUEVO
 
       querySnapshot.forEach((doc) => {
         const data = doc.data() as RegistroPatron;
@@ -1018,22 +1078,31 @@ const NormasScreen = () => {
         const status = getVencimientoStatus(data.fecha);
         const estadoProceso = data.estadoProceso || 'operativo'; // 🚨 OBTENER ESTADO
 
-        // <-- Usamos el displayName como la llave del mapa
-        if (displayName && !patronesMap.has(displayName)) {
-            patronesMap.set(displayName, { 
-                noControl: noControl,
-                nombre: displayName, // <-- Guardamos el nombre combinado
-                marca: data.marca || 'S/M', 
-                modelo: data.modelo || 'S/M', 
-                serie: data.serie || 'S/N',
-                fechaVencimiento: data.fecha, 
-                status: status,
-                estadoProceso: estadoProceso, // 🚨 GUARDAMOS ESTADO DEL PROCESO
-            });
+        const patronData: PatronBase = {
+            noControl: noControl,
+            nombre: displayName, // <-- Guardamos el nombre combinado
+            marca: data.marca || 'S/M', 
+            modelo: data.modelo || 'S/M', 
+            serie: data.serie || 'S/N',
+            fechaVencimiento: data.fecha, 
+            status: status,
+            estadoProceso: estadoProceso, // 🚨 GUARDAMOS ESTADO DEL PROCESO
+        };
+
+        // Llenamos el mapa para el Dropdown (select)
+        if (displayName && !patronesMapDropdown.has(displayName)) {
+            patronesMapDropdown.set(displayName, patronData);
+        }
+        
+        // 🚀 NUEVO: Llenamos el mapa para el Escáner
+        if (noControl !== 'S/N' && !patronesMapScanner.has(noControl)) {
+            patronesMapScanner.set(noControl, patronData);
         }
       });
 
-      setPatronesDisponibles(patronesMap);
+      setPatronesDisponibles(patronesMapDropdown);
+      setPatronesPorNoControl(patronesMapScanner); // 🚀 NUEVO
+      
     } catch (error) {
       console.error("Error cargando patrones de medición: ", error);
     } finally {
@@ -1121,10 +1190,137 @@ const NormasScreen = () => {
     }
   };
 
+  // --- 🚀 NUEVO: FUNCIONES DEL ESCÁNER ---
+
+  /**
+   * Se ejecuta cuando el escáner lee un código
+   */
+  const handleScanResult = useCallback((noControl: string) => {
+    if (!noControl) return;
+
+    // 1. Detener el escáner inmediatamente
+    stopScan();
+    console.log(`Código escaneado: ${noControl}`);
+
+    // 2. Buscar el patrón en nuestro NUEVO mapa
+    const patron = patronesPorNoControl.get(noControl);
+
+    if (!patron) {
+      alert(`Patrón con No. de Control "${noControl}" no encontrado en la base de datos.`);
+      return;
+    }
+    
+    // 3. Revisar si ya está en la lista (usando su 'displayName')
+    const displayName = patron.nombre;
+    if (selectedManualToolNames.has(displayName)) {
+        alert(`Patrón "${displayName}" ya está en la lista.`);
+        return;
+    }
+
+    // 4. Revisar si está disponible
+    const isUnavailable = patron.estadoProceso === 'en_proceso' || patron.estadoProceso === 'fuera_servicio';
+    if (isUnavailable) {
+        alert(`Patrón "${displayName}" NO DISPONIBLE. Estado: ${patron.estadoProceso.toUpperCase()}.`);
+        return;
+    }
+    
+    // 5. Revisar si está vencido/crítico
+    const isVencida = (patron.status === 'vencido' || patron.status === 'critico');
+
+    // 6. ¡Todo bien! Agregarlo a la lista
+    append({
+      herramienta: patron.nombre, // "AG-XXX - Nombre"
+      qty: '1',
+      marca: patron.marca,
+      modelo: patron.modelo,
+      serie: patron.serie,
+      isVencida: isVencida,
+      isUnavailable: isUnavailable,
+    });
+    
+    alert(`Patrón "${displayName}" agregado exitosamente.`);
+
+  }, [patronesPorNoControl, selectedManualToolNames, append]); // Dependencias
+
+  /**
+   * Inicia la cámara y el escáner
+   */
+  const startScan = useCallback(async () => {
+    if (!videoRef.current) return;
+
+    setIsScannerOpen(true);
+    const reader = new BrowserMultiFormatReader();
+    
+    try {
+      // Pide permiso y empieza a escanear del video
+      const controls = await reader.decodeFromVideoDevice(
+        undefined, // undefined usa la cámara por defecto
+        videoRef.current,
+        (result, error, controls) => {
+          if (result) {
+            // ¡Éxito!
+            handleScanResult(result.getText());
+            controls.stop(); // Detiene el stream
+          }
+          if (error && !(error instanceof DOMException && error.name === 'NotAllowedError')) {
+            // Ignora errores de "no encontrado", pero loggea otros
+            // console.error(error); 
+          }
+        }
+      );
+      // Guardamos los controles para poder detenerlos manualmente (ej. con el botón Cancelar)
+      scannerControlsRef.current = controls;
+    } catch (e) {
+      console.error("Error al iniciar el escáner:", e);
+      alert("Error al iniciar la cámara. Revisa los permisos.");
+      setIsScannerOpen(false);
+    }
+  }, [handleScanResult]);
+
+  /**
+   * Detiene la cámara y cierra el modal
+   */
+  const stopScan = useCallback(() => {
+    if (scannerControlsRef.current) {
+      scannerControlsRef.current.stop();
+      scannerControlsRef.current = null;
+    }
+    setIsScannerOpen(false);
+  }, []);
+
+  // Limpieza: Asegurarse de que el escáner se apague si el componente se desmonta
+  useEffect(() => {
+    return () => {
+      if (scannerControlsRef.current) {
+        scannerControlsRef.current.stop();
+      }
+    };
+  }, []);
+
+
   // --- 4. RENDER CON MEJORAS DE UI ---
   return (
     <>
       <style>{styles}</style>
+      
+      {/* --- 🚀 NUEVO: MODAL DEL ESCÁNER --- */}
+      {isScannerOpen && (
+        <div className="scanner-modal" onClick={stopScan}>
+          <div className="scanner-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Escanear Código de Barras</h3>
+            <video ref={videoRef} className="scanner-video" />
+            <button 
+              type="button" 
+              className="btn btn-danger" 
+              onClick={stopScan}
+            >
+              <XCircle size={18} style={{ marginRight: '8px' }} />
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="form-container">
         
         {/* --- BOTÓN DE REGRESO Y TÍTULO --- */}
@@ -1292,26 +1488,42 @@ const NormasScreen = () => {
               Herramientas Manuales Adicionales
             </h3>
             
-            {/* Botón de Agregar Fila (Movido arriba de la tabla) */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* 🔧 MODIFICADO: Contenedor de botones */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 {isAnyPatronVencido && (
                     <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg mb-2 flex items-center gap-2">
                         <AlertCircle className="w-4 h-4" />
                         ⚠️ **ERROR:** Patrón(es) VENCIDO(s)/CRÍTICO(s) o **NO DISPONIBLE** seleccionado(s).
                     </div>
                 )}
-              <button
-                type="button"
-                className="btn btn-secondary ml-auto"
-                onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '', isVencida: false, isUnavailable: false })}
-                disabled={isLoadingPatrones}
-              >
-                {isLoadingPatrones ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
-                ) : (
-                    '+ Agregar Patrón/Herramienta'
-                )}
-              </button>
+                
+                {/* 🚀 NUEVO: Grupo de botones a la derecha */}
+                <div className="ml-auto" style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={startScan} // 🚀 NUEVO: Llama a la función de escanear
+                      disabled={isLoadingPatrones}
+                      title="Escanear un patrón con la cámara"
+                    >
+                      <Camera size={16} style={{ marginRight: '8px' }} />
+                      Escanear Patrón
+                    </button>
+                
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '', isVencida: false, isUnavailable: false })}
+                      disabled={isLoadingPatrones}
+                      title="Agregar una fila manualmente"
+                    >
+                      {isLoadingPatrones ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+                      ) : (
+                          '+ Agregar Manual'
+                      )}
+                    </button>
+                </div>
             </div>
 
             <div className="tool-table-wrapper">
