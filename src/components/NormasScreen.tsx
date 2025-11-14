@@ -1190,19 +1190,27 @@ const NormasScreen = () => {
     }
   };
 
-  // --- 🚀 NUEVO: FUNCIONES DEL ESCÁNER ---
+  // --- 🚀 NUEVO: FUNCIONES DEL ESCÁNER (CORREGIDAS) ---
 
   /**
-   * Se ejecuta cuando el escáner lee un código
+   * 1. Esta función AHORA SÍ la llamará el botón.
+   * Solo se encarga de ABRIR el modal.
+   */
+  const handleOpenScanner = () => {
+    setIsScannerOpen(true);
+  };
+
+  /**
+   * 2. Se ejecuta cuando el escáner lee un código
    */
   const handleScanResult = useCallback((noControl: string) => {
     if (!noControl) return;
 
-    // 1. Detener el escáner inmediatamente
+    // Detener el escáner inmediatamente
     stopScan();
     console.log(`Código escaneado: ${noControl}`);
 
-    // 2. Buscar el patrón en nuestro NUEVO mapa
+    // Buscar el patrón en nuestro NUEVO mapa
     const patron = patronesPorNoControl.get(noControl);
 
     if (!patron) {
@@ -1210,24 +1218,24 @@ const NormasScreen = () => {
       return;
     }
     
-    // 3. Revisar si ya está en la lista (usando su 'displayName')
+    // Revisar si ya está en la lista (usando su 'displayName')
     const displayName = patron.nombre;
     if (selectedManualToolNames.has(displayName)) {
         alert(`Patrón "${displayName}" ya está en la lista.`);
         return;
     }
 
-    // 4. Revisar si está disponible
+    // Revisar si está disponible
     const isUnavailable = patron.estadoProceso === 'en_proceso' || patron.estadoProceso === 'fuera_servicio';
     if (isUnavailable) {
         alert(`Patrón "${displayName}" NO DISPONIBLE. Estado: ${patron.estadoProceso.toUpperCase()}.`);
         return;
     }
     
-    // 5. Revisar si está vencido/crítico
+    // Revisar si está vencido/crítico
     const isVencida = (patron.status === 'vencido' || patron.status === 'critico');
 
-    // 6. ¡Todo bien! Agregarlo a la lista
+    // ¡Todo bien! Agregarlo a la lista
     append({
       herramienta: patron.nombre, // "AG-XXX - Nombre"
       qty: '1',
@@ -1243,42 +1251,7 @@ const NormasScreen = () => {
   }, [patronesPorNoControl, selectedManualToolNames, append]); // Dependencias
 
   /**
-   * Inicia la cámara y el escáner
-   */
-  const startScan = useCallback(async () => {
-    if (!videoRef.current) return;
-
-    setIsScannerOpen(true);
-    const reader = new BrowserMultiFormatReader();
-    
-    try {
-      // Pide permiso y empieza a escanear del video
-      const controls = await reader.decodeFromVideoDevice(
-        undefined, // undefined usa la cámara por defecto
-        videoRef.current,
-        (result, error, controls) => {
-          if (result) {
-            // ¡Éxito!
-            handleScanResult(result.getText());
-            controls.stop(); // Detiene el stream
-          }
-          if (error && !(error instanceof DOMException && error.name === 'NotAllowedError')) {
-            // Ignora errores de "no encontrado", pero loggea otros
-            // console.error(error); 
-          }
-        }
-      );
-      // Guardamos los controles para poder detenerlos manualmente (ej. con el botón Cancelar)
-      scannerControlsRef.current = controls;
-    } catch (e) {
-      console.error("Error al iniciar el escáner:", e);
-      alert("Error al iniciar la cámara. Revisa los permisos.");
-      setIsScannerOpen(false);
-    }
-  }, [handleScanResult]);
-
-  /**
-   * Detiene la cámara y cierra el modal
+   * 3. Esta función se encarga de CERRAR el modal y detener la cámara.
    */
   const stopScan = useCallback(() => {
     if (scannerControlsRef.current) {
@@ -1288,14 +1261,51 @@ const NormasScreen = () => {
     setIsScannerOpen(false);
   }, []);
 
-  // Limpieza: Asegurarse de que el escáner se apague si el componente se desmonta
+  // 🚀 NUEVO: Este useEffect enciende la cámara DESPUÉS de que el modal se abre
   useEffect(() => {
+    // Si el modal se acaba de abrir Y el videoRef ya está disponible...
+    if (isScannerOpen && videoRef.current) {
+      
+      const startScanLogic = async () => {
+        const reader = new BrowserMultiFormatReader();
+        try {
+          // Pide permiso y empieza a escanear
+          const controls = await reader.decodeFromVideoDevice(
+            undefined, // undefined usa la cámara por defecto
+            videoRef.current,
+            (result, error, controls) => {
+              if (result) {
+                // ¡Éxito!
+                handleScanResult(result.getText());
+                controls.stop(); // Detiene el stream
+              }
+              if (error && !(error instanceof DOMException && error.name === 'NotAllowedError')) {
+                // Ignora errores comunes, pero loggea otros
+                // console.error(error); 
+              }
+            }
+          );
+          // Guardamos los controles para poder detenerlos
+          scannerControlsRef.current = controls;
+        } catch (e) {
+          console.error("Error al iniciar el escáner:", e);
+          // 🚨 Si falla, avisa y cierra el modal
+          alert("Error al iniciar la cámara. Revisa los permisos.\n(Recuerda que debe ser un sitio HTTPS si no es localhost)");
+          setIsScannerOpen(false);
+        }
+      };
+      
+      startScanLogic(); // Ejecuta la lógica
+    }
+
+    // Función de limpieza: Se ejecuta cuando el modal se cierra (isScannerOpen cambia a false)
     return () => {
       if (scannerControlsRef.current) {
         scannerControlsRef.current.stop();
+        scannerControlsRef.current = null;
       }
     };
-  }, []);
+  }, [isScannerOpen, handleScanResult, stopScan]); // Se ejecuta CADA VEZ que 'isScannerOpen' cambia
 
 
   // --- 4. RENDER CON MEJORAS DE UI ---
@@ -1502,7 +1512,7 @@ const NormasScreen = () => {
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={startScan} // 🚀 NUEVO: Llama a la función de escanear
+                      onClick={handleOpenScanner} // 🚨🚨 CAMBIO CLAVE AQUÍ 🚨🚨
                       disabled={isLoadingPatrones}
                       title="Escanear un patrón con la cámara"
                     >
