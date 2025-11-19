@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
-import { Eye, EyeOff, Lock, Mail, ArrowRight, ScanFace, X, CheckCircle, AlertCircle, Volume2, VolumeX } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, ScanFace, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { getAuth, sendPasswordResetEmail } from "firebase/auth";
 import { getFirestore, collection, query, where, getDocs, limit } from 'firebase/firestore';
@@ -46,13 +46,6 @@ const getFriendlyErrorMessage = (errorCode: string): string => {
   }
 };
 
-const getTimeBasedGreeting = (): string => {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Buenos días";
-  if (hour < 19) return "Buenas tardes";
-  return "Buenas noches";
-};
-
 export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ onNavigateToRegister }) => {
   // --- ESTADOS DEL FORMULARIO ---
   const [email, setEmail] = useState('');
@@ -68,14 +61,12 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetStatus, setResetStatus] = useState<{ success: boolean; msg: string } | null>(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
 
   // --- HOOKS Y REFS ---
   const { login } = useAuth();
   const { navigateTo } = useNavigation();
   const lastGreetedUser = useRef<string | null>(null);
-  const audioUnlocked = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debouncedFetchRef = useRef<NodeJS.Timeout | null>(null);
   const isFormReady = email.length > 0 && password.length > 0;
@@ -95,52 +86,14 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
     y.set((e.clientY - rect.top) / rect.height - 0.5);
   };
 
-  // --- AUDIO ENGINE ---
-  const unlockAudioEngine = () => {
-    if (!audioUnlocked.current && 'speechSynthesis' in window) {
-      const empty = new SpeechSynthesisUtterance('');
-      empty.volume = 0;
-      window.speechSynthesis.speak(empty);
-      audioUnlocked.current = true;
-    }
-  };
-
-const speakGreeting = (userName: string) => {
-  if (!voiceEnabled || lastGreetedUser.current === email.toLowerCase() || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
-  const salutation = getTimeBasedGreeting();
-  const utterance = new SpeechSynthesisUtterance(`${salutation}, ${userName}. Bienvenido de nuevo.`);
-  const voices = window.speechSynthesis.getVoices();
-  const bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Microsoft')))
-    || voices.find(v => v.lang === 'es-MX')
-    || voices.find(v => v.lang.startsWith('es'));
-  
-  if (bestVoice) {
-    utterance.voice = bestVoice;
-    utterance.rate = 1.3; // ⚡ Velocidad mejorada - más natural y dinámica
-    utterance.pitch = 1.1;
-  } else {
-    utterance.lang = 'es-MX';
-    utterance.rate = 1.3; // ⚡ Importante: también aquí para voces por defecto
-  }
-  utterance.volume = 0.8;
-  setTimeout(() => window.speechSynthesis.speak(utterance), 100);
-  lastGreetedUser.current = email.toLowerCase();
-};
-
-
-  // --- LÓGICA DE FETCH REFACTORIZADA ---
+  // --- LÓGICA DE FETCH REFACTORIZADA (Sin audio) ---
   const runFetchLogic = async (emailToFetch: string) => {
     if (fetchingUser || lastGreetedUser.current === emailToFetch.toLowerCase()) return;
     setFetchingUser(true);
     const foundUser = await fetchUserProfile(emailToFetch);
     setUser(foundUser);
     if (foundUser?.name) {
-      if (window.speechSynthesis.getVoices().length === 0) {
-        window.speechSynthesis.onvoiceschanged = () => speakGreeting(foundUser.name);
-      } else {
-        speakGreeting(foundUser.name);
-      }
+      lastGreetedUser.current = email.toLowerCase();
     }
     setFetchingUser(false);
   };
@@ -211,7 +164,6 @@ const speakGreeting = (userName: string) => {
       className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 ${darkMode ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950' : 'bg-gradient-to-br from-slate-100 via-white to-slate-100'}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { x.set(0); y.set(0); }}
-      onClick={unlockAudioEngine}
       ref={containerRef}
     >
       {/* Background FX */}
@@ -228,18 +180,8 @@ const speakGreeting = (userName: string) => {
         />
       </div>
 
-      {/* Voice & Theme Toggle */}
+      {/* Theme Toggle Only */}
       <div className="absolute top-6 right-6 flex gap-3 z-50">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setVoiceEnabled(!voiceEnabled)}
-          className={`p-3 rounded-xl ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-200/80 hover:bg-slate-300/80'} border ${darkMode ? 'border-white/10' : 'border-slate-300'} transition-all`}
-          aria-label={voiceEnabled ? "Desactivar voz" : "Activar voz"}
-        >
-          {voiceEnabled ? <Volume2 className={darkMode ? "text-blue-400" : "text-blue-600"} size={20} /> : <VolumeX className={darkMode ? "text-slate-500" : "text-slate-600"} size={20} />}
-        </motion.button>
-        
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -280,7 +222,7 @@ const speakGreeting = (userName: string) => {
           </p>
         </div>
 
-        {/* User Greeting Card */}
+        {/* User Greeting Card (Visual Only) */}
         <AnimatePresence mode="wait">
           {user && (
             <motion.div
@@ -331,7 +273,7 @@ const speakGreeting = (userName: string) => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onFocus={() => { setFocusedField('email'); unlockAudioEngine(); }}
+              onFocus={() => setFocusedField('email')}
               onBlur={() => setFocusedField(null)}
               placeholder="Correo electrónico"
               aria-label="Correo electrónico"
@@ -357,7 +299,6 @@ const speakGreeting = (userName: string) => {
               onChange={(e) => setPassword(e.target.value)}
               onFocus={() => {
                 setFocusedField('password');
-                unlockAudioEngine();
                 if (email && !user && !fetchingUser) {
                   if (debouncedFetchRef.current) {
                     clearTimeout(debouncedFetchRef.current);

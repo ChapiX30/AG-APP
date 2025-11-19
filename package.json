@@ -46,6 +46,7 @@
     "jspdf": "^3.0.2",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.525.0",
+    "mathjs": "^15.1.0",
     "node-fetch": "^2.7.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "2.14.305",

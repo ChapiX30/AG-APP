@@ -16,8 +16,11 @@ import {
   Edit3,
   Zap,
   Search,
+  Calculator,
+  ArrowRightLeft,
+  ArrowRight
 } from "lucide-react";
-import type { jsPDF } from "jspdf"; // Importar solo el tipo para TS
+import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
@@ -31,9 +34,236 @@ import {
   addMonths, 
   addYears, 
 } from "date-fns"; 
+import { unit } from 'mathjs';
 
 // ====================================================================
-// 2.A: DEFINICIÓN DE TIPOS ESTRICTOS (INTERFACES)
+// 1. CONFIGURACIÓN DE UNIDADES (Categorías y Valores MathJS)
+// ====================================================================
+
+type UnitDef = { label: string; value: string };
+type Categories = Record<string, UnitDef[]>;
+
+const UNIT_CATEGORIES: Categories = {
+  "Par Torsional (Torque)": [
+    { label: "Libra-fuerza pulgada (in·lbf)", value: "lbf inch" },
+    { label: "Pie-libra fuerza (ft·lbf)", value: "lbf ft" },
+    { label: "Newton metro (N·m)", value: "N m" },
+    { label: "Kilogramo-fuerza metro (kgf·m)", value: "kgf m" },
+    { label: "Kilogramo-fuerza cm (kgf·cm)", value: "kgf cm" },
+    { label: "Onza-fuerza pulgada (ozf·in)", value: "ozf inch" }
+  ],
+  "Presión": [
+    { label: "PSI (Libra/pulgada²)", value: "psi" },
+    { label: "Bar", value: "bar" },
+    { label: "Pascal (Pa)", value: "Pa" },
+    { label: "Kilopascal (kPa)", value: "kPa" },
+    { label: "Megapascal (MPa)", value: "MPa" },
+    { label: "Atmósfera (atm)", value: "atm" },
+    { label: "Milímetro de mercurio (mmHg)", value: "mmHg" },
+    { label: "Pulgada de agua (inH2O)", value: "inH2O" }
+  ],
+  "Masa": [
+    { label: "Kilogramo (kg)", value: "kg" },
+    { label: "Gramo (g)", value: "g" },
+    { label: "Miligramo (mg)", value: "mg" },
+    { label: "Libra (lb)", value: "lb" },
+    { label: "Onza (oz)", value: "oz" },
+    { label: "Tonelada métrica (t)", value: "tonne" }
+  ],
+  "Longitud": [
+    { label: "Metro (m)", value: "m" },
+    { label: "Centímetro (cm)", value: "cm" },
+    { label: "Milímetro (mm)", value: "mm" },
+    { label: "Pulgada (in)", value: "inch" },
+    { label: "Pie (ft)", value: "ft" },
+    { label: "Yarda (yd)", value: "yd" },
+    { label: "Milla (mi)", value: "mi" }
+  ],
+  "Temperatura": [
+    { label: "Celsius (°C)", value: "degC" },
+    { label: "Fahrenheit (°F)", value: "degF" },
+    { label: "Kelvin (K)", value: "K" },
+    { label: "Rankine (°R)", value: "degR" }
+  ],
+  "Volumen": [
+    { label: "Litro (L)", value: "L" },
+    { label: "Mililitro (mL)", value: "ml" },
+    { label: "Metro cúbico (m³)", value: "m3" },
+    { label: "Galón US (gal)", value: "gal" },
+    { label: "Pie cúbico (ft³)", value: "ft3" },
+    { label: "Pulgada cúbica (in³)", value: "in3" }
+  ]
+};
+
+// ====================================================================
+// 2. COMPONENTE MODAL DE CONVERTIDOR (CORREGIDO COLORES)
+// ====================================================================
+
+const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  // Estados
+  const [category, setCategory] = useState<string>("Par Torsional (Torque)");
+  const [amount, setAmount] = useState<string>("1");
+  
+  // Unidades seleccionadas (inician con los primeros valores de la categoría default)
+  const [fromUnit, setFromUnit] = useState<string>(UNIT_CATEGORIES["Par Torsional (Torque)"][0].value);
+  const [toUnit, setToUnit] = useState<string>(UNIT_CATEGORIES["Par Torsional (Torque)"][1].value);
+  
+  const [result, setResult] = useState<string>("");
+  const [error, setError] = useState<string>("");
+
+  // Efecto: Cuando cambia la categoría, resetear las unidades a las primeras de esa lista
+  const handleCategoryChange = (newCategory: string) => {
+    setCategory(newCategory);
+    const units = UNIT_CATEGORIES[newCategory];
+    if (units && units.length >= 2) {
+      setFromUnit(units[0].value);
+      setToUnit(units[1].value);
+    } else {
+      setFromUnit("");
+      setToUnit("");
+    }
+    setResult(""); // Limpiar resultado anterior
+  };
+
+  // Efecto: Calcular automáticamente cuando cambian los valores
+  useEffect(() => {
+    calculate();
+  }, [amount, fromUnit, toUnit, category]);
+
+  const calculate = () => {
+    setError("");
+    if (!amount || isNaN(Number(amount))) {
+      setResult("-");
+      return;
+    }
+    try {
+      // mathjs hace la magia
+      const val = unit(Number(amount), fromUnit);
+      const converted = val.to(toUnit);
+      // Formato inteligente: si es entero se ve entero, si tiene decimales muestra hasta 4
+      const formatted = converted.toNumber().toLocaleString('en-US', { maximumFractionDigits: 6 });
+      setResult(formatted);
+    } catch (err) {
+      // A veces mathjs falla si las unidades son incompatibles momentáneamente al cambiar
+      console.error(err); 
+      setResult("-");
+    }
+  };
+
+  // Función auxiliar para invertir unidades
+  const handleSwap = () => {
+    const temp = fromUnit;
+    setFromUnit(toUnit);
+    setToUnit(temp);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200 flex flex-col max-h-[90vh]">
+        
+        {/* Header */}
+        <div className="bg-gray-900 text-white p-4 flex justify-between items-center shrink-0">
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <Calculator className="w-5 h-5 text-blue-400" /> 
+            Convertidor de Unidades
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        
+        <div className="p-6 overflow-y-auto">
+          
+          {/* 1. Selector de Categoría */}
+          <div className="mb-8">
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              1. Selecciona la Categoría
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {Object.keys(UNIT_CATEGORIES).map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => handleCategoryChange(cat)}
+                  className={`px-3 py-2 text-sm rounded-lg border transition-all text-left truncate ${
+                    category === cat 
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                      : 'bg-gray-50 text-gray-900 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. Área de Conversión (Grid Split) */}
+          <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-6 rounded-xl border border-gray-200">
+            
+            {/* LADO IZQUIERDO: DE */}
+            <div className="w-full md:w-1/2 space-y-3">
+              <label className="block text-sm font-bold text-gray-700">De:</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                // FIX: Forzamos bg-white y text-gray-900 para evitar inputs oscuros
+                className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none shadow-sm bg-white text-gray-900 placeholder-gray-400"
+                placeholder="0"
+              />
+              <select
+                value={fromUnit}
+                onChange={(e) => setFromUnit(e.target.value)}
+                // FIX: Forzamos bg-white y text-gray-900 explícitamente
+                className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+              >
+                {UNIT_CATEGORIES[category]?.map((u) => (
+                  <option key={u.value} value={u.value} className="text-gray-900 bg-white">{u.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Icono de Flecha / Intercambio */}
+            <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0">
+               <button onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full transition-colors" title="Invertir">
+                 <ArrowRightLeft className="w-5 h-5 md:rotate-90 text-gray-600" />
+               </button>
+               <ArrowRight className="w-6 h-6 hidden md:block text-blue-300" />
+            </div>
+
+            {/* LADO DERECHO: A */}
+            <div className="w-full md:w-1/2 space-y-3">
+              <label className="block text-sm font-bold text-gray-700">A:</label>
+              <div className="w-full p-3 text-lg font-mono font-bold bg-blue-50 text-blue-900 border border-blue-100 rounded-lg flex items-center min-h-[54px]">
+                {result || "-"}
+              </div>
+              <select
+                value={toUnit}
+                onChange={(e) => setToUnit(e.target.value)}
+                // FIX: Forzamos bg-white y text-gray-900 explícitamente
+                className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+              >
+                {UNIT_CATEGORIES[category]?.map((u) => (
+                  <option key={u.value} value={u.value} className="text-gray-900 bg-white">{u.label}</option>
+                ))}
+              </select>
+            </div>
+
+          </div>
+
+          <div className="mt-4 text-center">
+             <p className="text-xs text-gray-400">
+               Conversión automática impulsada por MathJS
+             </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ====================================================================
+// 3. DEFINICIÓN DE TIPOS Y LOGICA PRINCIPAL (RESTO DEL CÓDIGO)
 // ====================================================================
 
 type ClienteRecord = {
@@ -49,7 +279,6 @@ type MasterRecord = {
   E: string; // Serie
 };
 
-// Interfaz para el Estado Completo del Formulario
 interface WorksheetState {
   lugarCalibracion: "Sitio" | "Laboratorio" | "";
   frecuenciaCalibracion: string;
@@ -75,7 +304,6 @@ interface WorksheetState {
   notas: string;
   tempAmbiente: string | number;
   humedadRelativa: string | number;
-  // Estados de UI internos del reducer
   idBlocked: boolean;
   idErrorMessage: string;
   permitirExcepcion: boolean;
@@ -83,7 +311,6 @@ interface WorksheetState {
   fieldsLocked: boolean;
 }
 
-// Tipos para las Acciones del Reducer (Discriminated Union)
 type WorksheetAction =
   | { type: 'SET_FIELD'; field: keyof WorksheetState; payload: string | string[] | number | boolean }
   | { type: 'SET_USER_NAME'; payload: string }
@@ -95,11 +322,7 @@ type WorksheetAction =
   | { type: 'SET_ID_BLOCKED'; message: string }
   | { type: 'CLEAR_ID_BLOCK' }
   | { type: 'SET_EXCEPCION'; payload: boolean }
-  | { type: 'RESTORE_BACKUP'; payload: WorksheetState }; // Nueva acción para restaurar respaldo
-
-// ====================================================================
-// FIN DEFINICIÓN DE TIPOS
-// ====================================================================
+  | { type: 'RESTORE_BACKUP'; payload: WorksheetState };
 
 interface ClienteSearchSelectProps {
     clientes: ClienteRecord[];
@@ -302,7 +525,6 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
   return null;
 }
 
-// 2.A: Tipado estricto para formData en la transferencia
 const transferToFriday = async (formData: WorksheetState, userId: string, user: any) => {
   try {
     console.log('Transferencia a Friday iniciada');
@@ -354,13 +576,12 @@ const transferToFriday = async (formData: WorksheetState, userId: string, user: 
     return true;
   } catch (error) {
     console.error("Error transferencia Friday:", error);
-    return false; // Retornamos false pero no lanzamos error para no bloquear el guardado principal
+    return false; 
   }
 };
 
-// 2.A: Tipado estricto para formData en PDF
 const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
-  // @ts-ignore - Ignoramos error de tipo si JsPDF viene como any en tiempo de ejecución
+  // @ts-ignore
   const doc = new JsPDF({ orientation:"p", unit: "pt", format: "a4" });
   
   const marginLeft = 50;
@@ -559,18 +780,19 @@ export const WorkSheetScreen: React.FC = () => {
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [autoTransferEnabled, setAutoTransferEnabled] = useState(() => localStorage.getItem('autoTransferWorksheets') === 'true');
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
+  
+  // Estado para controlar el modal del convertidor
+  const [showConverter, setShowConverter] = useState(false);
 
-  // 2.C: Recuperación básica de respaldo local si existe
   useEffect(() => {
     const backup = localStorage.getItem('backup_worksheet_data');
     if (backup) {
       try {
         const parsedBackup = JSON.parse(backup) as WorksheetState;
-        // Opcional: preguntar al usuario si quiere restaurar
         if (window.confirm("Se encontró una hoja de trabajo no guardada. ¿Desea restaurarla?")) {
            dispatch({ type: 'RESTORE_BACKUP', payload: parsedBackup });
         }
-        localStorage.removeItem('backup_worksheet_data'); // Limpiar tras restaurar o rechazar
+        localStorage.removeItem('backup_worksheet_data'); 
       } catch (e) {
         console.error("Error al restaurar respaldo local", e);
         localStorage.removeItem('backup_worksheet_data');
@@ -676,14 +898,12 @@ export const WorkSheetScreen: React.FC = () => {
     validarIdEnPeriodo();
   };
 
-  // 2.C: Manejo de Errores Robusto en Red (con respaldo local)
   const handleSave = useCallback(async () => {
     if (!valid) return alert("⚠️ Completa todos los campos obligatorios");
     if (state.idBlocked && !state.permitirExcepcion) return alert("❌ Equipo bloqueado por periodo de calibración.");
 
     setIsSaving(true);
     try {
-      // Verificación previa de red básica
       if (!navigator.onLine) {
          throw new Error("offline");
       }
@@ -695,7 +915,7 @@ export const WorkSheetScreen: React.FC = () => {
       }
 
       const { jsPDF } = await import("jspdf");
-      const pdfDoc = generateTemplatePDF(state, jsPDF as any); // Cast necesario si la librería no exporta tipos perfectos
+      const pdfDoc = generateTemplatePDF(state, jsPDF as any); 
       const blob = pdfDoc.output("blob");
       const nombreArchivo = `worksheets/${getUserName(currentUser || user)}/${state.certificado}_${state.id || "SINID"}.pdf`;
       const pdfRef = ref(storage, nombreArchivo);
@@ -713,16 +933,12 @@ export const WorkSheetScreen: React.FC = () => {
         alert("✅ Guardado exitoso");
       }
 
-      // Limpiar respaldo si existía uno por error previo
       localStorage.removeItem('backup_worksheet_data');
       goBack();
 
     } catch (e: any) {
       console.error("Error al guardar:", e);
-      
-      // 2.C: Guardar respaldo local si falla por red u otro error crítico
       localStorage.setItem('backup_worksheet_data', JSON.stringify(state));
-      
       let msg = "Error desconocido al guardar.";
       if (e.message === "offline" || e.code === "unavailable" || e.message.includes("network")) {
          msg = "⚠️ ERROR DE RED: No hay conexión. Se ha guardado una COPIA LOCAL. No cierre la sesión e intente guardar nuevamente cuando recupere la conexión.";
@@ -730,7 +946,6 @@ export const WorkSheetScreen: React.FC = () => {
          msg = `❌ Error: ${e.message || e}. Se guardó una copia de respaldo local.`;
       }
       alert(msg);
-
     } finally {
       setIsSaving(false);
     }
@@ -770,6 +985,16 @@ export const WorkSheetScreen: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            
+            {/* NUEVO BOTÓN: CONVERTIDOR */}
+            <button 
+              onClick={() => setShowConverter(true)} 
+              className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95"
+            >
+              <Calculator className="w-4 h-4" />
+              <span className="text-sm font-medium">Convertidor</span>
+            </button>
+
             <button onClick={toggleAutoTransfer} className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all ${autoTransferEnabled ? 'bg-green-500/20 text-green-200 border border-green-400/50' : 'bg-white/10 text-white border border-white/20'}`}>
               <Zap className="w-4 h-4" /><span className="text-sm">Auto → Friday</span>
             </button>
@@ -889,6 +1114,10 @@ export const WorkSheetScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* RENDERIZADO CONDICIONAL DEL MODAL CONVERTIDOR */}
+      {showConverter && <UnitConverterModal onClose={() => setShowConverter(false)} />}
+      
     </div>
   );
 };

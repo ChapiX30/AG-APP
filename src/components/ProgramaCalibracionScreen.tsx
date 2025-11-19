@@ -30,7 +30,8 @@ import {
   Save,
   Loader2,
   Info,
-  Trash2
+  Trash2,
+  User // 🚨 AÑADIDO
 } from 'lucide-react';
 // Importa tu hook personalizado de navegación
 import { useNavigation } from '../hooks/useNavigation';
@@ -51,9 +52,6 @@ import {
   where 
 } from 'firebase/firestore';
 // Asume que tienes configurada la conexión a Firebase en '../utils/firebase'
-// **IMPORTANTE:** Reemplaza el path si es necesario.
-// **NOTA IMPORTANTE:** Debes asegurarte de que tu archivo '../utils/firebase'
-// exporte la constante 'db' de tu configuración de Firestore.
 import { db } from '../utils/firebase'; 
 
 
@@ -81,17 +79,17 @@ export interface RegistroPatron {
   prioridad: 'Alta' | 'Media' | 'Baja';
   ubicacion: string;
   responsable: string;
-  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio';
+  // 🚨 AÑADIMOS EL NUEVO ESTADO 'en_servicio'
+  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_prestamo';
   fechaInicioProceso?: string;
   observaciones?: string;
+  // 🚨 AÑADIMOS NUEVOS CAMPOS
+  usuarioEnUso?: string;
+  fechaPrestamo?: string;
   historial: HistorialEntry[];
 }
 
 // --- SIMULACIÓN DE CONTEXTO DE USUARIO ---
-// En una app real, esto vendría de un React Context (AuthContext)
-
-// OPCIÓN 1: Usuario Administrador (Puede Editar)
-// ¡¡ESTÁ ACTIVO POR DEFECTO PARA QUE VEAS QUE CALIDAD SÍ PUEDE EDITAR!!
 const mockCurrentUser = {
   nombre: "Viridiana Moreno",
   puesto: "calidad"
@@ -116,6 +114,8 @@ const processStyles = `
   .process-en_proceso { color: #b45309; background-color: #fffbeb; border-color: #fde68a; } /* AMARILLO/NARANJA */
   .process-completado { color: #059669; background-color: #d1fae5; border-color: #a7f3d0; }
   .process-fuera_servicio { color: #dc2626; background-color: #fee2e2; border-color: #fca5a5; }
+  /* 🚨 NUEVO ESTILO PARA 'EN SERVICIO' */
+  .process-en_servicio { color: #475569; background-color: #f1f5f9; border-color: #cbd5e1; } 
 `;
 
 
@@ -153,22 +153,16 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   });
 
   // *** NUEVO ESTADO PARA EL USUARIO ***
-  // Usamos el mock para simular el usuario logueado
   const [currentUser, setCurrentUser] = useState(mockCurrentUser);
 
   // *** NUEVA VARIABLE DE PERMISO ***
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
-    
-    // La regla es: Puesto "calidad" Y el nombre es uno de los dos.
     const isAdminName = ['Viridiana Moreno', 'Jesús Sustaita'].includes(currentUser.nombre);
     const isAdminPuesto = currentUser.puesto === 'calidad';
-    
     return isAdminName && isAdminPuesto;
   }, [currentUser]);
   
-  // *** ACTUALIZAMOS LA CONSTANTE DE USUARIO ***
-  // La usamos para el historial
   const USUARIO_ACTUAL = currentUser.nombre;
 
   const limpiarDatosEnvio = () => {
@@ -205,21 +199,18 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       });
 
       if (fetchedData.length === 0) {
-        // Lógica de inicialización: Usa patronesData.ts si la colección está vacía.
+        // Lógica de inicialización
         console.log("No hay datos en Firestore. Inicializando con patronesData.ts");
-        
         const promises = patronesData.map(patron => 
           addDoc(collection(db, COLLECTION_NAME), patron)
         );
         await Promise.all(promises);
-
         setData(patronesData as RegistroPatron[]);
       } else {
         setData(fetchedData);
       }
     } catch (e) {
       console.error("Error al cargar o inicializar los patrones: ", e);
-      // Fallback a localStorage si el entorno lo permite
       const saved = localStorage.getItem('patrones_calibracion');
       if (saved) {
         setData(JSON.parse(saved));
@@ -234,9 +225,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   useEffect(() => {
     fetchPatrones();
   }, [fetchPatrones]);
-  // --- FIN CARGA DE DATOS ---
   
-  // ⚙️ FUNCIÓN PARA MANEJAR EL ORDENAMIENTO
   const handleSort = (column: SortableColumn) => {
     if (column === sortColumn) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -270,15 +259,21 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     }
   };
 
-  // *** CORRECCIÓN: 'color' -> 'textColor' y NUEVO AMBER para EN_PROCESO ***
+  // 🚨🚨 MODIFICACIÓN AQUÍ: CAMBIADO A "EN SERVICIO" 🚨🚨
   const getEstadoProcesoInfo = (estadoProceso: RegistroPatron['estadoProceso']) => {
     switch(estadoProceso) {
       case 'operativo': return { label: 'Operativo', textColor: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: Target, sortValue: 4, className: 'process-operativo' };
       case 'programado': return { label: 'Programado', textColor: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', icon: Calendar, sortValue: 2, className: 'process-programado' };
-      // 🚨 NUEVO: Color para EN PROCESO
       case 'en_proceso': return { label: 'En Proceso', textColor: 'text-amber-700', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', icon: Wrench, sortValue: 1, className: 'process-en_proceso' };
       case 'completado': return { label: 'Completado', textColor: 'text-green-700', bgColor: 'bg-green-50', borderColor: 'border-green-200', icon: CheckCircle2, sortValue: 3, className: 'process-completado' };
       case 'fuera_servicio': return { label: 'Fuera de Servicio', textColor: 'text-red-700', bgColor: 'bg-red-50', borderColor: 'border-red-200', icon: XCircle, sortValue: 0, className: 'process-fuera_servicio' };
+      
+      // 🚨 AHORA RECONOCE 'en_servicio' y MUESTRA 'En Servicio'
+      case 'en_servicio': return { label: 'En Servicio', textColor: 'text-slate-700', bgColor: 'bg-slate-50', borderColor: 'border-slate-200', icon: User, sortValue: 0, className: 'process-en_servicio' };
+      
+      // Mantenemos este por compatibilidad con datos viejos si los hubiera
+      case 'en_prestamo': return { label: 'En Servicio', textColor: 'text-slate-700', bgColor: 'bg-slate-50', borderColor: 'border-slate-200', icon: User, sortValue: 0, className: 'process-en_servicio' };
+      
       default: return { label: 'Desconocido', textColor: 'text-gray-700', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', icon: AlertCircle, sortValue: 5, className: '' };
     }
   };
@@ -319,6 +314,12 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
   const getAccionesDisponibles = (item: RegistroPatron) => {
     const acciones = [];
+    
+    // 🚨 SI ESTÁ EN SERVICIO, SOLO SE PUEDE EDITAR
+    if (item.estadoProceso === 'en_servicio' || item.estadoProceso === 'en_prestamo') {
+        acciones.push({ id: 'editar', label: 'Editar Datos', icon: Edit, color: 'bg-gray-400 hover:bg-gray-500' });
+        return acciones;
+    }
 
     if (item.tipoServicio === 'Calibración' && item.estadoProceso === 'operativo') {
         acciones.push({ id: 'calibracion_externa', label: 'Calibración Externa', icon: Calendar, color: 'bg-blue-600 hover:bg-blue-700' });
@@ -359,13 +360,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   // --- MANIPULACIÓN DE DATOS (FIREBASE) ---
   
   const ejecutarAccion = async () => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para realizar esta acción.");
       setAccionModalOpen(false);
       return;
     }
-    // **********************************
 
     if (!equipoSeleccionado || !accionSeleccionada || !equipoSeleccionado.id) {
         console.error("Error: Equipo seleccionado o ID de Firestore no válido.");
@@ -426,7 +425,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     try {
       const { id, ...dataToUpdate } = equipoActualizado;
       const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-      // 🚨 CORRECCIÓN: Usar setDoc con merge: true para robustez
       await setDoc(docRef, dataToUpdate, { merge: true });
       await fetchPatrones();
 
@@ -472,13 +470,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const handleGuardar = async () => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para agregar nuevos patrones.");
       setModalOpen(false);
       return;
     }
-    // **********************************
 
     if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion || !nuevoRegistro.fecha) {
       alert('Por favor complete los campos obligatorios');
@@ -494,7 +490,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     };
     
     try {
-      // Usamos addDoc para un nuevo registro (no necesita ID)
       await addDoc(collection(db, COLLECTION_NAME), {
         ...nuevoRegistro,
         historial: [nuevaEntradaHistorial]
@@ -517,13 +512,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const guardarEdicion = async () => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para editar patrones.");
       setEditModalOpen(false);
       return;
     }
-    // **********************************
 
     if (!equipoEditando || !equipoEditando.id) return;
     setLoading(true);
@@ -544,7 +537,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       const { id, ...dataToUpdate } = equipoConHistorial;
 
       const docRef = doc(db, COLLECTION_NAME, equipoEditando.id);
-      // 🚨 CORRECCIÓN: Usar setDoc con merge: true para robustez
       await setDoc(docRef, dataToUpdate, { merge: true });
       
       await fetchPatrones();
@@ -560,12 +552,10 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
   
   const handleEliminar = async (id: string) => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para eliminar patrones.");
       return;
     }
-    // **********************************
 
     setLoading(true);
     try {
@@ -583,13 +573,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const procesarEnvioCalibracion = async () => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para registrar acciones.");
       setCalibracionModalOpen(false);
       return;
     }
-    // **********************************
 
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
@@ -610,7 +598,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     try {
         const { id, ...dataToUpdate } = equipoActualizado;
         const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-        // 🚨 CORRECCIÓN: Usar setDoc con merge: true para robustez
         await setDoc(docRef, dataToUpdate, { merge: true });
         await fetchPatrones();
     } catch (e) {
@@ -625,13 +612,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const procesarMantenimiento = async () => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para registrar acciones.");
       setMantenimientoModalOpen(false);
       return;
     }
-    // **********************************
 
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
@@ -652,7 +637,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     try {
         const { id, ...dataToUpdate } = equipoActualizado;
         const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-        // 🚨 CORRECCIÓN: Usar setDoc con merge: true para robustez
         await setDoc(docRef, dataToUpdate, { merge: true });
         await fetchPatrones();
     } catch (e) {
@@ -667,13 +651,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   const procesarVerificacion = async () => {
-    // *** NUEVA VALIDACIÓN DE PERMISO ***
     if (!canEdit) {
       alert("No tiene permisos para registrar acciones.");
       setVerificacionModalOpen(false);
       return;
     }
-    // **********************************
     
     if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
@@ -694,7 +676,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     try {
         const { id, ...dataToUpdate } = equipoActualizado;
         const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-        // 🚨 CORRECCIÓN: Usar setDoc con merge: true para robustez
         await setDoc(docRef, dataToUpdate, { merge: true });
         await fetchPatrones();
     } catch (e) {
@@ -719,51 +700,46 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       const cumpleBusqueda = busqueda === '' ||
         item.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
         item.noControl.toLowerCase().includes(busqueda.toLowerCase()) ||
-        item.marca.toLowerCase().includes(busqueda.toLowerCase());
+        item.marca.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (item.usuarioEnUso && item.usuarioEnUso.toLowerCase().includes(busqueda.toLowerCase())); 
 
       return cumpleFecha && cumpleEstado && cumpleServicio && cumpleBusqueda;
     });
 
-    // 🔄 LÓGICA DE ORDENAMIENTO APLICADA DESPUÉS DEL FILTRADO
+    // 🔄 LÓGICA DE ORDENAMIENTO
     filtered.sort((a, b) => {
       let aValue: any;
       let bValue: any;
 
       if (sortColumn === 'statusVencimiento') {
-        // Ordena por el valor numérico del estado de vencimiento (0=Vencido, 1=Crítico, ...)
         aValue = getStatusInfo(a.fecha).sortValue;
         bValue = getStatusInfo(b.fecha).sortValue;
         
-        // Si los estados son iguales (ej. ambos Vigentes), usa la fecha como desempate
         if (aValue === bValue) {
             aValue = a.fecha ? parseISO(a.fecha).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
             bValue = b.fecha ? parseISO(b.fecha).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
         }
 
-      } else if (sortColumn === 'fecha' || sortColumn === 'fechaInicioProceso') {
-        // Ordena fechas
+      } else if (sortColumn === 'fecha' || sortColumn === 'fechaInicioProceso' || sortColumn === 'fechaPrestamo') {
         aValue = a[sortColumn] ? parseISO(a[sortColumn]!).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
         bValue = b[sortColumn] ? parseISO(b[sortColumn]!).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
 
       } else if (sortColumn === 'prioridad') {
-        // Ordena prioridades (Alta=0, Media=1, Baja=2)
         aValue = getPrioridadSortValue(a.prioridad);
         bValue = getPrioridadSortValue(b.prioridad);
 
       } else if (sortColumn === 'estadoProceso') {
-         // Ordena por estado de proceso
         aValue = getEstadoProcesoInfo(a.estadoProceso).sortValue;
         bValue = getEstadoProcesoInfo(b.estadoProceso).sortValue;
         
       } else {
-        // Ordena cadenas (strings)
         aValue = (a[sortColumn as keyof RegistroPatron] || '').toLowerCase();
         bValue = (b[sortColumn as keyof RegistroPatron] || '').toLowerCase();
       }
 
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0; // Si son iguales, no cambia el orden relativo
+      return 0; 
     });
 
     return filtered;
@@ -782,10 +758,10 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
   const handleExportar = () => {
     const csv = [
-      ['No. Control', 'Descripción', 'Serie', 'Marca', 'Modelo', 'Frecuencia', 'Tipo Servicio', 'Fecha', 'Estado', 'Prioridad', 'Ubicación', 'Responsable'],
+      ['No. Control', 'Descripción', 'Serie', 'Marca', 'Modelo', 'Frecuencia', 'Tipo Servicio', 'Fecha', 'Estado', 'Prioridad', 'Ubicación', 'Responsable', 'Usuario en Uso'],
       ...dataFiltrada.map(d => {
         const status = getStatusInfo(d.fecha);
-        return [d.noControl, d.descripcion, d.serie, d.marca, d.modelo, d.frecuencia, d.tipoServicio, d.fecha, status.label, d.prioridad, d.ubicacion, d.responsable];
+        return [d.noControl, d.descripcion, d.serie, d.marca, d.modelo, d.frecuencia, d.tipoServicio, d.fecha, status.label, d.prioridad, d.ubicacion, d.responsable, d.usuarioEnUso || ''];
       })
     ].map(row => row.join(',')).join('\n');
 
@@ -796,47 +772,44 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     link.click();
   };
 
-  // *** INICIO: NUEVA FUNCIÓN PARA EXPORTAR CALENDARIO ***
+  // *** EXPORTAR CALENDARIO ***
   const handleExportarCalendario = () => {
     if (data.length === 0) {
       alert("No hay patrones para exportar.");
       return;
     }
 
-    // 1. Mapear los datos de patrones a eventos de calendario
     const eventos = data
-      .filter(item => item.fecha && item.fecha !== 'Por Comprar') // Filtra los que tienen fecha
+      .filter(item => item.fecha && item.fecha !== 'Por Comprar') 
       .map(item => {
         try {
-          // Usamos UTC para evitar problemas de zona horaria
           const fechaVencimiento = parseISO(item.fecha);
           const [year, month, day] = [
             fechaVencimiento.getUTCFullYear(),
-            fechaVencimiento.getUTCMonth() + 1, // Meses en ics son 1-12
+            fechaVencimiento.getUTCMonth() + 1, 
             fechaVencimiento.getUTCDate()
           ];
 
           return {
             title: `VENCIMIENTO: ${item.descripcion} (${item.noControl})`,
             start: [year, month, day] as ics.DateArray,
-            duration: { days: 1 }, // Evento de todo el día
+            duration: { days: 1 }, 
             description: `Patrón: ${item.descripcion}\nNo. Control: ${item.noControl}\nSerie: ${item.serie}\nMarca: ${item.marca}\nServicio: ${item.tipoServicio}`,
             status: 'CONFIRMED' as ics.EventStatus,
             busyStatus: 'FREE' as ics.BusyStatus,
           };
         } catch (e) {
           console.error("Error al parsear fecha para ics:", item.fecha);
-          return null; // Omite eventos con fechas inválidas
+          return null; 
         }
       })
-      .filter(Boolean) as ics.EventAttributes[]; // Filtra nulos
+      .filter(Boolean) as ics.EventAttributes[]; 
 
     if (eventos.length === 0) {
       alert("No hay patrones con fechas válidas para exportar.");
       return;
     }
 
-    // 2. Crear el archivo .ics
     const { error, value } = ics.createEvents(eventos);
 
     if (error) {
@@ -850,7 +823,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       return;
     }
 
-    // 3. Crear el Blob y descargarlo
     const blob = new Blob([value], { type: 'text/calendar;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -858,10 +830,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
     link.click();
     URL.revokeObjectURL(link.href);
   };
-  // *** FIN: NUEVA FUNCIÓN PARA EXPORTAR CALENDARIO ***
 
-
-  // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS (MANTENIDA EN MEMORIA POR SI SE USA EN OTRO COMPONENTE) ---
+  // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS ---
   const getPatronesList = () => {
       const descripcionesUnicas = Array.from(new Set(data.map(patron => patron.descripcion)));
       return descripcionesUnicas.filter(desc => desc && desc !== '');
@@ -871,7 +841,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
   // --- RENDERIZADO (JSX) ---
 
-  // ℹ️ FUNCIÓN DE RENDERIZADO PARA LOS ENCABEZADOS DE COLUMNA
   const renderSortableHeader = (columnKey: SortableColumn, label: string) => (
     <th className="text-left p-4 font-semibold text-gray-700">
       <button
@@ -887,10 +856,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       </button>
     </th>
   );
-  // -------------------------------------------------------------
 
   return (
-    // 🚨 AÑADIMOS EL ESTILO DE PROCESO
     <>
       <style>{processStyles}</style>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -1110,6 +1077,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                         {renderSortableHeader('fecha', 'Fecha Vencimiento')} 
                         {renderSortableHeader('statusVencimiento', 'Estado Calibración')} 
                         {renderSortableHeader('estadoProceso', 'Estado Proceso')}
+                        {renderSortableHeader('usuarioEnUso', 'Quién lo tiene')} {/* 🚨 NUEVA COLUMNA */}
                         {renderSortableHeader('prioridad', 'Prioridad')}
                         <th className="text-left p-4 font-semibold text-gray-700">Acciones</th>
                       </tr>
@@ -1179,6 +1147,19 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                                   </div>
                                 )}
                               </td>
+
+                              {/* 🚨 NUEVA CELDA PARA MOSTRAR QUIÉN LO TIENE */}
+                              <td className="p-4">
+                                {(item.estadoProceso === 'en_servicio' || item.estadoProceso === 'en_prestamo') && (
+                                  <>
+                                    <div className="font-medium text-gray-900">{item.usuarioEnUso}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {item.fechaPrestamo ? `Desde: ${format(parseISO(item.fechaPrestamo), 'dd/MM/yy', { locale: es })}` : ''}
+                                    </div>
+                                  </>
+                                )}
+                              </td>
+                              
                               <td className="p-4">
                                 <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getPrioridadColor(item.prioridad)}`}>
                                   {item.prioridad}
@@ -1488,6 +1469,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                         <option value="en_proceso">En Proceso</option>
                         <option value="completado">Completado</option>
                         <option value="fuera_servicio">Fuera de Servicio</option>
+                        {/* 🚨 AÑADIDO */}
+                        <option value="en_servicio">En Servicio</option> 
                       </select>
                     </div>
                   </div>

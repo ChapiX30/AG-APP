@@ -5,7 +5,7 @@ import {
   Calendar, Building2, FileText, ClipboardList, BookOpen,
   Settings, LogOut, User, Database, FolderKanban, Bell, Check, 
   TrendingUp, Menu as MenuIcon, X, ChevronRight, Sparkles, 
-  Activity, Award, Clock
+  Activity, Award, Clock, ArrowRightLeft // 🚨 1. ÍCONO NUEVO IMPORTADO
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
@@ -78,26 +78,35 @@ const menuItems = [
   { 
     id: 'hojas-trabajo', 
     title: 'Hojas de Trabajo', 
-    icon: FileText, // Icono actualizado
-    gradient: 'from-indigo-500 via-purple-500 to-pink-500', // Gradiente actualizado
-    description: 'Gestión de documentos de trabajo', // Descripción actualizada
-    available: false // Actualizado a true
+    icon: FileText, 
+    gradient: 'from-indigo-500 via-purple-500 to-pink-500', 
+    description: 'Gestión de documentos de trabajo', 
+    available: false 
   },
   { 
     id: 'normas', 
     title: 'Hojas de Herramienta', 
-    icon: BookOpen, // Icono actualizado
-    gradient: 'from-rose-500 via-red-500 to-orange-500', // Gradiente actualizado
-    description: 'Acceso a normativas y guías', // Descripción actualizada
+    icon: BookOpen, 
+    gradient: 'from-rose-500 via-red-500 to-orange-500', 
+    description: 'Acceso a normativas y guías', 
     available: true 
   },
   { 
     id: 'programa-calibracion', 
     title: 'Patrones', 
-    icon: Award, // Icono actualizado
-    gradient: 'from-yellow-500 via-amber-500 to-orange-500', // Gradiente actualizado
-    description: 'Administración de patrones de referencia', // Descripción actualizada
-    available: true // Actualizado a true
+    icon: Award, 
+    gradient: 'from-yellow-500 via-amber-500 to-orange-500', 
+    description: 'Administración de patrones de referencia', 
+    available: true 
+  },
+  // 🚨 2. NUEVO BOTÓN AGREGADO AQUÍ
+  { 
+    id: 'control-prestamos', 
+    title: 'Préstamos', 
+    icon: ArrowRightLeft, 
+    gradient: 'from-orange-500 via-orange-600 to-red-600', // Color distintivo
+    description: 'Entradas y salidas de equipo',
+    available: true 
   },
 ];
 
@@ -112,9 +121,8 @@ export const MainMenu: React.FC = () => {
     ((u?.position ?? "").trim().toLowerCase()) ||
     ((u?.role ?? "").trim().toLowerCase()) || "";
 
-  const userRole = getRole(user); // Obtenemos el rol una sola vez
+  const userRole = getRole(user); 
   
-  // Obtenemos el nombre del usuario (asumiendo que está en el objeto 'user' de useAuth)
   const userName = ((user as any)?.name || "").trim().toLowerCase(); 
   
   // Variables de Rol
@@ -122,7 +130,6 @@ export const MainMenu: React.FC = () => {
   const isMetrologo = userRole === "metrólogo";
   
   // --- REGLA ESPECÍFICA PARA JESUS SUSTAITA (CALIDAD) ---
-  // Revisa el nombre Y el rol (puesto)
   const isJesusSustaitaCalidad = (userName === "jesus sustaita" && userRole === "calidad");
   // ---
 
@@ -130,21 +137,18 @@ export const MainMenu: React.FC = () => {
   const menuItemsFiltered = menuItems.filter(item => {
     
     // --- LÓGICA PARA JESUS SUSTAITA ---
-    // Si es Jesus Sustaita (calidad), solo muéstrale "Patrones"
     if (isJesusSustaitaCalidad) {
-      // "Patrones" tiene el id 'programa-calibracion' en tu array
-      return item.id === 'programa-calibracion'; 
+      // 🚨 3. AHORA PUEDE VER 'PATRONES' Y 'PRÉSTAMOS'
+      return item.id === 'programa-calibracion' || item.id === 'control-prestamos'; 
     }
     // ---
     
     // Lógica existente para 'Jefe' (administrativo)
-    // Solo el jefe puede ver 'Estadísticas'
     if (item.id === "calibration-stats") {
       return isJefe;
     }
     
-    // Para todos los demás (que no son Jesus Sustaita),
-    // muestra todos los demás ítems.
+    // Para todos los demás, muestra el resto.
     return true;
   });
 
@@ -154,12 +158,10 @@ export const MainMenu: React.FC = () => {
   // ============= ESTADOS =============
   const [showProfile, setShowProfile] = useState(false);
   const [showAssignedBanner, setShowAssignedBanner] = useState(false);
-  const [showMetrologoTip, setShowMetrologoTip] = useState(false); // 👈 Estado para el tip
-  
-  // --- MEJORA: Estado de carga para el perfil ---
+  const [showMetrologoTip, setShowMetrologoTip] = useState(false); 
   const [profileLoading, setProfileLoading] = useState(true);
 
-  // Estados para *mostrar* la información del perfil (se cargan desde Firebase)
+  // Estados para perfil
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -182,7 +184,6 @@ export const MainMenu: React.FC = () => {
       setEditPhone(d.phone || "");
       setEditPosition(d.position || "");
       setPhotoUrl(d.photoUrl || "");
-      // --- MEJORA: Ocultar el 'esqueleto' de carga ---
       setProfileLoading(false);
     });
     return () => unsub();
@@ -217,18 +218,14 @@ export const MainMenu: React.FC = () => {
 
   // Efecto para el Tip del Metrólogo
   useEffect(() => {
-    // Si es Metrólogo y tiene un contador, mostrar el tip
     if (isMetrologo && equipmentCount > 0) {
       setShowMetrologoTip(true);
     } else {
-      // Si no, ocultarlo (si el contador baja a 0 o cambia de rol)
       setShowMetrologoTip(false);
     }
   }, [isMetrologo, equipmentCount]);
 
-  // ========================================================================
-  // === BLOQUE MODIFICADO: Efecto para servicios asignados y notificaciones ===
-  // ========================================================================
+  // Efecto para servicios asignados y notificaciones
   useEffect(() => {
     if (!uid && !email) return;
 
@@ -241,18 +238,11 @@ export const MainMenu: React.FC = () => {
     const unsub = onSnapshot(collection(db, 'servicios'), (snap) => {
       const servicios = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
 
-      // --- MEJORA 1: FILTRAR SERVICIOS ACTIVOS ---
-      // Filtramos primero todos los servicios que NO estén finalizados.
-      // (Asumiendo que tu campo de estado se llama 'estado')
-      //
       const serviciosActivos = servicios.filter(s => {
         const estado = (s.estado || '').toString().toLowerCase().trim();
         return estado !== 'finalizado' && estado !== 'completado';
       });
-      // ---
 
-      
-      // Filtramos los servicios asignados sobre la lista de *activos*.
       const asignados = serviciosActivos.filter(s => {
         const personas = Array.isArray(s.personas) ? s.personas : [];
         const personasLower = personas.map((p: any) => (p || '').toString().toLowerCase());
@@ -262,7 +252,6 @@ export const MainMenu: React.FC = () => {
 
       const nuevos = asignados.filter(s => !notifiedSet.has(s.id));
       
-      // El contador ahora solo refleja los servicios activos.
       setAssignedCount(asignados.length); 
 
       if (nuevos.length > 0) {
@@ -270,27 +259,17 @@ export const MainMenu: React.FC = () => {
         setTimeout(() => setShowAssignedBanner(false), 6000);
         
         if ('Notification' in window) {
-          
-          // --- MEJORA 2: NOTIFICACIÓN DESCRIPTIVA (CORREGIDA) ---
-          // Usamos los campos 'titulo' y 'cliente' de FridayServiciosScreen
-          //
           const title = 'Nuevo servicio asignado';
           let body = '';
 
           if (nuevos.length === 1) {
             const s = nuevos[0];
-            
-            // Usamos s.titulo
             const titulo = s.titulo || 'un servicio'; 
-            
-            // Usamos s.cliente
             const cliente = s.cliente ? ` para ${s.cliente}` : '';
-            
             body = `Se te asignó: ${titulo}${cliente}.`;
           } else {
             body = `Se te asignaron ${nuevos.length} nuevos servicios. Revísalos en la app.`;
           }
-          // ---
 
           const show = () => { 
             try { 
@@ -309,7 +288,6 @@ export const MainMenu: React.FC = () => {
           localStorage.setItem(key, JSON.stringify(Array.from(notifiedSet))); 
         } catch {}
       } else {
-        // Actualizamos el localStorage solo con los IDs de los servicios activos
         try { 
           localStorage.setItem(key, JSON.stringify(asignados.map(s => s.id))); 
         } catch {}
@@ -320,9 +298,6 @@ export const MainMenu: React.FC = () => {
 
     return () => unsub();
   }, [uid, email]);
-  // ========================================================================
-  // === FIN DEL BLOQUE MODIFICADO ===
-  // ========================================================================
 
 
   // Efecto para FCM Token
@@ -364,20 +339,15 @@ export const MainMenu: React.FC = () => {
 
   // ============= HANDLERS =============
   
-  // --- MEJORA: La lógica de guardar y cambiar foto se movió DENTRO de ProfileModal ---
-
   const handleMenuClick = (item: any) => {
     if (!item.available) return;
-    // --- MEJORA: Se quitó setMobileMenuOpen(false) ---
     navigateTo(item.id);
   };
 
   // ============= COMPONENTES DE UI =============
   
-  // --- MEJORA: Componente Modal de Perfil con estado aislado ---
   const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () => void }) => {
     
-    // Estados locales para el formulario
     const { uid, name, email, phone, position, photoUrl: initialPhotoUrl } = currentUser;
     const [localName, setLocalName] = useState(name || '');
     const [localEmail, setLocalEmail] = useState(email || '');
@@ -388,7 +358,6 @@ export const MainMenu: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const inputFileRef = useRef<HTMLInputElement>(null);
 
-    // Lógica de guardado (ahora local al modal)
     const handleProfileSave = async () => {
       if (!uid) return;
       setSaving(true);
@@ -399,7 +368,6 @@ export const MainMenu: React.FC = () => {
           await uploadBytes(storageReference, localPhotoFile);
           newPhotoUrl = await getDownloadURL(storageReference);
         }
-        // Guarda los datos locales en Firestore
         await setDoc(doc(db, "usuarios", uid), {
           name: localName, 
           email: localEmail, 
@@ -408,7 +376,6 @@ export const MainMenu: React.FC = () => {
           photoUrl: newPhotoUrl,
         }, { merge: true });
         
-        // Cierra el modal
         onClose(); 
         setLocalPhotoFile(null);
       } catch (error) {
@@ -418,11 +385,9 @@ export const MainMenu: React.FC = () => {
       }
     };
 
-    // Lógica de cambio de foto (ahora local al modal)
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
         setLocalPhotoFile(e.target.files[0]);
-        // Crea una URL temporal para previsualizar la imagen
         setLocalPhotoUrl(URL.createObjectURL(e.target.files[0]));
       }
     };
@@ -430,7 +395,6 @@ export const MainMenu: React.FC = () => {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
         <div className="relative w-full max-w-md bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 rounded-3xl shadow-2xl border border-white/10 overflow-hidden">
-          {/* Header con efecto glassmorphism */}
           <div className="relative px-6 pt-6 pb-4 bg-gradient-to-r from-violet-600/20 via-purple-600/20 to-fuchsia-600/20 backdrop-blur-xl border-b border-white/10">
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -438,7 +402,7 @@ export const MainMenu: React.FC = () => {
                 Editar Perfil
               </h3>
               <button
-                onClick={onClose} // <-- Usa onClose
+                onClick={onClose} 
                 className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-all duration-200 text-white/70 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -447,12 +411,11 @@ export const MainMenu: React.FC = () => {
           </div>
 
           <form onSubmit={(e) => { e.preventDefault(); handleProfileSave(); }} className="p-6 space-y-5">
-            {/* Avatar con glassmorphism */}
             <div className="flex flex-col items-center space-y-3">
               <div className="relative group">
                 <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
                 <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-white/20 bg-gradient-to-br from-slate-700 to-slate-800 shadow-2xl">
-                  {localPhotoUrl ? ( // <-- Usa localPhotoUrl
+                  {localPhotoUrl ? ( 
                     <img src={localPhotoUrl} alt="Perfil" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
@@ -464,7 +427,7 @@ export const MainMenu: React.FC = () => {
               <input
                 type="file"
                 ref={inputFileRef}
-                onChange={handlePhotoChange} // <-- Usa handlePhotoChange local
+                onChange={handlePhotoChange} 
                 accept="image/*"
                 className="hidden"
               />
@@ -477,7 +440,6 @@ export const MainMenu: React.FC = () => {
               </button>
             </div>
 
-            {/* Campos con glassmorphism (usando estados locales) */}
             <div className="space-y-4">
               {[
                 { label: "Nombre", type: "text", value: localName, setter: setLocalName, placeholder: "Tu nombre completo", icon: User },
@@ -501,11 +463,10 @@ export const MainMenu: React.FC = () => {
               ))}
             </div>
 
-            {/* Botones */}
             <div className="flex gap-3 pt-4">
               <button
                 type="button"
-                onClick={onClose} // <-- Usa onClose
+                onClick={onClose} 
                 disabled={saving}
                 className="flex-1 px-5 py-3 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-white/80 font-semibold hover:bg-white/10 transition-all duration-200"
               >
@@ -525,14 +486,13 @@ export const MainMenu: React.FC = () => {
     );
   };
 
-  // Componente Banner de Asignados (Sin cambios)
+  // Componente Banner de Asignados
   const AssignedBanner = () => (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 animate-slideDown">
       <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500/90 via-teal-500/90 to-cyan-500/90 backdrop-blur-xl border border-white/20 shadow-2xl">
         <div className="flex items-center gap-3 text-white">
           <Bell className="w-6 h-6 animate-bounce" />
           <p className="font-bold text-lg">
-            {/* El contador (assignedCount) ahora solo muestra servicios activos */}
             ¡Tienes {assignedCount} servicio{assignedCount !== 1 ? 's' : ''} nuevo{assignedCount !== 1 ? 's' : ''}!
           </p>
         </div>
@@ -542,59 +502,27 @@ export const MainMenu: React.FC = () => {
 
   // ============= LÓGICA DE NIVELES (CON COLORES) =============
   const levelDefinitions = [
-    // Nivel 1 (Azul/Cian)
-    { min: 0, title: 'I', 
-      badge: 'bg-gradient-to-r from-cyan-500 to-blue-500', 
-      titleColor: 'text-cyan-300', 
-      progress: 'from-cyan-500 via-blue-500 to-indigo-500' },
-    // Nivel 2 (Verde/Esmeralda)
-    { min: 10, title: 'II', 
-      badge: 'bg-gradient-to-r from-emerald-500 to-green-500', 
-      titleColor: 'text-emerald-300', 
-      progress: 'from-emerald-500 via-green-500 to-teal-500' },
-    // Nivel 3 (Amarillo/Ámbar)
-    { min: 25, title: 'III', 
-      badge: 'bg-gradient-to-r from-amber-500 to-yellow-500', 
-      titleColor: 'text-amber-300', 
-      progress: 'from-amber-500 via-yellow-500 to-orange-500' },
-    // Nivel 4 (Naranja/Rojo)
-    { min: 50, title: 'IV', 
-      badge: 'bg-gradient-to-r from-orange-500 to-red-500', 
-      titleColor: 'text-orange-300', 
-      progress: 'from-orange-500 via-red-500 to-rose-500' },
-    // Nivel 5 (Púrpura/Violeta)
-    { min: 75, title: 'V', 
-      badge: 'bg-gradient-to-r from-purple-500 to-violet-500', 
-      titleColor: 'text-purple-300', 
-      progress: 'from-purple-500 via-violet-500 to-fuchsia-500' },
-    // Nivel 6 (Fucsia/Rosa)
-    { min: 100, title: 'VI', 
-      badge: 'bg-gradient-to-r from-fuchsia-500 to-pink-500', 
-      titleColor: 'text-fuchsia-300', 
-      progress: 'from-fuchsia-500 via-pink-500 to-rose-500' },
-    // Nivel 7 (Legendario - Fuego/Oro)
-    { min: 150, title: 'Leyenda', 
-      badge: 'bg-gradient-to-r from-amber-500 to-red-600', 
-      titleColor: 'text-amber-300', 
-      progress: 'from-amber-500 via-red-500 to-rose-600' }
+    { min: 0, title: 'I', badge: 'bg-gradient-to-r from-cyan-500 to-blue-500', titleColor: 'text-cyan-300', progress: 'from-cyan-500 via-blue-500 to-indigo-500' },
+    { min: 10, title: 'II', badge: 'bg-gradient-to-r from-emerald-500 to-green-500', titleColor: 'text-emerald-300', progress: 'from-emerald-500 via-green-500 to-teal-500' },
+    { min: 25, title: 'III', badge: 'bg-gradient-to-r from-amber-500 to-yellow-500', titleColor: 'text-amber-300', progress: 'from-amber-500 via-yellow-500 to-orange-500' },
+    { min: 50, title: 'IV', badge: 'bg-gradient-to-r from-orange-500 to-red-500', titleColor: 'text-orange-300', progress: 'from-orange-500 via-red-500 to-rose-500' },
+    { min: 75, title: 'V', badge: 'bg-gradient-to-r from-purple-500 to-violet-500', titleColor: 'text-purple-300', progress: 'from-purple-500 via-violet-500 to-fuchsia-500' },
+    { min: 100, title: 'VI', badge: 'bg-gradient-to-r from-fuchsia-500 to-pink-500', titleColor: 'text-fuchsia-300', progress: 'from-fuchsia-500 via-pink-500 to-rose-500' },
+    { min: 150, title: 'Leyenda', badge: 'bg-gradient-to-r from-amber-500 to-red-600', titleColor: 'text-amber-300', progress: 'from-amber-500 via-red-500 to-rose-600' }
   ];
 
 
-  // Componente de Progreso de Metrólogo (CON COLORES) (Sin cambios)
+  // Componente de Progreso de Metrólogo (CON COLORES)
   const MetrologoProgressTip = () => {
     if (!isMetrologo || !showMetrologoTip || equipmentCount === 0) return null;
     
-    // --- Lógica de Niveles ---
     const currentLevelData = [...levelDefinitions].reverse().find(l => equipmentCount >= l.min)!;
     const currentLevelIndex = levelDefinitions.findIndex(l => l.title === currentLevelData.title);
     const level = currentLevelIndex + 1;
     
-    // Extraemos los nuevos valores de color
     const { title, badge, titleColor, progress: progressGradient } = currentLevelData;
-    
     const nextLevelData = levelDefinitions[currentLevelIndex + 1];
     
-    // --- Cálculo de Progreso ---
     let progress = 100;
     let remaining = 0;
     let goal = currentLevelData.min;
@@ -609,7 +537,6 @@ export const MainMenu: React.FC = () => {
       remaining = goal - equipmentCount;
     }
 
-    // --- Renderizado del Componente ---
     return (
       <div className="fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100%-3rem)] animate-fadeInUp">
         <div className="relative px-5 py-4 rounded-2xl bg-slate-900/90 backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300">
@@ -622,7 +549,6 @@ export const MainMenu: React.FC = () => {
             &times;
           </button>
 
-          {/* Encabezado */}
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-bold text-lg text-white">Progreso Mensual</h4>
             <span className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${badge}`}>
@@ -630,13 +556,11 @@ export const MainMenu: React.FC = () => {
             </span>
           </div>
           
-          {/* Título de Rango */}
           <div className="flex items-center gap-2 mb-3">
             <Award className={`w-5 h-5 ${titleColor}`} />
             <p className={`text-base font-semibold ${titleColor}`}>{title}</p>
           </div>
 
-          {/* Barra de Progreso */}
           <div className="w-full bg-slate-700/50 rounded-full h-3 mb-1 border border-white/10 overflow-hidden">
             <div 
               className={`h-full rounded-full bg-gradient-to-r ${progressGradient} transition-all duration-500 ease-out`} 
@@ -644,7 +568,6 @@ export const MainMenu: React.FC = () => {
             ></div>
           </div>
           
-          {/* Texto de Progreso */}
           <div className="flex justify-between items-baseline mb-3">
             <span className="text-xs font-medium text-white/60">
               {isMaxLevel ? '¡Nivel Máximo!' : `Próximo: ${nextLevelData.title}`}
@@ -654,7 +577,6 @@ export const MainMenu: React.FC = () => {
             </span>
           </div>
 
-          {/* Mensaje Motivacional */}
           {!isMaxLevel && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-white/5 border border-white/10">
               <TrendingUp className="w-5 h-5 text-green-400 flex-shrink-0" />
@@ -664,7 +586,6 @@ export const MainMenu: React.FC = () => {
             </div>
           )}
           
-          {/* Mensaje de Nivel Máximo */}
           {isMaxLevel && (
              <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-400/30">
               <Sparkles className="w-5 h-5 text-violet-300 flex-shrink-0" />
@@ -682,14 +603,12 @@ export const MainMenu: React.FC = () => {
   // ============= LAYOUT DESKTOP =============
   const DesktopLayout = () => (
     <div className="hidden lg:block min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Efectos de fondo */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-violet-500/10 rounded-full blur-[120px]"></div>
         <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-fuchsia-500/10 rounded-full blur-[120px]"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-500/5 rounded-full blur-[150px]"></div>
       </div>
 
-      {/* Header con glassmorphism */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-900/60 border-b border-white/5 shadow-2xl">
         <div className="max-w-7xl mx-auto px-8 py-4">
           <div className="flex items-center justify-between">
@@ -708,13 +627,11 @@ export const MainMenu: React.FC = () => {
 
             <div className="flex items-center gap-4">
               
-              {/* --- MEJORA: Perfil con Skeleton Loader --- */}
               <button
                 onClick={() => setShowProfile(true)}
                 className="flex items-center gap-3 px-4 py-2.5 min-h-[58px] rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 hover:bg-white/10 transition-all duration-200 group"
               >
                 {profileLoading ? (
-                  // Skeleton Loader
                   <div className="flex items-center gap-3 animate-pulse">
                     <div className="w-10 h-10 rounded-full bg-slate-700"></div>
                     <div className="space-y-2">
@@ -723,7 +640,6 @@ export const MainMenu: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  // Contenido real del perfil
                   <>
                     <div className="relative">
                       <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full blur opacity-50 group-hover:opacity-75 transition-opacity"></div>
@@ -745,7 +661,6 @@ export const MainMenu: React.FC = () => {
                 )}
               </button>
 
-              {/* Logout */}
               <button
                 onClick={logout}
                 className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all duration-200 hover:scale-105"
@@ -757,7 +672,6 @@ export const MainMenu: React.FC = () => {
         </div>
       </header>
 
-      {/* Grid de módulos */}
       <main className="relative max-w-7xl mx-auto px-8 py-12">
         <div className="mb-8">
           <h2 className="text-4xl font-bold text-white mb-2">Módulos del Sistema</h2>
@@ -766,26 +680,22 @@ export const MainMenu: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           
-          {/* --- MEJORA: Accesibilidad (Cambiado de 'div' a 'button') --- */}
           {menuItemsFiltered.map((item, idx) => (
             <button
               type="button"
               key={item.id}
               onClick={() => handleMenuClick(item)}
-              disabled={!item.available} // <-- Prop 'disabled'
+              disabled={!item.available} 
               className={`group relative w-full text-left overflow-hidden rounded-2xl transition-all duration-300 ${
                 item.available 
-                  ? 'cursor-pointer hover:scale-[1.02] hover:-translate-y-1' // Estilos si está disponible
-                  : 'opacity-50 cursor-not-allowed' // Estilos si NO está disponible
+                  ? 'cursor-pointer hover:scale-[1.02] hover:-translate-y-1' 
+                  : 'opacity-50 cursor-not-allowed'
               }`}
               style={{ animationDelay: `${idx * 50}ms` }}
             >
-              {/* Fondo con gradiente */}
               <div className={`absolute inset-0 bg-gradient-to-br ${item.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`}></div>
               
-              {/* Glassmorphism card */}
               <div className="relative h-full p-6 bg-white/5 backdrop-blur-xl border border-white/10 group-hover:border-white/20 transition-all duration-300">
-                {/* Icono con efecto */}
                 <div className="relative mb-4">
                   <div className={`absolute inset-0 bg-gradient-to-br ${item.gradient} rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity`}></div>
                   <div className={`relative w-14 h-14 rounded-2xl bg-gradient-to-br ${item.gradient} flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform duration-300`}>
@@ -793,7 +703,6 @@ export const MainMenu: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Contenido */}
                 <h3 className="text-xl font-bold text-white mb-2 group-hover:text-white transition-colors">
                   {item.title}
                 </h3>
@@ -801,7 +710,6 @@ export const MainMenu: React.FC = () => {
                   {item.description}
                 </p>
 
-                {/* Badge o Arrow */}
                 {item.available ? (
                   <div className="flex items-center gap-2 text-white/70 group-hover:text-white text-sm font-semibold">
                     <span>Acceder</span>
@@ -814,7 +722,6 @@ export const MainMenu: React.FC = () => {
                   </span>
                 )}
 
-                {/* Efecto de brillo en hover */}
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
                   <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/10 via-transparent to-transparent"></div>
                 </div>
@@ -829,13 +736,11 @@ export const MainMenu: React.FC = () => {
   // ============= LAYOUT MOBILE =============
   const MobileLayout = () => (
     <div className="lg:hidden min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Efectos de fondo mobile */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-violet-500/10 rounded-full blur-[100px]"></div>
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-fuchsia-500/10 rounded-full blur-[100px]"></div>
       </div>
 
-      {/* Header mobile */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-900/80 border-b border-white/10 shadow-2xl">
         <div className="px-4 py-4">
           <div className="flex items-center justify-between">
@@ -849,7 +754,6 @@ export const MainMenu: React.FC = () => {
               </div>
             </div>
 
-            {/* --- MEJORA: Botón de menú cambiado a botón de Perfil --- */}
             <button
               onClick={() => setShowProfile(true)}
               className="p-2.5 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-white hover:bg-white/10 transition-all"
@@ -860,7 +764,6 @@ export const MainMenu: React.FC = () => {
         </div>
       </header>
 
-      {/* Grid de módulos mobile */}
       <main className="relative p-4 pb-24">
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-white mb-1">Módulos</h2>
@@ -880,11 +783,9 @@ export const MainMenu: React.FC = () => {
               }`}
               style={{ animationDelay: `${idx * 30}ms` }}
             >
-              {/* Fondo glassmorphism */}
               <div className="absolute inset-0 bg-white/5 backdrop-blur-xl border border-white/10"></div>
               <div className={`absolute inset-0 bg-gradient-to-br ${item.gradient} opacity-0 ${item.available && 'group-active:opacity-100'} transition-opacity`}></div>
               
-              {/* Contenido */}
               <div className="relative">
                 <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center mb-3 shadow-lg`}>
                   <item.icon className="w-6 h-6 text-white" />
@@ -903,7 +804,6 @@ export const MainMenu: React.FC = () => {
         </div>
       </main>
 
-      {/* Bottom navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 backdrop-blur-xl bg-slate-900/90 border-t border-white/10 shadow-2xl">
         <div className="flex items-center justify-around px-4 py-3">
           <button className="flex flex-col items-center gap-1 p-2 text-violet-400">
@@ -931,7 +831,6 @@ export const MainMenu: React.FC = () => {
 
   return (
     <>
-      {/* --- MEJORA: Pasando props al Modal --- */}
       {showProfile && <ProfileModal 
         currentUser={{
           uid: uid,
@@ -951,7 +850,6 @@ export const MainMenu: React.FC = () => {
       <DesktopLayout />
       <MobileLayout />
 
-      {/* Estilos (sin cambios) */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }

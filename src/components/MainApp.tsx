@@ -4,24 +4,23 @@ import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { AnimatePresence, motion } from 'framer-motion';
 
-// Screens "ligeras"
+// --- Screens Ligeras ---
 import { LoginScreen } from './LoginScreen';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
 import SplashScreen from "./SplashScreen";
 
-// --- **CORRECCIÓN PRINCIPAL** ---
-// Ajustamos React.lazy para que funcione con "named exports" (export const RegisterScreen)
-// Esto soluciona el error "Cannot convert object to primitive value".
+// --- Lazy Loading de Screens (Named Exports) ---
 const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
+const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen').then(module => ({ default: module.ProgramaCalibracionScreen })));
+const ControlPrestamosScreen = lazy(() => import('./ControlPrestamosScreen').then(module => ({ default: module.ControlPrestamosScreen })));
 
-// Screens GRANDES en lazy loading
+// --- Lazy Loading de Screens (Default Exports) ---
 const WorkSheetScreen = lazy(() => import('./WorkSheetScreen'));
 const FridayScreen = lazy(() => import('./FridayScreen'));
 const FridayServiciosScreen = lazy(() => import('./FridayServiciosScreen'));
 const DriveScreen = lazy(() => import('./DriveScreen'));
-const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen').then(module => ({ default: module.ProgramaCalibracionScreen })));
 const HojaDeServicioScreen = lazy(() => import('./HojaDeServicioScreen'));
 const CalibrationManager = lazy(() => import('./CalibrationManager'));
 const EmpresasScreen = lazy(() => import('./EmpresasScreen'));
@@ -30,13 +29,7 @@ const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
 
-// --- **NOTA** --- 
-// El componente TablerosScreen no estaba importado, lo comenté para evitar un error.
-// Deberás importarlo de forma similar a los demás si lo vas a usar.
-// const TablerosScreen = lazy(() => import('./TablerosScreen'));
-
-
-// Loader visual PRO
+// --- Loader Component ---
 const Loader = () => (
   <div className="w-full h-screen flex flex-col items-center justify-center bg-white/80 z-50 fixed top-0 left-0">
     <svg className="animate-spin h-10 w-10 text-blue-700" viewBox="0 0 24 24">
@@ -50,27 +43,38 @@ const Loader = () => (
 export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
-
   const [loading, setLoading] = useState(true);
 
-  // Notificaciones push
+  // Configuración de Notificaciones Push
   usePushNotifications(
     user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
     user?.email || localStorage.getItem('usuario.email') || ''
   );
 
-  // SplashScreen de arranque
+  // SplashScreen Timer
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 3200);
     return () => clearTimeout(timeout);
   }, []);
 
+  // --- 🔥 SOLUCIÓN: FORZAR URL LIMPIA 🔥 ---
+  // Este efecto vigila si estás en el menú y limpia la URL visualmente
+  useEffect(() => {
+    if (isAuthenticated && (currentScreen === 'menu' || currentScreen === 'login')) {
+      // Si la URL tiene algo extra (como /MainMenu), la limpiamos a '/'
+      if (window.location.pathname !== '/') {
+        window.history.replaceState(null, '', '/');
+      }
+    }
+  }, [currentScreen, isAuthenticated]);
+  // -----------------------------------------
+
   if (loading) {
     return <SplashScreen />;
   }
 
+  // Flujo de No Autenticado (Login / Registro)
   if (!isAuthenticated) {
-    // La lógica de navegación aquí está bien, el problema era cómo se cargaba el componente.
     return (
       <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
         <AnimatePresence mode="wait">
@@ -81,7 +85,7 @@ export const MainApp: React.FC = () => {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 500, opacity: 0 }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="w-full" // Ajustado para ocupar el ancho completo
+              className="w-full"
             >
               <Suspense fallback={<Loader />}>
                 <RegisterScreen onNavigateToLogin={() => navigateTo('login')} />
@@ -90,7 +94,7 @@ export const MainApp: React.FC = () => {
           ) : (
             <motion.div
               key="login"
-              initial={{ x: 0, opacity: 0 }} // Ajustado para un fade-in centrado
+              initial={{ x: 0, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 0, opacity: 0 }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
@@ -104,64 +108,65 @@ export const MainApp: React.FC = () => {
     );
   }
 
-  // Screens autenticadas
+  // Flujo de Autenticado (Router Principal)
   switch (currentScreen) {
     case 'menu':
       return <MainMenu />;
+      
     case 'consecutivos':
       return <ConsecutivosScreen />;
+      
     case 'magnitude-detail':
       return <MagnitudeDetailScreen />;
+      
     case 'work-sheet':
       return (
         <Suspense fallback={<Loader />}>
           <WorkSheetScreen />
         </Suspense>
       );
+      
     case 'empresas':
       return (
         <Suspense fallback={<Loader />}>
           <EmpresasScreen />
         </Suspense>
       );
+      
     case 'calendario':
       return (
         <Suspense fallback={<Loader />}>
           <CalendarScreen />
         </Suspense>
       );
+      
     case 'hoja-servicio':
       return (
         <Suspense fallback={<Loader />}>
           <HojaDeServicioScreen />
         </Suspense>
       );
+      
     case 'calibration-manager':
       return (
         <Suspense fallback={<Loader />}>
           <CalibrationManager />
         </Suspense>
       );
+      
     case 'drive':
       return (
         <Suspense fallback={<Loader />}>
           <DriveScreen />
         </Suspense>
       );
+      
     case 'tableros':
-      // Asegúrate de importar TablerosScreen si lo vas a usar.
-      // return (
-      //   <Suspense fallback={<Loader />}>
-      //     <TablerosScreen />
-      //   </Suspense>
-      // );
-      return <MainMenu />; // Temporalmente redirige a menu
+      return <MainMenu />; 
+      
     case 'calibration-stats':
-      if (
-        ((user?.puesto ?? "").trim().toLowerCase() === "administrativo") ||
-        ((user?.position ?? "").trim().toLowerCase() === "administrativo") ||
-        ((user?.role ?? "").trim().toLowerCase() === "administrativo")
-      ) {
+      const role = (user?.puesto || user?.position || user?.role || "").trim().toLowerCase();
+      if (role === "administrativo") {
         return (
           <Suspense fallback={<Loader />}>
             <CalibrationStatsScreen />
@@ -170,36 +175,49 @@ export const MainApp: React.FC = () => {
       } else {
         return <MainMenu />;
       }
+      
     case 'programa-calibracion':
       return (
         <Suspense fallback={<Loader />}>
           <ProgramaCalibracionScreen />
         </Suspense>
       );
+    
+    case 'control-prestamos':
+      return (
+        <Suspense fallback={<Loader />}>
+          <ControlPrestamosScreen />
+        </Suspense>
+      );
+
     case 'friday-servicios':
       return (
         <Suspense fallback={<Loader />}>
           <FridayServiciosScreen />
         </Suspense>
       );
+      
     case 'normas':
       return (
         <Suspense fallback={<Loader />}>
           <NormasScreen />
         </Suspense>
       );
+      
     case 'check-list':
       return (
         <Suspense fallback={<Loader />}>
           <InventoryProScreen />
         </Suspense>
       );
+      
     case 'friday':
       return (
         <Suspense fallback={<Loader />}>
           <FridayScreen />
         </Suspense>
       );
+      
     default:
       return <MainMenu />;
   }
