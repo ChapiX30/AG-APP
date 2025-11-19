@@ -368,11 +368,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // UI States
+  // UI States (OPTIMIZADO: Debounce search)
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [view, setView] = useState<'grid' | 'list'>('grid');
-  const [searchQuery, setSearchQuery] = useState("");
-  const [globalSearch, setGlobalSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(""); // Lo que escribes
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // Lo que filtra realmente
+  
   const [sortBy, setSortBy] = useState<'name' | 'date'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
@@ -428,6 +429,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     if (!accessLoading && currentUserData !== null) reloadTree();
   }, [accessLoading, currentUserData]);
+
+  // --- DEBOUNCE SEARCH EFFECT ---
+  useEffect(() => {
+      const timer = setTimeout(() => {
+          setDebouncedSearch(searchQuery);
+      }, 500); // Espera 500ms después de que dejes de escribir para filtrar
+      return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // --- CORE DATA LOGIC ---
   const loadFileMetadata = async (file: DriveFile): Promise<DriveFile> => {
@@ -524,26 +533,32 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const getAllFilesFromTree = (folder: DriveFolder): DriveFile[] => folder.files.concat(...folder.folders.map(getAllFilesFromTree));
 
   const filteredFolders = useMemo(() => {
-    if (searchQuery) return [];
+    if (debouncedSearch) return [];
     if (!currentFolder) return [];
     
     let folders = currentFolder.folders;
     if (selectedPath.length === 0 && currentUserData) folders = filterFoldersByPermissions(folders);
     
     return folders.sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
-  }, [currentFolder, searchQuery, sortOrder, currentUserData, userIsQuality, selectedPath]);
+  }, [currentFolder, debouncedSearch, sortOrder, currentUserData, userIsQuality, selectedPath]);
 
   const filteredFiles = useMemo(() => {
     if (!tree) return [];
     
-    let files = searchQuery ? allFilesCache : (currentFolder?.files || []);
+    // Usa debouncedSearch en lugar de searchQuery directo
+    let files = debouncedSearch ? allFilesCache : (currentFolder?.files || []);
     
-    // FILTRO PARA OCULTAR .KEEP
     files = files.filter(f => f.name !== '.keep'); 
 
-    if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+    if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
         files = files.filter(f => f.name.toLowerCase().includes(q) || f.fullPath.toLowerCase().includes(q));
+        
+        // *** OPTIMIZACIÓN CRÍTICA ***
+        // Limitar resultados a 100 para evitar congelar el navegador (INP Issue)
+        if (files.length > 100) {
+            files = files.slice(0, 100);
+        }
     }
     
     return files.sort((a, b) => {
@@ -552,7 +567,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const dateB = new Date(b.originalUpdated || b.updated).getTime();
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     });
-  }, [currentFolder, searchQuery, tree, allFilesCache, sortBy, sortOrder]);
+  }, [currentFolder, debouncedSearch, tree, allFilesCache, sortBy, sortOrder]);
 
   // --- ACTIONS ---
   const handleToggleStar = async (file: DriveFile) => {
@@ -639,7 +654,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         await uploadBytes(fakeFileRef, new Uint8Array([0]));
         logActivity('create_folder', undefined, newFolderName.trim());
         setNewFolderName("");
-        // ESPERA DE SEGURIDAD DE 500ms
+        // Wait a bit for consistency
         await new Promise(resolve => setTimeout(resolve, 500));
         reloadTree();
     } catch(e) { console.error(e); setLoading(false); }
@@ -737,14 +752,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <Stack direction="row" spacing={1}>
                     {userIsQuality && (
                         <>
-                            {/* NUEVO ICONO DIRECTO DE CARPETA */}
-                            <Tooltip title="Crear Carpeta">
+                             <Tooltip title="Crear Carpeta">
                                 <IconButton onClick={() => setCreateFolderOpen(true)}>
                                     <CreateNewFolderIcon />
                                 </IconButton>
                             </Tooltip>
-                            
-                            {/* BOTÓN NUEVO CON MENÚ */}
                             <Button
                                 variant="contained"
                                 startIcon={<AddIcon />}
@@ -812,7 +824,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
         <input ref={fileInputRef} type="file" multiple hidden onChange={() => {}} />
 
-        {/* ================= NUEVO BUTTON MENU ================= */}
+        {/* ================= NEW MENU ================= */}
         <Menu
             anchorEl={newMenuAnchor}
             open={Boolean(newMenuAnchor)}
@@ -844,7 +856,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             )}
 
             {/* FOLDERS GRID (Ocultar si estamos buscando) */}
-            {!searchQuery && filteredFolders.length > 0 && (
+            {!debouncedSearch && filteredFolders.length > 0 && (
                 <Box sx={{ mb: 4 }}>
                     <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 500 }}>Carpetas</Typography>
                     <Grid container spacing={2}>
@@ -877,7 +889,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <Box>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
                         <Typography variant="subtitle2" color="text.secondary" fontWeight={500}>
-                            {searchQuery ? `Resultados de búsqueda (${filteredFiles.length})` : `Archivos (${filteredFiles.length})`}
+                            {debouncedSearch ? `Resultados de búsqueda (${filteredFiles.length})` : `Archivos (${filteredFiles.length})`}
                         </Typography>
                         {userIsQuality && selectionMode && (
                             <Button size="small" color="error" onClick={() => setSelectedFiles([])}>Cancelar selección</Button>
