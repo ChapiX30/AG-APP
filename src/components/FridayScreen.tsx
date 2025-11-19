@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Trash2, ChevronRight, ChevronDown, Search, Filter, 
-  MoreHorizontal, Home, ArrowUp, ArrowDown, Settings, 
-  Eye, EyeOff, Bell, UserCircle, Calendar, GripVertical, Check, X
+  MoreHorizontal, Home, Settings, Bell, UserCircle, Calendar, 
+  GripVertical, X, Type, Hash, List, ArrowLeft, Menu
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
@@ -10,16 +10,7 @@ import { doc, updateDoc, collection, getDocs, query, where, onSnapshot, setDoc, 
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 
-// --- CONSTANTES Y CONFIGURACIÓN ---
-const MONDAY_COLORS = {
-  border: "#d0d4e4",
-  headerBg: "#f5f6f8",
-  rowHover: "#f5f7fa",
-  primary: "#0073ea",
-  textMain: "#323338",
-  textLight: "#676879"
-};
-
+// --- CONSTANTES ---
 const STATUS_CONFIG: any = {
   pending: { label: "Pendiente", bg: "#c4c4c4", text: "#fff" },
   in_progress: { label: "En Proceso", bg: "#fdab3d", text: "#fff" },
@@ -37,18 +28,6 @@ const PRIORITY_CONFIG: any = {
 // --- INTERFACES ---
 interface WorksheetData {
   id: string;
-  folio?: string;
-  certificado: string;
-  cliente: string;
-  equipo: string;
-  marca: string;
-  modelo: string;
-  serie: string;
-  lugarCalibracion: 'sitio' | 'laboratorio';
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  assignedTo: string;
-  dueDate: string;
   [key: string]: any;
 }
 
@@ -71,23 +50,29 @@ interface Group {
   collapsed: boolean;
 }
 
-// --- COLUMNAS POR DEFECTO ---
+interface DragItem {
+  type: 'row' | 'column';
+  index: number;
+  gidx?: number;
+  id?: string;
+}
+
+// --- COLUMNAS DEFAULT ---
 const DEFAULT_COLUMNS: Column[] = [
-  { key: 'folio', label: 'Folio', width: 120, type: "text", sortable: true, sticky: true },
-  { key: 'cliente', label: 'Cliente', width: 200, type: "text", sortable: true },
-  { key: 'equipo', label: 'Equipo', width: 160, type: "text", sortable: true },
+  { key: 'folio', label: 'Folio', width: 100, type: "text", sortable: true, sticky: true },
+  { key: 'cliente', label: 'Cliente', width: 220, type: "text", sortable: true },
+  { key: 'equipo', label: 'Equipo', width: 180, type: "text", sortable: true },
   { key: 'status', label: 'Estado', width: 140, type: "dropdown", options: ["pending","in_progress","completed","cancelled"], sortable: true },
   { key: 'priority', label: 'Prioridad', width: 130, type: "dropdown", options: ["low","medium","high","urgent"], sortable: true },
-  { key: 'dueDate', label: 'Fecha Límite', width: 140, type: "date", sortable: true },
-  { key: 'assignedTo', label: 'Responsable', width: 120, type: "person", sortable: true },
+  { key: 'dueDate', label: 'Fecha Límite', width: 130, type: "date", sortable: true },
+  { key: 'assignedTo', label: 'Resp.', width: 120, type: "person", sortable: true },
   { key: 'certificado', label: 'Certificado', width: 140, type: "text", sortable: true },
   { key: 'marca', label: 'Marca', width: 130, type: "text" },
   { key: 'modelo', label: 'Modelo', width: 130, type: "text" },
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
 ];
 
-// --- COMPONENTE CELDA OPTIMIZADO (React.memo) ---
-// Este componente maneja su propia lógica de renderizado para evitar INP issues
+// --- COMPONENTE CELDA ---
 interface CellProps {
   row: WorksheetData;
   col: Column;
@@ -104,119 +89,120 @@ const Cell = React.memo(({ row, col, gidx, ridx, isEditing, onStartEdit, onSave,
   const [tempValue, setTempValue] = useState(row[col.key]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Efecto para enfocar al editar
   useEffect(() => {
     if (isEditing) {
-      setTempValue(row[col.key]); // Sincronizar valor inicial
-      setTimeout(() => inputRef.current?.focus(), 10);
+      setTempValue(row[col.key]);
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isEditing, row, col.key]);
 
   const value = row[col.key];
-  const cellBaseClass = "h-full w-full px-2 flex items-center text-sm border-r border-[#d0d4e4] relative transition-colors duration-200";
+  const cellBaseClass = "h-full w-full px-3 flex items-center text-sm relative transition-colors duration-200";
 
-  // 1. RENDERIZADO: STATUS & PRIORITY (Chips de color completo)
   if (col.key === 'status' || col.key === 'priority') {
     const config = col.key === 'status' ? STATUS_CONFIG : PRIORITY_CONFIG;
     const item = config[value] || { label: value, bg: "#c4c4c4" };
 
     if (isEditing) {
       return (
-        <div className="absolute inset-0 z-50 bg-white shadow-2xl rounded border border-blue-500 min-w-[140px]">
-           {col.options?.map(opt => (
-             <div key={opt} className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
-                  onClick={() => onSave(opt)}>
-                <div className="w-3 h-3 rounded-full" style={{ background: config[opt]?.bg || '#ccc' }}></div>
-                <span className="text-sm">{config[opt]?.label || opt}</span>
-             </div>
-           ))}
+        <div className="relative w-full h-full">
+            <div className="w-full h-full flex items-center justify-center text-white font-medium" style={{ backgroundColor: item.bg }}>
+                {item.label}
+            </div>
+            <div className="absolute top-full left-0 w-full bg-white shadow-xl rounded-b-md border border-gray-200 z-50 overflow-hidden">
+               {col.options?.map(opt => (
+                 <div key={opt} 
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 border-b border-gray-50"
+                      onClick={(e) => { e.stopPropagation(); onSave(opt); }}>
+                    <div className="w-3 h-3 rounded-full" style={{ background: config[opt]?.bg || '#ccc' }}></div>
+                    <span className="text-xs font-medium text-gray-700">{config[opt]?.label || opt}</span>
+                 </div>
+               ))}
+            </div>
+            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onCancel(); }}></div>
         </div>
       );
     }
     return (
-      <div className="w-full h-full flex items-center justify-center cursor-pointer text-white font-medium relative group transition-all hover:opacity-90"
+      <div className="w-full h-full flex items-center justify-center cursor-pointer text-white font-medium group hover:opacity-90"
            style={{ backgroundColor: item.bg }}
            onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
-          <span className="truncate px-1 text-xs md:text-sm">{item.label}</span>
-          <div className="absolute right-1 opacity-0 group-hover:opacity-100 bg-black/20 p-0.5 rounded">
-            <ChevronDown className="w-3 h-3" />
-          </div>
+          <span className="truncate px-1 text-xs">{item.label}</span>
       </div>
     );
   }
 
-  // 2. RENDERIZADO: FECHA
   if (col.type === 'date') {
     if (isEditing) {
       return (
-        <input ref={inputRef} type="date" className="w-full h-full px-1 outline-none z-50 absolute inset-0"
-               value={tempValue || ''} 
-               onChange={(e) => setTempValue(e.target.value)} 
-               onBlur={() => onSave(tempValue)} 
-               onKeyDown={(e) => e.key === 'Enter' && onSave(tempValue)} />
+        <div className="w-full h-full relative">
+            <input ref={inputRef} type="date" className="w-full h-full px-2 outline-none border-2 border-[#0073ea] bg-white absolute inset-0 z-50 text-xs"
+               value={tempValue || ''} onChange={(e) => setTempValue(e.target.value)} onBlur={() => onSave(tempValue)} onKeyDown={(e) => e.key === 'Enter' && onSave(tempValue)} 
+            />
+        </div>
       );
     }
     const displayDate = value ? new Date(value).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : '-';
     return (
-      <div className={clsx(cellBaseClass, "justify-center hover:bg-gray-50 cursor-pointer")} 
+      <div className={clsx(cellBaseClass, "justify-center hover:bg-gray-100 cursor-pointer")} 
            onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
-          {value ? <span className="text-gray-700">{displayDate}</span> : <Calendar className="w-4 h-4 text-gray-300" />}
+          {value ? displayDate : <Calendar className="w-4 h-4 text-gray-300" />}
       </div>
     );
   }
 
-  // 3. RENDERIZADO: PERSONA
   if (col.type === 'person') {
     if (isEditing) {
       return (
-        <div className="absolute inset-0 z-50 bg-white shadow-2xl rounded border border-blue-500 min-w-[180px] max-h-48 overflow-y-auto">
-          {metrologos.map((m: any) => (
-            <div key={m.id} className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
-                 onClick={() => onSave(m.name)}>
-              <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">{m.name.charAt(0)}</div>
-              <span className="text-sm text-gray-700">{m.name}</span>
+        <div className="relative w-full h-full">
+            <div className="absolute top-0 left-0 min-w-[200px] bg-white shadow-2xl rounded border border-blue-200 z-50 max-h-60 overflow-y-auto">
+              {metrologos.map((m: any) => {
+                  const name = m.name || "Desconocido";
+                  const initial = name.charAt(0) || "?";
+                  return (
+                    <div key={m.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-2"
+                        onClick={() => onSave(name)}>
+                    <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">{initial}</div>
+                    <span className="text-sm text-gray-700">{name}</span>
+                    </div>
+                  );
+              })}
             </div>
-          ))}
+            <div className="fixed inset-0 z-40" onClick={onCancel}></div>
         </div>
       );
     }
+    const displayInitial = (value && typeof value === 'string') ? value.charAt(0).toUpperCase() : "?";
     return (
-      <div className={clsx(cellBaseClass, "justify-center hover:bg-gray-50 cursor-pointer")} 
+      <div className={clsx(cellBaseClass, "justify-center hover:bg-gray-100 cursor-pointer")} 
            onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
           {value ? (
             <div className="w-7 h-7 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center border-2 border-white shadow-sm" title={value}>
-              {value.charAt(0).toUpperCase()}
+              {displayInitial}
             </div>
           ) : <UserCircle className="w-6 h-6 text-gray-300" />}
       </div>
     );
   }
 
-  // 4. RENDERIZADO: TEXTO / DEFAULT
   if (isEditing) {
     return (
-      <input ref={inputRef}
-             className="w-full h-full px-2 outline-none bg-white border-2 border-[#0073ea] shadow-sm z-50 absolute inset-0 text-sm"
-             value={tempValue || ''}
-             onChange={(e) => setTempValue(e.target.value)}
-             onBlur={() => onSave(tempValue)}
-             onKeyDown={(e) => { if(e.key==='Enter') onSave(tempValue); if(e.key==='Escape') onCancel(); }}
-      />
+        <div className="w-full h-full relative block">
+            <input ref={inputRef} className="w-full h-full px-3 outline-none bg-white border-2 border-[#0073ea] shadow-md text-sm text-gray-800 absolute inset-0 z-50"
+                value={tempValue || ''} onChange={(e) => setTempValue(e.target.value)} onBlur={() => onSave(tempValue)} 
+                onKeyDown={(e) => { if(e.key==='Enter') onSave(tempValue); if(e.key==='Escape') onCancel(); }}
+            />
+        </div>
     );
   }
 
   return (
-    <div className={clsx(cellBaseClass, "hover:border-[#aeb1bd] hover:bg-white cursor-text group")}
+    <div className={clsx(cellBaseClass, "hover:border-[#aeb1bd] hover:bg-white cursor-text group border border-transparent")}
          onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
         <span className="truncate w-full block text-gray-700">{value}</span>
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 border border-gray-300 bg-white p-0.5 rounded shadow-sm">
-             <span className="text-[10px] text-gray-500 px-1 font-mono">Edit</span>
-        </div>
     </div>
   );
 }, (prev, next) => {
-  // Función de comparación custom para React.memo
-  // Solo re-renderizar si los datos de la fila, la columna o el estado de edición cambian
   return (
     prev.row[prev.col.key] === next.row[next.col.key] &&
     prev.isEditing === next.isEditing &&
@@ -225,7 +211,7 @@ const Cell = React.memo(({ row, col, gidx, ridx, isEditing, onStartEdit, onSave,
   );
 });
 
-// --- COMPONENTE FILA OPTIMIZADO ---
+// --- COMPONENTE FILA ---
 interface BoardRowProps {
   row: WorksheetData;
   columns: Column[];
@@ -239,386 +225,418 @@ interface BoardRowProps {
   onSaveCell: (val: any) => void;
   onCancelEdit: () => void;
   metrologos: any[];
-  handleDragStart: (e: React.DragEvent, type: 'row', data: any) => void;
-  handleDrop: (e: React.DragEvent, type: 'row', data: any) => void;
+  onDragStart: (e: React.DragEvent, item: DragItem) => void;
+  onDrop: (e: React.DragEvent, targetGidx: number, targetRidx: number) => void;
 }
 
 const BoardRow = React.memo(({ 
   row, columns, gidx, ridx, color, isSelected, editCell, 
-  onToggleSelect, onStartEdit, onSaveCell, onCancelEdit, metrologos, handleDragStart, handleDrop 
+  onToggleSelect, onStartEdit, onSaveCell, onCancelEdit, metrologos, onDragStart, onDrop
 }: BoardRowProps) => {
-  
   return (
-    <div className={clsx("flex border-b border-[#d0d4e4] hover:bg-[#f5f7fa] group transition-colors h-9", isSelected && "bg-blue-50")}
-         draggable
-         onDragStart={e => handleDragStart(e, 'row', {groupIndex: gidx, rowIndex: ridx})}
-         onDragOver={e => e.preventDefault()}
-         onDrop={e => handleDrop(e, 'row', {groupIndex: gidx, rowIndex: ridx})}
+    <div 
+        className={clsx("flex border-b border-[#d0d4e4] hover:bg-[#f5f7fa] group transition-colors h-9 bg-white", isSelected && "bg-blue-50")}
+        draggable
+        onDragStart={(e) => onDragStart(e, { type: 'row', index: ridx, gidx, ridx, id: row.id })}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onDrop(e, gidx, ridx)}
     >
-       {/* Barra de Color */}
-       <div className="w-1.5 flex-shrink-0 transition-colors" style={{ backgroundColor: color }}></div>
-
-       {/* Checkbox Sticky */}
-       <div className="w-10 flex-shrink-0 border-r border-[#d0d4e4] bg-white sticky left-0 z-10 flex items-center justify-center group-hover:bg-[#f5f7fa]">
+       <div className="w-1.5 flex-shrink-0 sticky left-0 z-20" style={{ backgroundColor: color }}></div>
+       <div className="w-10 flex-shrink-0 border-r border-[#d0d4e4] bg-white sticky left-1.5 z-20 flex items-center justify-center group-hover:bg-[#f5f7fa]">
            <input 
               type="checkbox" 
               checked={isSelected}
               onChange={() => onToggleSelect(gidx, ridx)}
-              className="opacity-0 group-hover:opacity-100 checked:opacity-100 transition-opacity rounded border-gray-300 text-[#0073ea] focus:ring-[#0073ea] cursor-pointer" 
+              className="opacity-0 group-hover:opacity-100 checked:opacity-100 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
            />
            <GripVertical className="w-3 h-3 text-gray-300 absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab" />
        </div>
-
-       {/* Columnas */}
-       {columns.filter(c => !c.hidden).map((col, i) => {
+       {columns.filter(c => !c.hidden).map((col) => {
           const isEditing = editCell?.gidx === gidx && editCell?.ridx === ridx && editCell?.key === col.key;
-          const isSticky = col.sticky;
-          
-          // Cálculo de estilo para sticky
           const style: React.CSSProperties = { width: col.width };
-          if (isSticky) {
-             style.left = 46; // 40px (check) + 6px (color bar)
+          if (col.sticky) {
              style.position = 'sticky';
-             style.zIndex = 10;
+             style.left = 46;
+             style.zIndex = 20;
+             style.backgroundColor = isSelected ? '#eff6ff' : '#fff';
           }
-
           return (
-             <div key={col.key} 
-                  style={style} 
-                  className={clsx(
-                      "flex-shrink-0 bg-white", // Fondo blanco necesario para sticky
-                      isSticky && "group-hover:bg-[#f5f7fa] border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]"
-                  )}
-             >
-                 <Cell 
-                    row={row} 
-                    col={col} 
-                    gidx={gidx} 
-                    ridx={ridx}
-                    isEditing={isEditing} 
-                    onStartEdit={onStartEdit} 
-                    onSave={onSaveCell}
-                    onCancel={onCancelEdit}
-                    metrologos={metrologos} 
-                 />
+             <div key={col.key} style={style} 
+                  className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.02)]")}>
+                 <Cell row={row} col={col} gidx={gidx} ridx={ridx} isEditing={isEditing} 
+                    onStartEdit={onStartEdit} onSave={onSaveCell} onCancel={onCancelEdit} metrologos={metrologos} />
              </div>
           );
        })}
-       <div className="w-full border-b border-transparent bg-transparent"></div>
+       <div className="w-full border-b border-transparent"></div>
     </div>
   );
 });
 
-
 // --- COMPONENTE PRINCIPAL ---
 const FridayScreen: React.FC<{ navigate?: (route: string) => void }> = ({ navigate }) => {
-  // Hook custom para movil
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener('resize', c); return () => window.removeEventListener('resize', c); }, []);
 
-  // --- ESTADOS ---
-  const FRIDAY_GROUPS: Group[] = [
+  const [groups, setGroups] = useState<Group[]>([
     { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false, rows: [] },
     { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false, rows: [] }
-  ];
-  
-  const [groups, setGroups] = useState<Group[]>(FRIDAY_GROUPS);
+  ]);
   const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
+  const [metrologos, setMetrologos] = useState<any[]>([]);
+
   const [editCell, setEditCell] = useState<{gidx:number, ridx:number, key:string}|null>(null);
   const [selectedRows, setSelectedRows] = useState<{gidx:number, ridx:number}[]>([]);
   const [search, setSearch] = useState("");
-  const [metrologos, setMetrologos] = useState<any[]>([]);
-  const [sidebarAbierto, setSidebarAbierto] = useState(!isMobile);
   
-  const groupsRef = useRef(groups); // Ref para acceso en callbacks async
-  useEffect(() => { groupsRef.current = groups; }, [groups]);
+  // Sidebar state
+  const [sidebarAbierto, setSidebarAbierto] = useState(!isMobile);
 
-  // --- FIREBASE LOAD ---
+  const [showAddCol, setShowAddCol] = useState(false);
+  const [newColData, setNewColData] = useState({ label: "", type: "text" });
+  const [dragItem, setDragItem] = useState<DragItem | null>(null);
+
+  // --- CARGA DE DATOS ---
   useEffect(() => {
-     // Cargar metrologos
-     getDocs(query(collection(db,"usuarios"), where("puesto", "==", "Metrólogo"))).then(snap => {
-        setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-     });
+     getDocs(query(collection(db,"usuarios"), where("puesto", "==", "Metrólogo")))
+        .then(snap => setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+        .catch(err => console.error("Error loading users:", err));
 
-     // Cargar estructura tablero
      const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
-        if(snap.exists()) {
-            const d = snap.data();
-            if(d.columns) {
-                // Merge inteligente de columnas
-                const mergedCols = DEFAULT_COLUMNS.map(def => {
-                    const saved = d.columns.find((c:Column) => c.key === def.key);
-                    return saved ? { ...def, ...saved } : def;
-                });
-                setColumns(mergedCols);
-            }
+        if(snap.exists() && snap.data().columns) {
+            const savedCols = snap.data().columns;
+            const merged = DEFAULT_COLUMNS.map(def => {
+                const found = savedCols.find((c:Column) => c.key === def.key);
+                return found ? { ...def, ...found } : def;
+            });
+            savedCols.forEach((c:Column) => {
+                if(!DEFAULT_COLUMNS.find(def => def.key === c.key)) merged.push(c);
+            });
+            setColumns(merged);
         }
      });
 
-     // Cargar datos (Worksheets)
      const unsubWorksheets = onSnapshot(collection(db, "hojasDeTrabajo"), (snap) => {
         snap.docChanges().forEach(change => {
             const data = { id: change.doc.id, ...change.doc.data() } as WorksheetData;
-            if (change.type === 'added' || change.type === 'modified') {
-                setGroups(prev => {
-                    const newGroups = [...prev];
-                    // Lógica para asignar al grupo correcto
-                    const targetId = data.lugarCalibracion === 'sitio' ? 'sitio' : 'laboratorio';
-                    const gIndex = newGroups.findIndex(g => g.id === targetId);
-                    if (gIndex === -1) return prev;
-
-                    const group = newGroups[gIndex];
-                    const rIndex = group.rows.findIndex(r => r.id === data.id);
-                    
-                    if (rIndex >= 0) group.rows[rIndex] = data;
-                    else group.rows.push(data);
-                    
-                    return newGroups;
-                });
-            }
-            // Handle delete logic if needed
+            setGroups(prev => {
+                const newGroups = [...prev];
+                if (change.type === 'removed') {
+                    return newGroups.map(g => ({...g, rows: g.rows.filter(r => r.id !== change.doc.id)}));
+                }
+                const targetId = data.lugarCalibracion === 'sitio' ? 'sitio' : 'laboratorio';
+                const gIndex = newGroups.findIndex(g => g.id === targetId);
+                if (gIndex === -1) return prev;
+                const group = newGroups[gIndex];
+                const rIndex = group.rows.findIndex(r => r.id === data.id);
+                if (rIndex >= 0) group.rows[rIndex] = { ...group.rows[rIndex], ...data };
+                else group.rows.push(data);
+                return newGroups;
+            });
         });
      });
-
      return () => { unsubBoard(); unsubWorksheets(); };
   }, []);
 
-  // --- HANDLERS MEMOIZADOS (Crucial para performance) ---
-  
-  const handleStartEdit = useCallback((gidx: number, ridx: number, key: string, val: any) => {
-      // Solo activar edición, el valor se pasa via prop inicial
-      setEditCell({ gidx, ridx, key });
-  }, []);
-
-  const handleSaveCell = useCallback((val: any) => {
-      if (!editCell) return;
-      const { gidx, ridx, key } = editCell;
-      
-      setGroups(prev => {
-          const newGroups = [...prev];
-          const row = newGroups[gidx]?.rows[ridx];
-          if (row) {
-              row[key] = val;
-              // Actualizar en Firebase
-              updateDoc(doc(db, "hojasDeTrabajo", row.id), { [key]: val, lastUpdated: new Date().toISOString() })
-                .catch(e => console.error("Error updating", e));
-          }
-          return newGroups;
-      });
-      setEditCell(null);
-  }, [editCell]);
+  // --- HANDLERS ---
+  const { navigateTo } = useNavigation();
+  const manejarNavegacion = useCallback((d: string) => {
+      if(['servicios','friday-servicios'].includes(d)) navigateTo('friday-servicios');
+      else if(['menu','inicio','mainmenu'].includes(d)) navigateTo('menu');
+      else navigateTo(d);
+  }, [navigateTo]);
 
   const handleAddRow = useCallback(async (gidx: number) => {
       const newId = `WS-${Date.now()}`;
       const newRow: WorksheetData = {
-          id: newId, certificado: "", cliente: "Nuevo Cliente", folio: `N-${Math.floor(Math.random()*1000)}`,
-          equipo: "Equipo", marca: "", modelo: "", serie: "", 
+          id: newId, certificado: "", cliente: "Cliente Nuevo", folio: `N-${Math.floor(Math.random()*1000)}`,
+          equipo: "Equipo Genérico", marca: "", modelo: "", serie: "", 
           lugarCalibracion: groups[gidx].id as any, status: 'pending', priority: 'medium',
           assignedTo: "", dueDate: new Date().toISOString()
       };
-      
-      // Optimistic update
-      setGroups(prev => {
-          const n = [...prev];
-          n[gidx].rows.push(newRow);
-          return n;
-      });
-      
       await setDoc(doc(db, "hojasDeTrabajo", newId), newRow);
   }, [groups]);
 
-  // --- NAVEGACIÓN ---
-  const { navigateTo } = useNavigation();
-  const manejarNavegacion = useCallback((d: string) => {
-      if(['servicios','friday-servicios'].includes(d)) navigateTo('friday-servicios');
-      else if(['menu','inicio'].includes(d)) navigateTo('menu');
-      else navigateTo(d);
-  }, [navigateTo]);
+  const handleSaveCell = useCallback((val: any) => {
+      if (!editCell) return;
+      const { gidx, ridx, key } = editCell;
+      setGroups(prev => {
+          const newGroups = [...prev];
+          if(newGroups[gidx]?.rows[ridx]) newGroups[gidx].rows[ridx][key] = val;
+          return newGroups;
+      });
+      const rowId = groups[gidx].rows[ridx].id;
+      updateDoc(doc(db, "hojasDeTrabajo", rowId), { [key]: val, lastUpdated: new Date().toISOString() }).catch(e => console.error(e));
+      setEditCell(null);
+  }, [editCell, groups]);
+
+  const handleAddColumn = async () => {
+      if(!newColData.label) return;
+      const newKey = newColData.label.toLowerCase().replace(/\s+/g, '_');
+      const newCol: Column = { key: newKey, label: newColData.label, type: newColData.type as any, width: 150, sortable: true };
+      const updatedCols = [...columns, newCol];
+      setColumns(updatedCols);
+      setShowAddCol(false);
+      setNewColData({ label: "", type: "text" });
+      await setDoc(doc(db, "tableros", "principal"), { columns: updatedCols }, { merge: true });
+  };
+
+  const handleDeleteSelected = async () => {
+      if(!confirm(`¿Eliminar ${selectedRows.length} equipos?`)) return;
+      const promises = selectedRows.map(sel => {
+          const row = groups[sel.gidx]?.rows[sel.ridx];
+          return row ? deleteDoc(doc(db, "hojasDeTrabajo", row.id)) : Promise.resolve();
+      });
+      await Promise.all(promises);
+      setSelectedRows([]);
+  };
 
   // --- DRAG & DROP ---
-  const handleDropRow = useCallback((e: React.DragEvent, type: 'row', target: {groupIndex: number, rowIndex: number}) => {
-      // Lógica simplificada para mover filas (implementar validaciones completas si se requiere)
-      console.log("Dropped on", target);
+  const handleDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
+      setDragItem(item);
+      e.dataTransfer.effectAllowed = "move";
   }, []);
 
+  const handleDrop = useCallback(async (e: React.DragEvent, targetGidxOrColIndex: number, targetRidx?: number) => {
+      e.preventDefault();
+      if (!dragItem) return;
 
-  if (!isMobile && sidebarAbierto) {
-    return (
-      <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338]">
-        <SidebarFriday onNavigate={manejarNavegacion} isOpen={sidebarAbierto} onToggle={() => setSidebarAbierto(!sidebarAbierto)} />
+      if (dragItem.type === 'column') {
+          const sourceIndex = dragItem.index;
+          const targetIndex = targetGidxOrColIndex;
+          if (sourceIndex === targetIndex) return;
+
+          const newCols = [...columns];
+          const [movedCol] = newCols.splice(sourceIndex, 1);
+          newCols.splice(targetIndex, 0, movedCol);
+          
+          setColumns(newCols);
+          setDragItem(null);
+          await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+          return;
+      }
+
+      if (dragItem.type === 'row' && typeof targetRidx === 'number') {
+          const sourceGidx = dragItem.gidx!;
+          const sourceRidx = dragItem.ridx!;
+          const targetGidx = targetGidxOrColIndex;
+          
+          if (sourceGidx === targetGidx && sourceRidx === targetRidx) return;
+
+          const newGroups = [...groups];
+          const [movedRow] = newGroups[sourceGidx].rows.splice(sourceRidx, 1);
+          const targetGroup = newGroups[targetGidx];
+          
+          movedRow.lugarCalibracion = targetGroup.id as any;
+          targetGroup.rows.splice(targetRidx, 0, movedRow);
+          
+          setGroups(newGroups);
+          setDragItem(null);
+
+          await updateDoc(doc(db, "hojasDeTrabajo", movedRow.id), { 
+              lugarCalibracion: targetGroup.id,
+              lastUpdated: new Date().toISOString()
+          });
+      }
+  }, [dragItem, groups, columns]);
+
+
+  return (
+    <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
+        {/* SIDEBAR RESPONSIVE */}
+        {/* En escritorio, si está abierto se muestra relativo (empuja el contenido). En movil es absolute */}
+        {sidebarAbierto && (
+            <div className={clsx(
+                "flex-shrink-0 bg-white h-full z-50 transition-all duration-300",
+                isMobile ? "fixed inset-y-0 left-0 shadow-xl w-64" : "relative w-64"
+            )}>
+                 <SidebarFriday onNavigate={manejarNavegacion} isOpen={sidebarAbierto} onToggle={() => setSidebarAbierto(!sidebarAbierto)} />
+            </div>
+        )}
+
+        {/* Overlay movil */}
+        {isMobile && sidebarAbierto && (
+            <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarAbierto(false)}></div>
+        )}
         
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0 ml-64 bg-white rounded-tl-3xl shadow-[0_0_20px_rgba(0,0,0,0.05)] my-2 mr-2 border border-[#d0d4e4]">
+        {/* CONTENIDO PRINCIPAL - OCUPA TODO EL RESTO (flex-1) */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-white relative transition-all duration-300">
            
-           {/* HEADER SUPERIOR */}
-           <div className="px-8 py-5 border-b border-[#d0d4e4] flex justify-between items-center bg-white rounded-tl-3xl">
-               <div>
-                   <h1 className="text-2xl font-bold text-[#323338]">Equipos en Calibración</h1>
-                   <p className="text-sm text-gray-500">Gestión operativa del laboratorio</p>
+           {/* HEADER */}
+           <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white">
+               <div className="flex items-center gap-4">
+                   {/* Botón Toggle Sidebar / Back */}
+                   <div className="flex items-center gap-2">
+                       {!sidebarAbierto && (
+                           <button onClick={() => setSidebarAbierto(true)} className="p-2 hover:bg-gray-100 rounded-md text-gray-600">
+                               <Menu className="w-6 h-6" />
+                           </button>
+                       )}
+                       <button onClick={() => manejarNavegacion('mainmenu')} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600" title="Volver al Menú">
+                           <ArrowLeft className="w-6 h-6" />
+                       </button>
+                   </div>
+
+                   <div>
+                       <h1 className="text-2xl font-bold text-[#323338] leading-tight">Equipos en Calibración</h1>
+                       <p className="text-sm text-gray-500">Tablero Principal</p>
+                   </div>
                </div>
                <div className="flex items-center gap-3">
-                   <div className="flex -space-x-2 px-4">
-                        {metrologos.slice(0,3).map(m => (
-                            <div key={m.id} className="w-8 h-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs">{m.name.charAt(0)}</div>
-                        ))}
-                   </div>
-                   <button className="p-2 hover:bg-gray-100 rounded-full"><Search className="w-5 h-5 text-gray-500"/></button>
                    <button className="p-2 hover:bg-gray-100 rounded-full"><Bell className="w-5 h-5 text-gray-500"/></button>
+                   <button className="p-2 hover:bg-gray-100 rounded-full"><Settings className="w-5 h-5 text-gray-500"/></button>
                </div>
            </div>
 
-           {/* CONTROLES Y FILTROS */}
-           <div className="px-8 py-3 flex items-center justify-between sticky top-0 z-40 bg-white shadow-sm">
-                <div className="flex gap-2">
-                    <button onClick={() => handleAddRow(0)} className="bg-[#0073ea] hover:bg-[#0060b9] text-white px-4 py-1.5 rounded text-sm font-medium flex items-center transition-colors">
+           {/* TOOLBAR */}
+           <div className="px-6 py-3 flex items-center justify-between sticky top-0 z-40 bg-white shadow-sm">
+                <div className="flex gap-2 items-center flex-wrap">
+                    <button onClick={() => handleAddRow(0)} className="bg-[#0073ea] hover:bg-[#0060b9] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center transition-colors shadow-sm">
                         <Plus className="w-4 h-4 mr-2"/> Nuevo Equipo
                     </button>
-                    <div className="relative">
-                        <Search className="w-4 h-4 absolute left-3 top-2 text-gray-400"/>
+                    <div className="relative ml-2">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-500"/>
                         <input 
                             value={search} 
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Buscar..." 
-                            className="pl-9 pr-3 py-1.5 border border-gray-300 rounded hover:border-blue-400 focus:border-blue-500 outline-none text-sm w-64 transition-colors"
+                            className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm w-64 transition-all bg-white text-gray-900 placeholder-gray-400"
                         />
                     </div>
                 </div>
                 <div className="flex gap-2">
                     <button className="flex items-center px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"><Filter className="w-4 h-4 mr-1"/> Filtros</button>
-                    <button className="flex items-center px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"><Settings className="w-4 h-4 mr-1"/> Ajustes</button>
                 </div>
            </div>
 
-           {/* TABLA PRINCIPAL */}
-           <div className="flex-1 overflow-auto pl-8 pr-2 pb-10 bg-white">
-               <div className="inline-block min-w-full pb-4">
+           {/* TABLA */}
+           <div className="flex-1 overflow-auto pl-6 pr-2 pb-24 bg-white">
+               <div className="inline-block min-w-full pb-4 relative">
                    
-                   {/* HEADERS DE COLUMNA */}
-                   <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm">
-                       <div className="w-10 flex-shrink-0 border-r border-[#d0d4e4] bg-white sticky left-0 z-30 flex items-center justify-center">
+                   {/* Header Columnas */}
+                   <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm h-10">
+                       <div className="w-1.5 sticky left-0 bg-white z-30"></div>
+                       <div className="w-10 border-r border-[#d0d4e4] bg-white sticky left-1.5 z-30 flex items-center justify-center">
                            <input type="checkbox" className="rounded border-gray-300" />
                        </div>
-                       {/* Separador de color sticky placeholder */}
-                       <div className="w-1.5 sticky left-10 bg-white z-30 border-r border-[#d0d4e4]"></div>
-
-                       {columns.filter(c => !c.hidden).map((col, i) => (
+                       
+                       {columns.filter(c => !c.hidden).map((col, index) => (
                            <div key={col.key} 
-                                style={{ 
-                                    width: col.width,
-                                    left: col.sticky ? 46 : undefined, // 40 (check) + 6 (color bar)
-                                    position: col.sticky ? 'sticky' : undefined,
-                                    zIndex: col.sticky ? 30 : undefined
-                                }}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, { type: 'column', index })}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => handleDrop(e, index)}
+                                style={{ width: col.width, left: col.sticky ? 46 : undefined, position: col.sticky ? 'sticky' : undefined, zIndex: col.sticky ? 30 : undefined }}
                                 className={clsx(
-                                    "px-2 py-2 text-xs font-bold text-gray-500 text-center border-r border-[#d0d4e4] bg-white select-none flex items-center justify-center hover:bg-gray-50",
+                                    "px-2 text-xs font-bold text-gray-500 text-center border-r border-[#d0d4e4] bg-white select-none flex items-center justify-center hover:bg-gray-50 cursor-grab active:cursor-grabbing", 
                                     col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
                                 )}
                             >
                                {col.label}
                            </div>
                        ))}
-                       <div className="w-10 flex items-center justify-center border-r border-gray-200"><Plus className="w-4 h-4 text-gray-400"/></div>
+                       
+                       <div className="w-10 flex items-center justify-center border-r border-gray-200 hover:bg-gray-100 cursor-pointer" onClick={() => setShowAddCol(true)}>
+                           <Plus className="w-4 h-4 text-gray-400"/>
+                       </div>
                    </div>
 
-                   {/* GRUPOS DE FILAS */}
+                   {/* Grupos */}
                    {groups.map((group, gidx) => (
                        <div key={group.id} className="mt-6">
-                           {/* Header de Grupo */}
-                           <div className="flex items-center mb-1 sticky left-0 pl-2">
-                               <ChevronDown className="w-5 h-5 text-[#0073ea] cursor-pointer" />
+                           <div className="flex items-center mb-1 sticky left-0 pl-2 bg-white z-10">
+                               <ChevronDown className={clsx("w-5 h-5 text-[#0073ea] cursor-pointer transition-transform", group.collapsed && "-rotate-90")} 
+                                            onClick={()=>{ const n = [...groups]; n[gidx].collapsed = !n[gidx].collapsed; setGroups(n); }}/>
                                <h2 className="text-lg font-medium ml-1" style={{color: group.color}}>{group.name}</h2>
                                <span className="ml-3 text-xs text-gray-400 border px-2 rounded-full">{group.rows.length} items</span>
                            </div>
-
-                           {/* Filas del Grupo */}
-                           <div className="border-t border-[#d0d4e4]">
-                               {group.rows
-                                 .filter(r => !search || JSON.stringify(r).toLowerCase().includes(search.toLowerCase()))
-                                 .map((row, ridx) => (
-                                   <BoardRow 
-                                      key={row.id || ridx}
-                                      row={row}
-                                      columns={columns}
-                                      gidx={gidx}
-                                      ridx={ridx}
-                                      color={group.color}
-                                      isSelected={selectedRows.some(s => s.gidx === gidx && s.ridx === ridx)}
-                                      editCell={editCell}
-                                      onToggleSelect={(gx, rx) => {
-                                          const exists = selectedRows.some(s => s.gidx === gx && s.ridx === rx);
-                                          if(exists) setSelectedRows(prev => prev.filter(s => !(s.gidx === gx && s.ridx === rx)));
-                                          else setSelectedRows(prev => [...prev, {gidx: gx, ridx: rx}]);
-                                      }}
-                                      onStartEdit={handleStartEdit}
-                                      onSaveCell={handleSaveCell}
-                                      onCancelEdit={() => setEditCell(null)}
-                                      metrologos={metrologos}
-                                      handleDragStart={() => {}}
-                                      handleDrop={() => {}}
-                                   />
-                               ))}
-                               
-                               {/* Input para añadir rápido */}
-                               <div className="flex h-9 border-b border-[#d0d4e4] group">
-                                   <div className="w-1.5 bg-transparent sticky left-0"></div>
-                                   <div className="w-10 border-r border-[#d0d4e4] sticky left-0 bg-white"></div>
-                                   <div className="pl-2 flex items-center sticky left-[46px] bg-white">
-                                       <input 
-                                          type="text" 
-                                          placeholder="+ Añadir" 
-                                          className="outline-none text-sm w-48 h-full placeholder-gray-400 hover:bg-gray-50 px-2"
-                                          onKeyDown={(e) => e.key === 'Enter' && handleAddRow(gidx)}
+                           {!group.collapsed && (
+                               <div className="border-t border-[#d0d4e4]">
+                                   {group.rows.filter(r => !search || JSON.stringify(r).toLowerCase().includes(search.toLowerCase())).map((row, ridx) => (
+                                       <BoardRow key={row.id || ridx} row={row} columns={columns} gidx={gidx} ridx={ridx} color={group.color}
+                                          isSelected={selectedRows.some(s => s.gidx === gidx && s.ridx === ridx)}
+                                          editCell={editCell}
+                                          onToggleSelect={(gx, rx) => {
+                                              const exists = selectedRows.some(s => s.gidx === gx && s.ridx === rx);
+                                              if(exists) setSelectedRows(prev => prev.filter(s => !(s.gidx === gx && s.ridx === rx)));
+                                              else setSelectedRows(prev => [...prev, {gidx: gx, ridx: rx}]);
+                                          }}
+                                          onStartEdit={(gx, rx, k, v) => setEditCell({gidx: gx, ridx: rx, key: k})}
+                                          onSaveCell={handleSaveCell} onCancelEdit={() => setEditCell(null)} metrologos={metrologos}
+                                          onDragStart={handleDragStart} onDrop={handleDrop}
                                        />
+                                   ))}
+                                   <div className="flex h-9 border-b border-[#d0d4e4] group">
+                                       <div className="w-1.5 bg-transparent sticky left-0 z-10"></div>
+                                       <div className="w-10 border-r border-[#d0d4e4] sticky left-1.5 bg-white z-10"></div>
+                                       <div className="pl-2 flex items-center sticky left-[46px] bg-white z-10">
+                                           <input type="text" placeholder="+ Añadir" className="outline-none text-sm w-48 h-full placeholder-gray-400 hover:bg-gray-50 px-2 bg-transparent"
+                                              onKeyDown={(e) => e.key === 'Enter' && handleAddRow(gidx)} />
+                                       </div>
                                    </div>
+                               </div>
+                           )}
+                       </div>
+                   ))}
+               </div>
+           </div>
+           
+           {/* MENU FLOTANTE BULK ACTIONS */}
+           {selectedRows.length > 0 && (
+               <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 z-50 animate-in slide-in-from-bottom-4">
+                   <div className="flex items-center gap-3 border-r border-gray-200 pr-6">
+                       <div className="bg-[#0073ea] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">{selectedRows.length}</div>
+                       <span className="text-sm font-medium text-gray-700">Seleccionados</span>
+                   </div>
+                   <div className="flex gap-4">
+                       <button onClick={handleDeleteSelected} className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors">
+                           <Trash2 className="w-5 h-5" />
+                           <span className="text-[10px]">Eliminar</span>
+                       </button>
+                   </div>
+                   <button onClick={() => setSelectedRows([])} className="ml-2 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+               </div>
+           )}
+
+           {/* MODAL AGREGAR COLUMNA */}
+           {showAddCol && (
+               <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center">
+                   <div className="bg-white rounded-lg shadow-2xl w-96 p-6">
+                       <h3 className="text-lg font-bold mb-4">Nueva Columna</h3>
+                       <div className="space-y-4">
+                           <div>
+                               <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Título</label>
+                               <input autoFocus value={newColData.label} onChange={e => setNewColData({...newColData, label: e.target.value})}
+                                   className="w-full border border-gray-300 rounded p-2 text-sm focus:border-blue-500 outline-none text-black bg-white"/>
+                           </div>
+                           <div>
+                               <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Tipo</label>
+                               <div className="grid grid-cols-3 gap-2">
+                                   {[
+                                       {id: 'text', icon: Type, label: 'Texto'},
+                                       {id: 'number', icon: Hash, label: 'Num'},
+                                       {id: 'date', icon: Calendar, label: 'Fecha'},
+                                       {id: 'dropdown', icon: List, label: 'Estado'},
+                                       {id: 'person', icon: UserCircle, label: 'Persona'},
+                                   ].map(t => (
+                                       <div key={t.id} onClick={() => setNewColData({...newColData, type: t.id})}
+                                            className={clsx("border rounded p-2 flex flex-col items-center cursor-pointer hover:bg-blue-50", newColData.type === t.id ? "border-blue-500 bg-blue-50 text-blue-600" : "border-gray-200")}>
+                                            <t.icon className="w-5 h-5 mb-1"/>
+                                            <span className="text-xs">{t.label}</span>
+                                       </div>
+                                   ))}
                                </div>
                            </div>
                        </div>
-                   ))}
-
+                       <div className="mt-6 flex justify-end gap-2">
+                           <button onClick={() => setShowAddCol(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded text-sm">Cancelar</button>
+                           <button onClick={handleAddColumn} className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Crear Columna</button>
+                       </div>
+                   </div>
                </div>
-           </div>
+           )}
         </div>
-      </div>
-    );
-  }
-
-  // Vista móvil simplificada
-  return (
-      <div className="flex flex-col h-screen bg-white">
-          <div className="p-4 border-b flex justify-between items-center shadow-sm">
-              <div className="flex items-center gap-2" onClick={() => setSidebarAbierto(true)}>
-                  <Home className="w-5 h-5 text-blue-600"/>
-                  <span className="font-bold text-lg">Equipos</span>
-              </div>
-              <Plus className="w-6 h-6 text-blue-600" onClick={() => handleAddRow(0)}/>
-          </div>
-          <div className="flex-1 overflow-y-auto bg-gray-50 p-2">
-              {groups.map(g => (
-                  <div key={g.id} className="mb-4 bg-white rounded shadow-sm overflow-hidden border border-gray-100">
-                      <div className="px-4 py-2 font-bold text-sm uppercase tracking-wide" style={{color: g.color, borderLeft: `4px solid ${g.color}`}}>
-                          {g.name}
-                      </div>
-                      {g.rows.map(r => (
-                          <div key={r.id} className="p-3 border-b border-gray-100 flex justify-between items-center">
-                              <div>
-                                  <div className="font-medium text-gray-800">{r.folio || "Sin Folio"}</div>
-                                  <div className="text-xs text-gray-500">{r.equipo}</div>
-                              </div>
-                              <span className="px-2 py-1 rounded text-xs font-bold text-white" style={{backgroundColor: STATUS_CONFIG[r.status]?.bg}}>
-                                  {STATUS_CONFIG[r.status]?.label}
-                              </span>
-                          </div>
-                      ))}
-                  </div>
-              ))}
-          </div>
-          {sidebarAbierto && (
-            <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setSidebarAbierto(false)}>
-                <div className="w-3/4 h-full bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
-                    <SidebarFriday onNavigate={manejarNavegacion} isOpen={true} onToggle={() => setSidebarAbierto(false)} />
-                </div>
-            </div>
-          )}
-      </div>
+    </div>
   );
 };
 
