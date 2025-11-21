@@ -3,8 +3,7 @@ import {
   collection, 
   query, 
   getDocs, 
-  orderBy, 
-  limit 
+  orderBy 
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { useNavigation } from '../hooks/useNavigation';
@@ -16,10 +15,9 @@ import {
   Clock, 
   CheckCircle2, 
   Mail, 
-  Phone, 
-  Filter,
-  Building2,
-  Download
+  Download,
+  Send,
+  Building2 // 🚨 AGREGADO AQUÍ (Faltaba este import)
 } from 'lucide-react';
 import { addMonths, addYears, differenceInDays, parseISO, format, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -27,8 +25,8 @@ import * as XLSX from 'xlsx';
 
 // --- Tipos ---
 interface EquipoVencimiento {
-  id: string; // ID del documento
-  equipoId: string; // ID del equipo (folio o identificador)
+  id: string; 
+  equipoId: string; 
   descripcion: string;
   cliente: string;
   fechaCalibracion: string;
@@ -36,7 +34,7 @@ interface EquipoVencimiento {
   fechaVencimiento: Date;
   diasRestantes: number;
   status: 'vencido' | 'critico' | 'proximo' | 'vigente';
-  contacto?: string; // Opcional si guardas datos de contacto en la hoja
+  contacto?: string; 
   telefono?: string;
   correo?: string;
 }
@@ -46,29 +44,24 @@ export const VencimientosScreen: React.FC = () => {
   const [equipos, setEquipos] = useState<EquipoVencimiento[]>([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('todos'); // todos, vencido, critico, proximo
+  const [filtroEstado, setFiltroEstado] = useState('todos'); 
 
   // --- Lógica de Cálculo de Fechas ---
   const calcularFechaVencimiento = (fechaStr: string, frecuenciaStr: string): Date | null => {
     if (!fechaStr || !frecuenciaStr) return null;
-    
     try {
       const fechaBase = parseISO(fechaStr);
       if (!isValid(fechaBase)) return null;
-
       const freqLower = frecuenciaStr.toLowerCase();
       
-      // Lógica simple de parsing basada en tus opciones de WorkSheetScreen
       if (freqLower.includes('1 año')) return addYears(fechaBase, 1);
       if (freqLower.includes('2 años')) return addYears(fechaBase, 2);
       if (freqLower.includes('3 años')) return addYears(fechaBase, 3);
       if (freqLower.includes('3 meses')) return addMonths(fechaBase, 3);
       if (freqLower.includes('6 meses')) return addMonths(fechaBase, 6);
       
-      return addYears(fechaBase, 1); // Default 1 año
-    } catch (e) {
-      return null;
-    }
+      return addYears(fechaBase, 1); 
+    } catch (e) { return null; }
   };
 
   // --- Carga de Datos ---
@@ -76,12 +69,8 @@ export const VencimientosScreen: React.FC = () => {
     const fetchEquipos = async () => {
       setLoading(true);
       try {
-        // Traemos las hojas de trabajo. 
-        // NOTA: Si tienes miles de registros, idealmente deberías filtrar por fecha en Firebase.
-        // Por ahora traemos todo para procesar en cliente.
         const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc"));
         const querySnapshot = await getDocs(q);
-        
         const listaProcesada: EquipoVencimiento[] = [];
         const hoy = new Date();
 
@@ -91,13 +80,12 @@ export const VencimientosScreen: React.FC = () => {
 
           if (fechaVenc) {
             const dias = differenceInDays(fechaVenc, hoy);
-            
             let status: EquipoVencimiento['status'] = 'vigente';
+            
             if (dias < 0) status = 'vencido';
-            else if (dias <= 30) status = 'critico'; // Menos de un mes
-            else if (dias <= 60) status = 'proximo'; // Entre 1 y 2 meses
+            else if (dias <= 30) status = 'critico'; 
+            else if (dias <= 60) status = 'proximo'; 
 
-            // Solo agregamos si es relevante (no mostramos vigentes de más de 1 año de antiguedad si ya se vencieron hace mucho, opcional)
             listaProcesada.push({
               id: doc.id,
               equipoId: data.id || data.certificado || 'S/N',
@@ -111,10 +99,7 @@ export const VencimientosScreen: React.FC = () => {
             });
           }
         });
-
-        // Ordenar por los más urgentes primero
         listaProcesada.sort((a, b) => a.diasRestantes - b.diasRestantes);
-        
         setEquipos(listaProcesada);
       } catch (error) {
         console.error("Error cargando equipos:", error);
@@ -122,7 +107,6 @@ export const VencimientosScreen: React.FC = () => {
         setLoading(false);
       }
     };
-
     fetchEquipos();
   }, []);
 
@@ -137,14 +121,46 @@ export const VencimientosScreen: React.FC = () => {
       const matchEstado = filtroEstado === 'todos' 
         ? true 
         : filtroEstado === 'accion' 
-          ? (item.status === 'vencido' || item.status === 'critico' || item.status === 'proximo') // Muestra todo lo que requiere acción
+          ? (item.status === 'vencido' || item.status === 'critico' || item.status === 'proximo') 
           : item.status === filtroEstado;
 
       return matchTexto && matchEstado;
     });
   }, [equipos, busqueda, filtroEstado]);
 
-  // --- Exportar a Excel para Calidad ---
+  // --- NUEVO: DETECTAR EQUIPOS A 60 DÍAS ---
+  const equiposA60Dias = useMemo(() => {
+    // Filtramos equipos que vencen entre 50 y 65 días (un rango seguro para no perder ninguno)
+    return equipos.filter(e => e.diasRestantes >= 50 && e.diasRestantes <= 65);
+  }, [equipos]);
+
+  // --- NUEVO: FUNCIÓN PARA ENVIAR REPORTE A CALIDAD ---
+  const enviarReporteCalidad = () => {
+    if (equiposA60Dias.length === 0) {
+        alert("No hay equipos en el rango de 60 días para reportar hoy.");
+        return;
+    }
+
+    const destinatario = "calidad@ese-ag.mx";
+    const asunto = `⚠️ ALERTA: ${equiposA60Dias.length} Equipos próximos a vencer (60 días)`;
+    
+    let cuerpo = `Hola Calidad,\n\nEl sistema ha detectado los siguientes equipos que vencerán en aproximadamente 60 días. Es momento de contactar al cliente:\n\n`;
+
+    equiposA60Dias.forEach(e => {
+        cuerpo += `🔹 ${e.equipoId} - ${e.descripcion}\n`;
+        cuerpo += `   Cliente: ${e.cliente}\n`;
+        cuerpo += `   Vence: ${format(e.fechaVencimiento, 'dd/MM/yyyy')} (Faltan ${e.diasRestantes} días)\n\n`;
+    });
+
+    cuerpo += `\nPor favor gestionar su reprogramación.\n\nSistema de Gestión ESE-AG`;
+
+    const mailtoLink = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+    
+    // Abrir cliente de correo
+    window.location.href = mailtoLink;
+  };
+
+  // --- Exportar a Excel ---
   const exportarExcel = () => {
     const dataExportar = equiposFiltrados.map(e => ({
       Cliente: e.cliente,
@@ -155,14 +171,13 @@ export const VencimientosScreen: React.FC = () => {
       'Días Restantes': e.diasRestantes,
       Estado: e.status.toUpperCase()
     }));
-
     const ws = XLSX.utils.json_to_sheet(dataExportar);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vencimientos");
     XLSX.writeFile(wb, `Reporte_Vencimientos_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
-  // --- Generar Link de Correo ---
+  // --- Generar Link de Correo Individual ---
   const generarLinkCorreo = (equipo: EquipoVencimiento) => {
     const subject = `Recordatorio de Calibración Próxima - ${equipo.equipoId}`;
     const body = `Estimado cliente,\n\nLe informamos que el equipo ${equipo.descripcion} (ID: ${equipo.equipoId}) tiene su calibración vencida o próxima a vencer el día ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}.\n\nPor favor contáctenos para programar su servicio.\n\nSaludos,\nEquipos y Servicios AG`;
@@ -188,11 +203,22 @@ export const VencimientosScreen: React.FC = () => {
           </div>
           
           <div className="flex gap-2">
+             {/* BOTÓN NUEVO: NOTIFICAR A CALIDAD */}
+             {equiposA60Dias.length > 0 && (
+                 <button 
+                    onClick={enviarReporteCalidad}
+                    className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-all shadow-sm text-sm font-medium animate-pulse"
+                    title="Enviar reporte de equipos a 60 días"
+                 >
+                    <Send size={16} /> Notificar a Calidad ({equiposA60Dias.length})
+                 </button>
+             )}
+
              <button 
                 onClick={exportarExcel}
                 className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium"
              >
-                <Download size={16} /> Exportar Excel
+                <Download size={16} /> Excel
              </button>
           </div>
         </div>
@@ -201,6 +227,27 @@ export const VencimientosScreen: React.FC = () => {
       {/* Contenido Principal */}
       <div className="max-w-7xl mx-auto p-4 md:p-6">
         
+        {/* Alerta visual si hay equipos a 60 días */}
+        {equiposA60Dias.length > 0 && (
+            <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-full text-orange-600">
+                        <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-orange-800">Atención Calidad</h3>
+                        <p className="text-sm text-orange-700">
+                            Hay <strong>{equiposA60Dias.length} equipos</strong> que vencen en el rango de 60 días. 
+                            Revisa la lista o envía el reporte.
+                        </p>
+                    </div>
+                </div>
+                <button onClick={() => setFiltroEstado('proximo')} className="text-sm font-semibold text-orange-600 hover:text-orange-800 underline">
+                    Ver Equipos
+                </button>
+            </div>
+        )}
+
         {/* Filtros y KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             {/* Stats Cards */}
@@ -306,11 +353,10 @@ export const VencimientosScreen: React.FC = () => {
                                             <a 
                                                 href={generarLinkCorreo(item)}
                                                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                title="Enviar correo recordatorio"
+                                                title="Enviar correo recordatorio al cliente"
                                             >
                                                 <Mail size={18} />
                                             </a>
-                                            {/* Aquí podrías agregar botón de WhatsApp si tuvieras el número */}
                                         </div>
                                     </td>
                                 </tr>

@@ -202,7 +202,7 @@ const getUserDisplayName = async (user: any) => {
   return 'Usuario';
 };
 
-// --- OPTIMISTIC UI HELPERS (CRUCIAL PARA LA VELOCIDAD) ---
+// --- OPTIMISTIC UI HELPERS ---
 const updateFileInTree = (folder: DriveFolder, filePath: string, updates: Partial<DriveFile>): DriveFolder => {
   const fileIndex = folder.files.findIndex(f => f.fullPath === filePath);
   if (fileIndex > -1) {
@@ -491,8 +491,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, []);
 
   async function reloadTree() {
-    // setLoading(true); // NO BLOQUEAR TODA LA PANTALLA PARA PEQUEÑOS CAMBIOS
-    // SOLO INICIO
     if (!tree) setLoading(true); 
     try {
       const rootTree = await fetchFolder([]);
@@ -580,7 +578,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const handleToggleStar = async (file: DriveFile) => {
       if (!user || !tree) return;
       const newStarred = !file.starred;
-      // 1. Optimistic Update
       setTree(prev => prev ? updateFileInTree(prev, file.fullPath, { starred: newStarred }) : null);
       try {
           const id = file.fullPath.replace(/\//g, '_');
@@ -594,7 +591,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const newReviewed = !file.reviewed;
       const userName = await getUserDisplayName(user);
       
-      // 1. Optimistic Update
       setTree(prev => prev ? updateFileInTree(prev, file.fullPath, { 
           reviewed: newReviewed, 
           reviewedBy: newReviewed ? user.email : undefined,
@@ -618,7 +614,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       const newCompleted = !file.completed;
       const userName = await getUserDisplayName(user);
 
-      // 1. Optimistic Update
       setTree(prev => prev ? updateFileInTree(prev, file.fullPath, { 
           completed: newCompleted,
           completedBy: newCompleted ? user.email : undefined,
@@ -642,10 +637,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       if (!moveTargetFile || !user) return;
       setMoveDialogOpen(false);
       
-      // 1. Optimistic Update (Remove from current view instantly)
       setTree(prev => prev ? removeFileFromTree(prev, moveTargetFile.fullPath) : null);
 
-      // Calculate New Path
       const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
       const newFullPath = `${destinationPathString}/${moveTargetFile.name}`;
       
@@ -670,12 +663,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
           await deleteObject(ref(storage, moveTargetFile.fullPath));
           logActivity('move', moveTargetFile.name);
-          // No reload needed if optimistic worked, but good to sync eventually
-          // reloadTree(); 
       } catch (e) {
           console.error(e);
           setError("Error al mover archivo");
-          reloadTree(); // Revert on error
+          reloadTree(); 
       }
   };
 
@@ -696,7 +687,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const handleDeleteFile = async () => {
     if (!deleteFile) return;
-    // Optimistic
     setDeleteFile(null);
     setTree(prev => prev ? removeFileFromTree(prev, deleteFile.fullPath) : null);
 
@@ -736,7 +726,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       </Container>
   );
 
-  // Calculate move folder content
   const moveFolderContent = getFolderContentForMove();
 
   return (
@@ -880,7 +869,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                             sx={{ fontSize: '0.875rem' }}
                         >
                             <MenuItem value="name-asc">Nombre (A-Z)</MenuItem>
-                            <MenuItem value="date-desc">Última modificación</MenuItem>
+                            <MenuItem value="name-desc">Nombre (Z-A)</MenuItem>
+                            <MenuItem value="date-desc">Más reciente</MenuItem>
+                            <MenuItem value="date-asc">Más antiguo</MenuItem>
                         </Select>
                     </FormControl>
                 </Stack>
