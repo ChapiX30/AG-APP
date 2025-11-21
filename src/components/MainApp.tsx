@@ -27,6 +27,9 @@ const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
 
+// 🚨 NUEVO: Importación Lazy de VencimientosScreen
+const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
+
 // --- Loader Component ---
 const Loader = () => (
   <div className="w-full h-screen flex flex-col items-center justify-center bg-slate-950 z-50 fixed top-0 left-0">
@@ -127,6 +130,10 @@ export const MainApp: React.FC = () => {
     case 'normas': return <Suspense fallback={<Loader />}><NormasScreen /></Suspense>;
     case 'check-list': return <Suspense fallback={<Loader />}><InventoryProScreen /></Suspense>;
     case 'friday': return <Suspense fallback={<Loader />}><FridayScreen /></Suspense>;
+    
+    // 🚨 NUEVO CASE PARA VENCIMIENTOS
+    case 'vencimientos': return <Suspense fallback={<Loader />}><VencimientosScreen /></Suspense>;
+
     default: return <MainMenu />;
   }
 };

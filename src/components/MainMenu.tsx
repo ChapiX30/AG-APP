@@ -5,7 +5,7 @@ import {
   Calendar, Building2, FileText, ClipboardList, BookOpen,
   Settings, LogOut, User, Database, FolderKanban, Bell, Check, 
   TrendingUp, Menu as MenuIcon, X, ChevronRight, Sparkles, 
-  Activity, Award, Clock, ArrowRightLeft // 🚨 1. ÍCONO NUEVO IMPORTADO
+  Activity, Award, Clock, ArrowRightLeft
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
@@ -25,6 +25,15 @@ const menuItems = [
     icon: Calendar, 
     gradient: 'from-blue-500 via-blue-600 to-indigo-600',
     description: 'Gestiona tus eventos',
+    available: true 
+  },
+  // 🚨 NUEVO MÓDULO DE VENCIMIENTOS
+  { 
+    id: 'vencimientos', 
+    title: 'Vencimientos', 
+    icon: Bell, 
+    gradient: 'from-red-500 via-orange-500 to-yellow-500',
+    description: 'Monitor de equipos por vencer',
     available: true 
   },
   { 
@@ -99,12 +108,11 @@ const menuItems = [
     description: 'Administración de patrones de referencia', 
     available: true 
   },
-  // 🚨 2. NUEVO BOTÓN AGREGADO AQUÍ
   { 
     id: 'control-prestamos', 
     title: 'Préstamos', 
     icon: ArrowRightLeft, 
-    gradient: 'from-orange-500 via-orange-600 to-red-600', // Color distintivo
+    gradient: 'from-orange-500 via-orange-600 to-red-600',
     description: 'Entradas y salidas de equipo',
     available: true 
   },
@@ -115,19 +123,19 @@ export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { logout, user } = useAuth();
   
-  // ============= IDENTIFICACIÓN DE ROLES (MODIFICADO) =============
+  // ============= IDENTIFICACIÓN DE ROLES =============
   const getRole = (u: any) => 
     ((u?.puesto ?? "").trim().toLowerCase()) ||
     ((u?.position ?? "").trim().toLowerCase()) ||
     ((u?.role ?? "").trim().toLowerCase()) || "";
 
   const userRole = getRole(user); 
-  
   const userName = ((user as any)?.name || "").trim().toLowerCase(); 
   
   // Variables de Rol
   const isJefe = userRole === "administrativo";
   const isMetrologo = userRole === "metrólogo";
+  const isCalidad = userRole === "calidad";
   
   // --- REGLA ESPECÍFICA PARA JESUS SUSTAITA (CALIDAD) ---
   const isJesusSustaitaCalidad = (userName === "jesus sustaita" && userRole === "calidad");
@@ -138,14 +146,19 @@ export const MainMenu: React.FC = () => {
     
     // --- LÓGICA PARA JESUS SUSTAITA ---
     if (isJesusSustaitaCalidad) {
-      // 🚨 3. AHORA PUEDE VER 'PATRONES' Y 'PRÉSTAMOS'
-      return item.id === 'programa-calibracion' || item.id === 'control-prestamos'; 
+      // Ahora puede ver Patrones, Préstamos Y Vencimientos
+      return item.id === 'programa-calibracion' || item.id === 'control-prestamos' || item.id === 'vencimientos'; 
     }
     // ---
     
-    // Lógica existente para 'Jefe' (administrativo)
+    // Solo administrativos ven estadísticas
     if (item.id === "calibration-stats") {
       return isJefe;
+    }
+
+    // 🚨 LÓGICA PARA VENCIMIENTOS: Solo Calidad y Administrativos
+    if (item.id === "vencimientos") {
+      return isJefe || isCalidad;
     }
     
     // Para todos los demás, muestra el resto.
@@ -500,7 +513,7 @@ export const MainMenu: React.FC = () => {
     </div>
   );
 
-  // ============= LÓGICA DE NIVELES (CON COLORES) =============
+  // ============= LÓGICA DE NIVELES =============
   const levelDefinitions = [
     { min: 0, title: 'I', badge: 'bg-gradient-to-r from-cyan-500 to-blue-500', titleColor: 'text-cyan-300', progress: 'from-cyan-500 via-blue-500 to-indigo-500' },
     { min: 10, title: 'II', badge: 'bg-gradient-to-r from-emerald-500 to-green-500', titleColor: 'text-emerald-300', progress: 'from-emerald-500 via-green-500 to-teal-500' },
@@ -512,7 +525,7 @@ export const MainMenu: React.FC = () => {
   ];
 
 
-  // Componente de Progreso de Metrólogo (CON COLORES)
+  // Componente de Progreso de Metrólogo
   const MetrologoProgressTip = () => {
     if (!isMetrologo || !showMetrologoTip || equipmentCount === 0) return null;
     
