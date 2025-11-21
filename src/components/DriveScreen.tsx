@@ -202,6 +202,7 @@ const getUserDisplayName = async (user: any) => {
   return 'Usuario';
 };
 
+// --- OPTIMISTIC UI HELPERS (CRUCIAL PARA LA VELOCIDAD) ---
 const updateFileInTree = (folder: DriveFolder, filePath: string, updates: Partial<DriveFile>): DriveFolder => {
   const fileIndex = folder.files.findIndex(f => f.fullPath === filePath);
   if (fileIndex > -1) {
@@ -209,13 +210,14 @@ const updateFileInTree = (folder: DriveFolder, filePath: string, updates: Partia
     updatedFiles[fileIndex] = { ...updatedFiles[fileIndex], ...updates };
     return { ...folder, files: updatedFiles };
   }
-  const folderIndex = folder.folders.findIndex(f => filePath.startsWith(f.fullPath));
-  if (folderIndex > -1) {
-    const updatedFolders = [...folder.folders];
-    updatedFolders[folderIndex] = updateFileInTree(updatedFolders[folderIndex], filePath, updates);
-    return { ...folder, folders: updatedFolders };
-  }
-  return folder;
+  const updatedFolders = folder.folders.map(subFolder => updateFileInTree(subFolder, filePath, updates));
+  return { ...folder, folders: updatedFolders };
+};
+
+const removeFileFromTree = (folder: DriveFolder, filePath: string): DriveFolder => {
+    const newFiles = folder.files.filter(f => f.fullPath !== filePath);
+    const newFolders = folder.folders.map(subFolder => removeFileFromTree(subFolder, filePath));
+    return { ...folder, files: newFiles, folders: newFolders };
 };
 
 const ROOT_PATH = "worksheets";
@@ -399,7 +401,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // MOVE STATES
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTargetFile, setMoveTargetFile] = useState<DriveFile | null>(null);
-  const [moveToPath, setMoveToPath] = useState<string[]>([]); // Navegacion dentro del modal mover
+  const [moveToPath, setMoveToPath] = useState<string[]>([]);
 
   // Process States
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -489,8 +491,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, []);
 
   async function reloadTree() {
-    setLoading(true);
-    setError(null);
+    // setLoading(true); // NO BLOQUEAR TODA LA PANTALLA PARA PEQUEÑOS CAMBIOS
+    // SOLO INICIO
+    if (!tree) setLoading(true); 
     try {
       const rootTree = await fetchFolder([]);
       setTree(rootTree);
@@ -573,22 +576,31 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     });
   }, [currentFolder, debouncedSearch, tree, allFilesCache, sortBy, sortOrder]);
 
-  // --- ACTIONS ---
+  // --- ACTIONS (OPTIMIZED) ---
   const handleToggleStar = async (file: DriveFile) => {
-      if (!user) return;
+      if (!user || !tree) return;
       const newStarred = !file.starred;
+      // 1. Optimistic Update
+      setTree(prev => prev ? updateFileInTree(prev, file.fullPath, { starred: newStarred }) : null);
       try {
           const id = file.fullPath.replace(/\//g, '_');
           await setDoc(doc(db, 'fileMetadata', id), { starred: newStarred }, { merge: true });
           logActivity(newStarred ? 'star' : 'unstar', file.name);
-          reloadTree();
       } catch (e) { reloadTree(); }
   };
 
   const handleMarkReviewed = async (file: DriveFile) => {
-      if (!user) return;
+      if (!user || !tree) return;
       const newReviewed = !file.reviewed;
       const userName = await getUserDisplayName(user);
+      
+      // 1. Optimistic Update
+      setTree(prev => prev ? updateFileInTree(prev, file.fullPath, { 
+          reviewed: newReviewed, 
+          reviewedBy: newReviewed ? user.email : undefined,
+          reviewedByName: newReviewed ? userName : undefined
+      }) : null);
+
       try {
           const id = file.fullPath.replace(/\//g, '_');
           await setDoc(doc(db, 'fileMetadata', id), { 
@@ -598,14 +610,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               reviewedAt: newReviewed ? new Date().toISOString() : null
           }, { merge: true });
           logActivity(newReviewed ? 'review' : 'unreview', file.name);
-          reloadTree();
       } catch (e) { console.error(e); reloadTree(); }
   };
 
   const handleMarkCompleted = async (file: DriveFile) => {
-      if (!user) return;
+      if (!user || !tree) return;
       const newCompleted = !file.completed;
       const userName = await getUserDisplayName(user);
+
+      // 1. Optimistic Update
+      setTree(prev => prev ? updateFileInTree(prev, file.fullPath, { 
+          completed: newCompleted,
+          completedBy: newCompleted ? user.email : undefined,
+          completedByName: newCompleted ? userName : undefined
+      }) : null);
+
       try {
           const id = file.fullPath.replace(/\//g, '_');
           await setDoc(doc(db, 'fileMetadata', id), { 
@@ -615,34 +634,30 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               completedAt: newCompleted ? new Date().toISOString() : null
           }, { merge: true });
           logActivity(newCompleted ? 'complete' : 'uncomplete', file.name);
-          reloadTree();
       } catch (e) { console.error(e); reloadTree(); }
   };
 
-  // --- MOVE LOGIC (RESTORED) ---
+  // --- MOVE LOGIC (OPTIMIZED) ---
   const handleMoveFile = async () => {
       if (!moveTargetFile || !user) return;
       setMoveDialogOpen(false);
-      setLoading(true);
+      
+      // 1. Optimistic Update (Remove from current view instantly)
+      setTree(prev => prev ? removeFileFromTree(prev, moveTargetFile.fullPath) : null);
 
       // Calculate New Path
       const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
       const newFullPath = `${destinationPathString}/${moveTargetFile.name}`;
       
-      if (newFullPath === moveTargetFile.fullPath) {
-          setLoading(false); return; // Same place
-      }
+      if (newFullPath === moveTargetFile.fullPath) return;
 
       try {
-          // 1. Get File URL
           const fileUrl = await getDownloadURL(ref(storage, moveTargetFile.fullPath));
           const response = await fetch(fileUrl);
           const blob = await response.blob();
 
-          // 2. Upload to new location
           await uploadBytes(ref(storage, newFullPath), blob);
 
-          // 3. Move Metadata
           const oldMetaId = moveTargetFile.fullPath.replace(/\//g, '_');
           const newMetaId = newFullPath.replace(/\//g, '_');
           
@@ -653,15 +668,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               await deleteDoc(doc(db, 'fileMetadata', oldMetaId));
           }
 
-          // 4. Delete old file
           await deleteObject(ref(storage, moveTargetFile.fullPath));
-
           logActivity('move', moveTargetFile.name);
-          reloadTree();
+          // No reload needed if optimistic worked, but good to sync eventually
+          // reloadTree(); 
       } catch (e) {
           console.error(e);
           setError("Error al mover archivo");
-          setLoading(false);
+          reloadTree(); // Revert on error
       }
   };
 
@@ -682,14 +696,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const handleDeleteFile = async () => {
     if (!deleteFile) return;
-    setLoading(true);
+    // Optimistic
+    setDeleteFile(null);
+    setTree(prev => prev ? removeFileFromTree(prev, deleteFile.fullPath) : null);
+
     try {
         await deleteObject(ref(storage, deleteFile.fullPath));
         await deleteDoc(doc(db, 'fileMetadata', deleteFile.fullPath.replace(/\//g, '_'))).catch(() => {});
         logActivity('delete', deleteFile.name);
-        setDeleteFile(null);
-        reloadTree();
-    } catch (e) { console.error(e); setError("Error al eliminar"); setLoading(false); }
+    } catch (e) { console.error(e); setError("Error al eliminar"); reloadTree(); }
   };
 
   const handleCreateFolder = async () => {
@@ -702,7 +717,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         await uploadBytes(fakeFileRef, new Uint8Array([0]));
         logActivity('create_folder', undefined, newFolderName.trim());
         setNewFolderName("");
-        // ESPERA DE SEGURIDAD DE 500ms para que Firebase indexe
         await new Promise(resolve => setTimeout(resolve, 500));
         reloadTree();
     } catch(e) { console.error(e); setLoading(false); }
@@ -1157,7 +1171,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </MenuItem>
             )}
 
-            {/* AQUI ESTA EL CAMBIO: AHORA METROLOGO O CALIDAD PUEDEN MARCAR REALIZADO */}
             {(userIsMetrologist || userIsQuality) && (
                 <MenuItem onClick={() => { if(selectedFile) handleMarkCompleted(selectedFile); setActionMenuAnchor(null); }}>
                     <ListItemIcon>
@@ -1172,7 +1185,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {userIsQuality && (
                 <Box>
                     <Divider />
-                    {/* RESTAURADO MOVER */}
+                    {/* MOVER RESTAURADO */}
                     <MenuItem onClick={() => { 
                         setMoveTargetFile(selectedFile); 
                         setMoveToPath([]); 
@@ -1233,7 +1246,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {userIsQuality && (
                 <Box>
                     <Divider />
-                    {/* RESTAURADO MOVER EN CLICK DERECHO */}
+                    {/* MOVER RESTAURADO */}
                     <MenuItem onClick={() => { 
                         setMoveTargetFile(contextMenu?.file || null); 
                         setMoveToPath([]); 
