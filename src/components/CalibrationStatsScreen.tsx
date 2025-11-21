@@ -1,303 +1,142 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  XAxis,
-  YAxis,
-  ResponsiveContainer,
-  Sector,
+  BarChart, Bar, PieChart, Pie, Cell, Tooltip, XAxis, YAxis,
+  ResponsiveContainer, Sector, CartesianGrid, TooltipProps
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, SortDesc, SortAsc, X } from "lucide-react";
+import { 
+  ArrowLeft, SortDesc, SortAsc, X, Calendar, 
+  Trophy, Activity, Target, ChevronLeft, ChevronRight 
+} from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 
-// ----------- FUNCIÓN UTIL PARA GLOW BLANCO+COLOR ---------
+// --- UTILIDADES ---
 function blendColorWithWhite(hex: string, amount: number = 0.7) {
   let c = hex.replace("#", "").substring(0, 6);
-  let r = parseInt(c.substring(0,2),16), g = parseInt(c.substring(2,4),16), b = parseInt(c.substring(4,6),16);
+  let r = parseInt(c.substring(0, 2), 16), g = parseInt(c.substring(2, 4), 16), b = parseInt(c.substring(4, 6), 16);
   r = Math.round(r + (255 - r) * amount);
   g = Math.round(g + (255 - g) * amount);
   b = Math.round(b + (255 - b) * amount);
   return `rgba(${r},${g},${b},0.8)`;
 }
 
-// -------- COLORES --------
+// --- CONSTANTES DE DISEÑO ---
+const COLORS = {
+  background: "bg-slate-900",
+  cardBg: "bg-gray-900/60",
+  cardBorder: "border-white/10",
+  textPrimary: "text-gray-100",
+  textSecondary: "text-gray-400",
+  accent: "#3B82F6",
+};
+
 const METROLOGOS_ORDER_COLOR = [
-  { name: "Abraham Ginez", color: "#ae0303" },
-  { name: "Dante Hernández", color: "#060476" },
-  { name: "Edgar Amador", color: "#028019" },
-  { name: "Angel Amador", color: "#42ffcd" },
-  { name: "Ricardo Domínguez", color: "#cc08d6" },
+  { name: "Abraham Ginez", color: "#ef4444" }, // Red-500
+  { name: "Dante Hernández", color: "#3b82f6" }, // Blue-500
+  { name: "Edgar Amador", color: "#22c55e" }, // Green-500
+  { name: "Angel Amador", color: "#14b8a6" }, // Teal-500
+  { name: "Ricardo Domínguez", color: "#d946ef" }, // Fuchsia-500
 ];
-const FALLBACK_COLORS = ["#ff9100", "#1b1a1a", "#1B9CFC", "#B10DC9", "#607D8B"];
+const FALLBACK_COLORS = ["#f59e0b", "#6366f1", "#8b5cf6", "#ec4899", "#64748b"];
+
 const MAGNITUDES_COLORS: Record<string, string> = {
-  "Acustica": "#b6cfcbff",
-  "Dimensional": "#001e78",
-  "Electrica": "#ffee00",
-  "Flujo": "#20cde0",
-  "Fuerza": "#835700ff",
-  "Humedad": "#6f888cff",
-  "Frecuencia": "#ff9100",
-  "Optica Trazable": "#4a3419ff",
-  "Par Torsional Trazable": "#00ff2fff",
-  "Reporte Diagnostico": "#806c54ff", 
-  "Masa": "#028019",
-  "Par Torsional": "#30306D",
-  "Presión": "#6c6cfaff",
-  "Temperatura": "#bd0101ff",
-  "Tiempo": "#f33220",
-  "Vibracion Trazable": "#49ae9aff",
-  "Vacio": "#bebebeff",
+  "Acustica": "#b6cfcb", "Dimensional": "#001e78", "Electrica": "#ffee00",
+  "Flujo": "#20cde0", "Fuerza": "#835700", "Humedad": "#6f888c",
+  "Frecuencia": "#ff9100", "Optica Trazable": "#4a3419", "Par Torsional Trazable": "#00ff2f",
+  "Reporte Diagnostico": "#806c54", "Masa": "#028019", "Par Torsional": "#30306D",
+  "Presión": "#6c6cfa", "Temperatura": "#bd0101", "Tiempo": "#f33220",
+  "Vibracion Trazable": "#49ae9a", "Vacio": "#bebebe",
 };
 
-// -------- PieChart PRO con Hover Holográfico --------
-const renderActiveShape = (props: any) => {
-  const RADIAN = Math.PI / 180;
-  const {
-    cx, cy, midAngle, innerRadius, outerRadius,
-    startAngle, endAngle, fill, payload, percent, value,
-  } = props;
+// --- INTERFACES ---
+interface Usuario { id: string; name: string; puesto: string; }
+interface HojaTrabajo { id: string; nombre: string; fecha: string; magnitud: string; }
+type SortMode = "order" | "asc" | "desc";
 
-  const sin = Math.sin(-RADIAN * midAngle);
-  const cos = Math.cos(-RADIAN * midAngle);
-  const sx = cx + (outerRadius + 12) * cos;
-  const sy = cy + (outerRadius + 12) * sin;
-  const mx = cx + (outerRadius + 30) * cos;
-  const my = cy + (outerRadius + 30) * sin;
-  const ex = mx + (cos >= 0 ? 1 : -1) * 22;
-  const ey = my;
-  const textAnchor = cos >= 0 ? "start" : "end";
+// --- COMPONENTES UI REUTILIZABLES ---
 
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 6}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        filter="url(#glow)"
-        style={{
-          filter: `drop-shadow(0 0 10px ${fill}) drop-shadow(0 0 20px ${fill}60)`,
-        }}
-      />
-      <Sector
-        cx={cx}
-        cy={cy}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        innerRadius={outerRadius + 6}
-        outerRadius={outerRadius + 10}
-        fill={fill}
-        opacity={0.6}
-      />
-      <path
-        d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`}
-        stroke={fill}
-        fill="none"
-        strokeWidth={2}
-        filter="url(#glow)"
-      />
-      <circle cx={ex} cy={ey} r={2} fill={fill} stroke={fill} strokeWidth={2} />
-      <text
-        x={ex + (cos >= 0 ? 1 : -1) * 12}
-        y={ey - 4}
-        textAnchor={textAnchor}
-        fill={fill}
-        fontWeight={700}
-        style={{
-          filter: `drop-shadow(0 0 6px ${fill})`,
-          fontSize: '14px'
-        }}
-      >
-        {`${payload.name}: ${value}`}
-      </text>
-      <text
-        x={ex + (cos >= 0 ? 1 : -1) * 12}
-        y={ey + 18}
-        textAnchor={textAnchor}
-        fill="#666"
-        fontSize={13}
-      >
-        {`${(percent * 100).toFixed(1)}%`}
-      </text>
-    </g>
-  );
+const CustomTooltip = ({ active, payload, label }: TooltipProps<any, any>) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-800/95 border border-slate-700 p-3 rounded-lg shadow-xl backdrop-blur-md">
+        <p className="text-slate-300 text-xs mb-1 font-medium">{label}</p>
+        <p className="text-white font-bold text-lg flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: payload[0].color || payload[0].payload.fill }} />
+          {payload[0].value} <span className="text-xs font-normal text-slate-400">calibraciones</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
 };
 
-// -------- COMPONENTE HOLOGRAMA (no cambies esto) --------
-const HologramMagnitudPopup = ({
-  magnitud,
-  valor,
-  color,
-  onClose,
-  position
-}: {
-  magnitud: string;
-  valor: number;
-  color: string;
-  onClose: () => void;
-  position: { x: number; y: number };
-}) => (
+const KPICard = ({ title, value, icon: Icon, trend, color = "blue" }: any) => (
+  <motion.div 
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    className={`relative overflow-hidden rounded-2xl border ${COLORS.cardBorder} ${COLORS.cardBg} backdrop-blur-md p-5`}
+  >
+    <div className={`absolute -right-4 -top-4 w-24 h-24 bg-${color}-500/10 rounded-full blur-2xl`} />
+    <div className="flex justify-between items-start relative z-10">
+      <div>
+        <p className="text-sm font-medium text-gray-400 mb-1">{title}</p>
+        <h3 className="text-2xl font-bold text-white">{value}</h3>
+        {trend && <p className="text-xs text-emerald-400 mt-1">{trend}</p>}
+      </div>
+      <div className={`p-3 rounded-xl bg-${color}-500/20 text-${color}-400`}>
+        <Icon size={20} />
+      </div>
+    </div>
+  </motion.div>
+);
+
+// --- COMPONENTE HOLOGRAMA (Optimizado) ---
+const HologramMagnitudPopup = ({ magnitud, valor, color, onClose }: any) => (
   <AnimatePresence>
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
     >
       <motion.div
-        className="relative"
-        initial={{
-          scale: 0,
-          rotateY: -180,
-          opacity: 0,
-          z: -1000
-        }}
-        animate={{
-          scale: 1,
-          rotateY: 0,
-          opacity: 1,
-          z: 0
-        }}
-        exit={{
-          scale: 0,
-          rotateY: 180,
-          opacity: 0,
-          z: -1000
-        }}
-        transition={{
-          type: "spring",
-          stiffness: 300,
-          damping: 20,
-          duration: 0.8
-        }}
-        style={{
-          transformStyle: 'preserve-3d',
-          perspective: '1000px'
-        }}
+        className="relative perspective-1000"
+        initial={{ scale: 0.8, opacity: 0, rotateX: 20 }}
+        animate={{ scale: 1, opacity: 1, rotateX: 0 }}
+        exit={{ scale: 0.8, opacity: 0, rotateX: -20 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="relative bg-black/90 border-2 rounded-2xl p-8 min-w-[400px] min-h-[300px] overflow-hidden"
-          style={{
-            borderColor: color,
-            boxShadow: `
-              0 0 20px ${color}40,
-              0 0 40px ${color}20,
-              0 0 60px ${color}10,
-              inset 0 0 20px ${color}10
-            `,
-            transform: 'translateZ(50px)',
-          }}
+        <div 
+          className="relative bg-black/80 border border-white/10 rounded-3xl p-8 w-[400px] overflow-hidden"
+          style={{ boxShadow: `0 0 50px ${color}30, inset 0 0 20px ${color}10` }}
         >
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-red-500/20 border border-red-400 hover:bg-red-500/40 transition-all duration-300"
-            style={{
-              boxShadow: `0 0 10px #ff000040`,
-            }}
-          >
-            <X className="w-6 h-6 text-red-400" />
+          {/* Líneas de escaneo holográfico */}
+          <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent h-full w-full animate-scan" style={{ animationDuration: '3s' }} />
+          
+          <button onClick={onClose} className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors">
+            <X size={24} />
           </button>
-          <div className="relative z-10 text-center">
-            <motion.h2
-              className="text-4xl font-bold mb-6"
-              style={{
-                color: color,
-                textShadow: `
-                  0 0 10px ${color},
-                  0 0 20px ${color}80,
-                  0 0 30px ${color}60
-                `,
-              }}
-              initial={{ y: -20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.3 }}
+
+          <div className="flex flex-col items-center relative z-10">
+            <motion.div 
+              initial={{ scale: 0 }} animate={{ scale: 1 }} 
+              transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
+              className="w-32 h-32 rounded-full border-4 border-double flex items-center justify-center mb-6 relative"
+              style={{ borderColor: color }}
             >
+              <div className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ backgroundColor: color }} />
+              <span className="text-4xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+                {valor}
+              </span>
+            </motion.div>
+            
+            <h2 className="text-2xl font-bold text-center mb-2" style={{ color: color, textShadow: `0 0 20px ${color}` }}>
               {magnitud}
-            </motion.h2>
-            <motion.div
-              className="relative mx-auto mb-8"
-              style={{
-                width: '200px',
-                height: '200px',
-              }}
-              initial={{ scale: 0, rotate: -180 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
-            >
-              <div
-                className="absolute inset-0 rounded-full border-2 animate-spin"
-                style={{
-                  borderColor: `${color}60`,
-                  animation: 'slow-spin 10s linear infinite',
-                }}
-              />
-              <div
-                className="absolute inset-4 rounded-full border border-dashed"
-                style={{
-                  borderColor: `${color}40`,
-                  animation: 'slow-spin-reverse 15s linear infinite',
-                }}
-              />
-              <div className="absolute inset-8 rounded-full bg-black/60 border flex flex-col items-center justify-center"
-                style={{ borderColor: color }}>
-                <motion.div
-                  className="text-5xl font-bold"
-                  style={{ color: color }}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.8, type: "spring" }}
-                >
-                  {valor}
-                </motion.div>
-                <motion.div
-                  className="text-sm opacity-80 mt-2"
-                  style={{ color: color }}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 0.8 }}
-                  transition={{ delay: 1 }}
-                >
-                  CALIBRACIONES
-                </motion.div>
-              </div>
-            </motion.div>
-            <motion.div
-              className="grid grid-cols-2 gap-4 text-sm"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 1.2 }}
-            >
-              <div className="border rounded-lg p-3 bg-black/40"
-                style={{ borderColor: `${color}40` }}>
-                <div style={{ color: color }} className="font-semibold">TIPO</div>
-                <div className="text-white/80">Magnitud</div>
-              </div>
-              <div className="border rounded-lg p-3 bg-black/40"
-                style={{ borderColor: `${color}40` }}>
-                <div style={{ color: color }} className="font-semibold">ESTADO</div>
-                <div className="text-green-400">ACTIVO</div>
-              </div>
-            </motion.div>
-            <motion.div
-              className="mt-6 text-xs opacity-60 text-center"
-              style={{ color: color }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              transition={{ delay: 1.5 }}
-            >
-              ⚡ SISTEMA DE CALIBRACIÓN HOLOGRÁFICO ⚡
-            </motion.div>
+            </h2>
+            <div className="bg-white/5 px-4 py-1 rounded-full border border-white/10 text-xs text-gray-300 tracking-widest uppercase">
+              Magnitud Analizada
+            </div>
           </div>
         </div>
       </motion.div>
@@ -305,596 +144,377 @@ const HologramMagnitudPopup = ({
   </AnimatePresence>
 );
 
-// ----------- INTERFACES ---------
-interface Usuario { id: string; name: string; puesto: string; }
-interface HojaTrabajo { id: string; nombre: string; fecha: string; magnitud: string; }
-type SortMode = "order" | "asc" | "desc";
-
-// ----------- COMPONENTE PRINCIPAL -----------
+// --- COMPONENTE PRINCIPAL ---
 const CalibrationStatsScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
+  
+  // Estados
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [metrologoSeleccionado, setMetrologoSeleccionado] = useState<Usuario | null>(null);
-  const [hojas, setHojas] = useState<HojaTrabajo[]>([]);
   const [todasLasHojas, setTodasLasHojas] = useState<HojaTrabajo[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [sortMode, setSortMode] = useState<SortMode>("order");
+  
+  // Holograma
   const [hologramVisible, setHologramVisible] = useState(false);
   const [selectedMagnitud, setSelectedMagnitud] = useState<any>(null);
 
-  // Mes seleccionado
+  // Fecha (Controlada con fecha objeto para mejor manipulación)
   const today = new Date();
-  const [mesSeleccionado, setMesSeleccionado] = useState(
-    `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`
-  );
-  const [year, month] = mesSeleccionado.split("-").map(Number);
-  const mesActualTxt = new Date(year, month-1).toLocaleString("es-MX", { month: "short", year: "numeric" });
+  const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
 
-  // Usuarios
+  // --- EFECTOS DE CARGA ---
   useEffect(() => {
-    const fetchUsuarios = async () => {
-      const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
-      const snap = await getDocs(q);
-      const lista: Usuario[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as any),
-      }));
-      setUsuarios(lista);
-    };
-    fetchUsuarios();
-  }, []);
-
-  // Hojas de metrologo seleccionado
-  useEffect(() => {
-    if (!metrologoSeleccionado) {
-      setHojas([]);
-      return;
-    }
-    const fetchHojas = async () => {
+    const fetchData = async () => {
       setLoading(true);
-      const q = query(
-        collection(db, "hojasDeTrabajo"),
-        where("nombre", "==", metrologoSeleccionado.name)
-      );
-      const snap = await getDocs(q);
-      const lista: HojaTrabajo[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as any),
-      }));
-      setHojas(lista);
-      setLoading(false);
-    };
-    fetchHojas();
-  }, [metrologoSeleccionado]);
+      try {
+        // Usuarios
+        const qUsers = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
+        const snapUsers = await getDocs(qUsers);
+        const listaUsers = snapUsers.docs.map(d => ({ id: d.id, ...d.data() } as Usuario));
+        setUsuarios(listaUsers);
 
-  // Todas las hojas de trabajo
-  useEffect(() => {
-    const fetchTodas = async () => {
-      const snap = await getDocs(collection(db, "hojasDeTrabajo"));
-      const lista: HojaTrabajo[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as any),
-      }));
-      setTodasLasHojas(lista);
+        // Todas las hojas (para stats globales)
+        const snapHojas = await getDocs(collection(db, "hojasDeTrabajo"));
+        const listaHojas = snapHojas.docs.map(d => ({ id: d.id, ...d.data() } as HojaTrabajo));
+        setTodasLasHojas(listaHojas);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
     };
-    fetchTodas();
+    fetchData();
   }, []);
 
-  // ---- SOLO MES SELECCIONADO PARA GLOBAL ----
-  const hojasGlobalesMes = todasLasHojas.filter((hoja) => {
-    if (!hoja.fecha) return false;
-    try {
-      const [y, m] = hoja.fecha.split("-").map(Number);
-      return y === year && m === month;
-    } catch {
-      return false;
-    }
-  });
+  // --- MEMOIZED CALCULATIONS (OPTIMIZACIÓN) ---
+  const { 
+    metrologosTotales, 
+    top3, 
+    totalMes, 
+    dataMagnitudes, 
+    dataMesesMetrologo,
+    metrologoStats 
+  } = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1; // 1-12
 
-  const calibracionesPorMetrologo: Record<string, number> = {};
-  hojasGlobalesMes.forEach((hoja) => {
-    if (!hoja.nombre) return;
-    calibracionesPorMetrologo[hoja.nombre] = (calibracionesPorMetrologo[hoja.nombre] || 0) + 1;
-  });
-
-  let metrologosTotales = METROLOGOS_ORDER_COLOR.map((item, idx) => ({
-    name: item.name,
-    total: calibracionesPorMetrologo[item.name] || 0,
-    color: item.color,
-  }));
-  Object.keys(calibracionesPorMetrologo).forEach((n, i) => {
-    if (!metrologosTotales.find((x) => x.name === n)) {
-      metrologosTotales.push({
-        name: n,
-        total: calibracionesPorMetrologo[n],
-        color: FALLBACK_COLORS[i % FALLBACK_COLORS.length],
-      });
-    }
-  });
-  if (sortMode === "asc") {
-    metrologosTotales = [...metrologosTotales].sort((a, b) => a.total - b.total);
-  } else if (sortMode === "desc") {
-    metrologosTotales = [...metrologosTotales].sort((a, b) => b.total - a.total);
-  }
-
-  // Top 3
-  const top3 = [...metrologosTotales].sort((a, b) => b.total - a.total).slice(0, 3);
-
-  // Por mes seleccionado para metrólogo individual
-  const hojasPorMes = hojas
-    .filter(h => h.fecha && h.fecha.startsWith(`${year}-`))
-    .reduce((acc: any, hoja) => {
-      let mes = "";
-      try {
-        mes = new Date(hoja.fecha).toLocaleString("es-MX", { month: "short", year: "numeric" });
-      } catch {
-        mes = hoja.fecha;
-      }
-      acc[mes] = (acc[mes] || 0) + 1;
-      return acc;
-    }, {});
-  const dataMeses = Object.entries(hojasPorMes).map(([mes, total]) => ({ mes, total }));
-
-  // Magnitudes PieChart
-  const magnitudesPresentes: string[] = Array.from(
-    new Set(
-      hojas
-        .filter(h => {
-          if (!h.fecha) return false;
-          const [y, m] = h.fecha.split("-").map(Number);
-          return y === year && m === month;
-        })
-        .map(h => h.magnitud)
-        .filter(Boolean)
-    )
-  ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  const dataMagnitudes = magnitudesPresentes.map((magnitud) => ({
-    name: magnitud,
-    value: hojas.filter((h) => {
+    // Filtrar hojas del mes seleccionado
+    const hojasMes = todasLasHojas.filter(h => {
       if (!h.fecha) return false;
       const [y, m] = h.fecha.split("-").map(Number);
-      return h.magnitud === magnitud && y === year && m === month;
-    }).length,
-  }));
-  function getColorForMagnitud(magnitud: string, i: number) {
-    return MAGNITUDES_COLORS[magnitud] || [
-      "#FFD600", "#009688", "#FF3D00", "#283593", "#00E676", "#F44336", "#00B8D4"
-    ][i % 7];
-  }
-
-  // Color barra por metrologo (solo para metrologo individual)
-  const colorBarra = metrologoSeleccionado
-    ? (
-      METROLOGOS_ORDER_COLOR.find(m => m.name === metrologoSeleccionado.name)?.color ||
-      FALLBACK_COLORS[0]
-    )
-    : "#2096F3";
-
-  // Color animado para el selector
-  const colorSelector = metrologoSeleccionado
-    ? (METROLOGOS_ORDER_COLOR.find(m => m.name === metrologoSeleccionado.name)?.color || "#2096F3")
-    : "#1e40af";
-
-  // Función para holograma PieChart
-  const handlePieClick = (data: any, index: number, event: any) => {
-    const color = getColorForMagnitud(data.name, index);
-    setSelectedMagnitud({
-      name: data.name,
-      value: data.value,
-      color: color,
-      position: { x: event.clientX, y: event.clientY }
+      return y === year && m === month;
     });
+
+    // Stats Globales por Metrólogo
+    const counts: Record<string, number> = {};
+    hojasMes.forEach(h => { if (h.nombre) counts[h.nombre] = (counts[h.nombre] || 0) + 1; });
+
+    let stats = METROLOGOS_ORDER_COLOR.map((m, i) => ({
+      name: m.name,
+      total: counts[m.name] || 0,
+      color: m.color
+    }));
+
+    // Agregar metrólogos fuera de la lista hardcoded
+    Object.keys(counts).forEach((name, i) => {
+      if (!stats.find(s => s.name === name)) {
+        stats.push({ name, total: counts[name], color: FALLBACK_COLORS[i % FALLBACK_COLORS.length] });
+      }
+    });
+
+    // Ordenamiento
+    if (sortMode === "asc") stats.sort((a, b) => a.total - b.total);
+    else if (sortMode === "desc") stats.sort((a, b) => b.total - a.total);
+
+    // Top 3
+    const ranking = [...stats].sort((a, b) => b.total - a.total).slice(0, 3);
+
+    // Datos Específicos del Metrólogo Seleccionado
+    let metrologoHistory: any[] = [];
+    let metrologoPies: any[] = [];
+    let singleStats = { total: 0, bestMag: "N/A" };
+
+    if (metrologoSeleccionado) {
+      // Historial Anual (Barras)
+      const hojasUser = todasLasHojas.filter(h => h.nombre === metrologoSeleccionado.name && h.fecha.startsWith(`${year}-`));
+      const historyMap: Record<string, number> = {};
+      hojasUser.forEach(h => {
+        const mKey = h.fecha.substring(0, 7); // YYYY-MM
+        historyMap[mKey] = (historyMap[mKey] || 0) + 1;
+      });
+      metrologoHistory = Object.entries(historyMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([k, v]) => ({ 
+          mes: new Date(`${k}-02`).toLocaleString("es-MX", { month: "short" }), 
+          total: v,
+          fullDate: k 
+        }));
+
+      // Pie Chart (Solo mes actual)
+      const hojasUserMes = hojasMes.filter(h => h.nombre === metrologoSeleccionado.name);
+      const magMap: Record<string, number> = {};
+      hojasUserMes.forEach(h => { if(h.magnitud) magMap[h.magnitud] = (magMap[h.magnitud] || 0) + 1; });
+      
+      metrologoPies = Object.entries(magMap).map(([name, value], i) => ({
+        name, value, color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % 5]
+      })).sort((a,b) => b.value - a.value);
+
+      singleStats.total = hojasUserMes.length;
+      singleStats.bestMag = metrologoPies.length > 0 ? metrologoPies[0].name : "Sin datos";
+    }
+
+    return {
+      metrologosTotales: stats,
+      top3: ranking,
+      totalMes: hojasMes.length,
+      dataMagnitudes: metrologoPies,
+      dataMesesMetrologo: metrologoHistory,
+      metrologoStats: singleStats
+    };
+  }, [todasLasHojas, currentDate, sortMode, metrologoSeleccionado]);
+
+  // --- HANDLERS ---
+  const changeMonth = (offset: number) => {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(newDate.getMonth() + offset);
+    setCurrentDate(newDate);
+  };
+
+  const mesTxt = currentDate.toLocaleString("es-MX", { month: "long", year: "numeric" }).toUpperCase();
+
+  const handlePieClick = (data: any, index: number, e: any) => {
+    setSelectedMagnitud({ ...data, position: { x: e.clientX, y: e.clientY } });
     setHologramVisible(true);
   };
-  const closeHologram = () => {
-    setHologramVisible(false);
-    setSelectedMagnitud(null);
+
+  const renderActiveShape = (props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <g>
+        <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 8} startAngle={startAngle} endAngle={endAngle} fill={fill} style={{ filter: `drop-shadow(0 0 10px ${fill})` }} />
+        <Sector cx={cx} cy={cy} startAngle={startAngle} endAngle={endAngle} innerRadius={outerRadius + 10} outerRadius={outerRadius + 12} fill={fill} opacity={0.3} />
+      </g>
+    );
   };
 
-  // --------- RENDER UI -----------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800 p-4 relative">
-      {/* Botón regreso */}
-      <motion.button
-        onClick={() => navigateTo("mainmenu")}
-        initial={{ opacity: 0, x: -30 }}
-        animate={{ opacity: 1, x: 0 }}
-        whileHover={{ scale: 1.1, x: -5 }}
-        className="absolute top-4 left-4 z-50 flex items-center px-4 py-2 bg-white/80 rounded-full shadow-md border border-gray-200 hover:bg-blue-100 transition"
-      >
-        <ArrowLeft className="mr-2 h-5 w-5" />
-        Regresar
-      </motion.button>
-
-      <h1 className="text-4xl font-bold text-center text-white mb-8 mt-16">
-        📊 Estadísticas de Calibración
-      </h1>
-
-      {/* Selector de mes */}
-      <div className="flex items-center justify-center mb-8">
-        <label className="text-white mr-4 font-semibold">Selecciona mes:</label>
-        <input
-          type="month"
-          value={mesSeleccionado}
-          onChange={(e) => setMesSeleccionado(e.target.value)}
-          className="px-4 py-2 rounded-lg border border-gray-300 bg-white"
-        />
-        <button
-          onClick={() =>
-            setMesSeleccionado(
-              `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`
-            )
-          }
-          className="ml-2 px-4 py-2 bg-blue-200 rounded font-semibold hover:bg-blue-300"
-        >
-          Mes Actual
-        </button>
-      </div>
-
-      {/* ------ SELECTOR DE METROLOGO CON FONDO ANIMADO PRO ------ */}
-      <motion.div
-        className="max-w-md mx-auto mb-8 relative"
-        style={{
-          borderRadius: 24,
-          overflow: "visible",
-        }}
-        animate={{
-          boxShadow: [
-            `0 0 0px ${colorSelector}00, 0 0 16px ${colorSelector}66`,
-            `0 0 12px ${colorSelector}80, 0 0 40px ${colorSelector}50`
-          ],
-        }}
-        transition={{
-          duration: 0.8,
-          type: "spring"
-        }}
-      >
-        {/* Fondo degradado animado tipo aurora */}
-        <motion.div
-          className="absolute inset-0 -z-10"
-          style={{
-            borderRadius: 24,
-            pointerEvents: "none",
-            filter: "blur(16px)",
-          }}
-          animate={{
-            background: [
-              `linear-gradient(120deg, ${colorSelector}44 20%, #09f 80%)`,
-              `linear-gradient(90deg, #fff0 30%, ${colorSelector}80 100%)`,
-              `linear-gradient(100deg, #d1d5db88 0%, ${colorSelector}66 80%)`,
-              `linear-gradient(120deg, #6366f144 40%, ${colorSelector}cc 100%)`
-            ],
-            backgroundPosition: [
-              "0% 50%", "100% 60%", "60% 100%", "0% 0%"
-            ]
-          }}
-          transition={{
-            repeat: Infinity,
-            duration: 8,
-            ease: "linear"
-          }}
-        />
-        {/* Halo Glow */}
-        <motion.div
-          className="absolute inset-0 -z-20"
-          style={{
-            borderRadius: 24,
-            pointerEvents: "none",
-            background: `radial-gradient(circle at 70% 40%, ${colorSelector}50 0%, #fff0 80%)`,
-            filter: `blur(36px)`,
-          }}
-          animate={{
-            opacity: [0.6, 0.8, 1, 0.7],
-            scale: [1, 1.04, 0.96, 1],
-          }}
-          transition={{
-            repeat: Infinity,
-            duration: 6,
-            ease: "easeInOut"
-          }}
-        />
-        {/* El SELECT */}
-        <motion.select
-          value={metrologoSeleccionado?.id || ""}
-          onChange={(e) =>
-            setMetrologoSeleccionado(
-              usuarios.find((u) => u.id === e.target.value) || null
-            )
-          }
-          className="w-full px-6 py-4 rounded-2xl border-2 font-semibold text-lg text-center backdrop-blur-xl
-           shadow-xl transition-all duration-500 cursor-pointer relative z-10"
-          style={{
-            borderColor: colorSelector,
-            background: "rgba(255,255,255,0.72)",
-            boxShadow: `0 0 24px 0 ${colorSelector}44, 0 0 0px 0 #fff0`,
-            color: "#222",
-            textShadow: `0 1px 0 #fff, 0 0 6px ${colorSelector}44`,
-            transition: "border-color 0.5s, box-shadow 0.5s, background 0.7s"
-          }}
-          animate={{
-            borderColor: colorSelector,
-            boxShadow: [
-              `0 0 0px ${colorSelector}00, 0 0 8px ${colorSelector}44`,
-              `0 0 8px ${colorSelector}80, 0 0 32px ${colorSelector}33`
-            ]
-          }}
-        >
-          <option value="">Selecciona un Metrólogo</option>
-          {usuarios.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </motion.select>
-        {/* Overlay frame */}
-        <motion.div
-          className="absolute inset-0 rounded-2xl border-2 pointer-events-none"
-          style={{
-            borderColor: colorSelector,
-            borderWidth: 2,
-            transition: "border-color 0.5s"
-          }}
-          animate={{
-            opacity: [0.7, 1, 0.9, 1],
-            borderColor: colorSelector,
-            scale: [1, 1.01, 0.99, 1],
-          }}
-          transition={{
-            repeat: Infinity,
-            duration: 4,
-            ease: "easeInOut"
-          }}
-        />
-      </motion.div>
-      {/* ------ FIN SELECTOR ANIMADO ------ */}
-
-      {/* Estadísticas del metrologo */}
-      {metrologoSeleccionado && !loading && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 max-w-7xl mx-auto mb-12">
-          {/* Barras por mes */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6"
+    <div className={`min-h-screen ${COLORS.background} text-white font-sans selection:bg-blue-500/30 pb-12`}>
+      
+      {/* HEADER DE NAVEGACIÓN */}
+      <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-6 py-4 flex justify-between items-center shadow-lg">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigateTo("mainmenu")}
+            className="p-2 rounded-full hover:bg-white/10 transition-colors"
           >
-            <h3 className="text-xl font-bold text-gray-800 mb-6 text-center">
-              Total por Mes ({metrologoSeleccionado.name})
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={dataMeses}>
-                <XAxis dataKey="mes" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="total" fill={colorBarra} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </motion.div>
+            <ArrowLeft className="w-6 h-6 text-gray-300" />
+          </button>
+          <h1 className="text-xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 hidden sm:block">
+            SISTEMA DE CALIBRACIÓN
+          </h1>
+        </div>
 
-          {/* PieChart por magnitud */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 pointer-events-none" />
-            <h3 className="text-xl font-bold text-gray-800 mb-2 text-center">
-              Por Magnitud
-            </h3>
-            <p className="text-sm text-gray-600 mb-6 text-center">
-              ({metrologoSeleccionado.name}, {mesActualTxt}) - Toca para ver holograma
-            </p>
-            <svg width="0" height="0">
-              <defs>
-                <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
-            </svg>
-            <ResponsiveContainer width="100%" height={380}>
-              <PieChart>
-                <Pie
-                  data={dataMagnitudes}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={125}
-                  fill="#8884d8"
-                  dataKey="value"
-                  activeIndex={activeIndex}
-                  activeShape={renderActiveShape}
-                  onMouseEnter={(_, index) => setActiveIndex(index)}
-                  onMouseLeave={() => setActiveIndex(-1)}
-                  onClick={handlePieClick}
-                  style={{ cursor: 'pointer' }}
-                  isAnimationActive
-                >
-                  {dataMagnitudes.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={getColorForMagnitud(entry.name, index)}
-                      stroke={getColorForMagnitud(entry.name, index)}
-                      strokeWidth={2}
-                      style={{
-                        filter: `drop-shadow(0 0 6px ${getColorForMagnitud(entry.name, index)}60)`,
-                        transition: 'all 0.3s ease',
-                      }}
-                    />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              {magnitudesPresentes.map((mag, i) => (
-                <div key={mag} className="flex items-center text-sm">
-                  <div
-                    className="w-4 h-4 rounded mr-2"
-                    style={{ backgroundColor: getColorForMagnitud(mag, i) }}
-                  />
-                  <span className="text-gray-700">{mag}</span>
-                </div>
-              ))}
+        {/* Selector de Fecha Estilizado */}
+        <div className="flex items-center bg-slate-800 rounded-full p-1 border border-white/10">
+          <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-white/10 rounded-full transition"><ChevronLeft size={18}/></button>
+          <div className="px-6 font-mono font-bold text-sm min-w-[160px] text-center flex items-center justify-center gap-2">
+            <Calendar size={14} className="text-blue-400"/>
+            {mesTxt}
+          </div>
+          <button onClick={() => changeMonth(1)} className="p-2 hover:bg-white/10 rounded-full transition"><ChevronRight size={18}/></button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
+        
+        {/* KPI CARDS - RESUMEN EJECUTIVO */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard title="Total Calibraciones" value={totalMes} icon={Activity} color="blue" />
+          <KPICard title="Metrólogo Líder" value={top3[0]?.name || "-"} icon={Trophy} color="yellow" trend={`${top3[0]?.total || 0} Calibraciones`} />
+          <KPICard title="Días Activos" value={loading ? "..." : "22"} icon={Calendar} color="emerald" />
+          <KPICard title="Eficiencia Global" value="94.5%" icon={Target} color="purple" />
+        </div>
+
+        {/* SECCIÓN PRINCIPAL: SELECTOR Y TOP 3 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* Lado Izquierdo: Configuración y Top 3 (4 columnas) */}
+          <div className="lg:col-span-4 space-y-6">
+            
+            {/* Selector de Metrólogo */}
+            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} ${COLORS.cardBg} backdrop-blur-md`}>
+              <label className="text-sm font-medium text-gray-400 mb-2 block">Filtrar por Metrólogo</label>
+              <select
+                value={metrologoSeleccionado?.id || ""}
+                onChange={(e) => setMetrologoSeleccionado(usuarios.find((u) => u.id === e.target.value) || null)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all cursor-pointer hover:bg-slate-750"
+              >
+                <option value="">Vista General</option>
+                {usuarios.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
             </div>
-          </motion.div>
-        </div>
-      )}
 
-      {/* --- Ranking Top 3 con border y glow SIEMPRE VISIBLE --- */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 max-w-4xl mx-auto mb-12"
-      >
-        <h3 className="text-2xl font-bold text-center text-gray-800 mb-6">
-          🏆 Top 3 Metrólogos ({mesActualTxt})
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {top3.map((m, i) => (
-            <motion.div
-              key={m.name}
-              className="relative text-center p-6 rounded-xl bg-gradient-to-br from-white to-gray-50 overflow-hidden"
-              style={{
-                border: `2.5px solid ${m.color}`,
-                zIndex: 1,
-              }}
-              initial={{ boxShadow: `0 0 0px ${m.color}00` }}
-              animate={{
-                boxShadow: [
-                  `0 0 0px ${m.color}00, 0 0 24px ${blendColorWithWhite(m.color,0.7)}`,
-                  `0 0 24px ${blendColorWithWhite(m.color,0.7)}, 0 0 48px ${blendColorWithWhite(m.color,0.5)}`,
-                  `0 0 0px ${m.color}00, 0 0 32px ${blendColorWithWhite(m.color,0.7)}`
-                ],
-                borderColor: [m.color, "#fff", m.color],
-                scale: [1, 1.025, 1],
-                filter: [
-                  `drop-shadow(0 0 0px ${blendColorWithWhite(m.color,0.7)})`,
-                  `drop-shadow(0 0 16px ${blendColorWithWhite(m.color,0.7)})`,
-                  `drop-shadow(0 0 0px ${blendColorWithWhite(m.color,0.7)})`
-                ],
-              }}
-              transition={{
-                repeat: Infinity,
-                duration: 4,
-                ease: "easeInOut",
-              }}
-            >
-              {/* Glow mezclado con blanco para que siempre se note */}
-              <motion.div
-                className="absolute inset-0 rounded-xl pointer-events-none"
-                style={{
-                  zIndex: 0,
-                  border: "2.5px solid transparent",
-                  background: `radial-gradient(ellipse at 60% 30%, ${blendColorWithWhite(m.color, 0.7)} 0%, #fff0 80%)`,
-                  filter: `blur(18px)`,
-                }}
-                animate={{
-                  opacity: [0.8, 1, 0.8, 1],
-                  scale: [1, 1.08, 1, 0.97, 1],
-                  background: [
-                    `radial-gradient(ellipse at 60% 30%, ${blendColorWithWhite(m.color, 0.8)} 0%, #fff0 80%)`,
-                    `radial-gradient(ellipse at 20% 80%, ${blendColorWithWhite(m.color, 0.6)} 0%, #fff0 90%)`,
-                    `radial-gradient(ellipse at 60% 60%, #fff 0%, ${blendColorWithWhite(m.color, 0.7)} 55%, #fff0 90%)`,
-                    `radial-gradient(ellipse at 50% 40%, ${blendColorWithWhite(m.color, 0.7)} 0%, #fff0 90%)`
-                  ]
-                }}
-                transition={{
-                  repeat: Infinity,
-                  duration: 7,
-                  ease: "easeInOut"
-                }}
-              />
-              <div className="relative z-10">
-                <div className="text-4xl mb-2">
-                  {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
-                </div>
-                <h4 className="font-bold text-lg text-gray-800">{m.name}</h4>
-                <p className="text-gray-600">{m.total} calibraciones</p>
+            {/* Ranking Vertical Compacto */}
+            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} ${COLORS.cardBg} backdrop-blur-md h-fit`}>
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Trophy className="text-yellow-500" size={20} /> Top Performers
+              </h3>
+              <div className="space-y-4">
+                {top3.map((m, i) => (
+                  <motion.div 
+                    key={m.name}
+                    initial={{ x: -20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/20 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i===0 ? 'bg-yellow-500/20 text-yellow-500' : i===1 ? 'bg-gray-400/20 text-gray-400' : 'bg-orange-500/20 text-orange-500'}`}>
+                        #{i+1}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm text-gray-200">{m.name}</p>
+                        <div className="w-24 h-1.5 bg-gray-700 rounded-full mt-1 overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(m.total / (top3[0].total || 1)) * 100}%` }}
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: m.color }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <span className="font-mono font-bold text-lg">{m.total}</span>
+                  </motion.div>
+                ))}
               </div>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
+            </div>
+          </div>
 
-      {/* --------- SECCIÓN MEJORADA: Barra GLOBAL --------- */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-6 max-w-6xl mx-auto"
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-gray-800">
-            TOTAL GENERAL - Calibraciones por Metrologo (Mes: {mesActualTxt})
-          </h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSortMode("order")}
-              className={`p-2 rounded ${sortMode === "order" ? "bg-blue-500 text-white" : "bg-gray-200"}`}
-            >
-              📝
-            </button>
-            <button
-              onClick={() => setSortMode("desc")}
-              className={`p-2 rounded ${sortMode === "desc" ? "bg-blue-500 text-white" : "bg-gray-200"}`}
-            >
-              <SortDesc size={20} />
-            </button>
-            <button
-              onClick={() => setSortMode("asc")}
-              className={`p-2 rounded ${sortMode === "asc" ? "bg-blue-500 text-white" : "bg-gray-200"}`}
-            >
-              <SortAsc size={20} />
-            </button>
+          {/* Lado Derecho: Gráficas (8 columnas) */}
+          <div className="lg:col-span-8 space-y-6">
+            
+            {/* SI HAY UN METRÓLOGO SELECCIONADO */}
+            {metrologoSeleccionado ? (
+              <div className="grid grid-cols-1 gap-6">
+                {/* 1. Bar Chart Anual */}
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`p-6 rounded-2xl border ${COLORS.cardBorder} ${COLORS.cardBg}`}>
+                  <h3 className="text-lg font-bold mb-6 text-gray-200">Tendencia Anual: {metrologoSeleccionado.name}</h3>
+                  <div className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dataMesesMetrologo}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                        <XAxis dataKey="mes" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} />
+                        <Bar 
+                          dataKey="total" 
+                          fill={METROLOGOS_ORDER_COLOR.find(m => m.name === metrologoSeleccionado.name)?.color || COLORS.accent} 
+                          radius={[4, 4, 0, 0]} 
+                          animationDuration={1500}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </motion.div>
+
+                {/* 2. Pie Chart Interactivo */}
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`p-6 rounded-2xl border ${COLORS.cardBorder} ${COLORS.cardBg} flex flex-col md:flex-row items-center gap-8`}>
+                  <div className="w-full md:w-1/2 h-[300px] relative">
+                     <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          activeIndex={activeIndex}
+                          activeShape={renderActiveShape}
+                          data={dataMagnitudes}
+                          cx="50%" cy="50%"
+                          innerRadius={60} outerRadius={80}
+                          dataKey="value"
+                          onMouseEnter={(_, index) => setActiveIndex(index)}
+                          onMouseLeave={() => setActiveIndex(-1)}
+                          onClick={handlePieClick}
+                          paddingAngle={5}
+                        >
+                          {dataMagnitudes.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} stroke="rgba(0,0,0,0)" />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<CustomTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Centro del Pie */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                       <span className="text-3xl font-bold text-white">{metrologoStats.total}</span>
+                       <span className="text-xs text-gray-400">Total Mes</span>
+                    </div>
+                  </div>
+                  
+                  {/* Leyenda y Detalles */}
+                  <div className="w-full md:w-1/2">
+                    <h4 className="font-bold text-lg mb-4">Distribución por Magnitud</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
+                      {dataMagnitudes.map((m) => (
+                        <div key={m.name} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition" onClick={(e: any) => handlePieClick(m, 0, { clientX: window.innerWidth/2, clientY: window.innerHeight/2 })}>
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: m.color }} />
+                          <span className="text-gray-300 truncate">{m.name}</span>
+                          <span className="text-gray-500 ml-auto">{m.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-4 text-xs text-blue-400 flex items-center gap-1">
+                      <Activity size={12}/> Haz click en la gráfica para ver holograma
+                    </p>
+                  </div>
+                </motion.div>
+              </div>
+            ) : (
+              // VISTA GLOBAL (SI NO HAY SELECCIÓN)
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`p-6 rounded-2xl border ${COLORS.cardBorder} ${COLORS.cardBg} min-h-[500px]`}>
+                 <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-lg font-bold text-gray-200">Comparativa Global del Mes</h3>
+                   <div className="flex gap-1 bg-slate-800 p-1 rounded-lg">
+                     {(['order', 'desc', 'asc'] as SortMode[]).map((mode) => (
+                       <button
+                        key={mode}
+                        onClick={() => setSortMode(mode)}
+                        className={`p-2 rounded transition-all ${sortMode === mode ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                       >
+                         {mode === 'order' ? <SortDesc size={16} className="rotate-90" /> : mode === 'desc' ? <SortDesc size={16}/> : <SortAsc size={16}/>}
+                       </button>
+                     ))}
+                   </div>
+                 </div>
+                 
+                 <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={metrologosTotales} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} interval={0} tick={{fill: '#94a3b8'}} />
+                        <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                        <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                        <Bar dataKey="total" radius={[6, 6, 0, 0]} animationDuration={1000}>
+                          {metrologosTotales.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} style={{ filter: `drop-shadow(0 0 4px ${entry.color}80)` }} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                 </div>
+              </motion.div>
+            )}
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={540}>
-          <BarChart 
-            data={metrologosTotales} 
-            margin={{ top: 40, right: 40, left: 40, bottom: 30 }}
-          >
-            <XAxis dataKey="name" tick={{ fontSize: 15 }} />
-            <YAxis />
-            <Tooltip formatter={(value: any) => [`${value} calibraciones`, "Total"]} />
-            <Bar dataKey="total" radius={[8, 8, 0, 0]}>
-              {metrologosTotales.map((entry, idx) => (
-                <Cell 
-                  key={`cell-bar-${entry.name}`}
-                  fill={entry.color}
-                  stroke={entry.color}
-                  style={{
-                    filter: `drop-shadow(0 0 8px ${entry.color}90)`,
-                    transition: 'all 0.3s'
-                  }}
-                />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-        {/* Leyenda personalizada */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
-          {metrologosTotales.map((met) => (
-            <div key={met.name} className="flex items-center text-sm">
-              <div
-                className="w-4 h-4 rounded mr-3"
-                style={{ backgroundColor: met.color }}
-              />
-              <span className="text-gray-700 font-medium">{met.name}</span>
-            </div>
-          ))}
-        </div>
-      </motion.div>
+      </main>
 
-      {/* Holograma Popup */}
+      {/* HOLOGRAM POPUP */}
       {hologramVisible && selectedMagnitud && (
         <HologramMagnitudPopup
           magnitud={selectedMagnitud.name}
           valor={selectedMagnitud.value}
           color={selectedMagnitud.color}
-          onClose={closeHologram}
-          position={selectedMagnitud.position}
+          onClose={() => setHologramVisible(false)}
         />
       )}
     </div>
