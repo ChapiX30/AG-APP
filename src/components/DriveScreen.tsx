@@ -55,6 +55,8 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import WarningIcon from '@mui/icons-material/Warning';
 
 // --- INTERFACES ---
 interface DriveFile {
@@ -62,7 +64,7 @@ interface DriveFile {
   url: string;
   fullPath: string;
   updated: string;
-  originalUpdated?: string;
+  originalUpdated?: string; // Fecha de creación original
   reviewed?: boolean;
   reviewedBy?: string;
   reviewedByName?: string;
@@ -169,6 +171,31 @@ const getActivityDescription = (activity: ActivityLog) => {
   }
 };
 
+// --- DEADLINE LOGIC HELPER ---
+const calculateDeadlineStatus = (fileDate: string, isCompleted?: boolean) => {
+    if (isCompleted) return { status: 'completed', progress: 100, color: 'primary', label: 'Finalizado' };
+
+    const created = new Date(fileDate);
+    const now = new Date();
+    const MAX_DAYS = 5;
+    
+    // Diferencia en milisegundos
+    const diffTime = now.getTime() - created.getTime();
+    // Diferencia en días
+    const diffDays = diffTime / (1000 * 3600 * 24);
+    
+    const percentageUsed = Math.min((diffDays / MAX_DAYS) * 100, 100);
+    const daysLeft = Math.max(0, Math.ceil(MAX_DAYS - diffDays));
+
+    if (diffDays >= MAX_DAYS) {
+        return { status: 'expired', progress: 100, color: 'error', label: 'Vencido' };
+    } else if (diffDays >= MAX_DAYS - 2) { // Quedan 2 dias o menos
+        return { status: 'warning', progress: percentageUsed, color: 'warning', label: `${daysLeft} días restantes` };
+    } else {
+        return { status: 'ok', progress: percentageUsed, color: 'success', label: `${daysLeft} días restantes` };
+    }
+};
+
 // --- FIREBASE HELPERS ---
 const getFileParentPath = (filePath: string): string[] => {
   const pathParts = filePath.replace('worksheets/', '').split('/');
@@ -202,7 +229,6 @@ const getUserDisplayName = async (user: any) => {
   return 'Usuario';
 };
 
-// --- OPTIMISTIC UI HELPERS ---
 const updateFileInTree = (folder: DriveFolder, filePath: string, updates: Partial<DriveFile>): DriveFolder => {
   const fileIndex = folder.files.findIndex(f => f.fullPath === filePath);
   if (fileIndex > -1) {
@@ -243,6 +269,9 @@ const FileCard = ({
     onClick: () => void;
 }) => {
     const { displayName, displayDate } = extractFileInfo(file.name, file.updated, file.originalUpdated);
+    
+    // CALCULO DEL ESTADO DE TIEMPO
+    const deadline = calculateDeadlineStatus(file.originalUpdated || file.updated, file.completed);
 
     const tooltipContent = (
         <Box sx={{ p: 0.5 }}>
@@ -255,12 +284,22 @@ const FileCard = ({
                     {file.completedByName ? `Realizó: ${file.completedByName}` : 'No realizado aún'}
                 </Typography>
             </Stack>
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} alignItems="center" mb={1}>
                 <CheckCircleIcon sx={{ fontSize: 16, color: file.reviewed ? '#a5d6a7' : '#bdbdbd' }} />
                 <Typography variant="caption" sx={{ color: file.reviewed ? '#fff' : '#bdbdbd' }}>
                     {file.reviewedByName ? `Revisó: ${file.reviewedByName}` : 'No revisado aún'}
                 </Typography>
             </Stack>
+            
+            {/* INFO DE VENCIMIENTO EN TOOLTIP */}
+            {!file.completed && (
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ color: deadline.color === 'error' ? '#ffcdd2' : '#fff' }}>
+                    {deadline.status === 'expired' ? <WarningIcon fontSize="small" /> : <AccessTimeIcon fontSize="small" />}
+                    <Typography variant="caption" fontWeight={700}>
+                        {deadline.label}
+                    </Typography>
+                </Stack>
+            )}
         </Box>
     );
 
@@ -323,7 +362,7 @@ const FileCard = ({
                     </Stack>
                 </Box>
 
-                <Box sx={{ p: 2, flex: 1 }}>
+                <Box sx={{ p: 2, pb: 1, flex: 1 }}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between">
                         <Typography variant="body2" fontWeight={600} noWrap title={displayName} sx={{ flex: 1 }}>
                             {displayName}
@@ -335,7 +374,7 @@ const FileCard = ({
                         </Box>
                     </Stack>
                     
-                    <Stack direction="row" alignItems="center" spacing={1} mt={1}>
+                    <Stack direction="row" alignItems="center" spacing={1} mt={0.5} mb={1}>
                         {getFileIconComponent(file.name, 16)}
                         <Typography variant="caption" color="text.secondary">
                             {displayDate}
@@ -349,6 +388,27 @@ const FileCard = ({
                             {file.starred ? <StarIcon sx={{ fontSize: 18, color: '#fbbc04' }} /> : <StarBorderIcon sx={{ fontSize: 18, color: '#dadce0' }} />}
                         </IconButton>
                     </Stack>
+
+                    {/* BARRA DE VENCIMIENTO (NUEVO) */}
+                    {!file.completed && (
+                        <Box sx={{ mt: 1 }}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+                                <Typography variant="caption" sx={{ 
+                                    fontSize: '0.65rem', 
+                                    fontWeight: 700, 
+                                    color: deadline.color === 'error' ? 'error.main' : 'text.secondary'
+                                }}>
+                                    {deadline.label}
+                                </Typography>
+                            </Stack>
+                            <LinearProgress 
+                                variant="determinate" 
+                                value={deadline.progress} 
+                                color={deadline.color as any}
+                                sx={{ height: 4, borderRadius: 2, bgcolor: alpha('#000', 0.05) }} 
+                            />
+                        </Box>
+                    )}
                 </Box>
             </Paper>
         </Tooltip>
@@ -567,10 +627,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     
     return files.sort((a, b) => {
-      if (sortBy === 'name') return sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-      const dateA = new Date(a.originalUpdated || a.updated).getTime();
-      const dateB = new Date(b.originalUpdated || b.updated).getTime();
-      return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      if (sortBy === 'name') {
+          return sortOrder === 'asc' 
+            ? a.name.localeCompare(b.name) 
+            : b.name.localeCompare(a.name);
+      } else {
+          // Sort by date
+          const dateA = new Date(a.originalUpdated || a.updated).getTime();
+          const dateB = new Date(b.originalUpdated || b.updated).getTime();
+          return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      }
     });
   }, [currentFolder, debouncedSearch, tree, allFilesCache, sortBy, sortOrder]);
 
