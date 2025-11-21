@@ -54,6 +54,7 @@ import TableChartIcon from '@mui/icons-material/TableChart';
 import DescriptionIcon from '@mui/icons-material/Description';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 
 // --- INTERFACES ---
 interface DriveFile {
@@ -368,12 +369,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // UI States (OPTIMIZADO: Debounce search)
+  // UI States
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [view, setView] = useState<'grid' | 'list'>('grid');
-  const [searchQuery, setSearchQuery] = useState(""); // Lo que escribes
-  const [debouncedSearch, setDebouncedSearch] = useState(""); // Lo que filtra realmente
-  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<'name' | 'date'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
@@ -395,6 +395,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [renameTarget, setRenameTarget] = useState<DriveFile | null>(null);
   const [newName, setNewName] = useState("");
   const [deleteFile, setDeleteFile] = useState<DriveFile | null>(null);
+  
+  // MOVE STATES
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveTargetFile, setMoveTargetFile] = useState<DriveFile | null>(null);
+  const [moveToPath, setMoveToPath] = useState<string[]>([]); // Navegacion dentro del modal mover
 
   // Process States
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -430,11 +435,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (!accessLoading && currentUserData !== null) reloadTree();
   }, [accessLoading, currentUserData]);
 
-  // --- DEBOUNCE SEARCH EFFECT ---
   useEffect(() => {
-      const timer = setTimeout(() => {
-          setDebouncedSearch(searchQuery);
-      }, 500); // Espera 500ms después de que dejes de escribir para filtrar
+      const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
       return () => clearTimeout(timer);
   }, [searchQuery]);
 
@@ -507,6 +509,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     } catch (e) { console.error(e); }
   };
 
+  // --- HELPERS FOR MOVE DIALOG ---
+  const getFolderContentForMove = (): DriveFolder | null => {
+      if (!tree) return null;
+      let folder: DriveFolder = tree;
+      for (const seg of moveToPath) {
+          const next = folder.folders.find(f => f.name === seg);
+          if (!next) return null;
+          folder = next;
+      }
+      return folder;
+  };
+
   // --- FILTERING & NAVIGATION ---
   const getCurrentFolder = (): DriveFolder | null => {
     if (!tree) return null;
@@ -529,23 +543,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const currentFolder = getCurrentFolder();
-  
   const getAllFilesFromTree = (folder: DriveFolder): DriveFile[] => folder.files.concat(...folder.folders.map(getAllFilesFromTree));
 
   const filteredFolders = useMemo(() => {
     if (debouncedSearch) return [];
     if (!currentFolder) return [];
-    
     let folders = currentFolder.folders;
     if (selectedPath.length === 0 && currentUserData) folders = filterFoldersByPermissions(folders);
-    
     return folders.sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
   }, [currentFolder, debouncedSearch, sortOrder, currentUserData, userIsQuality, selectedPath]);
 
   const filteredFiles = useMemo(() => {
     if (!tree) return [];
-    
-    // Usa debouncedSearch en lugar de searchQuery directo
     let files = debouncedSearch ? allFilesCache : (currentFolder?.files || []);
     
     files = files.filter(f => f.name !== '.keep'); 
@@ -553,12 +562,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
         files = files.filter(f => f.name.toLowerCase().includes(q) || f.fullPath.toLowerCase().includes(q));
-        
-        // *** OPTIMIZACIÓN CRÍTICA ***
-        // Limitar resultados a 100 para evitar congelar el navegador (INP Issue)
-        if (files.length > 100) {
-            files = files.slice(0, 100);
-        }
+        if (files.length > 100) files = files.slice(0, 100);
     }
     
     return files.sort((a, b) => {
@@ -585,7 +589,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       if (!user) return;
       const newReviewed = !file.reviewed;
       const userName = await getUserDisplayName(user);
-
       try {
           const id = file.fullPath.replace(/\//g, '_');
           await setDoc(doc(db, 'fileMetadata', id), { 
@@ -603,7 +606,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       if (!user) return;
       const newCompleted = !file.completed;
       const userName = await getUserDisplayName(user);
-
       try {
           const id = file.fullPath.replace(/\//g, '_');
           await setDoc(doc(db, 'fileMetadata', id), { 
@@ -615,6 +617,52 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           logActivity(newCompleted ? 'complete' : 'uncomplete', file.name);
           reloadTree();
       } catch (e) { console.error(e); reloadTree(); }
+  };
+
+  // --- MOVE LOGIC (RESTORED) ---
+  const handleMoveFile = async () => {
+      if (!moveTargetFile || !user) return;
+      setMoveDialogOpen(false);
+      setLoading(true);
+
+      // Calculate New Path
+      const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
+      const newFullPath = `${destinationPathString}/${moveTargetFile.name}`;
+      
+      if (newFullPath === moveTargetFile.fullPath) {
+          setLoading(false); return; // Same place
+      }
+
+      try {
+          // 1. Get File URL
+          const fileUrl = await getDownloadURL(ref(storage, moveTargetFile.fullPath));
+          const response = await fetch(fileUrl);
+          const blob = await response.blob();
+
+          // 2. Upload to new location
+          await uploadBytes(ref(storage, newFullPath), blob);
+
+          // 3. Move Metadata
+          const oldMetaId = moveTargetFile.fullPath.replace(/\//g, '_');
+          const newMetaId = newFullPath.replace(/\//g, '_');
+          
+          const oldMetaDoc = await getDoc(doc(db, 'fileMetadata', oldMetaId));
+          if (oldMetaDoc.exists()) {
+              const data = oldMetaDoc.data();
+              await setDoc(doc(db, 'fileMetadata', newMetaId), { ...data, filePath: newFullPath });
+              await deleteDoc(doc(db, 'fileMetadata', oldMetaId));
+          }
+
+          // 4. Delete old file
+          await deleteObject(ref(storage, moveTargetFile.fullPath));
+
+          logActivity('move', moveTargetFile.name);
+          reloadTree();
+      } catch (e) {
+          console.error(e);
+          setError("Error al mover archivo");
+          setLoading(false);
+      }
   };
 
   const handleOpenFile = (file: DriveFile) => {
@@ -654,7 +702,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         await uploadBytes(fakeFileRef, new Uint8Array([0]));
         logActivity('create_folder', undefined, newFolderName.trim());
         setNewFolderName("");
-        // Wait a bit for consistency
+        // ESPERA DE SEGURIDAD DE 500ms para que Firebase indexe
         await new Promise(resolve => setTimeout(resolve, 500));
         reloadTree();
     } catch(e) { console.error(e); setLoading(false); }
@@ -674,6 +722,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       </Container>
   );
 
+  // Calculate move folder content
+  const moveFolderContent = getFolderContentForMove();
+
   return (
     <Box 
         sx={{ minHeight: '100vh', bgcolor: '#f8f9fa' }}
@@ -683,7 +734,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         onDragLeave={(e) => { e.preventDefault(); if(e.currentTarget === dropZoneRef.current) setIsDragging(false); }}
         onDrop={async (e) => {
             e.preventDefault(); setIsDragging(false);
-            // File upload logic would go here
+            // File upload logic...
         }}
     >
         {/* DRAG OVERLAY */}
@@ -1121,6 +1172,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {userIsQuality && (
                 <Box>
                     <Divider />
+                    {/* RESTAURADO MOVER */}
+                    <MenuItem onClick={() => { 
+                        setMoveTargetFile(selectedFile); 
+                        setMoveToPath([]); 
+                        setMoveDialogOpen(true); 
+                        setActionMenuAnchor(null); 
+                    }}>
+                        <ListItemIcon><DriveFileMoveIcon fontSize="small" /></ListItemIcon> Mover
+                    </MenuItem>
                     <MenuItem onClick={() => { setRenameTarget(selectedFile); setRenameDialogOpen(true); setActionMenuAnchor(null); }}>
                         <ListItemIcon><DriveFileRenameOutlineIcon fontSize="small" /></ListItemIcon> Cambiar nombre
                     </MenuItem>
@@ -1161,7 +1221,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </MenuItem>
             )}
 
-            {/* AQUI TAMBIEN ESTA EL CAMBIO: AHORA METROLOGO O CALIDAD PUEDEN MARCAR REALIZADO */}
             {(userIsMetrologist || userIsQuality) && contextMenu?.file && (
                 <MenuItem onClick={() => { handleMarkCompleted(contextMenu.file!); setContextMenu(null); }}>
                     <ListItemIcon>
@@ -1174,6 +1233,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {userIsQuality && (
                 <Box>
                     <Divider />
+                    {/* RESTAURADO MOVER EN CLICK DERECHO */}
+                    <MenuItem onClick={() => { 
+                        setMoveTargetFile(contextMenu?.file || null); 
+                        setMoveToPath([]); 
+                        setMoveDialogOpen(true); 
+                        setContextMenu(null); 
+                    }}>
+                        <ListItemIcon><DriveFileMoveIcon fontSize="small" /></ListItemIcon> Mover
+                    </MenuItem>
                     <MenuItem onClick={() => { setRenameTarget(contextMenu?.file || null); setRenameDialogOpen(true); setContextMenu(null); }}>
                         <ListItemIcon><DriveFileRenameOutlineIcon fontSize="small" /></ListItemIcon> Cambiar nombre
                     </MenuItem>
@@ -1211,6 +1279,42 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <DialogActions>
                 <Button onClick={() => setDeleteFile(null)}>Cancelar</Button>
                 <Button variant="contained" color="error" onClick={handleDeleteFile}>Eliminar</Button>
+            </DialogActions>
+        </Dialog>
+
+        {/* RESTORED: MOVE DIALOG */}
+        <Dialog open={moveDialogOpen} onClose={() => setMoveDialogOpen(false)} maxWidth="sm" fullWidth>
+            <DialogTitle>Mover a...</DialogTitle>
+            <DialogContent dividers>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <IconButton 
+                        disabled={moveToPath.length === 0} 
+                        onClick={() => setMoveToPath(prev => prev.slice(0, -1))}
+                    >
+                        <ArrowUpwardIcon />
+                    </IconButton>
+                    <Breadcrumbs sx={{ ml: 1 }}>
+                        <Typography color="inherit">Mi unidad</Typography>
+                        {moveToPath.map((p, i) => <Typography key={i} color="text.primary">{p}</Typography>)}
+                    </Breadcrumbs>
+                </Box>
+                <List dense>
+                    {moveFolderContent?.folders.map((folder, idx) => (
+                        <ListItemButton key={idx} onClick={() => setMoveToPath([...moveToPath, folder.name])}>
+                            <ListItemIcon><FolderIcon /></ListItemIcon>
+                            <ListItemText primary={folder.name} />
+                        </ListItemButton>
+                    ))}
+                    {(!moveFolderContent || moveFolderContent.folders.length === 0) && (
+                        <Typography variant="caption" sx={{ p: 2, color: 'text.secondary' }}>No hay carpetas aquí</Typography>
+                    )}
+                </List>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setMoveDialogOpen(false)}>Cancelar</Button>
+                <Button variant="contained" onClick={handleMoveFile} disabled={!moveTargetFile}>
+                    Mover aquí
+                </Button>
             </DialogActions>
         </Dialog>
 

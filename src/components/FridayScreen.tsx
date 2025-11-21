@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useTransition } from "react";
 import {
   Plus, Trash2, ChevronRight, ChevronDown, Search, Filter, 
   MoreHorizontal, Home, Settings, Bell, UserCircle, Calendar, 
@@ -109,7 +109,7 @@ const Cell = React.memo(({ row, col, gidx, ridx, isEditing, onStartEdit, onSave,
             <div className="w-full h-full flex items-center justify-center text-white font-medium" style={{ backgroundColor: item.bg }}>
                 {item.label}
             </div>
-            <div className="absolute top-full left-0 w-full bg-white shadow-xl rounded-b-md border border-gray-200 z-50 overflow-hidden">
+            <div className="absolute top-full left-0 w-full bg-white shadow-xl rounded-b-md border border-gray-200 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                {col.options?.map(opt => (
                  <div key={opt} 
                       className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 border-b border-gray-50"
@@ -155,7 +155,7 @@ const Cell = React.memo(({ row, col, gidx, ridx, isEditing, onStartEdit, onSave,
     if (isEditing) {
       return (
         <div className="relative w-full h-full">
-            <div className="absolute top-0 left-0 min-w-[200px] bg-white shadow-2xl rounded border border-blue-200 z-50 max-h-60 overflow-y-auto">
+            <div className="absolute top-0 left-0 min-w-[200px] bg-white shadow-2xl rounded border border-blue-200 z-50 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
               {metrologos.map((m: any) => {
                   const name = m.name || "Desconocido";
                   const initial = name.charAt(0) || "?";
@@ -278,6 +278,9 @@ const FridayScreen: React.FC<{ navigate?: (route: string) => void }> = ({ naviga
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener('resize', c); return () => window.removeEventListener('resize', c); }, []);
 
+  // HOOK DE TRANSICIÓN PARA EVITAR INP (Lag en botones)
+  const [isPending, startTransition] = useTransition();
+
   const [groups, setGroups] = useState<Group[]>([
     { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false, rows: [] },
     { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false, rows: [] }
@@ -298,9 +301,9 @@ const FridayScreen: React.FC<{ navigate?: (route: string) => void }> = ({ naviga
 
   // --- CARGA DE DATOS ---
   useEffect(() => {
-     getDocs(query(collection(db,"usuarios"), where("puesto", "==", "Metrólogo")))
-        .then(snap => setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-        .catch(err => console.error("Error loading users:", err));
+     const unsubMetrologos = onSnapshot(query(collection(db,"usuarios"), where("puesto", "==", "Metrólogo")), (snap) => {
+        setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+     });
 
      const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
         if(snap.exists() && snap.data().columns) {
@@ -335,15 +338,19 @@ const FridayScreen: React.FC<{ navigate?: (route: string) => void }> = ({ naviga
             });
         });
      });
-     return () => { unsubBoard(); unsubWorksheets(); };
+     return () => { unsubBoard(); unsubWorksheets(); unsubMetrologos(); };
   }, []);
 
   // --- HANDLERS ---
   const { navigateTo } = useNavigation();
+  
+  // OPTIMIZACIÓN CRÍTICA DE INP: Usamos startTransition para que la navegación no bloquee el hilo principal
   const manejarNavegacion = useCallback((d: string) => {
-      if(['servicios','friday-servicios'].includes(d)) navigateTo('friday-servicios');
-      else if(['menu','inicio','mainmenu'].includes(d)) navigateTo('menu');
-      else navigateTo(d);
+      startTransition(() => {
+          if(['servicios','friday-servicios'].includes(d)) navigateTo('friday-servicios');
+          else if(['menu','inicio','mainmenu'].includes(d)) navigateTo('menu');
+          else navigateTo(d);
+      });
   }, [navigateTo]);
 
   const handleAddRow = useCallback(async (gidx: number) => {
@@ -443,36 +450,39 @@ const FridayScreen: React.FC<{ navigate?: (route: string) => void }> = ({ naviga
 
   return (
     <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
-        {/* SIDEBAR RESPONSIVE */}
-        {/* En escritorio, si está abierto se muestra relativo (empuja el contenido). En movil es absolute */}
+        {/* SIDEBAR RESPONSIVE - Layout relativo en desktop para empujar contenido */}
         {sidebarAbierto && (
             <div className={clsx(
                 "flex-shrink-0 bg-white h-full z-50 transition-all duration-300",
-                isMobile ? "fixed inset-y-0 left-0 shadow-xl w-64" : "relative w-64"
+                isMobile ? "fixed inset-y-0 left-0 shadow-xl w-64" : "relative w-64 border-r border-[#d0d4e4]"
             )}>
                  <SidebarFriday onNavigate={manejarNavegacion} isOpen={sidebarAbierto} onToggle={() => setSidebarAbierto(!sidebarAbierto)} />
             </div>
         )}
 
-        {/* Overlay movil */}
         {isMobile && sidebarAbierto && (
             <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarAbierto(false)}></div>
         )}
         
-        {/* CONTENIDO PRINCIPAL - OCUPA TODO EL RESTO (flex-1) */}
+        {/* CONTENIDO PRINCIPAL - FLEX-1 PARA LLENAR EL ESPACIO RESTANTE */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-white relative transition-all duration-300">
            
            {/* HEADER */}
            <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white">
                <div className="flex items-center gap-4">
-                   {/* Botón Toggle Sidebar / Back */}
                    <div className="flex items-center gap-2">
                        {!sidebarAbierto && (
                            <button onClick={() => setSidebarAbierto(true)} className="p-2 hover:bg-gray-100 rounded-md text-gray-600">
                                <Menu className="w-6 h-6" />
                            </button>
                        )}
-                       <button onClick={() => manejarNavegacion('mainmenu')} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600" title="Volver al Menú">
+                       {/* BOTÓN DE ATRÁS OPTIMIZADO (isPending muestra estado de carga si es lento) */}
+                       <button 
+                           onClick={() => manejarNavegacion('mainmenu')} 
+                           disabled={isPending}
+                           className={clsx("p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600", isPending && "opacity-50 cursor-wait")} 
+                           title="Volver al Menú"
+                       >
                            <ArrowLeft className="w-6 h-6" />
                        </button>
                    </div>
