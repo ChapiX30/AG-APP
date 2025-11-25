@@ -578,12 +578,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                         value={`${sortBy}-${sortOrder}`} 
                         onChange={(e) => {
                             const [s, o] = (e.target.value as string).split('-');
-                            setSortBy(s as any); setSortOrder(o as any);
+                            setSortBy(s as 'name' | 'date'); 
+                            setSortOrder(o as 'asc' | 'desc');
                         }}
                         disableUnderline IconComponent={SortIcon} sx={{ fontSize: 14 }}
                     >
                         <MenuItem value="name-asc">Nombre (A-Z)</MenuItem>
+                        <MenuItem value="name-desc">Nombre (Z-A)</MenuItem>
+                        <Divider />
                         <MenuItem value="date-desc">Más reciente</MenuItem>
+                        <MenuItem value="date-asc">Más antiguo</MenuItem>
                     </Select>
                 </FormControl>
             </Stack>
