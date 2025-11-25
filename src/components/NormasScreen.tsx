@@ -23,33 +23,11 @@ interface PatronBase {
     serie: string;
     fechaVencimiento: string;
     status: 'vigente' | 'vencido' | 'critico' | 'proximo' | 'pendiente'; 
-    // 🚨 AÑADIDO 'en_servicio'
-    estadoProceso: 'operativo' | 'programado' | 'en_calibracion' | 'completado' | 'fuera_servicio' | 'en_prestamo' | 'en_servicio'; 
+    estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_prestamo' | 'en_servicio' | 'en_mantenimiento'; 
     usuarioEnUso?: string; 
 }
 
-export interface RegistroPatron {
-    id?: string;
-    noControl: string; 
-    descripcion: string;
-    serie: string;
-    marca: string;
-    modelo: string;
-    frecuencia: string;
-    tipoServicio: string;
-    fecha: string; 
-    prioridad: 'Alta' | 'Media' | 'Baja';
-    ubicacion: string;
-    responsable: string;
-    estadoProceso: 'operativo' | 'programado' | 'en_calibracion' | 'completado' | 'fuera_servicio' | 'en_prestamo' | 'en_servicio';
-    fechaInicioProceso?: string;
-    observaciones?: string;
-    historial: any[];
-    usuarioEnUso?: string;
-}
-
-const COLLECTION_NAME_PATRONES = "patronesCalibracion"; 
-
+// Catálogo de mochilas (Sin cambios en tus datos)
 const BACKPACK_CATALOG = {
   mochila_abraham: {
     nombre: 'Mochila 1 (Abraham)',
@@ -137,6 +115,8 @@ const BACKPACK_CATALOG = {
     ],
  }
 };
+
+const COLLECTION_NAME_PATRONES = "patronesCalibracion"; 
 
 type ToolItem = {
   herramienta: string;
@@ -236,7 +216,7 @@ const styles = `
 function aggregateTools(backpackIds: string[]): ToolItem[] {
   const aggregator = new Map<string, ToolItem>();
   for (const id of backpackIds) {
-    const backpack = BACKPACK_CATALOG[id];
+    const backpack = BACKPACK_CATALOG[id as keyof typeof BACKPACK_CATALOG];
     if (!backpack) continue;
     for (const item of backpack.items) {
       const cleanTool = item.herramienta.trim();
@@ -294,11 +274,10 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const xColModelo = 400;
     const xColSerie = 480;
 
-    // 🚨 EXCLUIR EQUIPOS NO OPERATIVOS
     const availableTools = allTools.filter(tool => 
-        tool.estadoProceso !== 'en_calibracion' && 
+        tool.estadoProceso !== 'en_proceso' && 
         tool.estadoProceso !== 'fuera_servicio' &&
-        tool.estadoProceso !== 'en_servicio' // Excluir 'en_servicio' si se desea
+        tool.estadoProceso !== 'en_servicio' 
     );
 
     availableTools.forEach((tool, index) => {
@@ -566,7 +545,7 @@ const NormasScreen = () => {
     [patronesDisponibles]
   );
 
-  // 🚨🚨 FUNCIÓN REGISTRO MASIVO (CORREGIDA PARA 'en_servicio') 🚨🚨
+  // 🚨🚨 LÓGICA DE REGISTRO DE SALIDA 🚨🚨
   const handleRegistrarSalidaMasiva = async () => {
     const isValid = await trigger('usuario'); 
     if (!isValid) {
@@ -585,12 +564,9 @@ const NormasScreen = () => {
         return;
     }
 
-    // ======================================================
-    // 🚨 VALIDACIÓN BLINDADA: REVISAR SI YA ESTÁN EN SERVICIO/PRÉSTAMO
-    // ======================================================
+    // 🚨 VALIDACIÓN DE DISPONIBILIDAD
     for (const tool of herramientasParaSalida) {
         const patronData = patronesDisponibles.get(tool.herramienta);
-        // Si NO está operativo (está en servicio, préstamo, etc.), NO se puede volver a sacar.
         if (patronData && patronData.estadoProceso !== 'operativo') {
              let msg = `❌ ERROR: El equipo "${patronData.nombre}" NO está disponible.`;
              if (patronData.usuarioEnUso) {
@@ -601,7 +577,6 @@ const NormasScreen = () => {
              return; // DETIENE TODO
         }
     }
-    // ======================================================
 
     if (isAnyPatronVencido) {
         const confirmar = window.confirm('⚠️ ADVERTENCIA: Hay patrones vencidos en la lista. ¿Deseas forzar la salida?');
@@ -625,10 +600,11 @@ const NormasScreen = () => {
 
             const docRef = doc(db, COLLECTION_NAME_PATRONES, patronData.id);
 
+            // 🚨 GUARDADO CRÍTICO
             batch.update(docRef, {
-                estadoProceso: 'en_servicio', // 🚨 GUARDAMOS COMO 'en_servicio'
-                usuarioEnUso: usuarioSeleccionado,
-                ubicacion: 'En Uso',
+                estadoProceso: 'en_servicio', // Cambia estado
+                usuarioEnUso: usuarioSeleccionado, // Guarda QUIÉN
+                ubicacion: `En Uso - ${usuarioSeleccionado}`, // Visualización rápida
                 fechaPrestamo: fechaActual,
             });
             count++;
@@ -637,6 +613,8 @@ const NormasScreen = () => {
         await batch.commit();
         alert(`✅ ¡Éxito! Se registró la salida de ${count} equipos a nombre de ${usuarioSeleccionado}.`);
         
+        // Limpiar tabla manual
+        setValue('manualTools', []);
         fetchPatrones();
 
     } catch (error) {
@@ -689,12 +667,13 @@ const NormasScreen = () => {
         return;
     }
     
-    // 🚨 VALIDACIÓN ESTRICTA EN EL ESCÁNER TAMBIÉN
+    // 🚨 VALIDACIÓN ESTRICTA
     const isUnavailable = 
         patron.estadoProceso === 'en_proceso' || 
         patron.estadoProceso === 'fuera_servicio' || 
-        patron.estadoProceso === 'en_servicio' || // 🚨 Bloquea 'en_servicio'
-        patron.estadoProceso === 'en_prestamo';   // 🚨 Bloquea 'en_prestamo'
+        patron.estadoProceso === 'en_servicio' || 
+        patron.estadoProceso === 'en_prestamo' ||
+        patron.estadoProceso === 'en_mantenimiento';
 
     if (isUnavailable) {
         let msg = `Patrón "${displayName}" NO DISPONIBLE. Estado: ${patron.estadoProceso.toUpperCase()}.`;
@@ -745,7 +724,7 @@ const NormasScreen = () => {
           scannerControlsRef.current = controls;
         } catch (e) {
           console.error("Error al iniciar el escáner:", e);
-          alert("Error al iniciar la cámara. Revisa los permisos.\n(Recuerda que debe ser un sitio HTTPS si no es localhost)");
+          alert("Error al iniciar la cámara. Revisa los permisos.");
           setIsScannerOpen(false);
         }
       };
@@ -921,12 +900,12 @@ const NormasScreen = () => {
                       const rowEstadoProceso = toolData?.estadoProceso || 'operativo';
                       let rowClassName = '';
                       
-                      // 🚨 LÓGICA MEJORADA: Bloquear también 'en_servicio' y 'en_prestamo'
                       const isUnavailable = 
                           rowEstadoProceso === 'en_proceso' || 
                           rowEstadoProceso === 'fuera_servicio' || 
                           rowEstadoProceso === 'en_servicio' || 
-                          rowEstadoProceso === 'en_prestamo';
+                          rowEstadoProceso === 'en_prestamo' ||
+                          rowEstadoProceso === 'en_mantenimiento';
                       
                       if (isUnavailable) rowClassName = 'tool-row-unavailable';
                       else if (rowStatus === 'vencido') rowClassName = 'tool-row-vencido';
@@ -949,12 +928,12 @@ const NormasScreen = () => {
                                     const newToolData = patronesDisponibles.get(selectedToolName); 
                                     if (newToolData) {
                                       const isVencida = (newToolData.status === 'vencido' || newToolData.status === 'critico');
-                                      // 🚨 ACTUALIZAR LÓGICA AQUÍ TAMBIÉN
                                       const isUnavailable = (
                                           newToolData.estadoProceso === 'en_proceso' || 
                                           newToolData.estadoProceso === 'fuera_servicio' ||
                                           newToolData.estadoProceso === 'en_servicio' ||
-                                          newToolData.estadoProceso === 'en_prestamo'
+                                          newToolData.estadoProceso === 'en_prestamo' ||
+                                          newToolData.estadoProceso === 'en_mantenimiento'
                                       );
                                       setValue(`manualTools.${index}.qty`, '1');
                                       setValue(`manualTools.${index}.marca`, newToolData.marca);
@@ -970,12 +949,13 @@ const NormasScreen = () => {
                                   <option value="">{isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}</option>
                                   {allAvailableOptions.map(patron => {
                                       const isSelectedInAnotherRow = selectedManualToolNames.has(patron.nombre) && patron.nombre !== currentToolName;
-                                      // 🚨 ACTUALIZAR LÓGICA AQUÍ TAMBIÉN
+                                      
                                       const isUnavailableOption = 
                                           patron.estadoProceso === 'en_proceso' || 
                                           patron.estadoProceso === 'fuera_servicio' ||
                                           patron.estadoProceso === 'en_servicio' ||
-                                          patron.estadoProceso === 'en_prestamo';
+                                          patron.estadoProceso === 'en_prestamo' ||
+                                          patron.estadoProceso === 'en_mantenimiento';
                                           
                                       let optionColor = '#333';
                                       if (isUnavailableOption) optionColor = '#a8a29e';
@@ -983,9 +963,13 @@ const NormasScreen = () => {
                                       else if (patron.status === 'critico') optionColor = '#925c0e';
                                       else if (patron.status === 'vigente') optionColor = '#198754';
                                       const isDisabled = isSelectedInAnotherRow || isUnavailableOption;
+                                      
+                                      const whoHasIt = patron.usuarioEnUso ? ` por ${patron.usuarioEnUso}` : '';
+
                                       return (
                                           <option key={patron.nombre} value={patron.nombre} disabled={isDisabled} style={{ color: optionColor, fontWeight: (patron.status === 'vencido' || patron.status === 'critico' || isUnavailableOption) ? 'bold' : 'normal', backgroundColor: '#ffffff' }}>
-                                              {patron.nombre} {patron.status === 'vencido' && ' (Vencido)'} {patron.status === 'critico' && ' (Crítico)'} {isUnavailableOption && ` (${patron.estadoProceso.toUpperCase().replace('_', ' ')})`}
+                                              {patron.nombre} {patron.status === 'vencido' && ' (Vencido)'} {patron.status === 'critico' && ' (Crítico)'} 
+                                              {isUnavailableOption && ` (${patron.estadoProceso.toUpperCase().replace('_', ' ')}${whoHasIt})`}
                                           </option>
                                       );
                                   })}

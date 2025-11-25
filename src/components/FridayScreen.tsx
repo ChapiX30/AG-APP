@@ -1,653 +1,467 @@
-import React, { useState, useEffect, useCallback, useRef, useTransition } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
-  Plus, Trash2, ChevronRight, ChevronDown, Search, Filter, 
-  MoreHorizontal, Home, Settings, Bell, UserCircle, Calendar, 
-  GripVertical, X, Type, Hash, List, ArrowLeft, Menu
+  Plus, Trash2, ChevronDown, Search, 
+  Bell, UserCircle, Calendar, GripVertical, X, 
+  Menu, Building2, ArrowLeft, Settings
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
-import { doc, updateDoc, collection, getDocs, query, where, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, onSnapshot, setDoc, writeBatch } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 
-// --- CONSTANTES ---
-const STATUS_CONFIG: any = {
-  pending: { label: "Pendiente", bg: "#c4c4c4", text: "#fff" },
-  in_progress: { label: "En Proceso", bg: "#fdab3d", text: "#fff" },
-  completed: { label: "Listo", bg: "#00c875", text: "#fff" },
-  cancelled: { label: "Atorado", bg: "#e2445c", text: "#fff" }
-};
+// --- TIPOS ---
+type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client";
 
-const PRIORITY_CONFIG: any = {
-  low: { label: "Baja", bg: "#579bfc", text: "#fff" },
-  medium: { label: "Media", bg: "#5559df", text: "#fff" },
-  high: { label: "Alta", bg: "#fdab3d", text: "#fff" },
-  urgent: { label: "Urgente", bg: "#e2445c", text: "#fff" }
-};
+interface Column {
+  key: string;
+  label: string;
+  type: CellType;
+  width: number;
+  hidden?: boolean;
+  options?: string[];
+  sticky?: boolean;
+}
 
-// --- INTERFACES ---
 interface WorksheetData {
   id: string;
   [key: string]: any;
 }
 
-interface Column {
-  key: string;
-  label: string;
-  type?: "text"|"number"|"dropdown"|"date"|"person";
-  width: number;
-  hidden?: boolean;
-  options?: string[];
-  sortable?: boolean;
-  sticky?: boolean;
-}
-
-interface Group {
+interface GroupData {
   id: string;
   name: string;
   color: string;
-  rows: WorksheetData[];
   collapsed: boolean;
 }
 
 interface DragItem {
-  type: 'row' | 'column';
-  index: number;
-  gidx?: number;
-  id?: string;
+    type: 'row' | 'column';
+    id?: string;    
+    index?: number; 
 }
 
-// --- COLUMNAS DEFAULT ---
+// Configuración visual
+const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
+  pending: { label: "Pendiente", bg: "#c4c4c4" },
+  in_progress: { label: "En Proceso", bg: "#fdab3d" },
+  completed: { label: "Listo", bg: "#00c875" },
+  cancelled: { label: "Estancado", bg: "#e2445c" }
+};
+
+const PRIORITY_CONFIG: Record<string, { label: string; bg: string }> = {
+  low: { label: "Baja", bg: "#579bfc" },
+  medium: { label: "Media", bg: "#5559df" },
+  high: { label: "Alta", bg: "#fdab3d" },
+  urgent: { label: "Urgente", bg: "#e2445c" }
+};
+
 const DEFAULT_COLUMNS: Column[] = [
-  { key: 'folio', label: 'Folio', width: 100, type: "text", sortable: true, sticky: true },
-  { key: 'cliente', label: 'Cliente', width: 220, type: "text", sortable: true },
-  { key: 'equipo', label: 'Equipo', width: 180, type: "text", sortable: true },
-  { key: 'status', label: 'Estado', width: 140, type: "dropdown", options: ["pending","in_progress","completed","cancelled"], sortable: true },
-  { key: 'priority', label: 'Prioridad', width: 130, type: "dropdown", options: ["low","medium","high","urgent"], sortable: true },
-  { key: 'dueDate', label: 'Fecha Límite', width: 130, type: "date", sortable: true },
-  { key: 'assignedTo', label: 'Resp.', width: 120, type: "person", sortable: true },
-  { key: 'certificado', label: 'Certificado', width: 140, type: "text", sortable: true },
+  { key: 'folio', label: 'Folio', width: 100, type: "text", sticky: true },
+  { key: 'cliente', label: 'Cliente', width: 220, type: "client" },
+  { key: 'equipo', label: 'Equipo', width: 180, type: "text" },
+  { key: 'status', label: 'Estado', width: 140, type: "dropdown", options: ["pending","in_progress","completed","cancelled"] },
+  { key: 'priority', label: 'Prioridad', width: 130, type: "dropdown", options: ["low","medium","high","urgent"] },
+  { key: 'dueDate', label: 'Fecha Límite', width: 130, type: "date" },
+  { key: 'assignedTo', label: 'Resp.', width: 120, type: "person" },
+  { key: 'certificado', label: 'Certificado', width: 140, type: "text" },
   { key: 'marca', label: 'Marca', width: 130, type: "text" },
   { key: 'modelo', label: 'Modelo', width: 130, type: "text" },
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
 ];
 
-// --- COMPONENTE CELDA ---
-interface CellProps {
-  row: WorksheetData;
-  col: Column;
-  gidx: number;
-  ridx: number;
-  isEditing: boolean;
-  onStartEdit: (gidx: number, ridx: number, key: string, val: any) => void;
-  onSave: (val: any) => void;
-  onCancel: () => void;
-  metrologos: any[];
-}
-
-const Cell = React.memo(({ row, col, gidx, ridx, isEditing, onStartEdit, onSave, onCancel, metrologos }: CellProps) => {
-  const [tempValue, setTempValue] = useState(row[col.key]);
+// --- COMPONENTES DE CELDAS ---
+const TextCell = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const handleBlur = () => { if (inputRef.current && inputRef.current.value !== value) onChange(inputRef.current.value); };
+  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') inputRef.current?.blur(); };
+  return <input ref={inputRef} defaultValue={value || ""} placeholder={placeholder} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#0073ea] focus:z-10 transition-all text-sm truncate placeholder-gray-300" />;
+};
 
-  useEffect(() => {
-    if (isEditing) {
-      setTempValue(row[col.key]);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [isEditing, row, col.key]);
-
-  const value = row[col.key];
-  const cellBaseClass = "h-full w-full px-3 flex items-center text-sm relative transition-colors duration-200";
-
-  if (col.key === 'status' || col.key === 'priority') {
-    const config = col.key === 'status' ? STATUS_CONFIG : PRIORITY_CONFIG;
-    const item = config[value] || { label: value, bg: "#c4c4c4" };
-
-    if (isEditing) {
-      return (
-        <div className="relative w-full h-full">
-            <div className="w-full h-full flex items-center justify-center text-white font-medium" style={{ backgroundColor: item.bg }}>
-                {item.label}
+const ClientCell = ({ value, clientes, onChange }: { value: string, clientes: any[], onChange: (val: string) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const filtered = clientes.filter(c => (c.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
+    return (
+        <div className="w-full h-full relative group">
+            <div className="w-full h-full px-3 flex items-center cursor-pointer hover:bg-gray-50" onClick={() => { setIsOpen(true); setSearchTerm(""); }}>
+                {value ? <span className="text-sm text-gray-800 truncate font-medium">{value}</span> : <span className="text-sm text-gray-300 flex items-center gap-1"><Plus className="w-3 h-3"/> Seleccionar</span>}
             </div>
-            <div className="absolute top-full left-0 w-full bg-white shadow-xl rounded-b-md border border-gray-200 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-               {col.options?.map(opt => (
-                 <div key={opt} 
-                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 border-b border-gray-50"
-                      onClick={(e) => { e.stopPropagation(); onSave(opt); }}>
-                    <div className="w-3 h-3 rounded-full" style={{ background: config[opt]?.bg || '#ccc' }}></div>
-                    <span className="text-xs font-medium text-gray-700">{config[opt]?.label || opt}</span>
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
+                    <div className="absolute top-0 left-0 w-[240px] bg-white shadow-2xl rounded-lg border border-blue-200 z-50 p-2 animate-in fade-in zoom-in-95 duration-100 flex flex-col max-h-[300px]">
+                        <div className="relative mb-2 shrink-0"><Search className="w-3 h-3 absolute left-2 top-2.5 text-gray-400"/><input autoFocus placeholder="Buscar empresa..." className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:border-blue-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                        <div className="overflow-y-auto flex-1">
+                            {filtered.length > 0 ? filtered.map(c => (
+                                <div key={c.id} className="px-2 py-2 hover:bg-blue-50 cursor-pointer rounded flex items-center gap-2" onClick={() => { onChange(c.nombre); setIsOpen(false); }}>
+                                    <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center text-blue-600"><Building2 className="w-3 h-3"/></div><span className="text-xs text-gray-700">{c.nombre}</span>
+                                </div>
+                            )) : <div className="text-xs text-gray-400 text-center py-2">No encontrado</div>}
+                        </div>
+                        {value && <button onClick={() => { onChange(""); setIsOpen(false); }} className="mt-2 text-xs text-red-500 hover:bg-red-50 p-1 rounded text-center w-full border-t pt-2">Quitar selección</button>}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
+const DropdownCell = ({ value, options, config, onChange }: { value: string, options: string[], config: any, onChange: (val: string) => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const item = config[value] || { label: value, bg: "#c4c4c4" };
+  return (
+    <div className="w-full h-full relative">
+      <div className="w-full h-full flex items-center justify-center text-white text-xs font-medium cursor-pointer transition-opacity hover:opacity-90 relative" style={{ backgroundColor: item.bg }} onClick={() => setIsOpen(!isOpen)}>
+         <span className="truncate px-1">{item.label}</span>
+      </div>
+      {isOpen && (
+        <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
+            <div className="absolute top-full left-0 w-[160px] bg-white shadow-xl rounded-lg border border-gray-100 z-50 py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+               {options?.map(opt => (
+                 <div key={opt} className="px-4 py-2 hover:bg-gray-50 cursor-pointer flex items-center gap-3 transition-colors" onClick={() => { onChange(opt); setIsOpen(false); }}>
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: config[opt]?.bg || '#ccc' }}></div><span className="text-sm text-gray-700">{config[opt]?.label || opt}</span>
                  </div>
                ))}
             </div>
-            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onCancel(); }}></div>
-        </div>
-      );
-    }
-    return (
-      <div className="w-full h-full flex items-center justify-center cursor-pointer text-white font-medium group hover:opacity-90"
-           style={{ backgroundColor: item.bg }}
-           onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
-          <span className="truncate px-1 text-xs">{item.label}</span>
-      </div>
-    );
-  }
+        </>
+      )}
+    </div>
+  );
+};
 
-  if (col.type === 'date') {
-    if (isEditing) {
-      return (
-        <div className="w-full h-full relative">
-            <input ref={inputRef} type="date" className="w-full h-full px-2 outline-none border-2 border-[#0073ea] bg-white absolute inset-0 z-50 text-xs"
-               value={tempValue || ''} onChange={(e) => setTempValue(e.target.value)} onBlur={() => onSave(tempValue)} onKeyDown={(e) => e.key === 'Enter' && onSave(tempValue)} 
-            />
-        </div>
-      );
-    }
-    const displayDate = value ? new Date(value).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : '-';
+const DateCell = ({ value, onChange }: { value: string, onChange: (val: string) => void }) => {
+    const displayDate = value ? new Date(value).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
+    const inputRef = useRef<HTMLInputElement>(null);
     return (
-      <div className={clsx(cellBaseClass, "justify-center hover:bg-gray-100 cursor-pointer")} 
-           onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
-          {value ? displayDate : <Calendar className="w-4 h-4 text-gray-300" />}
-      </div>
+        <div className="w-full h-full flex items-center justify-center group relative cursor-pointer hover:bg-gray-100" onClick={() => inputRef.current?.showPicker()}>
+             {!value && <Calendar className="w-4 h-4 text-gray-300 group-hover:text-gray-400" />}{value && <span className="text-xs text-gray-700 font-medium">{displayDate}</span>}
+             <input ref={inputRef} type="date" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer" onChange={(e) => onChange(e.target.value)} />
+        </div>
     );
-  }
+};
 
-  if (col.type === 'person') {
-    if (isEditing) {
-      return (
-        <div className="relative w-full h-full">
-            <div className="absolute top-0 left-0 min-w-[200px] bg-white shadow-2xl rounded border border-blue-200 z-50 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
-              {metrologos.map((m: any) => {
-                  const name = m.name || "Desconocido";
-                  const initial = name.charAt(0) || "?";
-                  return (
-                    <div key={m.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-2"
-                        onClick={() => onSave(name)}>
-                    <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">{initial}</div>
-                    <span className="text-sm text-gray-700">{name}</span>
+const PersonCell = ({ value, metrologos, onChange }: { value: string, metrologos: any[], onChange: (val: string) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const initial = (value && typeof value === 'string') ? value.charAt(0).toUpperCase() : "?";
+    return (
+        <div className="w-full h-full flex items-center justify-center relative">
+            <div className="cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsOpen(true)}>
+                {value ? <div className="w-7 h-7 rounded-full bg-[#0073ea] text-white flex items-center justify-center text-xs border-2 border-white shadow-sm" title={value}>{initial}</div> : <UserCircle className="w-6 h-6 text-gray-300" />}
+            </div>
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
+                    <div className="absolute top-8 left-1/2 -translate-x-1/2 w-[220px] bg-white shadow-2xl rounded-lg border border-gray-100 z-50 p-2 max-h-60 overflow-y-auto">
+                        <div className="text-xs font-bold text-gray-400 px-2 py-1 mb-1">ASIGNAR A</div>
+                        {metrologos.map(m => {
+                            const mName = m.name || "Sin Nombre";
+                            const mInitial = mName.charAt(0) || "?";
+                            return (
+                                <div key={m.id} className="flex items-center gap-2 p-2 hover:bg-blue-50 rounded cursor-pointer" onClick={() => { onChange(mName); setIsOpen(false); }}>
+                                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">{mInitial}</div><span className="text-sm text-gray-700">{mName}</span>
+                                </div>
+                            );
+                        })}
                     </div>
-                  );
-              })}
-            </div>
-            <div className="fixed inset-0 z-40" onClick={onCancel}></div>
-        </div>
-      );
-    }
-    const displayInitial = (value && typeof value === 'string') ? value.charAt(0).toUpperCase() : "?";
-    return (
-      <div className={clsx(cellBaseClass, "justify-center hover:bg-gray-100 cursor-pointer")} 
-           onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
-          {value ? (
-            <div className="w-7 h-7 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center border-2 border-white shadow-sm" title={value}>
-              {displayInitial}
-            </div>
-          ) : <UserCircle className="w-6 h-6 text-gray-300" />}
-      </div>
-    );
-  }
-
-  if (isEditing) {
-    return (
-        <div className="w-full h-full relative block">
-            <input ref={inputRef} className="w-full h-full px-3 outline-none bg-white border-2 border-[#0073ea] shadow-md text-sm text-gray-800 absolute inset-0 z-50"
-                value={tempValue || ''} onChange={(e) => setTempValue(e.target.value)} onBlur={() => onSave(tempValue)} 
-                onKeyDown={(e) => { if(e.key==='Enter') onSave(tempValue); if(e.key==='Escape') onCancel(); }}
-            />
+                </>
+            )}
         </div>
     );
-  }
+};
 
-  return (
-    <div className={clsx(cellBaseClass, "hover:border-[#aeb1bd] hover:bg-white cursor-text group border border-transparent")}
-         onClick={() => onStartEdit(gidx, ridx, col.key, value)}>
-        <span className="truncate w-full block text-gray-700">{value}</span>
-    </div>
-  );
-}, (prev, next) => {
-  return (
-    prev.row[prev.col.key] === next.row[next.col.key] &&
-    prev.isEditing === next.isEditing &&
-    prev.col.width === next.col.width &&
-    prev.col.sticky === next.col.sticky
-  );
-});
+// --- COMPONENTE FILA (OPTIMIZADO) ---
+const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd }: any) => {
+    const handleCellChange = useCallback((key: string, value: any) => { onUpdateRow(row.id, key, value); }, [row.id, onUpdateRow]);
+    
+    return (
+        <div id={`row-${row.id}`}
+            className={clsx("flex border-b border-[#d0d4e4] bg-white hover:bg-[#f5f7fa] group transition-colors h-[36px]", isSelected && "bg-blue-50")}
+            draggable="true"
+            onDragStart={(e) => onDragStart(e, { type: 'row', id: row.id })}
+            onDragOver={(e) => e.preventDefault()}
+            onDragEnd={onDragEnd} // Importante: Limpieza al soltar
+            onDrop={(e) => { e.stopPropagation(); onDrop(e, { type: 'row', id: row.id }); }}
+        >
+            <div className="w-1.5 flex-shrink-0 sticky left-0 z-20" style={{ backgroundColor: color }}></div>
+            <div className="w-[40px] flex-shrink-0 border-r border-[#d0d4e4] bg-white sticky left-1.5 z-20 flex items-center justify-center group-hover:bg-[#f5f7fa]">
+                 <div className="relative w-full h-full flex items-center justify-center cursor-pointer" onClick={() => onToggleSelect(row.id)}>
+                    <GripVertical className="w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 absolute left-0 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing" />
+                    <input type="checkbox" checked={isSelected} onChange={() => {}} className={clsx("rounded border-gray-300 text-[#0073ea] focus:ring-0 cursor-pointer", !isSelected && "opacity-0 group-hover:opacity-100")} />
+                 </div>
+            </div>
 
-// --- COMPONENTE FILA ---
-interface BoardRowProps {
-  row: WorksheetData;
-  columns: Column[];
-  gidx: number;
-  ridx: number;
-  color: string;
-  isSelected: boolean;
-  editCell: { gidx: number, ridx: number, key: string } | null;
-  onToggleSelect: (gidx: number, ridx: number) => void;
-  onStartEdit: (gidx: number, ridx: number, key: string, val: any) => void;
-  onSaveCell: (val: any) => void;
-  onCancelEdit: () => void;
-  metrologos: any[];
-  onDragStart: (e: React.DragEvent, item: DragItem) => void;
-  onDrop: (e: React.DragEvent, targetGidx: number, targetRidx: number) => void;
-}
-
-const BoardRow = React.memo(({ 
-  row, columns, gidx, ridx, color, isSelected, editCell, 
-  onToggleSelect, onStartEdit, onSaveCell, onCancelEdit, metrologos, onDragStart, onDrop
-}: BoardRowProps) => {
-  return (
-    <div 
-        className={clsx("flex border-b border-[#d0d4e4] hover:bg-[#f5f7fa] group transition-colors h-9 bg-white", isSelected && "bg-blue-50")}
-        draggable
-        onDragStart={(e) => onDragStart(e, { type: 'row', index: ridx, gidx, ridx, id: row.id })}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onDrop(e, gidx, ridx)}
-    >
-       <div className="w-1.5 flex-shrink-0 sticky left-0 z-20" style={{ backgroundColor: color }}></div>
-       <div className="w-10 flex-shrink-0 border-r border-[#d0d4e4] bg-white sticky left-1.5 z-20 flex items-center justify-center group-hover:bg-[#f5f7fa]">
-           <input 
-              type="checkbox" 
-              checked={isSelected}
-              onChange={() => onToggleSelect(gidx, ridx)}
-              className="opacity-0 group-hover:opacity-100 checked:opacity-100 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
-           />
-           <GripVertical className="w-3 h-3 text-gray-300 absolute left-0 opacity-0 group-hover:opacity-100 cursor-grab" />
-       </div>
-       {columns.filter(c => !c.hidden).map((col) => {
-          const isEditing = editCell?.gidx === gidx && editCell?.ridx === ridx && editCell?.key === col.key;
-          const style: React.CSSProperties = { width: col.width };
-          if (col.sticky) {
-             style.position = 'sticky';
-             style.left = 46;
-             style.zIndex = 20;
-             style.backgroundColor = isSelected ? '#eff6ff' : '#fff';
-          }
-          return (
-             <div key={col.key} style={style} 
-                  className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.02)]")}>
-                 <Cell row={row} col={col} gidx={gidx} ridx={ridx} isEditing={isEditing} 
-                    onStartEdit={onStartEdit} onSave={onSaveCell} onCancel={onCancelEdit} metrologos={metrologos} />
-             </div>
-          );
-       })}
-       <div className="w-full border-b border-transparent"></div>
-    </div>
-  );
-});
-
-// --- COMPONENTE PRINCIPAL ---
-const FridayScreen: React.FC<{ navigate?: (route: string) => void }> = ({ navigate }) => {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener('resize', c); return () => window.removeEventListener('resize', c); }, []);
-
-  // HOOK DE TRANSICIÓN PARA EVITAR INP (Lag en botones)
-  const [isPending, startTransition] = useTransition();
-
-  const [groups, setGroups] = useState<Group[]>([
-    { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false, rows: [] },
-    { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false, rows: [] }
-  ]);
-  const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
-  const [metrologos, setMetrologos] = useState<any[]>([]);
-
-  const [editCell, setEditCell] = useState<{gidx:number, ridx:number, key:string}|null>(null);
-  const [selectedRows, setSelectedRows] = useState<{gidx:number, ridx:number}[]>([]);
-  const [search, setSearch] = useState("");
-  
-  // Sidebar state
-  const [sidebarAbierto, setSidebarAbierto] = useState(!isMobile);
-
-  const [showAddCol, setShowAddCol] = useState(false);
-  const [newColData, setNewColData] = useState({ label: "", type: "text" });
-  const [dragItem, setDragItem] = useState<DragItem | null>(null);
-
-  // --- CARGA DE DATOS ---
-  useEffect(() => {
-     const unsubMetrologos = onSnapshot(query(collection(db,"usuarios"), where("puesto", "==", "Metrólogo")), (snap) => {
-        setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-     });
-
-     const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
-        if(snap.exists() && snap.data().columns) {
-            const savedCols = snap.data().columns;
-            const merged = DEFAULT_COLUMNS.map(def => {
-                const found = savedCols.find((c:Column) => c.key === def.key);
-                return found ? { ...def, ...found } : def;
-            });
-            savedCols.forEach((c:Column) => {
-                if(!DEFAULT_COLUMNS.find(def => def.key === c.key)) merged.push(c);
-            });
-            setColumns(merged);
-        }
-     });
-
-     const unsubWorksheets = onSnapshot(collection(db, "hojasDeTrabajo"), (snap) => {
-        snap.docChanges().forEach(change => {
-            const data = { id: change.doc.id, ...change.doc.data() } as WorksheetData;
-            setGroups(prev => {
-                const newGroups = [...prev];
-                if (change.type === 'removed') {
-                    return newGroups.map(g => ({...g, rows: g.rows.filter(r => r.id !== change.doc.id)}));
+            {columns.filter((c: Column) => !c.hidden).map((col: Column) => {
+                const style: React.CSSProperties = { width: col.width };
+                if (col.sticky) {
+                    style.position = 'sticky';
+                    style.left = 46; 
+                    style.zIndex = 15;
+                    style.backgroundColor = isSelected ? '#eff6ff' : '#fff';
                 }
-                const targetId = data.lugarCalibracion === 'sitio' ? 'sitio' : 'laboratorio';
-                const gIndex = newGroups.findIndex(g => g.id === targetId);
-                if (gIndex === -1) return prev;
-                const group = newGroups[gIndex];
-                const rIndex = group.rows.findIndex(r => r.id === data.id);
-                if (rIndex >= 0) group.rows[rIndex] = { ...group.rows[rIndex], ...data };
-                else group.rows.push(data);
-                return newGroups;
-            });
+                return (
+                    <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative flex items-center", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
+                        {col.key === 'status' ? <DropdownCell value={row[col.key]} options={col.options!} config={STATUS_CONFIG} onChange={(v) => handleCellChange(col.key, v)} /> : 
+                         col.key === 'priority' ? <DropdownCell value={row[col.key]} options={col.options!} config={PRIORITY_CONFIG} onChange={(v) => handleCellChange(col.key, v)} /> : 
+                         col.type === 'date' ? <DateCell value={row[col.key]} onChange={(v) => handleCellChange(col.key, v)} /> : 
+                         col.type === 'person' ? <PersonCell value={row[col.key]} metrologos={metrologos} onChange={(v) => handleCellChange(col.key, v)} /> : 
+                         col.type === 'client' ? <ClientCell value={row[col.key]} clientes={clientes} onChange={(v) => handleCellChange(col.key, v)} /> : 
+                         <TextCell value={row[col.key]} onChange={(v) => handleCellChange(col.key, v)} />}
+                    </div>
+                );
+            })}
+             <div className="flex-1 border-b border-transparent min-w-[50px]"></div>
+        </div>
+    );
+}, (prev, next) => {
+    return prev.row === next.row && prev.isSelected === next.isSelected && prev.columns === next.columns && prev.clientes === next.clientes;
+});
+
+// --- MAIN COMPONENT ---
+const FridayScreen: React.FC = () => {
+    const { navigateTo } = useNavigation();
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+    const [sidebarAbierto, setSidebarAbierto] = useState(!isMobile);
+    const [rows, setRows] = useState<WorksheetData[]>([]);
+    const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
+    const dragItemRef = useRef<DragItem | null>(null); // REF PARA EVITAR RENDERIZADOS MASIVOS
+
+    const [groupsConfig, setGroupsConfig] = useState<GroupData[]>([
+        { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false },
+        { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false }
+    ]);
+    
+    const [metrologos, setMetrologos] = useState<any[]>([]);
+    const [clientes, setClientes] = useState<any[]>([]); 
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [search, setSearch] = useState("");
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // LOAD DATA
+    useEffect(() => {
+        const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
+            if (snap.exists() && snap.data().columns) {
+                const savedCols = snap.data().columns;
+                const merged = savedCols.map((c: any) => {
+                    const def = DEFAULT_COLUMNS.find(d => d.key === c.key);
+                    if (c.key === 'cliente') return { ...(def || {}), ...c, type: 'client' };
+                    return { ...(def || {}), ...c };
+                });
+                DEFAULT_COLUMNS.forEach(def => { if (!merged.find((c: any) => c.key === def.key)) merged.push(def); });
+                setColumns(merged);
+            } else { setColumns(DEFAULT_COLUMNS); }
         });
-     });
-     return () => { unsubBoard(); unsubWorksheets(); unsubMetrologos(); };
-  }, []);
 
-  // --- HANDLERS ---
-  const { navigateTo } = useNavigation();
-  
-  // OPTIMIZACIÓN CRÍTICA DE INP: Usamos startTransition para que la navegación no bloquee el hilo principal
-  const manejarNavegacion = useCallback((d: string) => {
-      startTransition(() => {
-          if(['servicios','friday-servicios'].includes(d)) navigateTo('friday-servicios');
-          else if(['menu','inicio','mainmenu'].includes(d)) navigateTo('menu');
-          else navigateTo(d);
-      });
-  }, [navigateTo]);
+        const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo")), (snap) => setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubClientes = onSnapshot(collection(db, "clientes"), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubRows = onSnapshot(query(collection(db, "hojasDeTrabajo")), (snapshot) => {
+            const newRows: WorksheetData[] = [];
+            snapshot.forEach(doc => newRows.push({ id: doc.id, ...doc.data() } as WorksheetData));
+            setRows(newRows);
+        });
 
-  const handleAddRow = useCallback(async (gidx: number) => {
-      const newId = `WS-${Date.now()}`;
-      const newRow: WorksheetData = {
-          id: newId, certificado: "", cliente: "Cliente Nuevo", folio: `N-${Math.floor(Math.random()*1000)}`,
-          equipo: "Equipo Genérico", marca: "", modelo: "", serie: "", 
-          lugarCalibracion: groups[gidx].id as any, status: 'pending', priority: 'medium',
-          assignedTo: "", dueDate: new Date().toISOString()
-      };
-      await setDoc(doc(db, "hojasDeTrabajo", newId), newRow);
-  }, [groups]);
+        return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
+    }, []);
 
-  const handleSaveCell = useCallback((val: any) => {
-      if (!editCell) return;
-      const { gidx, ridx, key } = editCell;
-      setGroups(prev => {
-          const newGroups = [...prev];
-          if(newGroups[gidx]?.rows[ridx]) newGroups[gidx].rows[ridx][key] = val;
-          return newGroups;
-      });
-      const rowId = groups[gidx].rows[ridx].id;
-      updateDoc(doc(db, "hojasDeTrabajo", rowId), { [key]: val, lastUpdated: new Date().toISOString() }).catch(e => console.error(e));
-      setEditCell(null);
-  }, [editCell, groups]);
+    // HANDLERS
+    const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
+        setRows(prevRows => prevRows.map(r => r.id === rowId ? { ...r, [key]: value } : r));
+        try { await updateDoc(doc(db, "hojasDeTrabajo", rowId), { [key]: value, lastUpdated: new Date().toISOString() }); } catch (error) { console.error(error); }
+    }, []);
 
-  const handleAddColumn = async () => {
-      if(!newColData.label) return;
-      const newKey = newColData.label.toLowerCase().replace(/\s+/g, '_');
-      const newCol: Column = { key: newKey, label: newColData.label, type: newColData.type as any, width: 150, sortable: true };
-      const updatedCols = [...columns, newCol];
-      setColumns(updatedCols);
-      setShowAddCol(false);
-      setNewColData({ label: "", type: "text" });
-      await setDoc(doc(db, "tableros", "principal"), { columns: updatedCols }, { merge: true });
-  };
+    const handleAddRow = useCallback(async (groupId: string) => {
+        const newId = `WS-${Date.now()}`;
+        const newRow: WorksheetData = { id: newId, folio: "", cliente: "", equipo: "", lugarCalibracion: groupId, status: 'pending', priority: 'medium', createdAt: new Date().toISOString() };
+        setRows(prev => [...prev, newRow]);
+        await setDoc(doc(db, "hojasDeTrabajo", newId), newRow);
+    }, []);
 
-  const handleDeleteSelected = async () => {
-      if(!confirm(`¿Eliminar ${selectedRows.length} equipos?`)) return;
-      const promises = selectedRows.map(sel => {
-          const row = groups[sel.gidx]?.rows[sel.ridx];
-          return row ? deleteDoc(doc(db, "hojasDeTrabajo", row.id)) : Promise.resolve();
-      });
-      await Promise.all(promises);
-      setSelectedRows([]);
-  };
+    const handleDeleteSelected = async () => {
+        if (selectedIds.size === 0) return;
+        if (!confirm(`¿Eliminar ${selectedIds.size} elementos?`)) return; // Confirmación de seguridad
+        const batch = writeBatch(db);
+        selectedIds.forEach(id => { batch.delete(doc(db, "hojasDeTrabajo", id)); });
+        setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
+        setSelectedIds(new Set());
+        await batch.commit();
+    };
 
-  // --- DRAG & DROP ---
-  const handleDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
-      setDragItem(item);
-      e.dataTransfer.effectAllowed = "move";
-  }, []);
+    const toggleSelect = useCallback((id: string) => {
+        setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+    }, []);
 
-  const handleDrop = useCallback(async (e: React.DragEvent, targetGidxOrColIndex: number, targetRidx?: number) => {
-      e.preventDefault();
-      if (!dragItem) return;
+    // --- DRAG & DROP OPTIMIZADO ---
+    const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
+        dragItemRef.current = item;
+        e.dataTransfer.effectAllowed = "move";
+        if (e.currentTarget instanceof HTMLElement) e.currentTarget.style.opacity = '0.4';
+    }, []);
 
-      if (dragItem.type === 'column') {
-          const sourceIndex = dragItem.index;
-          const targetIndex = targetGidxOrColIndex;
-          if (sourceIndex === targetIndex) return;
+    // Limpieza universal al terminar
+    const onDragEnd = useCallback((e: React.DragEvent) => {
+        if (e.currentTarget instanceof HTMLElement) e.currentTarget.style.opacity = '1';
+        dragItemRef.current = null;
+    }, []);
 
-          const newCols = [...columns];
-          const [movedCol] = newCols.splice(sourceIndex, 1);
-          newCols.splice(targetIndex, 0, movedCol);
-          
-          setColumns(newCols);
-          setDragItem(null);
-          await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
-          return;
-      }
+    const onDrop = useCallback(async (e: React.DragEvent, target: DragItem) => {
+        e.preventDefault();
+        const dragItem = dragItemRef.current;
+        if (!dragItem) return;
 
-      if (dragItem.type === 'row' && typeof targetRidx === 'number') {
-          const sourceGidx = dragItem.gidx!;
-          const sourceRidx = dragItem.ridx!;
-          const targetGidx = targetGidxOrColIndex;
-          
-          if (sourceGidx === targetGidx && sourceRidx === targetRidx) return;
+        // Columnas
+        if (dragItem.type === 'column' && target.type === 'column' && dragItem.index !== undefined && target.index !== undefined) {
+             const fromIdx = dragItem.index;
+             const toIdx = target.index;
+             if (fromIdx !== toIdx) {
+                // PRIMERO calculamos, LUEGO actualizamos estado y DB por separado
+                let newCols = [...columns];
+                const [moved] = newCols.splice(fromIdx, 1);
+                newCols.splice(toIdx, 0, moved);
+                setColumns(newCols);
+                setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+             }
+        }
 
-          const newGroups = [...groups];
-          const [movedRow] = newGroups[sourceGidx].rows.splice(sourceRidx, 1);
-          const targetGroup = newGroups[targetGidx];
-          
-          movedRow.lugarCalibracion = targetGroup.id as any;
-          targetGroup.rows.splice(targetRidx, 0, movedRow);
-          
-          setGroups(newGroups);
-          setDragItem(null);
+        // Filas
+        if (dragItem.type === 'row' && target.type === 'row' && dragItem.id && target.id) {
+            setRows(currentRows => {
+                const sourceRow = currentRows.find(r => r.id === dragItem.id);
+                const targetRow = currentRows.find(r => r.id === target.id);
+                if (sourceRow && targetRow && sourceRow.id !== targetRow.id) {
+                    const targetGroupId = targetRow.lugarCalibracion === 'sitio' ? 'sitio' : 'laboratorio';
+                    if (sourceRow.lugarCalibracion !== targetGroupId) {
+                        updateDoc(doc(db, "hojasDeTrabajo", sourceRow.id), { lugarCalibracion: targetGroupId });
+                        return currentRows.map(r => r.id === sourceRow.id ? { ...r, lugarCalibracion: targetGroupId } : r);
+                    }
+                }
+                return currentRows;
+            });
+        }
+    }, [columns]); // Dependencia columns necesaria para DnD columnas
 
-          await updateDoc(doc(db, "hojasDeTrabajo", movedRow.id), { 
-              lugarCalibracion: targetGroup.id,
-              lastUpdated: new Date().toISOString()
-          });
-      }
-  }, [dragItem, groups, columns]);
+    const onDropGroup = useCallback(async (e: React.DragEvent, groupId: string) => {
+        e.preventDefault();
+        const dragItem = dragItemRef.current;
+        if (!dragItem || dragItem.type !== 'row' || !dragItem.id) return;
 
+        setRows(currentRows => {
+            const sourceRow = currentRows.find(r => r.id === dragItem.id);
+            if (sourceRow) {
+                const currentGroup = sourceRow.lugarCalibracion === 'sitio' ? 'sitio' : 'laboratorio';
+                if (currentGroup !== groupId) {
+                    updateDoc(doc(db, "hojasDeTrabajo", sourceRow.id), { lugarCalibracion: groupId });
+                    return currentRows.map(r => r.id === sourceRow.id ? { ...r, lugarCalibracion: groupId } : r);
+                }
+            }
+            return currentRows;
+        });
+    }, []);
 
-  return (
-    <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
-        {/* SIDEBAR RESPONSIVE - Layout relativo en desktop para empujar contenido */}
-        {sidebarAbierto && (
-            <div className={clsx(
-                "flex-shrink-0 bg-white h-full z-50 transition-all duration-300",
-                isMobile ? "fixed inset-y-0 left-0 shadow-xl w-64" : "relative w-64 border-r border-[#d0d4e4]"
-            )}>
-                 <SidebarFriday onNavigate={manejarNavegacion} isOpen={sidebarAbierto} onToggle={() => setSidebarAbierto(!sidebarAbierto)} />
-            </div>
-        )}
+    const groupedRows = useMemo(() => {
+        const filtered = rows.filter(r => {
+            if (!search) return true;
+            const s = search.toLowerCase();
+            return (r.cliente || "").toLowerCase().includes(s) || (r.folio || "").toLowerCase().includes(s) || (r.equipo || "").toLowerCase().includes(s);
+        });
+        return groupsConfig.map(group => ({
+            ...group,
+            rows: filtered.filter(r => {
+                const rowLocation = r.lugarCalibracion === 'sitio' ? 'sitio' : 'laboratorio';
+                return rowLocation === group.id;
+            })
+        }));
+    }, [rows, groupsConfig, search]);
 
-        {isMobile && sidebarAbierto && (
-            <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarAbierto(false)}></div>
-        )}
-        
-        {/* CONTENIDO PRINCIPAL - FLEX-1 PARA LLENAR EL ESPACIO RESTANTE */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-white relative transition-all duration-300">
-           
-           {/* HEADER */}
-           <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white">
-               <div className="flex items-center gap-4">
-                   <div className="flex items-center gap-2">
-                       {!sidebarAbierto && (
-                           <button onClick={() => setSidebarAbierto(true)} className="p-2 hover:bg-gray-100 rounded-md text-gray-600">
-                               <Menu className="w-6 h-6" />
-                           </button>
-                       )}
-                       {/* BOTÓN DE ATRÁS OPTIMIZADO (isPending muestra estado de carga si es lento) */}
-                       <button 
-                           onClick={() => manejarNavegacion('mainmenu')} 
-                           disabled={isPending}
-                           className={clsx("p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600", isPending && "opacity-50 cursor-wait")} 
-                           title="Volver al Menú"
-                       >
-                           <ArrowLeft className="w-6 h-6" />
-                       </button>
-                   </div>
+    return (
+        <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
+             <div className={clsx("flex-shrink-0 bg-white h-full z-50 transition-all duration-300 ease-in-out overflow-hidden border-r border-[#d0d4e4]", sidebarAbierto ? "w-64 opacity-100" : "w-0 opacity-0 border-none")}>
+                <div className="w-64 h-full"><SidebarFriday onNavigate={navigateTo} isOpen={sidebarAbierto} onToggle={() => setSidebarAbierto(!sidebarAbierto)} /></div>
+             </div>
+             {isMobile && sidebarAbierto && (<div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarAbierto(false)}></div>)}
+             {isMobile && (<div className={clsx("fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-xl transition-transform duration-300", sidebarAbierto ? "translate-x-0" : "-translate-x-full")}><SidebarFriday onNavigate={navigateTo} isOpen={true} onToggle={() => setSidebarAbierto(false)} /></div>)}
 
-                   <div>
-                       <h1 className="text-2xl font-bold text-[#323338] leading-tight">Equipos en Calibración</h1>
-                       <p className="text-sm text-gray-500">Tablero Principal</p>
-                   </div>
-               </div>
-               <div className="flex items-center gap-3">
-                   <button className="p-2 hover:bg-gray-100 rounded-full"><Bell className="w-5 h-5 text-gray-500"/></button>
-                   <button className="p-2 hover:bg-gray-100 rounded-full"><Settings className="w-5 h-5 text-gray-500"/></button>
-               </div>
-           </div>
-
-           {/* TOOLBAR */}
-           <div className="px-6 py-3 flex items-center justify-between sticky top-0 z-40 bg-white shadow-sm">
-                <div className="flex gap-2 items-center flex-wrap">
-                    <button onClick={() => handleAddRow(0)} className="bg-[#0073ea] hover:bg-[#0060b9] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center transition-colors shadow-sm">
-                        <Plus className="w-4 h-4 mr-2"/> Nuevo Equipo
-                    </button>
-                    <div className="relative ml-2">
-                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-500"/>
-                        <input 
-                            value={search} 
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Buscar..." 
-                            className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm w-64 transition-all bg-white text-gray-900 placeholder-gray-400"
-                        />
+            <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all duration-300">
+                <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white sticky top-0 z-40">
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setSidebarAbierto(!sidebarAbierto)} className="p-2 hover:bg-gray-100 rounded-md text-gray-500 transition-colors"><Menu className="w-6 h-6"/></button>
+                            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors" title="Regresar al Menú"><ArrowLeft className="w-6 h-6"/></button>
+                        </div>
+                        <div className="flex flex-col"><h1 className="text-2xl font-bold leading-tight">Tablero Principal</h1><div className="flex items-center gap-2 text-sm text-gray-500"><span>Gestión de Calibración</span></div></div>
+                    </div>
+                    <div className="flex gap-3">
+                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar" className="pl-9 pr-4 py-1.5 border border-gray-300 rounded-full text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow" value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <button className="p-2 hover:bg-gray-100 rounded-full text-gray-500"><Bell className="w-5 h-5"/></button>
+                        <button className="p-2 hover:bg-gray-100 rounded-full text-gray-500"><Settings className="w-5 h-5"/></button>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <button className="flex items-center px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"><Filter className="w-4 h-4 mr-1"/> Filtros</button>
+
+                <div className="flex-1 overflow-auto bg-white" id="main-board-scroll">
+                    <div className="inline-block min-w-full pb-32">
+                        <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm h-[34px]">
+                            <div className="w-1.5 bg-white sticky left-0 z-30"></div>
+                            <div className="w-[40px] border-r border-[#d0d4e4] bg-white sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300" /></div>
+                            {columns.filter(c => !c.hidden).map((col, index) => (
+                                <div key={col.key} draggable="true" onDragStart={(e) => onDragStart(e, { type: 'column', index })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => onDrop(e, { type: 'column', index })} 
+                                     style={{ width: col.width, left: col.sticky ? 46 : undefined, position: col.sticky ? 'sticky' : undefined, zIndex: col.sticky ? 30 : undefined }}
+                                     className={clsx("px-2 text-xs font-semibold text-gray-500 flex items-center justify-center border-r border-transparent hover:bg-gray-50 cursor-grab active:cursor-grabbing select-none bg-white", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
+                                    {col.label}
+                                </div>
+                            ))}
+                            <div className="w-10 flex items-center justify-center border-l border-gray-200 hover:bg-gray-100 cursor-pointer"><Plus className="w-4 h-4 text-gray-400"/></div>
+                        </div>
+
+                        <div className="px-4 mt-6">
+                            {groupedRows.map((group) => (
+                                <div key={group.id} className="mb-10">
+                                    <div className="flex items-center mb-2 group sticky left-0 z-10 p-2 rounded hover:bg-gray-50 transition-colors"
+                                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
+                                        onDragLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                                        onDrop={(e) => { e.currentTarget.style.backgroundColor = ''; onDropGroup(e, group.id); }}>
+                                        <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-gray-200", group.collapsed && "-rotate-90")} style={{ color: group.color }}
+                                            onClick={() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }}/>
+                                        <h2 className="text-lg font-medium ml-2 px-1 rounded hover:border hover:border-gray-300 cursor-text" style={{ color: group.color }}>{group.name}</h2>
+                                        <span className="ml-3 text-xs text-gray-400 font-light">{group.rows.length} equipos</span>
+                                    </div>
+                                    {!group.collapsed && (
+                                        <div className="shadow-sm rounded-tr-md rounded-tl-md overflow-hidden border-l border-t border-r border-[#d0d4e4] min-h-[50px]"
+                                            onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDropGroup(e, group.id)}>
+                                            {group.rows.map(row => (
+                                                <BoardRow key={row.id} row={row} columns={columns} color={group.color} isSelected={selectedIds.has(row.id)} onToggleSelect={toggleSelect} onUpdateRow={handleUpdateRow} metrologos={metrologos} clientes={clientes} onDragStart={onDragStart} onDrop={onDrop} onDragEnd={onDragEnd} />
+                                            ))}
+                                            <div className="flex h-[36px] border-b border-[#d0d4e4] bg-white group hover:bg-gray-50">
+                                                <div className="w-1.5 sticky left-0 z-20" style={{ backgroundColor: group.color, opacity: 0.5 }}></div>
+                                                <div className="w-[40px] sticky left-1.5 bg-white z-20 border-r border-[#d0d4e4]"></div>
+                                                <div className="sticky left-[46px] z-20 bg-white flex items-center px-2">
+                                                    <input type="text" placeholder="+ Agregar Equipo" className="outline-none text-sm w-[200px] h-full placeholder-gray-400 bg-transparent"
+                                                        onKeyDown={(e) => { if (e.key === 'Enter') { handleAddRow(group.id); (e.target as HTMLInputElement).value = ''; } }} onMouseDown={(e) => e.stopPropagation()} />
+                                                    <button onClick={() => handleAddRow(group.id)} className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Agregar</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
-           </div>
 
-           {/* TABLA */}
-           <div className="flex-1 overflow-auto pl-6 pr-2 pb-24 bg-white">
-               <div className="inline-block min-w-full pb-4 relative">
-                   
-                   {/* Header Columnas */}
-                   <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm h-10">
-                       <div className="w-1.5 sticky left-0 bg-white z-30"></div>
-                       <div className="w-10 border-r border-[#d0d4e4] bg-white sticky left-1.5 z-30 flex items-center justify-center">
-                           <input type="checkbox" className="rounded border-gray-300" />
-                       </div>
-                       
-                       {columns.filter(c => !c.hidden).map((col, index) => (
-                           <div key={col.key} 
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, { type: 'column', index })}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => handleDrop(e, index)}
-                                style={{ width: col.width, left: col.sticky ? 46 : undefined, position: col.sticky ? 'sticky' : undefined, zIndex: col.sticky ? 30 : undefined }}
-                                className={clsx(
-                                    "px-2 text-xs font-bold text-gray-500 text-center border-r border-[#d0d4e4] bg-white select-none flex items-center justify-center hover:bg-gray-50 cursor-grab active:cursor-grabbing", 
-                                    col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
-                                )}
-                            >
-                               {col.label}
-                           </div>
-                       ))}
-                       
-                       <div className="w-10 flex items-center justify-center border-r border-gray-200 hover:bg-gray-100 cursor-pointer" onClick={() => setShowAddCol(true)}>
-                           <Plus className="w-4 h-4 text-gray-400"/>
-                       </div>
+                {selectedIds.size > 0 && (
+                   <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 z-50 animate-in slide-in-from-bottom-4">
+                       <div className="flex items-center gap-3 border-r border-gray-200 pr-6"><div className="bg-[#0073ea] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">{selectedIds.size}</div><span className="text-sm font-medium text-gray-700">Seleccionados</span></div>
+                       <button onClick={handleDeleteSelected} className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /><span className="text-[10px]">Eliminar</span></button>
+                       <button onClick={() => setSelectedIds(new Set())} className="ml-2 hover:bg-gray-100 p-1 rounded"><X className="w-4 h-4 text-gray-500" /></button>
                    </div>
-
-                   {/* Grupos */}
-                   {groups.map((group, gidx) => (
-                       <div key={group.id} className="mt-6">
-                           <div className="flex items-center mb-1 sticky left-0 pl-2 bg-white z-10">
-                               <ChevronDown className={clsx("w-5 h-5 text-[#0073ea] cursor-pointer transition-transform", group.collapsed && "-rotate-90")} 
-                                            onClick={()=>{ const n = [...groups]; n[gidx].collapsed = !n[gidx].collapsed; setGroups(n); }}/>
-                               <h2 className="text-lg font-medium ml-1" style={{color: group.color}}>{group.name}</h2>
-                               <span className="ml-3 text-xs text-gray-400 border px-2 rounded-full">{group.rows.length} items</span>
-                           </div>
-                           {!group.collapsed && (
-                               <div className="border-t border-[#d0d4e4]">
-                                   {group.rows.filter(r => !search || JSON.stringify(r).toLowerCase().includes(search.toLowerCase())).map((row, ridx) => (
-                                       <BoardRow key={row.id || ridx} row={row} columns={columns} gidx={gidx} ridx={ridx} color={group.color}
-                                          isSelected={selectedRows.some(s => s.gidx === gidx && s.ridx === ridx)}
-                                          editCell={editCell}
-                                          onToggleSelect={(gx, rx) => {
-                                              const exists = selectedRows.some(s => s.gidx === gx && s.ridx === rx);
-                                              if(exists) setSelectedRows(prev => prev.filter(s => !(s.gidx === gx && s.ridx === rx)));
-                                              else setSelectedRows(prev => [...prev, {gidx: gx, ridx: rx}]);
-                                          }}
-                                          onStartEdit={(gx, rx, k, v) => setEditCell({gidx: gx, ridx: rx, key: k})}
-                                          onSaveCell={handleSaveCell} onCancelEdit={() => setEditCell(null)} metrologos={metrologos}
-                                          onDragStart={handleDragStart} onDrop={handleDrop}
-                                       />
-                                   ))}
-                                   <div className="flex h-9 border-b border-[#d0d4e4] group">
-                                       <div className="w-1.5 bg-transparent sticky left-0 z-10"></div>
-                                       <div className="w-10 border-r border-[#d0d4e4] sticky left-1.5 bg-white z-10"></div>
-                                       <div className="pl-2 flex items-center sticky left-[46px] bg-white z-10">
-                                           <input type="text" placeholder="+ Añadir" className="outline-none text-sm w-48 h-full placeholder-gray-400 hover:bg-gray-50 px-2 bg-transparent"
-                                              onKeyDown={(e) => e.key === 'Enter' && handleAddRow(gidx)} />
-                                       </div>
-                                   </div>
-                               </div>
-                           )}
-                       </div>
-                   ))}
-               </div>
-           </div>
-           
-           {/* MENU FLOTANTE BULK ACTIONS */}
-           {selectedRows.length > 0 && (
-               <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 z-50 animate-in slide-in-from-bottom-4">
-                   <div className="flex items-center gap-3 border-r border-gray-200 pr-6">
-                       <div className="bg-[#0073ea] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">{selectedRows.length}</div>
-                       <span className="text-sm font-medium text-gray-700">Seleccionados</span>
-                   </div>
-                   <div className="flex gap-4">
-                       <button onClick={handleDeleteSelected} className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors">
-                           <Trash2 className="w-5 h-5" />
-                           <span className="text-[10px]">Eliminar</span>
-                       </button>
-                   </div>
-                   <button onClick={() => setSelectedRows([])} className="ml-2 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-               </div>
-           )}
-
-           {/* MODAL AGREGAR COLUMNA */}
-           {showAddCol && (
-               <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center">
-                   <div className="bg-white rounded-lg shadow-2xl w-96 p-6">
-                       <h3 className="text-lg font-bold mb-4">Nueva Columna</h3>
-                       <div className="space-y-4">
-                           <div>
-                               <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Título</label>
-                               <input autoFocus value={newColData.label} onChange={e => setNewColData({...newColData, label: e.target.value})}
-                                   className="w-full border border-gray-300 rounded p-2 text-sm focus:border-blue-500 outline-none text-black bg-white"/>
-                           </div>
-                           <div>
-                               <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Tipo</label>
-                               <div className="grid grid-cols-3 gap-2">
-                                   {[
-                                       {id: 'text', icon: Type, label: 'Texto'},
-                                       {id: 'number', icon: Hash, label: 'Num'},
-                                       {id: 'date', icon: Calendar, label: 'Fecha'},
-                                       {id: 'dropdown', icon: List, label: 'Estado'},
-                                       {id: 'person', icon: UserCircle, label: 'Persona'},
-                                   ].map(t => (
-                                       <div key={t.id} onClick={() => setNewColData({...newColData, type: t.id})}
-                                            className={clsx("border rounded p-2 flex flex-col items-center cursor-pointer hover:bg-blue-50", newColData.type === t.id ? "border-blue-500 bg-blue-50 text-blue-600" : "border-gray-200")}>
-                                            <t.icon className="w-5 h-5 mb-1"/>
-                                            <span className="text-xs">{t.label}</span>
-                                       </div>
-                                   ))}
-                               </div>
-                           </div>
-                       </div>
-                       <div className="mt-6 flex justify-end gap-2">
-                           <button onClick={() => setShowAddCol(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded text-sm">Cancelar</button>
-                           <button onClick={handleAddColumn} className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Crear Columna</button>
-                       </div>
-                   </div>
-               </div>
-           )}
+                )}
+            </div>
         </div>
-    </div>
-  );
+    );
 };
 
 export default FridayScreen;

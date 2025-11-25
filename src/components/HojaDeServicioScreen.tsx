@@ -3,12 +3,12 @@ import {
   Download, Star, Edit3, ArrowLeft, Loader2, Home, Trash2, RotateCcw, Save, Eye, User, Building, Calendar, FileText, Phone, Mail, Search, ChevronDown, Wrench
 } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
-// IMPORTACIONES ADICIONALES PARA FIREBASE STORAGE
+// IMPORTACIONES ADICIONALES PARA FIREBASE STORAGE Y FIRESTORE
 import { db, storage } from '../utils/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
   collection, getDocs, query, where, doc, getDoc,
-  setDoc, addDoc, Timestamp
+  setDoc, addDoc, Timestamp, writeBatch // <--- AGREGADO writeBatch
 } from "firebase/firestore";
 import logoImage from '../assets/lab_logo.png';
 
@@ -22,7 +22,7 @@ const camposIniciales = {
   telefono: '',
   correo: '',
   comentarios: '',
-  calidadServicio: 'Excelente', // Valor inicial sigue siendo texto
+  calidadServicio: 'Excelente', 
   tecnicoResponsable: '',
 };
 
@@ -35,16 +35,13 @@ type Empresa = {
   correo?: string;
 };
 
-// Tipo para un equipo unificado, incluyendo su estado para el color
 type EquipoUnificado = {
     id: string;
     estado: 'CALIBRADO' | 'RECHAZADO';
 }
 
-// Se mantiene el tipo actualizado para manejar la clasificación (ahora con id obligatorio para el push)
 type EquipoCalibrado = { id: string; tecnico?: string; estado: 'CALIBRADO' | 'RECHAZADO' }; 
 
-// Tipo para la nueva estructura unificada por técnico
 type GrupoEquiposUnificado = { 
     tecnico: string; 
     equipos: EquipoUnificado[]; 
@@ -56,7 +53,6 @@ const formatDate = (dateString: string): string => {
   const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' };
   return new Intl.DateTimeFormat('es-MX', options).format(date);
 };
-
 
 async function getNextFolio(): Promise<string> {
   const folioPrefix = 'HSDG-';
@@ -90,7 +86,6 @@ async function saveServiceData(campos: any, firmaTecnico: string, firmaCliente: 
     folioNum: folioNumber,
     firmaTecnico: firmaTecnico || '',
     firmaCliente: firmaCliente || '',
-    // Nota: equiposCalibrados es el objeto original sin unificar, se mantiene para la base de datos.
     equiposCalibrados: equiposCalibrados || {}, 
     fechaCreacion: Timestamp.now(),
     fechaModificacion: Timestamp.now(),
@@ -111,7 +106,6 @@ async function saveServiceData(campos: any, firmaTecnico: string, firmaCliente: 
   });
   return true;
 }
-
 
 async function getLogoBase64(): Promise<string | undefined> {
   if (logoImage) {
@@ -134,11 +128,6 @@ function truncateText(text: string, maxLength: number): string {
   return text && text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text || '';
 }
 
-/**
- * Unifica los equipos calibrados y rechazados en una sola lista por técnico.
- * @param equiposCalibrados Objeto con equipos separados por técnico (con id y estado).
- * @returns Array de grupos de equipos unificados (todos juntos).
- */
 function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalibrado[]>): GrupoEquiposUnificado[] {
     const equiposUnificadosPorTecnico: Record<string, EquipoUnificado[]> = {};
 
@@ -149,7 +138,6 @@ function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalib
 
         equipos.forEach((equipo: EquipoCalibrado) => {
             if (equipo.id) {
-                // Dividir IDs si están separados por coma y agregar el estado a cada uno
                 equipo.id.split(',').forEach((idSingle: string) => {
                     const trimmedId = idSingle.trim();
                     if (trimmedId) {
@@ -160,14 +148,12 @@ function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalib
         });
     });
 
-    // Convertir el objeto a un array de la estructura GrupoEquiposUnificado[]
     const resultado: GrupoEquiposUnificado[] = Object.entries(equiposUnificadosPorTecnico)
         .filter(([, equipos]) => equipos.length > 0)
         .map(([tecnico, equipos]) => ({ tecnico, equipos }));
         
     return resultado;
 }
-
 
 async function generarPDFFormal({
   campos,
@@ -189,7 +175,7 @@ async function generarPDFFormal({
   const azulSecundario = [52, 144, 220];
   const grisTexto = [60, 60, 60];
   const grisClaro = [240, 242, 247];
-  const rojoRechazo = [200, 0, 0]; // Color rojo para equipos rechazados
+  const rojoRechazo = [200, 0, 0]; 
 
   function crearNuevaPagina() {
     doc.addPage();
@@ -278,12 +264,11 @@ async function generarPDFFormal({
   doc.setFontSize(8);
   doc.text(truncateText(campos.empresa || '', 35), 30, currentY + 7);
   
-  // Se usa splitTextToSize para dar más espacio y que no se desborde el domicilio
-  const direccionLines = doc.splitTextToSize(campos.direccion || '', 60); // 60 mm de ancho
+  const direccionLines = doc.splitTextToSize(campos.direccion || '', 60); 
   const maxLineDireccion = 2;
   const direccionToShow = direccionLines.slice(0, maxLineDireccion);
   direccionToShow.forEach((line: string, index: number) => {
-      doc.text(line, 38, currentY + 15 + (index * 4)); // Inicia en 15, salto de línea de 4mm
+      doc.text(line, 38, currentY + 15 + (index * 4));
   });
   
   doc.text(truncateText(campos.contacto || '', 28), 33, currentY + 23);
@@ -292,17 +277,14 @@ async function generarPDFFormal({
 
   currentY += 34;
   
-  // Usar la función de unificación
   const equiposUnificados = organizarEquiposUnificado(equiposCalibrados);
 
-  // === SECCIÓN ÚNICA: EQUIPOS CALIBRADOS EN SITIO (CON RECHAZADOS EN ROJO) ===
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('EQUIPOS CALIBRADOS EN SITIO', 15, currentY);
   currentY += 6;
 
-  
   if (equiposUnificados.length === 0) {
     doc.setTextColor(...grisTexto);
     doc.setFont('helvetica', 'italic');
@@ -317,10 +299,7 @@ async function generarPDFFormal({
     const altoFila = 4.5;
     const altoEncabezado = 7;
     
-    // NOTA: Se elimina la línea de "Total de Equipos Atendidos" de esta sección.
-
     equiposUnificados.forEach((grupo, tecnicoIndex) => {
-      // **MODIFICACIÓN CLAVE: Ordenar los IDs por alfabético/numérico antes de pintar**
       grupo.equipos.sort((a, b) => a.id.localeCompare(b.id));
 
       const numFilas = Math.ceil(grupo.equipos.length / equiposPorFila);
@@ -338,7 +317,6 @@ async function generarPDFFormal({
       doc.setTextColor(...azulSecundario);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      // ENCABEZADO: Solo nombre y total por técnico
       doc.text(`${grupo.tecnico} (${grupo.equipos.length} equipos)`, margenIzq + 2, currentY + 4.5);
       
       currentY += altoEncabezado;
@@ -352,13 +330,11 @@ async function generarPDFFormal({
       while (equipoIndex < grupo.equipos.length) {
         const yFila = currentY + (numFila * altoFila);
         
-        // Fondo de fila alternado
         if (numFila % 2 === 0) {
           doc.setFillColor(252, 253, 255);
           doc.rect(margenIzq, yFila, anchoTotal, altoFila, 'F');
         }
 
-        // Líneas divisorias verticales
         doc.setDrawColor(230, 230, 230);
         doc.setLineWidth(0.1);
         for (let col = 1; col < equiposPorFila; col++) {
@@ -371,7 +347,6 @@ async function generarPDFFormal({
           const xPos = margenIzq + (col * anchoColumna) + 2;
           const equipoTexto = truncateText(equipo.id, 14);
           
-          // Lógica para resaltar en rojo los rechazados
           if (equipo.estado === 'RECHAZADO') {
              doc.setTextColor(...rojoRechazo);
              doc.setFont('helvetica', 'bold');
@@ -395,16 +370,14 @@ async function generarPDFFormal({
       }
     });
   }
-  // === FIN SECCIÓN DE EQUIPOS UNIFICADA ===
 
-  // Resetear el color del texto a gris por defecto después de la sección de equipos
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
 
 
   if (campos.comentarios && campos.comentarios.trim()) {
     currentY += 3;
-    if (currentY + 50 > 280) { // Check for page break
+    if (currentY + 50 > 280) {
         currentY = crearNuevaPagina();
     }
     doc.setTextColor(...azulPrimario);
@@ -435,33 +408,29 @@ async function generarPDFFormal({
     firmasY = crearNuevaPagina();
   }
   
-  // === Mover Total Equipos a esta sección ===
   const equiposUnificadosParaCalculo = organizarEquiposUnificado(equiposCalibrados);
   const totalEquipos = equiposUnificadosParaCalculo.reduce((sum, grupo) => sum + grupo.equipos.length, 0);
   
   const initialX = 15;
-  const spacing = 60; // Espacio entre los dos textos
+  const spacing = 60; 
   
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   
-  // 1. Calidad del Servicio
   doc.text('CALIDAD DEL SERVICIO:', initialX, firmasY);
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
-  doc.text(campos.calidadServicio, initialX + 55, firmasY); // Ajustar posición para Calidad
+  doc.text(campos.calidadServicio, initialX + 55, firmasY); 
   
-  // 2. Total Equipos (Nuevo)
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.text('TOTAL EQUIPOS:', initialX + spacing * 2, firmasY);
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
-  doc.text(totalEquipos.toString(), initialX + spacing * 2 + 38, firmasY); // Ajustar posición para Total Equipos
+  doc.text(totalEquipos.toString(), initialX + spacing * 2 + 38, firmasY); 
   
   firmasY += 8;
-  // =============================================================
 
   doc.setFillColor(...grisClaro);
   doc.rect(10, firmasY, 190, 40, 'F');
@@ -536,7 +505,6 @@ const qualityMap: { [key: string]: number } = {
 };
 const qualityLabels = ['Deficiente', 'Regular', 'Bueno', 'Muy Bueno', 'Excelente'];
 
-
 export default function HojaDeServicioScreen() {
   const [campos, setCampos] = useState(camposIniciales);
   const [firmaCliente, setFirmaCliente] = useState('');
@@ -579,7 +547,6 @@ export default function HojaDeServicioScreen() {
 
     setSavingService(true);
     try {
-      // 1. Generar BLOB para guardar en Firebase
       const pdfBlob = await generarPDFFormal({
         campos,
         firmaTecnico,
@@ -592,34 +559,85 @@ export default function HojaDeServicioScreen() {
         throw new Error("No se pudo generar el archivo PDF.");
       }
 
-      // 2. Subir a Firebase Storage
       const storagePath = `worksheets/Hojas de Servicio/${campos.folio}.pdf`;
       const storageRef = ref(storage, storagePath);
 
       const uploadResult = await uploadBytes(storageRef, pdfBlob as Blob);
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
-      // 3. Guardar registro en Firestore
       await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
       
-      // --- NUEVA FUNCIONALIDAD DE CORREO MANUAL ---
+      // ========================================================================
+      // --- NUEVO: CREAR MONITOR DE PROGRESO Y ETIQUETAR ARCHIVOS ---
+      // ========================================================================
+
+      // A. Definir la carpeta "Tablero de Control" (Hojas de Trabajo)
+      const folderPath = `worksheets/Hojas de Trabajo/${campos.folio}`;
+      
+      const folderRef = ref(storage, `${folderPath}/.keep`);
+      await uploadBytes(folderRef, new Uint8Array([0]));
+
+      // B. Calcular META (Total de equipos)
+      const totalEquiposMeta = Object.values(equiposCalibrados).reduce((total, lista) => total + lista.length, 0);
+
+      // C. Guardar la configuración de la barra de progreso (FolderMetadata)
+      await setDoc(doc(db, 'folderMetadata', campos.folio), {
+        path: folderPath,
+        folderName: campos.folio,
+        expectedFiles: totalEquiposMeta,
+        completedFiles: 0, 
+        folio: campos.folio,
+        cliente: campos.empresa,
+        createdAt: new Date().toISOString(),
+        status: 'pending'
+      });
+
+      // D. ETIQUETAR LOS ARCHIVOS DISPERSOS (Actualización por Lotes)
+      try {
+        const batch = writeBatch(db);
+        const todosLosIDs = Object.values(equiposCalibrados).flat().map(eq => eq.id);
+        
+        // Firestore limita la consulta 'in' a 30 elementos.
+        // Hacemos chunks de 30 para estar seguros si hay muchos equipos.
+        const chunkSize = 30;
+        for (let i = 0; i < todosLosIDs.length; i += chunkSize) {
+            const chunk = todosLosIDs.slice(i, i + chunkSize);
+            if(chunk.length === 0) continue;
+
+            // Buscamos en hojasDeTrabajo (donde se registran los equipos)
+            const qArchivos = query(collection(db, "hojasDeTrabajo"), where("id", "in", chunk));
+            const querySnapshot = await getDocs(qArchivos);
+            
+            querySnapshot.forEach((docArchivo) => {
+                // Le pegamos la etiqueta del folio al archivo
+                batch.update(docArchivo.ref, { 
+                    folio: campos.folio,
+                    servicioVinculado: true 
+                });
+            });
+        }
+        await batch.commit();
+        console.log("Archivos etiquetados correctamente con el folio:", campos.folio);
+
+      } catch (error) {
+        console.error("Error etiquetando archivos:", error);
+      }
+      // ========================================================================
+
       const confirmManual = window.confirm(
         `✅ Servicio guardado correctamente.\n\n¿Deseas descargar el PDF y abrir el correo para adjuntarlo manualmente?`
       );
 
       if (confirmManual) {
-        // A. Forzar descarga del PDF
         await generarPDFFormal({
             campos,
             firmaTecnico,
             firmaCliente,
             equiposCalibrados,
-            outputType: 'save' // Dispara la descarga en el navegador
+            outputType: 'save' 
         });
 
-        // B. Preparar y abrir la plantilla de correo
         const subject = `Hoja de Servicio ${campos.folio} - ${campos.empresa}`;
-        // Cuerpo del mensaje sin link de descarga, listo para adjuntar el archivo
         const body = `Buenos días,
 
 Adjunto encontrará la hoja de servicio correspondiente al día ${formatDate(campos.fecha)}.
@@ -629,12 +647,10 @@ Gracias.`;
 
         const mailtoLink = `mailto:${campos.correo || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
-        // Pequeño retraso para que la descarga inicie antes de cambiar de ventana
         setTimeout(() => {
             window.location.href = mailtoLink;
         }, 1000);
       }
-      // --------------------------------------------
 
     } catch (error: any) {
       console.error("Error al guardar:", error);
@@ -697,7 +713,6 @@ Gracias.`;
     loadDatosEmpresa();
   }, [campos.empresaId]);
 
-  // Lógica para clasificar equipos: AGRD- es RECHAZADO, !AGRD- es CALIBRADO.
   useEffect(() => {
     const fetchEquipos = async () => {
       setLoadingEquipos(true);
@@ -716,7 +731,6 @@ Gracias.`;
       
       qs.forEach(doc => {
         const data = doc.data();
-        // Aseguramos que sea en sitio
         if (data.lugarCalibracion && data.lugarCalibracion.toLowerCase().includes("sitio")) {
           const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
           if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
@@ -724,17 +738,13 @@ Gracias.`;
           const idBase = String(data.id || '').toUpperCase().trim();
           const certificadoString = String(data.certificado || '').toUpperCase().trim();
           
-          // La cadena de clasificación es el campo 'certificado' si existe, sino es el 'id'
           const classificationString = certificadoString || idBase;
 
-          // Si la cadena de clasificación contiene AGRD-, se clasifica como RECHAZADO.
           const isAGRD = classificationString.includes('AGRD-'); 
           
           const estado: 'CALIBRADO' | 'RECHAZADO' = isAGRD ? 'RECHAZADO' : 'CALIBRADO';
 
-          // Solo agregamos si hay un ID (que es lo que se muestra).
           if (idBase) {
-             // El id se pasa como un string, la función organizarEquiposUnificado se encargará de dividir si hay comas.
              equiposPorTecnico[tecnico].push({ id: idBase, estado: estado }); 
           }
         }
@@ -932,13 +942,11 @@ Gracias.`;
     );
   }
   
-  // Usar la función de unificación para la vista previa y la UI
   const equiposUnificados = organizarEquiposUnificado(equiposCalibrados);
   const totalEquiposAtendidos = equiposUnificados.reduce((sum, grupo) => sum + grupo.equipos.length, 0);
 
 
   if (vistaPrevia) {
-    // Ordenar equipos para la vista previa de la UI
     const equiposUnificadosVP = equiposUnificados.map(grupo => ({
         ...grupo,
         equipos: [...grupo.equipos].sort((a, b) => a.id.localeCompare(b.id))
@@ -947,7 +955,6 @@ Gracias.`;
     return (
       <div className="min-h-screen bg-gray-50 p-2 sm:p-4">
         <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
-          {/* Encabezado */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row items-center gap-4">
               {logoImage ? (
@@ -965,12 +972,10 @@ Gracias.`;
             </div>
           </div>
 
-          {/* Título */}
           <div className="bg-blue-700 text-white py-3">
             <h2 className="text-center text-lg sm:text-xl font-bold">HOJA DE SERVICIO TÉCNICO</h2>
           </div>
 
-          {/* Información básica */}
           <div className="p-4 sm:p-6 bg-gray-50 border-b">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div><strong>FOLIO:</strong> {campos.folio || '__________'}</div>
@@ -978,12 +983,10 @@ Gracias.`;
             </div>
           </div>
 
-          {/* Información del cliente */}
           <div className="p-4 sm:p-6 border-b">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
               <div className="space-y-2">
                 <div><strong>Planta:</strong> {truncateText(campos.empresa || 'Sin especificar', 35)}</div>
-                {/* Vista previa con límite de 70 (para dar más espacio) */}
                 <div><strong>Domicilio:</strong> {truncateText(campos.direccion || 'Sin especificar', 70)}</div>
                 <div><strong>Contacto:</strong> {truncateText(campos.contacto || 'Sin especificar', 28)}</div>
               </div>
@@ -994,7 +997,6 @@ Gracias.`;
             </div>
           </div>
 
-          {/* Equipos calibrados UNIFICADOS */}
           <div className="p-4 sm:p-6 border-b">
             <h3 className="text-base sm:text-lg font-bold text-blue-700 mb-4">EQUIPOS CALIBRADOS EN SITIO</h3>
             {loadingEquipos ? (
@@ -1004,16 +1006,13 @@ Gracias.`;
                 <div className="text-center py-4 text-gray-500 italic">No se registraron equipos en sitio para esta fecha.</div>
               ) : (
                 <>
-                  {/* Se elimina el total de equipos de esta sección en la vista previa de la UI */}
                   {equiposUnificadosVP.map((grupo, groupIndex) => (
                       <div key={groupIndex} className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        {/* ENCABEZADO MODIFICADO: Solo nombre y total por técnico */}
                         <h4 className="font-bold text-blue-700 mb-3">{grupo.tecnico} ({grupo.equipos.length} equipos):</h4>
                         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 text-sm">
                           {grupo.equipos.map((equipo, equipoIndex) => (
                             <div 
                               key={equipoIndex} 
-                              // Aplicar color rojo a los rechazados en la vista previa
                               className={`
                                   ${equipo.estado === 'RECHAZADO' ? 'text-red-700 font-semibold' : 'text-gray-700'}
                               `}
@@ -1029,7 +1028,6 @@ Gracias.`;
             )}
           </div>
           
-          {/* Comentarios */}
           {campos.comentarios && campos.comentarios.trim() && (
             <div className="p-4 sm:p-6 border-b bg-gray-50">
               <h4 className="font-bold text-blue-700 mb-2">OBSERVACIONES:</h4>
@@ -1039,7 +1037,6 @@ Gracias.`;
             </div>
           )}
 
-          {/* Calidad del servicio (AHORA CON TOTAL EQUIPOS) */}
           <div className="p-4 sm:p-6 border-b">
             <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -1053,7 +1050,6 @@ Gracias.`;
             </div>
           </div>
 
-          {/* Firmas */}
           <div className="p-4 sm:p-6 bg-gray-50">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
               <div className="text-center">
@@ -1085,13 +1081,11 @@ Gracias.`;
             </div>
           </div>
 
-          {/* Pie de página */}
           <div className="bg-blue-700 text-white p-3 text-center text-xs font-bold">
             DOCUMENTO VÁLIDO CON FIRMA DEL TÉCNICO RESPONSABLE Y AUTORIZACIÓN DEL CLIENTE
           </div>
         </div>
 
-        {/* Botones de acción */}
         <div className="flex flex-col sm:flex-row justify-center gap-4 mt-6">
           <button
             onClick={() => setVistaPrevia(false)}
@@ -1361,7 +1355,6 @@ Gracias.`;
               <h2 className="text-lg sm:text-xl font-semibold text-gray-800">Equipos Calibrados en Sitio</h2>
             </div>
             
-            {/* === SECCIÓN EQUIPOS UNIFICADA EN LA UI === */}
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 sm:p-6 mb-8">
               <h3 className="font-semibold text-lg text-orange-800 mb-4">Lista de Equipos Atendidos</h3>
               {loadingEquipos ? (
@@ -1378,9 +1371,7 @@ Gracias.`;
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Se elimina el total de equipos de esta sección en la UI principal */}
                     {equiposUnificados.map(grupo => {
-                        // Ordenar equipos para la UI principal
                         const equiposOrdenados = [...grupo.equipos].sort((a, b) => a.id.localeCompare(b.id));
 
                         return (
@@ -1419,8 +1410,6 @@ Gracias.`;
             </div>
 
           </div>
-          {/* === FIN DE SECCIONES DE EQUIPOS === */}
-
 
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">

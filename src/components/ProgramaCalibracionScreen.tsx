@@ -1,73 +1,47 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { differenceInDays, parseISO, format, addDays, addMonths } from 'date-fns';
+import { differenceInDays, parseISO, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calendar,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Plus,
-  Download,
-  Search,
-  Activity,
-  Settings,
-  TrendingUp,
-  AlertCircle,
-  Bell,
-  Play,
-  Pause,
-  RotateCcw,
-  CheckCircle2,
-  XCircle,
-  Eye,
-  Edit,
-  History,
-  Wrench,
-  Target,
-  ArrowLeft,
-  ChevronDown,
-  Save,
-  Loader2,
-  Info,
-  Trash2,
-  User // 🚨 AÑADIDO
+  Calendar, AlertTriangle, CheckCircle, Clock, Plus, Search,
+  Activity, TrendingUp, AlertCircle, Wrench,
+  Target, ArrowLeft, XCircle, Edit, History, 
+  User, FileText, DollarSign, MapPin, CornerDownLeft // 🚨 Iconos nuevos
 } from 'lucide-react';
-// Importa tu hook personalizado de navegación
+
 import { useNavigation } from '../hooks/useNavigation';
 import { patronesData } from './patronesData'; 
-// *** NUEVA IMPORTACIÓN ***
-import * as ics from 'ics';
-
-// --- IMPORTACIONES DE FIREBASE ---
 import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  // 🚨 CAMBIO: updateDoc por setDoc
-  setDoc,
-  deleteDoc, 
-  doc, 
-  query,
-  where 
+  collection, getDocs, addDoc, setDoc, doc, query 
 } from 'firebase/firestore';
-// Asume que tienes configurada la conexión a Firebase en '../utils/firebase'
 import { db } from '../utils/firebase'; 
 
+// --- INTERFACES ---
 
-// --- INTERFACES (EXPORTADAS) ---
+export interface MantenimientoDetalle {
+  tipo: 'Preventivo' | 'Correctivo' | 'Predictivo';
+  costo: number;
+  moneda: string;
+  tecnico: string;
+  refacciones: string;
+  descripcionFalla?: string;
+  accionesRealizadas: string;
+  tiempoInvertidoHoras?: number;
+}
 
 export interface HistorialEntry {
+  id: string; 
   fecha: string;
-  accion: string;
+  accion: string; 
   usuario: string;
+  tipoEvento: 'sistema' | 'calibracion' | 'mantenimiento' | 'verificacion' | 'administrativo' | 'prestamo';
   observaciones?: string;
+  detallesMantenimiento?: MantenimientoDetalle; 
   detalles?: any; 
 }
 
-// Añadimos 'id' para la referencia en Firestore
 export interface RegistroPatron {
-  id?: string; // ID generado por Firestore
+  id?: string;
   noControl: string;
   descripcion: string;
   serie: string;
@@ -75,2227 +49,740 @@ export interface RegistroPatron {
   modelo: string;
   frecuencia: string;
   tipoServicio: string;
-  fecha: string;
+  fecha: string; // Fecha de vencimiento
   prioridad: 'Alta' | 'Media' | 'Baja';
   ubicacion: string;
   responsable: string;
-  // 🚨 AÑADIMOS EL NUEVO ESTADO 'en_servicio'
-  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_prestamo';
+  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_mantenimiento';
   fechaInicioProceso?: string;
   observaciones?: string;
-  // 🚨 AÑADIMOS NUEVOS CAMPOS
-  usuarioEnUso?: string;
+  usuarioEnUso?: string; // 🚨 IMPORTANTE
   fechaPrestamo?: string;
   historial: HistorialEntry[];
 }
 
-// --- SIMULACIÓN DE CONTEXTO DE USUARIO ---
 const mockCurrentUser = {
   nombre: "Viridiana Moreno",
   puesto: "calidad"
 };
 
-// ------------------------------------------
+const COLLECTION_NAME = "patronesCalibracion";
 
-const COLLECTION_NAME = "patronesCalibracion"; // Nombre de tu colección en Firestore
-
-// --- Tipos para el ordenamiento
-type SortableColumn = keyof RegistroPatron | 'statusVencimiento';
-
-// 🚨 NUEVA CONSTANTE DE ESTILOS CSS
-const processStyles = `
-  .text-amber-700 { color: #b45309; }
-  .bg-amber-50 { background-color: #fffbeb; }
-  .border-amber-200 { border-color: #fde68a; }
-  
-  /* Sobrescribir colores de proceso para diferenciar */
-  .process-operativo { color: #059669; background-color: #d1fae5; border-color: #a7f3d0; }
-  .process-programado { color: #9333ea; background-color: #f3e8ff; border-color: #d8b4fe; }
-  .process-en_proceso { color: #b45309; background-color: #fffbeb; border-color: #fde68a; } /* AMARILLO/NARANJA */
-  .process-completado { color: #059669; background-color: #d1fae5; border-color: #a7f3d0; }
-  .process-fuera_servicio { color: #dc2626; background-color: #fee2e2; border-color: #fca5a5; }
-  /* 🚨 NUEVO ESTILO PARA 'EN SERVICIO' */
-  .process-en_servicio { color: #475569; background-color: #f1f5f9; border-color: #cbd5e1; } 
+// --- ESTILOS ---
+const styles = `
+  .timeline-line {
+    position: absolute;
+    left: 1.25rem;
+    top: 2.5rem;
+    bottom: 0;
+    width: 2px;
+    background-color: #e5e7eb;
+  }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 `;
 
+type SortableColumn = keyof RegistroPatron | 'statusVencimiento';
+
+// --- FUNCIÓN SAFE DATE ---
+const formatearFechaSafe = (fecha: string | undefined, formato: string = 'dd MMM yyyy') => {
+  if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'Pendiente';
+  try {
+    const fechaObj = parseISO(fecha);
+    if (isNaN(fechaObj.getTime())) return 'Fecha Inválida';
+    return format(fechaObj, formato, { locale: es });
+  } catch (error) { return 'Error Fecha'; }
+};
 
 export const ProgramaCalibracionScreen: React.FC = () => {
-  const [fechaFiltro, setFechaFiltro] = useState<string>('');
-  const [filtroEstado, setFiltroEstado] = useState<string>('todos');
-  const [filtroServicio, setFFiltroServicio] = useState<string>('todos');
-  const [busqueda, setBusqueda] = useState<string>('');
+  const [data, setData] = useState<RegistroPatron[]>([]);
   const [loading, setLoading] = useState(true); 
+  const [busqueda, setBusqueda] = useState('');
+  const [fechaFiltro, setFechaFiltro] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('todos');
   
-  // 🔄 ESTADOS DE ORDENAMIENTO (para habilitar la tabla interactiva)
   const [sortColumn, setSortColumn] = useState<SortableColumn>('statusVencimiento');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  // ------------------------------------
 
-  // --- ESTADOS DE DATOS Y MODALES ---
-  const [data, setData] = useState<RegistroPatron[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [accionModalOpen, setAccionModalOpen] = useState(false);
-  const [historialModalOpen, setHistorialModalOpen] = useState(false);
-  const [equipoSeleccionado, setEquipoSeleccionado] = useState<RegistroPatron | null>(null);
-  const [accionSeleccionada, setAccionSeleccionada] = useState<string>('');
-  const [observacionesAccion, setObservacionesAccion] = useState<string>('');
-  const [nuevaFechaVencimiento, setNuevaFechaVencimiento] = useState<string>('');
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [equipoEditando, setEquipoEditando] = useState<RegistroPatron | null>(null);
-  const [calibracionModalOpen, setCalibracionModalOpen] = useState(false);
-  const [mantenimientoModalOpen, setMantenimientoModalOpen] = useState(false);
-  const [verificacionModalOpen, setVerificacionModalOpen] = useState(false);
-
-  const [datosEnvio, setDatosEnvio] = useState({
-    laboratorio: '', direccion: '', contacto: '', telefono: '', email: '',
-    paqueteria: '', fechaEnvio: format(new Date(), 'yyyy-MM-dd'), fechaEstimadaRegreso: '',
-    costo: '', numeroOrden: '', observaciones: '', numeroPaqueteria: '',
-  });
-
-  // *** NUEVO ESTADO PARA EL USUARIO ***
-  const [currentUser, setCurrentUser] = useState(mockCurrentUser);
-
-  // *** NUEVA VARIABLE DE PERMISO ***
-  const canEdit = useMemo(() => {
-    if (!currentUser) return false;
-    const isAdminName = ['Viridiana Moreno', 'Jesús Sustaita'].includes(currentUser.nombre);
-    const isAdminPuesto = currentUser.puesto === 'calidad';
-    return isAdminName && isAdminPuesto;
-  }, [currentUser]);
+  const [modalNuevoOpen, setModalNuevoOpen] = useState(false);
+  const [expedienteOpen, setExpedienteOpen] = useState(false); 
+  const [mantenimientoModalOpen, setMantenimientoModalOpen] = useState(false); 
   
-  const USUARIO_ACTUAL = currentUser.nombre;
-
-  const limpiarDatosEnvio = () => {
-    setDatosEnvio({
-      laboratorio: '', direccion: '', contacto: '', telefono: '', email: '',
-      paqueteria: '', fechaEnvio: format(new Date(), 'yyyy-MM-dd'), fechaEstimadaRegreso: '',
-      costo: '', numeroOrden: '', observaciones: '', numeroPaqueteria: '',
-    });
-  };
+  const [equipoSeleccionado, setEquipoSeleccionado] = useState<RegistroPatron | null>(null);
+  
+  const [nuevoMantenimiento, setNuevoMantenimiento] = useState<Partial<MantenimientoDetalle> & { fecha: string, observaciones: string }>({
+    fecha: format(new Date(), 'yyyy-MM-dd'),
+    tipo: 'Correctivo',
+    costo: 0,
+    moneda: 'MXN',
+    tecnico: '',
+    refacciones: '',
+    accionesRealizadas: '',
+    observaciones: ''
+  });
 
   const [nuevoRegistro, setNuevoRegistro] = useState<RegistroPatron>({
     noControl: '', descripcion: '', serie: '', marca: '', modelo: '',
     frecuencia: '12 Meses ± 5 Días', tipoServicio: 'Calibración', fecha: '', prioridad: 'Media',
-    ubicacion: 'Laboratorio', responsable: USUARIO_ACTUAL, estadoProceso: 'operativo', historial: []
+    ubicacion: 'Laboratorio', responsable: mockCurrentUser.nombre, estadoProceso: 'operativo', historial: []
   });
 
-  const hoy = new Date();
+  const [currentUser] = useState(mockCurrentUser);
   const { navigateTo } = useNavigation();
+  const hoy = new Date();
 
-  const handleGoBack = () => {
-    navigateTo('menu');
-  };
+  const canEdit = useMemo(() => {
+    return ['Viridiana Moreno', 'Jesús Sustaita'].includes(currentUser.nombre);
+  }, [currentUser]);
 
-  // --- LÓGICA DE CARGA DE DATOS (FIREBASE) ---
   const fetchPatrones = useCallback(async () => {
     setLoading(true);
     try {
       const q = query(collection(db, COLLECTION_NAME));
       const querySnapshot = await getDocs(q);
       const fetchedData: RegistroPatron[] = [];
-
-      querySnapshot.forEach((doc) => {
-        fetchedData.push({ id: doc.id, ...doc.data() } as RegistroPatron);
-      });
-
+      querySnapshot.forEach((doc) => fetchedData.push({ id: doc.id, ...doc.data() } as RegistroPatron));
+      
       if (fetchedData.length === 0) {
-        // Lógica de inicialización
-        console.log("No hay datos en Firestore. Inicializando con patronesData.ts");
-        const promises = patronesData.map(patron => 
-          addDoc(collection(db, COLLECTION_NAME), patron)
-        );
-        await Promise.all(promises);
         setData(patronesData as RegistroPatron[]);
       } else {
         setData(fetchedData);
       }
     } catch (e) {
-      console.error("Error al cargar o inicializar los patrones: ", e);
-      const saved = localStorage.getItem('patrones_calibracion');
-      if (saved) {
-        setData(JSON.parse(saved));
-      } else {
-        setData(patronesData as RegistroPatron[]); 
-      }
+      console.error("Error fetching", e);
+      setData(patronesData as RegistroPatron[]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchPatrones();
-  }, [fetchPatrones]);
-  
-  const handleSort = (column: SortableColumn) => {
-    if (column === sortColumn) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortColumn(column);
-      setSortDirection('asc');
-    }
-  };
+  useEffect(() => { fetchPatrones(); }, [fetchPatrones]);
 
-  // --- LÓGICA DE CÁLCULO DE ESTADO Y PRIORIDAD ---
   const getStatusInfo = (fecha: string) => {
-    if (!fecha || fecha === 'Por Comprar' || fecha === '') {
-      return { status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200', label: 'Pendiente', icon: Info, dias: 0, sortValue: 4 };
-    }
+    if (!fecha || fecha === 'Por Comprar' || fecha === '') return { status: 'pendiente', color: 'text-gray-500', bg: 'bg-gray-100', label: 'Pendiente', icon: Clock, dias: 0, sort: 4 };
     try {
-      const fechaVencimiento = parseISO(fecha);
-      const dias = differenceInDays(fechaVencimiento, hoy);
-
-      if (dias < 0) {
-        return { status: 'vencido', color: 'bg-red-500', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200', label: 'Vencido', icon: AlertTriangle, dias: Math.abs(dias), sortValue: 0 };
-      }
-      if (dias >= 0 && dias <= 7) {
-        return { status: 'critico', color: 'bg-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200', label: 'Crítico', icon: AlertCircle, dias, sortValue: 1 };
-      }
-      if (dias > 7 && dias <= 30) {
-        return { status: 'proximo', color: 'bg-yellow-500', bgColor: 'bg-yellow-50', textColor: 'text-yellow-700', borderColor: 'border-yellow-200', label: 'Próximo', icon: Clock, dias, sortValue: 2 };
-      }
-      return { status: 'vigente', color: 'bg-green-500', bgColor: 'bg-green-50', textColor: 'text-green-700', borderColor: 'border-green-200', label: 'Vigente', icon: CheckCircle, dias, sortValue: 3 };
-    } catch (error) {
-       return { status: 'pendiente', color: 'bg-gray-500', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-gray-200', label: 'Error Fecha', icon: Info, dias: 0, sortValue: 5 };
-    }
+        const fechaObj = parseISO(fecha);
+        if (isNaN(fechaObj.getTime())) return { status: 'pendiente', color: 'text-gray-500', bg: 'bg-gray-100', label: 'Error', icon: AlertTriangle, dias: 0, sort: 5 };
+        const dias = differenceInDays(fechaObj, hoy);
+        if (dias < 0) return { status: 'vencido', color: 'text-red-600', bg: 'bg-red-50', label: 'Vencido', icon: AlertTriangle, dias: Math.abs(dias), sort: 0 };
+        if (dias <= 7) return { status: 'critico', color: 'text-orange-600', bg: 'bg-orange-50', label: 'Crítico', icon: AlertCircle, dias, sort: 1 };
+        if (dias <= 30) return { status: 'proximo', color: 'text-yellow-600', bg: 'bg-yellow-50', label: 'Próximo', icon: Clock, dias, sort: 2 };
+        return { status: 'vigente', color: 'text-green-600', bg: 'bg-green-50', label: 'Vigente', icon: CheckCircle, dias, sort: 3 };
+    } catch (e) { return { status: 'pendiente', color: 'text-gray-500', bg: 'bg-gray-100', label: 'Error', icon: AlertTriangle, dias: 0, sort: 5 }; }
   };
 
-  // 🚨🚨 MODIFICACIÓN AQUÍ: CAMBIADO A "EN SERVICIO" 🚨🚨
-  const getEstadoProcesoInfo = (estadoProceso: RegistroPatron['estadoProceso']) => {
-    switch(estadoProceso) {
-      case 'operativo': return { label: 'Operativo', textColor: 'text-blue-700', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', icon: Target, sortValue: 4, className: 'process-operativo' };
-      case 'programado': return { label: 'Programado', textColor: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', icon: Calendar, sortValue: 2, className: 'process-programado' };
-      case 'en_proceso': return { label: 'En Proceso', textColor: 'text-amber-700', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', icon: Wrench, sortValue: 1, className: 'process-en_proceso' };
-      case 'completado': return { label: 'Completado', textColor: 'text-green-700', bgColor: 'bg-green-50', borderColor: 'border-green-200', icon: CheckCircle2, sortValue: 3, className: 'process-completado' };
-      case 'fuera_servicio': return { label: 'Fuera de Servicio', textColor: 'text-red-700', bgColor: 'bg-red-50', borderColor: 'border-red-200', icon: XCircle, sortValue: 0, className: 'process-fuera_servicio' };
-      
-      // 🚨 AHORA RECONOCE 'en_servicio' y MUESTRA 'En Servicio'
-      case 'en_servicio': return { label: 'En Servicio', textColor: 'text-slate-700', bgColor: 'bg-slate-50', borderColor: 'border-slate-200', icon: User, sortValue: 0, className: 'process-en_servicio' };
-      
-      // Mantenemos este por compatibilidad con datos viejos si los hubiera
-      case 'en_prestamo': return { label: 'En Servicio', textColor: 'text-slate-700', bgColor: 'bg-slate-50', borderColor: 'border-slate-200', icon: User, sortValue: 0, className: 'process-en_servicio' };
-      
-      default: return { label: 'Desconocido', textColor: 'text-gray-700', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', icon: AlertCircle, sortValue: 5, className: '' };
-    }
+  const getProcessInfo = (estado: string) => {
+    const map: Record<string, { label: string, color: string, bg: string, border: string }> = {
+      'operativo': { label: 'Operativo', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+      'programado': { label: 'Programado', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+      'en_proceso': { label: 'En Calibración', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+      'completado': { label: 'Listo', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200' },
+      'fuera_servicio': { label: 'Baja / Dañado', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200' },
+      'en_servicio': { label: 'En Uso', color: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+      'en_mantenimiento': { label: 'En Mantenimiento', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' }
+    };
+    return map[estado] || map['operativo'];
   };
 
-  const getPrioridadColor = (prioridad: string) => {
-    switch(prioridad) {
-      case 'Alta': return 'bg-red-100 text-red-800 border border-red-200';
-      case 'Media': return 'bg-yellow-100 text-yellow-800 border border-yellow-200';
-      case 'Baja': return 'bg-green-100 text-green-800 border border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border border-gray-200';
-    }
-  };
+  // --- ACCIONES ---
 
-  const getPrioridadSortValue = (prioridad: string): number => {
-    switch(prioridad) {
-        case 'Alta': return 0;
-        case 'Media': return 1;
-        case 'Baja': return 2;
-        default: return 3;
-    }
-  };
-  
-  const parseFrecuenciaEnMeses = (frecuencia: string): number => {
-    const mesesMatch = frecuencia.match(/(\d+)\s*Meses?/i);
-    return mesesMatch ? parseInt(mesesMatch[1], 10) : 12;
-  };
-  
-  const calcularNuevaFechaVencimiento = (frecuencia: string, fechaBase: Date = new Date()) => {
+  const handleGuardarNuevo = async () => {
+    if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion) return alert("Complete campos obligatorios");
+    setLoading(true);
     try {
-        const meses = parseFrecuenciaEnMeses(frecuencia);
-        return format(addMonths(fechaBase, meses), 'yyyy-MM-dd');
-    } catch (e) {
-        return format(addMonths(fechaBase, 12), 'yyyy-MM-dd'); // Fallback
-    }
+      const historialInit: HistorialEntry = {
+        id: crypto.randomUUID(),
+        fecha: format(new Date(), 'yyyy-MM-dd'),
+        accion: 'Alta de Equipo',
+        usuario: currentUser.nombre,
+        tipoEvento: 'sistema',
+        observaciones: 'Registro inicial en el sistema.'
+      };
+      await addDoc(collection(db, COLLECTION_NAME), { ...nuevoRegistro, historial: [historialInit] });
+      await fetchPatrones();
+      setModalNuevoOpen(false);
+      setNuevoRegistro({ ...nuevoRegistro, noControl: '', descripcion: '' }); 
+    } catch (e) { console.error(e); alert("Error al guardar"); }
+    setLoading(false);
   };
-  
-  // --- LÓGICA DE ACCIONES ---
 
-  const getAccionesDisponibles = (item: RegistroPatron) => {
-    const acciones = [];
-    
-    // 🚨 SI ESTÁ EN SERVICIO, SOLO SE PUEDE EDITAR
-    if (item.estadoProceso === 'en_servicio' || item.estadoProceso === 'en_prestamo') {
-        acciones.push({ id: 'editar', label: 'Editar Datos', icon: Edit, color: 'bg-gray-400 hover:bg-gray-500' });
-        return acciones;
-    }
-
-    if (item.tipoServicio === 'Calibración' && item.estadoProceso === 'operativo') {
-        acciones.push({ id: 'calibracion_externa', label: 'Calibración Externa', icon: Calendar, color: 'bg-blue-600 hover:bg-blue-700' });
-    } else if (item.tipoServicio === 'Mantenimiento' && item.estadoProceso === 'operativo') {
-        acciones.push({ id: 'mantenimiento', label: 'Iniciar Mantenimiento', icon: Wrench, color: 'bg-red-600 hover:bg-red-700' });
-    } else if (item.tipoServicio === 'Verificación' && item.estadoProceso === 'operativo') {
-        acciones.push({ id: 'verificacion', label: 'Iniciar Verificación', icon: Eye, color: 'bg-green-600 hover:bg-green-700' });
-    }
-
-    switch(item.estadoProceso) {
-      case 'operativo':
-        acciones.push({ id: 'programar', label: 'Programar Servicio', icon: Clock, color: 'bg-purple-600 hover:bg-purple-700' });
-        acciones.push({ id: 'fuera_servicio', label: 'Poner Fuera de Servicio', icon: XCircle, color: 'bg-red-600 hover:bg-red-700' });
-        break;
-      case 'programado':
-        acciones.push({ id: 'iniciar_proceso', label: 'Iniciar Proceso', icon: Play, color: 'bg-orange-600 hover:bg-orange-700' });
-        acciones.push({ id: 'cancelar', label: 'Cancelar Programa', icon: RotateCcw, color: 'bg-gray-600 hover:bg-gray-700' });
-        break;
-      case 'en_proceso':
-        acciones.push({ id: 'completar', label: 'Completar Proceso', icon: CheckCircle2, color: 'bg-green-600 hover:bg-green-700' });
-        acciones.push({ id: 'pausar', label: 'Pausar Proceso', icon: Pause, color: 'bg-yellow-600 hover:bg-yellow-700' });
-        break;
-      case 'completado':
-        acciones.push({ id: 'reactivar', label: 'Reactivar/Operativo', icon: RotateCcw, color: 'bg-blue-600 hover:bg-blue-700' });
-        break;
-      case 'fuera_servicio':
-        acciones.push({ id: 'reactivar', label: 'Poner Operativo', icon: RotateCcw, color: 'bg-blue-600 hover:bg-blue-700' });
-        break;
-    }
-    
-    if (item.estadoProceso === 'operativo' || item.estadoProceso === 'programado' || item.estadoProceso === 'fuera_servicio') {
-      acciones.push({ id: 'editar', label: 'Editar Datos', icon: Edit, color: 'bg-gray-400 hover:bg-gray-500' });
-    }
-
-    return acciones.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
-  };
-  
-  // --- MANIPULACIÓN DE DATOS (FIREBASE) ---
-  
-  const ejecutarAccion = async () => {
-    if (!canEdit) {
-      alert("No tiene permisos para realizar esta acción.");
-      setAccionModalOpen(false);
-      return;
-    }
-
-    if (!equipoSeleccionado || !accionSeleccionada || !equipoSeleccionado.id) {
-        console.error("Error: Equipo seleccionado o ID de Firestore no válido.");
-        alert("Error: El equipo no tiene un ID de referencia válido. Intente recargar.");
-        setLoading(false);
-        setAccionModalOpen(false);
-        return;
-    }
+  const handleRegistrarMantenimiento = async () => {
+    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
     setLoading(true);
 
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: '',
-      usuario: USUARIO_ACTUAL,
-      observaciones: observacionesAccion
+    const detalle: MantenimientoDetalle = {
+      tipo: nuevoMantenimiento.tipo as any,
+      costo: Number(nuevoMantenimiento.costo),
+      moneda: nuevoMantenimiento.moneda,
+      tecnico: nuevoMantenimiento.tecnico || 'Interno',
+      refacciones: nuevoMantenimiento.refacciones || 'N/A',
+      accionesRealizadas: nuevoMantenimiento.accionesRealizadas || '',
+      tiempoInvertidoHoras: 0
     };
-    
-    let nuevaFecha = equipoSeleccionado.fecha;
 
-    switch(accionSeleccionada) {
-      case 'programar':
-        equipoActualizado.estadoProceso = 'programado';
-        nuevaEntradaHistorial.accion = `${equipoSeleccionado.tipoServicio} programado`;
-        break;
-      case 'iniciar_proceso':
-        equipoActualizado.estadoProceso = 'en_proceso';
-        equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-        nuevaEntradaHistorial.accion = `Proceso iniciado genérico para ${equipoSeleccionado.tipoServicio}`;
-        break;
-      case 'completar':
-        equipoActualizado.estadoProceso = 'operativo';
-        equipoActualizado.fechaInicioProceso = undefined;
-        nuevaFecha = nuevaFechaVencimiento || calcularNuevaFechaVencimiento(equipoSeleccionado.frecuencia, hoy);
-        equipoActualizado.fecha = nuevaFecha;
-        nuevaEntradaHistorial.accion = `${equipoSeleccionado.tipoServicio} completado`;
-        break;
-      case 'pausar':
-        equipoActualizado.estadoProceso = 'programado';
-        nuevaEntradaHistorial.accion = `${equipoSeleccionado.tipoServicio} pausado`;
-        break;
-      case 'cancelar':
-        equipoActualizado.estadoProceso = 'operativo';
-        nuevaEntradaHistorial.accion = `${equipoSeleccionado.tipoServicio} cancelado`;
-        break;
-      case 'reactivar':
-        equipoActualizado.estadoProceso = 'operativo';
-        nuevaEntradaHistorial.accion = 'Equipo puesto en Operativo';
-        break;
-      case 'fuera_servicio':
-        equipoActualizado.estadoProceso = 'fuera_servicio';
-        nuevaEntradaHistorial.accion = 'Puesto Fuera de Servicio';
-        break;
-    }
+    const nuevaEntrada: HistorialEntry = {
+      id: crypto.randomUUID(),
+      fecha: nuevoMantenimiento.fecha,
+      accion: `Mantenimiento ${nuevoMantenimiento.tipo}`,
+      usuario: currentUser.nombre,
+      tipoEvento: 'mantenimiento',
+      observaciones: nuevoMantenimiento.observaciones,
+      detallesMantenimiento: detalle
+    };
 
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-    
+    const equipoActualizado = {
+      ...equipoSeleccionado,
+      estadoProceso: 'operativo' as any, // Asumimos que al registrar queda listo
+      historial: [nuevaEntrada, ...equipoSeleccionado.historial]
+    };
+
     try {
       const { id, ...dataToUpdate } = equipoActualizado;
-      const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-      await setDoc(docRef, dataToUpdate, { merge: true });
+      await setDoc(doc(db, COLLECTION_NAME, id), dataToUpdate, { merge: true });
       await fetchPatrones();
-
-    } catch (e) {
-      console.error("Error al ejecutar la acción en Firebase: ", e);
-      alert("Error al guardar la acción. Intente de nuevo.");
-    } finally {
-      setLoading(false);
-      setAccionModalOpen(false);
-      setAccionSeleccionada('');
-      setObservacionesAccion('');
-      setNuevaFechaVencimiento('');
-      setEquipoSeleccionado(null);
-    }
-  };
-  
-  const abrirModalAccion = (equipo: RegistroPatron, accion: string) => {
-    setEquipoSeleccionado(equipo);
-    setAccionSeleccionada(accion);
-
-    if (accion === 'calibracion_externa') {
-      limpiarDatosEnvio(); setCalibracionModalOpen(true); return;
-    } else if (accion === 'mantenimiento') {
-      limpiarDatosEnvio(); setMantenimientoModalOpen(true); return;
-    } else if (accion === 'verificacion') {
-      limpiarDatosEnvio(); setVerificacionModalOpen(true); return;
-    } else if (accion === 'editar') {
-      setEquipoEditando(equipo); setEditModalOpen(true); return;
-    }
-    
-    if (accion === 'completar') {
-      setNuevaFechaVencimiento(calcularNuevaFechaVencimiento(equipo.frecuencia, hoy));
-    } else {
-      setNuevaFechaVencimiento('');
-    }
-    setObservacionesAccion(equipo.observaciones || '');
-    setAccionModalOpen(true);
-  };
-
-  const abrirHistorial = (equipo: RegistroPatron) => {
-    setEquipoSeleccionado(equipo);
-    setHistorialModalOpen(true);
-  };
-
-  const handleGuardar = async () => {
-    if (!canEdit) {
-      alert("No tiene permisos para agregar nuevos patrones.");
-      setModalOpen(false);
-      return;
-    }
-
-    if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion || !nuevoRegistro.fecha) {
-      alert('Por favor complete los campos obligatorios');
-      return;
-    }
-    setLoading(true);
-    
-    const nuevaEntradaHistorial: HistorialEntry = {
-        fecha: format(new Date(), 'yyyy-MM-dd'),
-        accion: 'Registro Creado',
-        usuario: USUARIO_ACTUAL,
-        observaciones: 'Patrón añadido al sistema.'
-    };
-    
-    try {
-      await addDoc(collection(db, COLLECTION_NAME), {
-        ...nuevoRegistro,
-        historial: [nuevaEntradaHistorial]
-      });
-      
-      await fetchPatrones();
-
-    } catch (e) {
-      console.error("Error al agregar patrón a Firebase: ", e);
-      alert("Error al guardar el patrón. Intente de nuevo.");
-    } finally {
-      setLoading(false);
-      setModalOpen(false);
-      setNuevoRegistro({
-        noControl: '', descripcion: '', serie: '', marca: '', modelo: '',
-        frecuencia: '12 Meses ± 5 Días', tipoServicio: 'Calibración', fecha: '', prioridad: 'Media',
-        ubicacion: 'Laboratorio', responsable: USUARIO_ACTUAL, estadoProceso: 'operativo', historial: []
-      });
-    }
-  };
-
-  const guardarEdicion = async () => {
-    if (!canEdit) {
-      alert("No tiene permisos para editar patrones.");
-      setEditModalOpen(false);
-      return;
-    }
-
-    if (!equipoEditando || !equipoEditando.id) return;
-    setLoading(true);
-    
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: 'Registro Editado',
-      usuario: USUARIO_ACTUAL,
-      observaciones: 'Se modificaron los datos generales del patrón.'
-    };
-    
-    const equipoConHistorial = { 
-        ...equipoEditando, 
-        historial: [nuevaEntradaHistorial, ...equipoEditando.historial] 
-    };
-
-    try {
-      const { id, ...dataToUpdate } = equipoConHistorial;
-
-      const docRef = doc(db, COLLECTION_NAME, equipoEditando.id);
-      await setDoc(docRef, dataToUpdate, { merge: true });
-      
-      await fetchPatrones();
-
-    } catch (e) {
-      console.error("Error al editar patrón en Firebase: ", e);
-      alert("Error al guardar la edición. Intente de nuevo.");
-    } finally {
-      setLoading(false);
-      setEditModalOpen(false);
-      setEquipoEditando(null);
-    }
-  };
-  
-  const handleEliminar = async (id: string) => {
-    if (!canEdit) {
-      alert("No tiene permisos para eliminar patrones.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-        const docRef = doc(db, COLLECTION_NAME, id);
-        await deleteDoc(docRef);
-
-        await fetchPatrones();
-
-    } catch (e) {
-        console.error("Error al eliminar patrón en Firebase: ", e);
-        alert("Error al eliminar el patrón. Intente de nuevo.");
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  const procesarEnvioCalibracion = async () => {
-    if (!canEdit) {
-      alert("No tiene permisos para registrar acciones.");
-      setCalibracionModalOpen(false);
-      return;
-    }
-
-    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
-    setLoading(true);
-
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: 'Envío a Calibración Externa',
-      usuario: USUARIO_ACTUAL,
-      observaciones: `Lab: ${datosEnvio.laboratorio}, Guía: ${datosEnvio.numeroPaqueteria}. ${datosEnvio.observaciones}`,
-      detalles: datosEnvio
-    };
-
-    equipoActualizado.estadoProceso = 'en_proceso'; 
-    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-
-    try {
-        const { id, ...dataToUpdate } = equipoActualizado;
-        const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-        await setDoc(docRef, dataToUpdate, { merge: true });
-        await fetchPatrones();
-    } catch (e) {
-        console.error("Error al procesar envío a Firebase: ", e);
-        alert("Error al guardar el envío. Intente de nuevo.");
-    } finally {
-        setLoading(false);
-        setCalibracionModalOpen(false);
-        limpiarDatosEnvio();
-        setEquipoSeleccionado(null);
-    }
-  };
-
-  const procesarMantenimiento = async () => {
-    if (!canEdit) {
-      alert("No tiene permisos para registrar acciones.");
       setMantenimientoModalOpen(false);
-      return;
-    }
-
-    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
-    setLoading(true);
-
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: `Mantenimiento iniciado - Tipo: ${datosEnvio.laboratorio}`,
-      usuario: USUARIO_ACTUAL,
-      observaciones: datosEnvio.observaciones,
-      detalles: datosEnvio
-    };
-
-    equipoActualizado.estadoProceso = 'en_proceso';
-    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-
-    try {
-        const { id, ...dataToUpdate } = equipoActualizado;
-        const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-        await setDoc(docRef, dataToUpdate, { merge: true });
-        await fetchPatrones();
-    } catch (e) {
-        console.error("Error al procesar mantenimiento a Firebase: ", e);
-        alert("Error al guardar el mantenimiento. Intente de nuevo.");
-    } finally {
-        setLoading(false);
-        setMantenimientoModalOpen(false);
-        limpiarDatosEnvio();
-        setEquipoSeleccionado(null);
-    }
+      setExpedienteOpen(false); 
+      setNuevoMantenimiento({ fecha: format(new Date(), 'yyyy-MM-dd'), tipo: 'Correctivo', costo: 0, moneda: 'MXN', tecnico: '', refacciones: '', accionesRealizadas: '', observaciones: '' });
+    } catch (e) { console.error(e); alert("Error al registrar mantenimiento"); }
+    setLoading(false);
   };
 
-  const procesarVerificacion = async () => {
-    if (!canEdit) {
-      alert("No tiene permisos para registrar acciones.");
-      setVerificacionModalOpen(false);
-      return;
-    }
-    
-    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
+  const handleUpdateFromExpediente = async (patronActualizado: RegistroPatron) => {
+    if (!patronActualizado.id) return;
     setLoading(true);
-
-    const equipoActualizado = { ...equipoSeleccionado };
-    const nuevaEntradaHistorial: HistorialEntry = {
-      fecha: format(new Date(), 'yyyy-MM-dd'),
-      accion: `Verificación iniciada - Tipo: ${datosEnvio.laboratorio}`,
-      usuario: USUARIO_ACTUAL,
-      observaciones: datosEnvio.observaciones,
-      detalles: datosEnvio
-    };
-
-    equipoActualizado.estadoProceso = 'en_proceso';
-    equipoActualizado.fechaInicioProceso = format(new Date(), 'yyyy-MM-dd');
-    equipoActualizado.historial = [nuevaEntradaHistorial, ...equipoActualizado.historial];
-
     try {
-        const { id, ...dataToUpdate } = equipoActualizado;
-        const docRef = doc(db, COLLECTION_NAME, equipoSeleccionado.id);
-        await setDoc(docRef, dataToUpdate, { merge: true });
+        const { id, ...rest } = patronActualizado;
+        await setDoc(doc(db, COLLECTION_NAME, id), rest, { merge: true });
         await fetchPatrones();
-    } catch (e) {
-        console.error("Error al procesar verificación a Firebase: ", e);
-        alert("Error al guardar la verificación. Intente de nuevo.");
-    } finally {
-        setLoading(false);
-        setVerificacionModalOpen(false);
-        limpiarDatosEnvio();
-        setEquipoSeleccionado(null);
-    }
+        setExpedienteOpen(false);
+    } catch (e) { console.error(e); alert("Error al actualizar"); }
+    setLoading(false);
   };
 
-  // --- FILTRADO Y ORDENAMIENTO ---
+  // 🚨 NUEVA FUNCIÓN: LIBERAR EQUIPO (Devolución)
+  const handleLiberarEquipo = async (equipo: RegistroPatron) => {
+    if (!equipo.id) return;
+    if(!window.confirm(`¿Confirmas la devolución del equipo ${equipo.noControl}?`)) return;
+
+    setLoading(true);
+    try {
+        const nuevaEntrada: HistorialEntry = {
+            id: crypto.randomUUID(),
+            fecha: format(new Date(), 'yyyy-MM-dd'),
+            accion: 'Devolución de Equipo',
+            usuario: currentUser.nombre,
+            tipoEvento: 'prestamo',
+            observaciones: `Equipo devuelto por ${equipo.usuarioEnUso || 'usuario'}.`
+        };
+
+        const equipoActualizado = {
+            ...equipo,
+            estadoProceso: 'operativo' as any,
+            usuarioEnUso: '', // Limpiamos el usuario
+            ubicacion: 'Laboratorio', // Regresa a su lugar base
+            fechaPrestamo: '',
+            historial: [nuevaEntrada, ...equipo.historial]
+        };
+
+        const { id, ...dataToUpdate } = equipoActualizado;
+        await setDoc(doc(db, COLLECTION_NAME, id), dataToUpdate, { merge: true });
+        await fetchPatrones();
+        setExpedienteOpen(false);
+    } catch(e) { console.error(e); alert("Error al liberar equipo"); }
+    setLoading(false);
+  };
 
   const dataFiltrada = useMemo(() => {
-    let filtered = data.filter(item => {
-      const statusInfo = getStatusInfo(item.fecha);
-      const cumpleFecha = fechaFiltro === '' || item.fecha.startsWith(fechaFiltro);
-      const cumpleEstado = filtroEstado === 'todos' || statusInfo.status === filtroEstado;
-      const cumpleServicio = filtroServicio === 'todos' || item.tipoServicio === filtroServicio;
-      const cumpleBusqueda = busqueda === '' ||
+    return data.filter(item => {
+      const status = getStatusInfo(item.fecha);
+      const matchSearch = 
         item.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
         item.noControl.toLowerCase().includes(busqueda.toLowerCase()) ||
-        item.marca.toLowerCase().includes(busqueda.toLowerCase()) ||
-        (item.usuarioEnUso && item.usuarioEnUso.toLowerCase().includes(busqueda.toLowerCase())); 
-
-      return cumpleFecha && cumpleEstado && cumpleServicio && cumpleBusqueda;
+        (item.usuarioEnUso && item.usuarioEnUso.toLowerCase().includes(busqueda.toLowerCase())) || // Buscar también por usuario asignado
+        item.marca.toLowerCase().includes(busqueda.toLowerCase());
+      const matchFecha = fechaFiltro ? item.fecha.startsWith(fechaFiltro) : true;
+      const matchEstado = filtroEstado === 'todos' || status.status === filtroEstado;
+      
+      return matchSearch && matchFecha && matchEstado;
+    }).sort((a, b) => {
+        return sortDirection === 'asc' ? a.noControl.localeCompare(b.noControl) : b.noControl.localeCompare(a.noControl);
     });
-
-    // 🔄 LÓGICA DE ORDENAMIENTO
-    filtered.sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-      if (sortColumn === 'statusVencimiento') {
-        aValue = getStatusInfo(a.fecha).sortValue;
-        bValue = getStatusInfo(b.fecha).sortValue;
-        
-        if (aValue === bValue) {
-            aValue = a.fecha ? parseISO(a.fecha).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
-            bValue = b.fecha ? parseISO(b.fecha).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
-        }
-
-      } else if (sortColumn === 'fecha' || sortColumn === 'fechaInicioProceso' || sortColumn === 'fechaPrestamo') {
-        aValue = a[sortColumn] ? parseISO(a[sortColumn]!).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
-        bValue = b[sortColumn] ? parseISO(b[sortColumn]!).getTime() : (sortDirection === 'asc' ? Infinity : -Infinity);
-
-      } else if (sortColumn === 'prioridad') {
-        aValue = getPrioridadSortValue(a.prioridad);
-        bValue = getPrioridadSortValue(b.prioridad);
-
-      } else if (sortColumn === 'estadoProceso') {
-        aValue = getEstadoProcesoInfo(a.estadoProceso).sortValue;
-        bValue = getEstadoProcesoInfo(b.estadoProceso).sortValue;
-        
-      } else {
-        aValue = (a[sortColumn as keyof RegistroPatron] || '').toLowerCase();
-        bValue = (b[sortColumn as keyof RegistroPatron] || '').toLowerCase();
-      }
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0; 
-    });
-
-    return filtered;
-  }, [data, fechaFiltro, filtroEstado, filtroServicio, busqueda, sortColumn, sortDirection]);
-
-  const estadisticas = useMemo(() => {
-    const total = data.length;
-    const operativos = data.filter(item => item.estadoProceso !== 'fuera_servicio');
-    const vencidos = operativos.filter(item => getStatusInfo(item.fecha).status === 'vencido').length;
-    const criticos = operativos.filter(item => getStatusInfo(item.fecha).status === 'critico').length;
-    const proximos = operativos.filter(item => getStatusInfo(item.fecha).status === 'proximo').length;
-    const vigentes = operativos.filter(item => getStatusInfo(item.fecha).status === 'vigente').length;
-
-    return { total, vencidos, criticos, proximos, vigentes };
-  }, [data]);
-
-  const handleExportar = () => {
-    const csv = [
-      ['No. Control', 'Descripción', 'Serie', 'Marca', 'Modelo', 'Frecuencia', 'Tipo Servicio', 'Fecha', 'Estado', 'Prioridad', 'Ubicación', 'Responsable', 'Usuario en Uso'],
-      ...dataFiltrada.map(d => {
-        const status = getStatusInfo(d.fecha);
-        return [d.noControl, d.descripcion, d.serie, d.marca, d.modelo, d.frecuencia, d.tipoServicio, d.fecha, status.label, d.prioridad, d.ubicacion, d.responsable, d.usuarioEnUso || ''];
-      })
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `programa_calibracion_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
-  };
-
-  // *** EXPORTAR CALENDARIO ***
-  const handleExportarCalendario = () => {
-    if (data.length === 0) {
-      alert("No hay patrones para exportar.");
-      return;
-    }
-
-    const eventos = data
-      .filter(item => item.fecha && item.fecha !== 'Por Comprar') 
-      .map(item => {
-        try {
-          const fechaVencimiento = parseISO(item.fecha);
-          const [year, month, day] = [
-            fechaVencimiento.getUTCFullYear(),
-            fechaVencimiento.getUTCMonth() + 1, 
-            fechaVencimiento.getUTCDate()
-          ];
-
-          return {
-            title: `VENCIMIENTO: ${item.descripcion} (${item.noControl})`,
-            start: [year, month, day] as ics.DateArray,
-            duration: { days: 1 }, 
-            description: `Patrón: ${item.descripcion}\nNo. Control: ${item.noControl}\nSerie: ${item.serie}\nMarca: ${item.marca}\nServicio: ${item.tipoServicio}`,
-            status: 'CONFIRMED' as ics.EventStatus,
-            busyStatus: 'FREE' as ics.BusyStatus,
-          };
-        } catch (e) {
-          console.error("Error al parsear fecha para ics:", item.fecha);
-          return null; 
-        }
-      })
-      .filter(Boolean) as ics.EventAttributes[]; 
-
-    if (eventos.length === 0) {
-      alert("No hay patrones con fechas válidas para exportar.");
-      return;
-    }
-
-    const { error, value } = ics.createEvents(eventos);
-
-    if (error) {
-      console.error("Error al crear archivo ics:", error);
-      alert("Error al generar el archivo de calendario.");
-      return;
-    }
-
-    if (!value) {
-      alert("No se pudo generar el calendario.");
-      return;
-    }
-
-    const blob = new Blob([value], { type: 'text/calendar;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `vencimientos_calibracion_${format(new Date(), 'yyyy-MM-dd')}.ics`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
-
-  // --- FUNCIÓN PARA OBTENER LA LISTA DE PATRONES ÚNICOS ---
-  const getPatronesList = () => {
-      const descripcionesUnicas = Array.from(new Set(data.map(patron => patron.descripcion)));
-      return descripcionesUnicas.filter(desc => desc && desc !== '');
-  };
-
-  const patronesUnicos = useMemo(() => getPatronesList(), [data]);
-
-  // --- RENDERIZADO (JSX) ---
-
-  const renderSortableHeader = (columnKey: SortableColumn, label: string) => (
-    <th className="text-left p-4 font-semibold text-gray-700">
-      <button
-        onClick={() => handleSort(columnKey)}
-        className="flex items-center gap-1 hover:text-blue-600 transition-colors"
-      >
-        {label}
-        {sortColumn === columnKey && (
-          <ChevronDown 
-            className={`w-4 h-4 transition-transform ${sortDirection === 'desc' ? 'rotate-180' : ''}`} 
-          />
-        )}
-      </button>
-    </th>
-  );
+  }, [data, busqueda, fechaFiltro, filtroEstado, sortDirection]);
 
   return (
     <>
-      <style>{processStyles}</style>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        {/* Header */}
-        <div className="bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={handleGoBack}
-                  className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center"
-                  title="Regresar al menú"
-                >
-                  <ArrowLeft className="w-5 h-5 text-gray-600" />
+      <style>{styles}</style>
+      <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+        
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-4">
+                <button onClick={() => navigateTo('menu')} className="p-2 rounded-full hover:bg-gray-100 transition">
+                  <ArrowLeft className="w-5 h-5 text-gray-500" />
                 </button>
-                <div className="p-2 bg-blue-600 rounded-lg">
-                  <Activity className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Sistema de Calibración</h1>
-                  <p className="text-sm text-gray-500">Gestión y monitoreo de patrones de medición</p>
+                <div className="flex items-center gap-2">
+                  <div className="bg-blue-600 p-2 rounded-lg text-white shadow-sm">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-gray-900 leading-tight">Metrología y Mantenimiento</h1>
+                    <p className="text-xs text-gray-500">Gestión integral de activos</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center space-x-3">
-                <div className="p-2 hover:bg-gray-100 rounded-lg cursor-pointer">
-                  <Bell className="w-5 h-5 text-gray-600" />
-                </div>
-                <div className="p-2 hover:bg-gray-100 rounded-lg cursor-pointer">
-                  <Settings className="w-5 h-5 text-gray-600" />
-                </div>
+              <div className="flex items-center gap-3">
+                 {canEdit && (
+                  <button 
+                    onClick={() => setModalNuevoOpen(true)}
+                    className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nuevo Equipo
+                  </button>
+                 )}
               </div>
             </div>
           </div>
-        </div>
+        </header>
 
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          
-          {loading && (
-            <div className="flex justify-center items-center py-8">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mr-2" />
-              <span className="text-lg text-gray-700">Cargando datos de Firebase...</span>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <KPICard title="Total Activos" value={data.length} icon={Target} color="blue" />
+                <KPICard title="Vencidos / Críticos" value={data.filter(d => ['vencido', 'critico'].includes(getStatusInfo(d.fecha).status)).length} icon={AlertTriangle} color="red" />
+                <KPICard title="En Uso (Asignados)" value={data.filter(d => d.estadoProceso === 'en_servicio').length} icon={User} color="indigo" />
+                <KPICard title="En Mantenimiento" value={data.filter(d => d.estadoProceso === 'en_mantenimiento').length} icon={Wrench} color="orange" />
             </div>
-          )}
 
-          {!loading && (
-            <>
-              {/* Dashboard Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Total Patrones</p>
-                      <p className="text-3xl font-bold text-gray-900">{estadisticas.total}</p>
-                    </div>
-                    <div className="p-3 bg-blue-100 rounded-lg">
-                      <TrendingUp className="w-6 h-6 text-blue-600" />
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="bg-white rounded-xl shadow-sm border border-red-200 p-6 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-red-600 mb-1">Vencidos</p>
-                      <p className="text-3xl font-bold text-red-700">{estadisticas.vencidos}</p>
-                    </div>
-                    <div className="p-3 bg-red-100 rounded-lg">
-                      <AlertTriangle className="w-6 h-6 text-red-600" />
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="bg-white rounded-xl shadow-sm border border-orange-200 p-6 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-orange-600 mb-1">Críticos (≤7 días)</p>
-                      <p className="text-3xl font-bold text-orange-700">{estadisticas.criticos}</p>
-                    </div>
-                    <div className="p-3 bg-orange-100 rounded-lg">
-                      <AlertCircle className="w-6 h-6 text-orange-600" />
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="bg-white rounded-xl shadow-sm border border-green-200 p-6 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-green-600 mb-1">Vigentes</p>
-                      <p className="text-3xl font-bold text-green-700">{estadisticas.vigentes}</p>
-                    </div>
-                    <div className="p-3 bg-green-100 rounded-lg">
-                      <CheckCircle className="w-6 h-6 text-green-600" />
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-
-              {/* Filters and Actions */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                  <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                    <div className="relative flex-1 max-w-md">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="text"
-                        placeholder="Buscar por descripción, control o marca..."
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="relative w-full md:w-96">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input 
+                        type="text" 
+                        placeholder="Buscar por control, usuario, descripción..." 
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                         value={busqueda}
                         onChange={(e) => setBusqueda(e.target.value)}
-                      />
-                    </div>
-
-                    <select
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      value={filtroEstado}
-                      onChange={(e) => setFiltroEstado(e.target.value)}
-                    >
-                      <option value="todos">Todos los estados</option>
-                      <option value="vencido">Vencidos</option>
-                      <option value="critico">Críticos</option>
-                      <option value="proximo">Próximos</option>
-                      <option value="vigente">Vigentes</option>
-                      <option value="pendiente">Pendientes</option>
-                    </select>
-
-                    <select
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      value={filtroServicio}
-                      onChange={(e) => setFFiltroServicio(e.target.value)}
-                    >
-                      <option value="todos">Todos los servicios</option>
-                      <option value="Calibración">Calibración</option>
-                      <option value="Mantenimiento">Mantenimiento</option>
-                      <option value="Verificación">Verificación</option>
-                    </select>
-
-                    <input
-                      type="month"
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      value={fechaFiltro}
-                      onChange={(e) => setFechaFiltro(e.target.value)}
                     />
-                  </div>
-
-                  <div className="flex gap-3">
-                    
-                    {/* *** MODIFICACIÓN: Botón "Nuevo Patrón" solo para Admins *** */}
-                    {canEdit && (
-                      <button
-                        onClick={() => setModalOpen(true)}
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Nuevo Patrón
-                      </button>
-                    )}
-                    {/* *** FIN DE MODIFICACIÓN *** */}
-                    
-                    <button
-                      onClick={handleExportar}
-                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
-                    >
-                      <Download className="w-4 h-4" />
-                      Exportar
-                    </button>
-                    
-                    {/* *** INICIO: NUEVO BOTÓN DE CALENDARIO *** */}
-                    <button
-                      onClick={handleExportarCalendario}
-                      className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md"
-                    >
-                      <Calendar className="w-4 h-4" />
-                      Calendario
-                    </button>
-                    {/* *** FIN: NUEVO BOTÓN DE CALENDARIO *** */}
-
-                  </div>
                 </div>
-              </div>
+                <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
+                    <select 
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                        value={filtroEstado}
+                        onChange={(e) => setFiltroEstado(e.target.value)}
+                    >
+                        <option value="todos">Todos los estados</option>
+                        <option value="vencido">Vencidos</option>
+                        <option value="vigente">Vigentes</option>
+                    </select>
+                </div>
+            </div>
 
-              {/* Results Info */}
-              <div className="mb-4">
-                <p className="text-sm text-gray-600">
-                  Mostrando {dataFiltrada.length} de {data.length} patrones
-                </p>
-              </div>
-
-              {/* Table */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        {renderSortableHeader('noControl', 'Control')}
-                        {renderSortableHeader('descripcion', 'Descripción')}
-                        {renderSortableHeader('marca', 'Marca/Modelo')}
-                        {renderSortableHeader('tipoServicio', 'Servicio')}
-                        {renderSortableHeader('fecha', 'Fecha Vencimiento')} 
-                        {renderSortableHeader('statusVencimiento', 'Estado Calibración')} 
-                        {renderSortableHeader('estadoProceso', 'Estado Proceso')}
-                        {renderSortableHeader('usuarioEnUso', 'Quién lo tiene')} {/* 🚨 NUEVA COLUMNA */}
-                        {renderSortableHeader('prioridad', 'Prioridad')}
-                        <th className="text-left p-4 font-semibold text-gray-700">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <AnimatePresence>
-                        {dataFiltrada.map((item, index) => {
-                          const statusInfo = getStatusInfo(item.fecha);
-                          const IconComponent = statusInfo.icon;
-                          const estadoProcesoInfo = getEstadoProcesoInfo(item.estadoProceso);
-                          const EstadoProcesoIcon = estadoProcesoInfo.icon;
-                          const accionesDisponibles = getAccionesDisponibles(item);
-
-                          return (
-                            <motion.tr
-                              key={item.id || item.noControl} 
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -10 }}
-                              transition={{ duration: 0.2, delay: index * 0.05 }}
-                              className={`border-b border-gray-100 hover:bg-gray-50 transition-colors group`}
-                            >
-                              <td className="p-4">
-                                <div className="font-semibold text-gray-900">{item.noControl}</div>
-                                <div className="text-xs text-gray-500">{item.ubicacion}</div>
-                              </td>
-                              <td className="p-4">
-                                <div className="font-medium text-gray-900">{item.descripcion}</div>
-                                <div className="text-xs text-gray-500">Serie: {item.serie}</div>
-                              </td>
-                              <td className="p-4">
-                                <div className="font-medium text-gray-700">{item.marca}</div>
-                                <div className="text-xs text-gray-500">{item.modelo}</div>
-                              </td>
-                              <td className="p-4">
-                                <div className="font-medium text-gray-700">{item.tipoServicio}</div>
-                                <div className="text-xs text-gray-500">{item.frecuencia}</div>
-                              </td>
-                              <td className="p-4">
-                                {item.fecha && item.fecha !== 'Por Comprar' && (
-                                  <div className="font-medium text-gray-900">
-                                      {format(parseISO(item.fecha), 'dd MMM yyyy', { locale: es })}
-                                    </div>
-                                )}
-                                
-                                <div className="text-xs text-gray-500">
-                                  {statusInfo.status === 'vencido' ? `${statusInfo.dias} días vencido` :
-                                  statusInfo.status === 'pendiente' ? statusInfo.label :
-                                  `${statusInfo.dias} días restantes`}
-                                </div>
-                              </td>
-                              <td className="p-4">
-                                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} border`}>
-                                  <IconComponent className="w-3 h-3" />
-                                  {statusInfo.label}
-                                </div>
-                              </td>
-                              <td className="p-4">
-                                {/* *** CAMBIO DE ESTILO: Se usa "className" para los nuevos colores *** */}
-                                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${estadoProcesoInfo.className}`}>
-                                  <EstadoProcesoIcon className="w-3 h-3" />
-                                  {estadoProcesoInfo.label}
-                                </div>
-                                {item.fechaInicioProceso && item.estadoProceso === 'en_proceso' && (
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    Desde: {format(parseISO(item.fechaInicioProceso), 'dd/MM', { locale: es })}
-                                  </div>
-                                )}
-                              </td>
-
-                              {/* 🚨 NUEVA CELDA PARA MOSTRAR QUIÉN LO TIENE */}
-                              <td className="p-4">
-                                {(item.estadoProceso === 'en_servicio' || item.estadoProceso === 'en_prestamo') && (
-                                  <>
-                                    <div className="font-medium text-gray-900">{item.usuarioEnUso}</div>
-                                    <div className="text-xs text-gray-500">
-                                      {item.fechaPrestamo ? `Desde: ${format(parseISO(item.fechaPrestamo), 'dd/MM/yy', { locale: es })}` : ''}
-                                    </div>
-                                  </>
-                                )}
-                              </td>
-                              
-                              <td className="p-4">
-                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getPrioridadColor(item.prioridad)}`}>
-                                  {item.prioridad}
-                                </span>
-                              </td>
-                              <td className="p-4">
-                                {/* *** MODIFICACIÓN: Mostrar/Ocultar acciones por permiso *** */}
-                                <div className="flex items-center gap-2">
-                                  
-                                  {/* El dropdown de Acciones (Wrench) SÓLO para admins */}
-                                  {canEdit && (
-                                    <div className="relative inline-block text-left">
-                                        <button
-                                          className="group inline-flex justify-center text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 p-2 rounded-lg"
-                                          onClick={(e) => {
-                                              const menu = e.currentTarget.nextElementSibling;
-                                              if (menu) menu.classList.toggle('hidden');
-                                          }}
-                                          onBlur={(e) => {
-                                              if (!e.currentTarget.parentNode?.contains(e.relatedTarget as Node)) {
-                                                  e.currentTarget.nextElementSibling?.classList.add('hidden');
-                                              }
-                                          }}
-                                        >
-                                          <Wrench className="w-4 h-4" />
-                                          <ChevronDown className="-mr-1 ml-1 h-4 w-4 flex-shrink-0 text-gray-400 group-hover:text-gray-500" aria-hidden="true" />
-                                        </button>
-                                        <div className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden" role="menu">
-                                            <div className="py-1">
-                                            {accionesDisponibles.map((accion) => {
-                                                const AccionIcon = accion.icon;
-                                                return (
-                                                    <button
-                                                        key={accion.id}
-                                                        onClick={(e) => {
-                                                            abrirModalAccion(item, accion.id);
-                                                            (e.currentTarget.closest('[role=menu]') as HTMLElement).classList.add('hidden');
-                                                        }}
-                                                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                                    >
-                                                        <AccionIcon className="w-4 h-4 inline mr-2" />
-                                                        {accion.label}
-                                                    </button>
-                                                );
-                                            })}
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
+                            <tr>
+                                <th className="px-6 py-4">Equipo / Control</th>
+                                <th className="px-6 py-4">Marca / Modelo</th>
+                                <th className="px-6 py-4">Estado Calibración</th>
+                                <th className="px-6 py-4">Estado Operativo</th>
+                                <th className="px-6 py-4">Ubicación / Asignado</th> {/* 🚨 Título actualizado */}
+                                <th className="px-6 py-4 text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {loading ? (
+                                <tr><td colSpan={6} className="text-center py-10 text-gray-500">Cargando activos...</td></tr>
+                            ) : dataFiltrada.map((item) => {
+                                const status = getStatusInfo(item.fecha);
+                                const proceso = getProcessInfo(item.estadoProceso);
+                                return (
+                                    <tr key={item.id || item.noControl} className="hover:bg-gray-50 group transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="font-semibold text-gray-900">{item.descripcion}</div>
+                                            <div className="text-xs text-gray-500 font-mono bg-gray-100 inline-block px-1 rounded mt-1">{item.noControl}</div>
+                                        </td>
+                                        <td className="px-6 py-4 text-gray-600">
+                                            <div>{item.marca}</div>
+                                            <div className="text-xs text-gray-400">{item.modelo}</div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${status.bg} ${status.color} border-transparent`}>
+                                                <status.icon className="w-3 h-3" />
+                                                {status.label}
                                             </div>
-                                        </div>
-                                    </div>
-                                  )}
-                                  
-                                  {/* El botón de Historial es visible para TODOS */}
-                                  <button
-                                    onClick={() => abrirHistorial(item)}
-                                    className="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-lg text-xs transition-all duration-200 hover:shadow-md"
-                                    title="Ver Historial"
-                                  >
-                                    <History className="w-3 h-3" />
-                                  </button>
-
-                                  {/* Botón de Eliminar SÓLO para admins */}
-                                  {canEdit && (
-                                    <button 
-                                      onClick={() => item.id && handleEliminar(item.id)}
-                                      className="p-2 text-red-500 hover:text-red-700" 
-                                      title="Eliminar"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                  
-                                </div>
-                                {/* *** FIN DE MODIFICACIÓN *** */}
-                              </td>
-                            </motion.tr>
-                          );
-                        })}
-                      </AnimatePresence>
-                    </tbody>
-                  </table>
+                                            <div className="text-xs text-gray-400 mt-1 ml-1">
+                                                {formatearFechaSafe(item.fecha)}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${proceso.bg} ${proceso.color} ${proceso.border}`}>
+                                                <span className="relative flex h-2 w-2">
+                                                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${proceso.color.replace('text', 'bg')}`}></span>
+                                                  <span className={`relative inline-flex rounded-full h-2 w-2 ${proceso.color.replace('text', 'bg')}`}></span>
+                                                </span>
+                                                {proceso.label}
+                                            </div>
+                                        </td>
+                                        {/* 🚨 COLUMNA UBICACIÓN INTELIGENTE */}
+                                        <td className="px-6 py-4">
+                                            {item.estadoProceso === 'en_servicio' ? (
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-2 text-indigo-700 font-medium">
+                                                        <User className="w-4 h-4" />
+                                                        <span>{item.usuarioEnUso || 'Usuario Asignado'}</span>
+                                                    </div>
+                                                    <span className="text-xs text-indigo-400 pl-6">En uso activo</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 text-gray-600">
+                                                    <MapPin className="w-4 h-4 text-gray-400" />
+                                                    <span>{item.ubicacion}</span>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button 
+                                                onClick={() => { setEquipoSeleccionado(item); setExpedienteOpen(true); }}
+                                                className="text-blue-600 hover:text-blue-800 font-medium text-xs border border-blue-200 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition"
+                                            >
+                                                Ver Expediente
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-              </div>
+            </div>
+        </main>
 
-              {/* 🚫 Bloque para mostrar la lista de patrones (REMOVIDO) */}
-            </>
-          )}
-        </div>
-
-        {/* Modal de Acciones Genérico */}
+        {/* --- MODAL EXPEDIENTE --- */}
         <AnimatePresence>
-          {accionModalOpen && equipoSeleccionado && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-md"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Gestionar Proceso - {equipoSeleccionado.noControl}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">{equipoSeleccionado.descripcion}</p>
-                </div>
-
-                <div className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Acción: {getAccionesDisponibles(equipoSeleccionado).find(a => a.id === accionSeleccionada)?.label || accionSeleccionada}
-                    </label>
-                  </div>
-
-                  {accionSeleccionada === 'completar' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Nueva Fecha de Vencimiento
-                      </label>
-                      <input
-                        type="date"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={nuevaFechaVencimiento}
-                        onChange={(e) => setNuevaFechaVencimiento(e.target.value)}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Fecha sugerida según frecuencia: {calcularNuevaFechaVencimiento(equipoSeleccionado.frecuencia, hoy)}
-                      </p>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Observaciones
-                    </label>
-                    <textarea
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 h-20 resize-none"
-                      placeholder="Ingrese observaciones sobre la acción realizada..."
-                      value={observacionesAccion}
-                      onChange={(e) => setObservacionesAccion(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                  <button
-                    onClick={() => {
-                      setAccionModalOpen(false);
-                      setAccionSeleccionada('');
-                      setObservacionesAccion('');
-                      setNuevaFechaVencimiento('');
-                      setEquipoSeleccionado(null);
-                    }}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={ejecutarAccion}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                    disabled={loading}
-                  >
-                    Confirmar Acción
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        
-        {/* Modal de Edición */}
-        <AnimatePresence>
-          {editModalOpen && equipoEditando && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setEditModalOpen(false); setEquipoEditando(null); }}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-xl font-semibold text-gray-900">
-                    Editar Patrón - {equipoEditando.noControl}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">Modifique la información del patrón</p>
-                </div>
-
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">No. Control</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                        value={equipoEditando.noControl}
-                        disabled
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, noControl: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.descripcion}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, descripcion: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Serie</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.serie}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, serie: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Marca</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.marca}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, marca: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Modelo</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.modelo}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, modelo: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Frecuencia</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.frecuencia}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, frecuencia: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Servicio</label>
-                      <select
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.tipoServicio}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, tipoServicio: e.target.value })}
-                      >
-                        <option value="Calibración">Calibración</option>
-                        <option value="Mantenimiento">Mantenimiento</option>
-                        <option value="Verificación">Verificación</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Vencimiento</label>
-                      <input
-                        type="date"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.fecha}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, fecha: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad</label>
-                      <select
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.prioridad}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, prioridad: e.target.value as 'Alta' | 'Media' | 'Baja' })}
-                      >
-                        <option value="Alta">Alta</option>
-                        <option value="Media">Media</option>
-                        <option value="Baja">Baja</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Ubicación</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.ubicacion}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, ubicacion: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Responsable</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.responsable}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, responsable: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Estado del Proceso</label>
-                      <select
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={equipoEditando.estadoProceso}
-                        onChange={(e) => setEquipoEditando({ ...equipoEditando, estadoProceso: e.target.value as any })}
-                      >
-                        <option value="operativo">Operativo</option>
-                        <option value="programado">Programado</option>
-                        <option value="en_proceso">En Proceso</option>
-                        <option value="completado">Completado</option>
-                        <option value="fuera_servicio">Fuera de Servicio</option>
-                        {/* 🚨 AÑADIDO */}
-                        <option value="en_servicio">En Servicio</option> 
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                  <button
-                    onClick={() => {
-                      setEditModalOpen(false);
-                      setEquipoEditando(null);
-                    }}
-                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={guardarEdicion}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                    disabled={loading}
-                  >
-                    Guardar Cambios
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
+            {expedienteOpen && equipoSeleccionado && (
+                <ExpedienteModal 
+                    equipo={equipoSeleccionado} 
+                    onClose={() => setExpedienteOpen(false)}
+                    canEdit={canEdit}
+                    onUpdate={handleUpdateFromExpediente}
+                    onOpenMaintenance={() => { setMantenimientoModalOpen(true); }} 
+                    onLiberar={() => handleLiberarEquipo(equipoSeleccionado)} // 🚨 Pasar función de liberar
+                />
+            )}
         </AnimatePresence>
 
-        {/* Modal de Calibración Externa */}
+        {/* --- MODAL MANTENIMIENTO --- */}
         <AnimatePresence>
-          {calibracionModalOpen && equipoSeleccionado && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setCalibracionModalOpen(false); limpiarDatosEnvio(); setEquipoSeleccionado(null); }}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Calendar className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        Envío a Calibración Externa
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {equipoSeleccionado.noControl} - {equipoSeleccionado.descripcion}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-gray-900 border-b pb-2">Información del Laboratorio</h4>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Laboratorio de Calibración *</label>
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                          placeholder="Nombre del laboratorio"
-                          value={datosEnvio.laboratorio}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, laboratorio: e.target.value })}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Dirección</label>
-                        <textarea
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 h-20 resize-none"
-                          placeholder="Dirección completa del laboratorio"
-                          value={datosEnvio.direccion}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, direccion: e.target.value })}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Contacto</label>
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                          placeholder="Nombre del contacto"
-                          value={datosEnvio.contacto}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, contacto: e.target.value })}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
-                          <input
-                            type="text"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            placeholder="Teléfono"
-                            value={datosEnvio.telefono}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, telefono: e.target.value })}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                          <input
-                            type="email"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            placeholder="Email"
-                            value={datosEnvio.email}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, email: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-gray-900 border-b pb-2">Información de Envío</h4>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Paquetería *</label>
-                          <select
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            value={datosEnvio.paqueteria}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, paqueteria: e.target.value })}
-                          >
-                            <option value="">Seleccionar...</option>
-                            <option value="DHL">DHL</option>
-                            <option value="FedEx">FedEx</option>
-                            <option value="UPS">UPS</option>
-                            <option value="Estafeta">Estafeta</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Número de Guía *</label>
-                          <input
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            placeholder="Número de guía"
-                            value={datosEnvio.numeroPaqueteria}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, numeroPaqueteria: e.target.value })}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Envío *</label>
-                          <input
-                            type="date"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            value={datosEnvio.fechaEnvio}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, fechaEnvio: e.target.value })}
-                          />
-                        </div>
-                        <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Estimada de Regreso</label>
-                          <input
-                            type="date"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            value={datosEnvio.fechaEstimadaRegreso}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, fechaEstimadaRegreso: e.target.value })}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Costo</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            placeholder="0.00"
-                            value={datosEnvio.costo}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, costo: e.target.value })}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">No. de Orden</label>
-                          <input
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                            placeholder="Número de orden"
-                            value={datosEnvio.numeroOrden}
-                            onChange={(e) => setDatosEnvio({ ...datosEnvio, numeroOrden: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones</label>
-                        <textarea
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 h-20 resize-none"
-                          placeholder="Observaciones adicionales sobre el envío..."
-                          value={datosEnvio.observaciones}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, observaciones: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <h5 className="font-medium text-blue-900 mb-2">Información del Equipo</h5>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-blue-700 font-medium">Control:</span>
-                        <p className="text-blue-800">{equipoSeleccionado.noControl}</p>
-                      </div>
-                      <div>
-                        <span className="text-blue-700 font-medium">Serie:</span>
-                        <p className="text-blue-800">{equipoSeleccionado.serie}</p>
-                      </div>
-                      <div>
-                        <span className="text-blue-700 font-medium">Marca:</span>
-                        <p className="text-blue-800">{equipoSeleccionado.marca}</p>
-                      </div>
-                      <div>
-                        <span className="text-blue-700 font-medium">Modelo:</span>
-                        <p className="text-blue-800">{equipoSeleccionado.modelo}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                  <button
-                    onClick={() => {
-                      setCalibracionModalOpen(false);
-                      limpiarDatosEnvio();
-                      setEquipoSeleccionado(null);
-                    }}
-                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={procesarEnvioCalibracion}
-                    disabled={loading || !datosEnvio.laboratorio || !datosEnvio.paqueteria || !datosEnvio.numeroPaqueteria || !datosEnvio.fechaEnvio}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Confirmar Envío
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Modal de Mantenimiento */}
-        <AnimatePresence>
-          {mantenimientoModalOpen && equipoSeleccionado && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setMantenimientoModalOpen(false); limpiarDatosEnvio(); setEquipoSeleccionado(null); }}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-orange-100 rounded-lg">
-                      <Wrench className="w-5 h-5 text-orange-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        Iniciar Mantenimiento
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {equipoSeleccionado.noControl} - {equipoSeleccionado.descripcion}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6">
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Mantenimiento</label>
-                        <select
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
-                          value={datosEnvio.laboratorio}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, laboratorio: e.target.value })}
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="Preventivo">Preventivo</option>
-                          <option value="Correctivo">Correctivo</option>
-                          <option value="Predictivo">Predictivo</option>
-                          <option value="Emergencia">Emergencia</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Técnico Responsable</label>
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
-                          placeholder="Nombre del técnico"
-                          value={datosEnvio.contacto}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, contacto: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Programada</label>
-                        <input
-                          type="date"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
-                          value={datosEnvio.fechaEnvio}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, fechaEnvio: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Duración Estimada (hrs)</label>
-                        <input
-                          type="number"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
-                          placeholder="Horas"
-                          value={datosEnvio.costo}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, costo: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad</label>
-                        <select
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
-                          value={datosEnvio.paqueteria}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, paqueteria: e.target.value })}
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="Baja">Baja</option>
-                          <option value="Media">Media</option>
-                          <option value="Alta">Alta</option>
-                          <option value="Crítica">Crítica</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Actividades a Realizar</label>
-                      <textarea
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 h-24 resize-none"
-                        placeholder="Describa las actividades de mantenimiento a realizar..."
-                        value={datosEnvio.observaciones}
-                        onChange={(e) => setDatosEnvio({ ...datosEnvio, observaciones: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Herramientas/Materiales Requeridos</label>
-                      <textarea
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 h-20 resize-none"
-                        placeholder="Liste las herramientas y materiales necesarios..."
-                        value={datosEnvio.direccion}
-                        onChange={(e) => setDatosEnvio({ ...datosEnvio, direccion: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
-                    <h5 className="font-medium text-orange-900 mb-2">Información del Equipo</h5>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-orange-700 font-medium">Control:</span>
-                        <p className="text-orange-800">{equipoSeleccionado.noControl}</p>
-                      </div>
-                      <div>
-                        <span className="text-orange-700 font-medium">Ubicación:</span>
-                        <p className="text-orange-800">{equipoSeleccionado.ubicacion}</p>
-                      </div>
-                      <div>
-                        <span className="text-orange-700 font-medium">Estado:</span>
-                        <p className="text-orange-800">{getEstadoProcesoInfo(equipoSeleccionado.estadoProceso).label}</p>
-                      </div>
-                      <div>
-                        <span className="text-orange-700 font-medium">Responsable:</span>
-                        <p className="text-orange-800">{equipoSeleccionado.responsable}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                  <button
-                    onClick={() => {
-                      setMantenimientoModalOpen(false);
-                      limpiarDatosEnvio();
-                      setEquipoSeleccionado(null);
-                    }}
-                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={procesarMantenimiento}
-                    className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
-                    disabled={loading}
-                  >
-                    Iniciar Mantenimiento
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Modal de Verificación */}
-        <AnimatePresence>
-          {verificacionModalOpen && equipoSeleccionado && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setVerificacionModalOpen(false); limpiarDatosEnvio(); setEquipoSeleccionado(null); }}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Eye className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        Iniciar Verificación
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {equipoSeleccionado.noControl} - {equipoSeleccionado.descripcion}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6">
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Verificación</label>
-                        <select
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          value={datosEnvio.laboratorio}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, laboratorio: e.target.value })}
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="Interna">Verificación Interna</option>
-                          <option value="Externa">Verificación Externa</option>
-                          <option value="Intermedia">Verificación Intermedia</option>
-                          <option value="Post-Calibración">Post-Calibración</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Inspector Responsable</label>
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          placeholder="Nombre del inspector"
-                          value={datosEnvio.contacto}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, contacto: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Verificación</label>
-                        <input
-                          type="date"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          value={datosEnvio.fechaEnvio}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, fechaEnvio: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Duración Estimada (min)</label>
-                        <input
-                          type="number"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          placeholder="Minutos"
-                          value={datosEnvio.costo}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, costo: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Método de Verificación</label>
-                        <select
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          value={datosEnvio.paqueteria}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, paqueteria: e.target.value })}
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="Visual">Inspección Visual</option>
-                          <option value="Funcional">Prueba Funcional</option>
-                          <option value="Dimensional">Verificación Dimensional</option>
-                          <option value="Completa">Verificación Completa</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Criterios de Verificación</label>
-                      <textarea
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 h-24 resize-none"
-                        placeholder="Describa los criterios y parámetros a verificar..."
-                        value={datosEnvio.observaciones}
-                        onChange={(e) => setDatosEnvio({ ...datosEnvio, observaciones: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Equipos de Referencia</label>
-                      <textarea
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 h-20 resize-none"
-                        placeholder="Liste los equipos de referencia o patrones a utilizar..."
-                        value={datosEnvio.direccion}
-                        onChange={(e) => setDatosEnvio({ ...datosEnvio, direccion: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Condiciones Ambientales</label>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          placeholder="Temperatura (°C)"
-                          value={datosEnvio.telefono}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, telefono: e.target.value })}
-                        />
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          placeholder="Humedad (%)"
-                          value={datosEnvio.email}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, email: e.target.value })}
-                        />
-                        <input
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
-                          placeholder="Presión (hPa)"
-                          value={datosEnvio.numeroOrden}
-                          onChange={(e) => setDatosEnvio({ ...datosEnvio, numeroOrden: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                    <h5 className="font-medium text-green-900 mb-2">Información del Equipo</h5>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-green-700 font-medium">Control:</span>
-                        <p className="text-green-800">{equipoSeleccionado.noControl}</p>
-                      </div>
-                      <div>
-                        <span className="text-green-700 font-medium">Última Calibración:</span>
-                        <p className="text-green-800">{format(parseISO(equipoSeleccionado.fecha), 'dd/MM/yyyy', { locale: es })}</p>
-                      </div>
-                      <div>
-                        <span className="text-green-700 font-medium">Frecuencia:</span>
-                        <p className="text-green-800">{equipoSeleccionado.frecuencia}</p>
-                      </div>
-                      <div>
-                        <span className="text-green-700 font-medium">Estado:</span>
-                        <p className="text-green-800">{getStatusInfo(equipoSeleccionado.fecha).label}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                  <button
-                    onClick={() => {
-                      setVerificacionModalOpen(false);
-                      limpiarDatosEnvio();
-                      setEquipoSeleccionado(null);
-                    }}
-                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={procesarVerificacion}
-                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                    disabled={loading}
-                  >
-                    Iniciar Verificación
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Modal de Historial */}
-        <AnimatePresence>
-          {historialModalOpen && equipoSeleccionado && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setHistorialModalOpen(false); setEquipoSeleccionado(null); }}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Historial - {equipoSeleccionado.noControl}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">{equipoSeleccionado.descripcion}</p>
-                </div>
-
-                <div className="p-6 overflow-y-auto max-h-96">
-                  {equipoSeleccionado.historial.length > 0 ? (
-                    <div className="space-y-4">
-                      {equipoSeleccionado.historial.map((entrada, index) => (
-                        <div key={index} className="border-l-4 border-blue-500 pl-4 py-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className="font-medium text-gray-900">{entrada.accion}</h4>
-                              <p className="text-sm text-gray-600">Por: {entrada.usuario}</p>
-                              {entrada.observaciones && (
-                                <p className="text-sm text-gray-500 mt-1">{entrada.observaciones}</p>
-                              )}
+            {mantenimientoModalOpen && equipoSeleccionado && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <motion.div 
+                        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+                    >
+                        <div className="bg-amber-500 px-6 py-4 flex justify-between items-center text-white">
+                            <div className="flex items-center gap-2">
+                                <Wrench className="w-5 h-5" />
+                                <h3 className="font-bold text-lg">Registrar Mantenimiento</h3>
                             </div>
-                            <span className="text-xs text-gray-400">
-                              {format(parseISO(entrada.fecha), 'dd MMM yyyy', { locale: es })}
-                            </span>
-                          </div>
+                            <button onClick={() => setMantenimientoModalOpen(false)} className="hover:bg-white/20 p-1 rounded-full"><XCircle className="w-5 h-5" /></button>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <History className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p>No hay historial disponible</p>
-                    </div>
-                  )}
-                </div>
+                        
+                        <div className="p-6 space-y-4">
+                            <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 text-sm text-amber-800 mb-4">
+                                Registrando mantenimiento para: <strong>{equipoSeleccionado.noControl}</strong>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
+                                    <select 
+                                        className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500"
+                                        value={nuevoMantenimiento.tipo}
+                                        onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, tipo: e.target.value as any})}
+                                    >
+                                        <option>Correctivo</option>
+                                        <option>Preventivo</option>
+                                        <option>Predictivo</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Fecha</label>
+                                    <input type="date" className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500"
+                                        value={nuevoMantenimiento.fecha} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, fecha: e.target.value})} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Descripción de la Falla / Trabajo</label>
+                                <textarea 
+                                    className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500 h-20"
+                                    placeholder="¿Qué falló o qué se va a revisar?"
+                                    value={nuevoMantenimiento.observaciones} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, observaciones: e.target.value})}
+                                ></textarea>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Costo Total</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                                        <input type="number" className="w-full pl-7 border-gray-300 rounded-lg text-sm focus:ring-amber-500"
+                                            value={nuevoMantenimiento.costo} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, costo: Number(e.target.value)})} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Técnico / Proveedor</label>
+                                    <input type="text" className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500"
+                                        placeholder="Interno o Empresa X"
+                                        value={nuevoMantenimiento.tecnico} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, tecnico: e.target.value})} />
+                                </div>
+                            </div>
+                        </div>
 
-                <div className="p-6 border-t border-gray-200 flex justify-end bg-gray-50">
-                  <button
-                    onClick={() => {
-                      setHistorialModalOpen(false);
-                      setEquipoSeleccionado(null);
-                    }}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                  >
-                    Cerrar
-                  </button>
+                        <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
+                             <button onClick={() => setMantenimientoModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm">Cancelar</button>
+                             <button onClick={handleRegistrarMantenimiento} className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium shadow-md">
+                                Registrar Mantenimiento
+                             </button>
+                        </div>
+                    </motion.div>
                 </div>
-              </motion.div>
-            </motion.div>
-          )}
+            )}
         </AnimatePresence>
 
-        {/* Modal Nuevo Patrón */}
-        <AnimatePresence>
-          {modalOpen && (
-            <motion.div
-              className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setModalOpen(false)}
-            >
-              <motion.div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-xl font-semibold text-gray-900">Nuevo Patrón de Medición</h3>
-                  <p className="text-sm text-gray-500 mt-1">Complete la información del patrón</p>
-                </div>
+        {/* Modal Nuevo (Simple) */}
+        {modalNuevoOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                 <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+                    <h2 className="text-lg font-bold mb-4">Nuevo Activo</h2>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">No. Control</label>
+                    <input className="w-full border border-gray-300 mb-2 p-2 rounded-lg" value={nuevoRegistro.noControl} onChange={e => setNuevoRegistro({...nuevoRegistro, noControl: e.target.value})} />
+                    
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Descripción</label>
+                    <input className="w-full border border-gray-300 mb-2 p-2 rounded-lg" value={nuevoRegistro.descripcion} onChange={e => setNuevoRegistro({...nuevoRegistro, descripcion: e.target.value})} />
+                    
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Marca</label>
+                    <input className="w-full border border-gray-300 mb-2 p-2 rounded-lg" value={nuevoRegistro.marca} onChange={e => setNuevoRegistro({...nuevoRegistro, marca: e.target.value})} />
+                    
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Fecha Vencimiento (Calibración)</label>
+                    <input type="date" className="w-full border border-gray-300 mb-4 p-2 rounded-lg" value={nuevoRegistro.fecha} onChange={e => setNuevoRegistro({...nuevoRegistro, fecha: e.target.value})} />
 
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">No. Control *</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="AG-XXX"
-                        value={nuevoRegistro.noControl}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, noControl: e.target.value })}
-                      />
+                    <div className="flex justify-end gap-2 mt-4">
+                        <button onClick={() => setModalNuevoOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">Cancelar</button>
+                        <button onClick={handleGuardarNuevo} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Descripción *</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Descripción del equipo"
-                        value={nuevoRegistro.descripcion}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, descripcion: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Serie</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Número de serie"
-                        value={nuevoRegistro.serie}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, serie: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Marca</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Marca del equipo"
-                        value={nuevoRegistro.marca}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, marca: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Modelo</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Modelo del equipo"
-                        value={nuevoRegistro.modelo}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, modelo: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Frecuencia</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="12 Meses ± 5 Días"
-                        value={nuevoRegistro.frecuencia}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, frecuencia: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Servicio</label>
-                      <select
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={nuevoRegistro.tipoServicio}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, tipoServicio: e.target.value })}
-                      >
-                        <option value="Calibración">Calibración</option>
-                        <option value="Mantenimiento">Mantenimiento</option>
-                        <option value="Verificación">Verificación</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Vencimiento *</label>
-                      <input
-                        type="date"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={nuevoRegistro.fecha}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, fecha: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad</label>
-                      <select
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        value={nuevoRegistro.prioridad}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, prioridad: e.target.value as 'Alta' | 'Media' | 'Baja' })}
-                      >
-                        <option value="Alta">Alta</option>
-                        <option value="Media">Media</option>
-                        <option value="Baja">Baja</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Ubicación</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Lab A"
-                        value={nuevoRegistro.ubicacion}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, ubicacion: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Responsable</label>
-                      <input
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                        placeholder="Nombre del responsable"
-                        value={nuevoRegistro.responsable}
-                        onChange={(e) => setNuevoRegistro({ ...nuevoRegistro, responsable: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                </div>
+                 </div>
+            </div>
+        )}
 
-                <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-                  <button
-                    onClick={() => setModalOpen(false)}
-                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleGuardar}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                    disabled={loading}
-                  >
-                    Guardar Patrón
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     </>
   );
 };
+
+// --- COMPONENTES AUXILIARES ---
+
+const KPICard = ({ title, value, icon: Icon, color }: any) => {
+    const colorClasses: any = {
+        blue: 'bg-blue-50 text-blue-600 border-blue-100',
+        red: 'bg-red-50 text-red-600 border-red-100',
+        orange: 'bg-orange-50 text-orange-600 border-orange-100',
+        green: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+        indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+    };
+    return (
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
+            <div>
+                <p className="text-sm text-gray-500 font-medium mb-1">{title}</p>
+                <p className="text-2xl font-bold text-gray-900">{value}</p>
+            </div>
+            <div className={`p-3 rounded-lg border ${colorClasses[color]}`}>
+                <Icon className="w-6 h-6" />
+            </div>
+        </div>
+    );
+};
+
+const ExpedienteModal = ({ equipo, onClose, canEdit, onUpdate, onOpenMaintenance, onLiberar }: { equipo: RegistroPatron, onClose: () => void, canEdit: boolean, onUpdate: (data: RegistroPatron) => void, onOpenMaintenance: () => void, onLiberar: () => void }) => {
+    const [activeTab, setActiveTab] = useState<'info' | 'history' | 'maintenance'>('info');
+    const [editMode, setEditMode] = useState(false);
+    const [localData, setLocalData] = useState(equipo);
+
+    const mantenimientos = equipo.historial.filter(h => h.tipoEvento === 'mantenimiento');
+
+    return (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <motion.div 
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+                className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header Expediente */}
+                <div className="bg-white border-b border-gray-200 p-6 flex justify-between items-start">
+                    <div className="flex gap-4">
+                        <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
+                            <Target className="w-8 h-8" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-2xl font-bold text-gray-900">{localData.noControl}</h2>
+                                <span className={`text-xs px-2 py-0.5 rounded-full border ${editMode ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                    {editMode ? 'Modo Edición' : 'Solo Lectura'}
+                                </span>
+                            </div>
+                            <p className="text-gray-500">{localData.descripcion}</p>
+                            
+                            {/* 🚨 INDICADOR DE PRÉSTAMO EN HEADER */}
+                            {localData.estadoProceso === 'en_servicio' && (
+                                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 text-sm">
+                                    <User className="w-4 h-4" />
+                                    <span>En uso por: <strong>{localData.usuarioEnUso}</strong></span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        {/* 🚨 BOTÓN DEVOLUCIÓN RÁPIDA */}
+                        {canEdit && !editMode && localData.estadoProceso === 'en_servicio' && (
+                            <button onClick={onLiberar} className="flex items-center gap-2 px-3 py-2 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg text-sm font-medium transition">
+                                <CornerDownLeft className="w-4 h-4" />
+                                Devolver / Liberar
+                            </button>
+                        )}
+                        {canEdit && !editMode && (
+                            <button onClick={() => onOpenMaintenance()} className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium transition">
+                                <Wrench className="w-4 h-4" />
+                                Mantenimiento
+                            </button>
+                        )}
+                        {canEdit && (
+                            <button onClick={() => editMode ? onUpdate(localData) : setEditMode(true)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${editMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-900 text-white hover:bg-gray-800'}`}>
+                                {editMode ? <><CheckCircle className="w-4 h-4" /> Guardar</> : <><Edit className="w-4 h-4" /> Editar Datos</>}
+                            </button>
+                        )}
+                        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><XCircle className="w-6 h-6 text-gray-400" /></button>
+                    </div>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b border-gray-200 px-6">
+                    <TabButton active={activeTab === 'info'} onClick={() => setActiveTab('info')} icon={FileText} label="Información General" />
+                    <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History} label="Línea de Tiempo" />
+                    <TabButton active={activeTab === 'maintenance'} onClick={() => setActiveTab('maintenance')} icon={Wrench} label="Historial de Mantenimiento" count={mantenimientos.length} />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+                    {activeTab === 'info' && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                           <Field label="Marca" value={localData.marca} editing={editMode} onChange={v => setLocalData({...localData, marca: v})} />
+                           <Field label="Modelo" value={localData.modelo} editing={editMode} onChange={v => setLocalData({...localData, modelo: v})} />
+                           <Field label="Serie" value={localData.serie} editing={editMode} onChange={v => setLocalData({...localData, serie: v})} />
+                           <Field label="Ubicación Base" value={localData.ubicacion} editing={editMode} onChange={v => setLocalData({...localData, ubicacion: v})} />
+                           <Field label="Responsable" value={localData.responsable} editing={editMode} onChange={v => setLocalData({...localData, responsable: v})} />
+                           <Field label="Frecuencia" value={localData.frecuencia} editing={editMode} onChange={v => setLocalData({...localData, frecuencia: v})} />
+                           <div className="col-span-full mt-4">
+                                <h4 className="text-sm font-medium text-gray-900 mb-2">Observaciones Generales</h4>
+                                {editMode ? (
+                                    <textarea className="w-full border-gray-300 rounded-lg text-sm" rows={3} value={localData.observaciones || ''} onChange={e => setLocalData({...localData, observaciones: e.target.value})} />
+                                ) : (
+                                    <p className="text-sm text-gray-600 bg-white p-3 rounded border border-gray-200">{localData.observaciones || 'Sin observaciones.'}</p>
+                                )}
+                           </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                        <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-0 before:w-0.5 before:bg-gray-200">
+                            {equipo.historial.map((h, i) => (
+                                <div key={i} className="relative">
+                                    <div className={`absolute -left-[29px] w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${h.tipoEvento === 'mantenimiento' ? 'bg-amber-500' : h.tipoEvento === 'prestamo' ? 'bg-indigo-500' : 'bg-blue-500'}`}>
+                                        <div className="w-2 h-2 bg-white rounded-full" />
+                                    </div>
+                                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="font-semibold text-gray-900">{h.accion}</span>
+                                            <span className="text-xs text-gray-400">{formatearFechaSafe(h.fecha, 'dd MMM yyyy, HH:mm')}</span>
+                                        </div>
+                                        <p className="text-sm text-gray-600">{h.observaciones}</p>
+                                        <div className="mt-2 text-xs text-gray-400 flex items-center gap-1">
+                                            <User className="w-3 h-3" /> {h.usuario}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {activeTab === 'maintenance' && (
+                        <div>
+                             {mantenimientos.length === 0 ? (
+                                 <div className="text-center py-12 text-gray-400">
+                                     <Wrench className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                     <p>No hay registros de mantenimiento correctivo o preventivo.</p>
+                                 </div>
+                             ) : (
+                                 <div className="space-y-4">
+                                     {mantenimientos.map((m, i) => (
+                                         <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition">
+                                             <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
+                                                 <div>
+                                                     <div className="flex items-center gap-2">
+                                                         <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${m.detallesMantenimiento?.tipo === 'Correctivo' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                                             {m.detallesMantenimiento?.tipo || 'Mantenimiento'}
+                                                         </span>
+                                                         <span className="text-sm font-medium text-gray-900">{formatearFechaSafe(m.fecha, 'dd/MM/yyyy')}</span>
+                                                     </div>
+                                                 </div>
+                                                 <div className="text-right">
+                                                     <span className="text-sm font-bold text-gray-900">${m.detallesMantenimiento?.costo}</span>
+                                                     <p className="text-xs text-gray-500">{m.detallesMantenimiento?.moneda}</p>
+                                                 </div>
+                                             </div>
+                                             <div className="grid grid-cols-2 gap-4 text-sm">
+                                                 <div>
+                                                     <span className="text-gray-400 text-xs">Falla / Trabajo:</span>
+                                                     <p className="text-gray-700">{m.observaciones}</p>
+                                                 </div>
+                                                 <div>
+                                                     <span className="text-gray-400 text-xs">Refacciones:</span>
+                                                     <p className="text-gray-700">{m.detallesMantenimiento?.refacciones}</p>
+                                                 </div>
+                                                  <div className="col-span-2">
+                                                     <span className="text-gray-400 text-xs">Técnico:</span>
+                                                     <span className="text-gray-700 ml-2">{m.detallesMantenimiento?.tecnico}</span>
+                                                 </div>
+                                             </div>
+                                         </div>
+                                     ))}
+                                 </div>
+                             )}
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
+const TabButton = ({ active, onClick, icon: Icon, label, count }: any) => (
+    <button 
+        onClick={onClick}
+        className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${active ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+    >
+        <Icon className="w-4 h-4" />
+        {label}
+        {count !== undefined && count > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-xs">{count}</span>}
+    </button>
+);
+
+const Field = ({ label, value, editing, onChange }: any) => (
+    <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+        {editing ? (
+            <input className="w-full border-gray-300 rounded-md text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 p-2" value={value} onChange={e => onChange(e.target.value)} />
+        ) : (
+            <p className="text-sm font-medium text-gray-900">{value || '-'}</p>
+        )}
+    </div>
+);

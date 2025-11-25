@@ -1,23 +1,24 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, User, LogIn, LogOut, Loader2, Camera, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, User, LogIn, LogOut, Loader2, XCircle, AlertTriangle, CheckCircle, Package, RefreshCw } from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
 import { db } from '../utils/firebase';
-import { collection, query, where, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import { format } from 'date-fns';
 
 // --- Interfaces ---
-// (Asegúrate de que coincida con la de ProgramaCalibracionScreen)
 export interface HistorialEntry {
+  id: string; 
   fecha: string;
   accion: string;
   usuario: string;
+  tipoEvento: 'sistema' | 'calibracion' | 'mantenimiento' | 'verificacion' | 'administrativo' | 'prestamo';
   observaciones?: string;
   detalles?: any; 
 }
 
 export interface RegistroPatron {
-  id?: string; // ID de Firestore
+  id?: string; 
   noControl: string;
   descripcion: string;
   serie: string;
@@ -29,11 +30,9 @@ export interface RegistroPatron {
   prioridad: 'Alta' | 'Media' | 'Baja';
   ubicacion: string;
   responsable: string;
-  // 🚨 AÑADIMOS EL NUEVO ESTADO
-  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_prestamo';
+  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_mantenimiento' | 'en_prestamo';
   fechaInicioProceso?: string;
   observaciones?: string;
-  // 🚨 AÑADIMOS LOS NUEVOS CAMPOS
   usuarioEnUso?: string; 
   fechaPrestamo?: string;
   historial: HistorialEntry[];
@@ -43,7 +42,6 @@ type Metrologo = {
   id: string;
   nombre: string;
 };
-// -----------------
 
 const COLLECTION_NAME = "patronesCalibracion";
 
@@ -52,14 +50,18 @@ export const ControlPrestamosScreen: React.FC = () => {
   const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
   const [usuarioSeleccionado, setUsuarioSeleccionado] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false); // 🚀 NUEVO: Estado de carga
+  const [isProcessing, setIsProcessing] = useState(false); 
   
+  // 🚨 NUEVO: Lista de items que tiene el usuario seleccionado
+  const [itemsEnPosesion, setItemsEnPosesion] = useState<RegistroPatron[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanMode, setScanMode] = useState<'entrada' | 'salida'>('salida');
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
 
-  // --- 1. Lógica para cargar usuarios (Metrólogos) ---
+  // --- 1. Cargar Usuarios ---
   useEffect(() => {
     const fetchMetrologos = async () => {
       try {
@@ -79,7 +81,41 @@ export const ControlPrestamosScreen: React.FC = () => {
     fetchMetrologos();
   }, []);
 
-  // --- 2. Lógica para abrir/cerrar el escáner ---
+  // --- 2. 🚨 NUEVO: Cargar Equipos del Usuario ---
+  const fetchItemsUsuario = useCallback(async (usuario: string) => {
+    if (!usuario) {
+        setItemsEnPosesion([]);
+        return;
+    }
+    setLoadingItems(true);
+    try {
+        // Buscamos todo lo que tenga este usuario asignado
+        const q = query(collection(db, COLLECTION_NAME), where("usuarioEnUso", "==", usuario));
+        const querySnapshot = await getDocs(q);
+        const items: RegistroPatron[] = [];
+        
+        querySnapshot.forEach((doc) => {
+            const data = doc.data() as RegistroPatron;
+            // Filtramos solo lo que esté activo (en servicio o préstamo antiguo)
+            if (data.estadoProceso === 'en_servicio' || data.estadoProceso === 'en_prestamo') {
+                items.push({ id: doc.id, ...data });
+            }
+        });
+        setItemsEnPosesion(items);
+    } catch (error) {
+        console.error("Error cargando items del usuario:", error);
+    } finally {
+        setLoadingItems(false);
+    }
+  }, []);
+
+  // Efecto: Cuando cambia el usuario, cargamos sus cosas
+  useEffect(() => {
+    fetchItemsUsuario(usuarioSeleccionado);
+  }, [usuarioSeleccionado, fetchItemsUsuario]);
+
+
+  // --- 3. Abrir Escáner ---
   const handleOpenScanner = (mode: 'entrada' | 'salida') => {
     if (!usuarioSeleccionado && mode === 'salida') {
         alert('Por favor, selecciona tu nombre de usuario antes de escanear una salida.');
@@ -97,14 +133,13 @@ export const ControlPrestamosScreen: React.FC = () => {
     setIsScannerOpen(false);
   }, []);
   
-  // --- 3. LÓGICA DE ESCANEO (COMPLETA) ---
+  // --- 4. LÓGICA DE ESCANEO ---
   const handleScanResult = useCallback(async (noControl: string) => {
     if (!noControl) return;
-    stopScan();
-    setIsProcessing(true); // 🚀 Bloquea la UI
+    stopScan(); // Cerramos cámara para procesar
+    setIsProcessing(true); 
 
     try {
-      // 1. Buscar el patrón en Firebase por 'noControl'
       const q = query(collection(db, COLLECTION_NAME), where("noControl", "==", noControl));
       const querySnapshot = await getDocs(q);
 
@@ -114,87 +149,94 @@ export const ControlPrestamosScreen: React.FC = () => {
         return;
       }
 
-      // Obtenemos el primer (y único) documento
       const patronDoc = querySnapshot.docs[0];
       const patronData = patronDoc.data() as RegistroPatron;
-      const patronId = patronDoc.id; // <-- El ID del documento
+      const patronId = patronDoc.id;
 
       const docRef = doc(db, COLLECTION_NAME, patronId);
       const fechaActual = format(new Date(), 'yyyy-MM-dd');
       let nuevaEntradaHistorial: HistorialEntry;
 
-      // 2. Lógica de SALIDA (Check-Out)
+      // === SALIDA (CHECK-OUT) ===
       if (scanMode === 'salida') {
-        // Validaciones
-        if (patronData.estadoProceso === 'en_prestamo') {
-          alert(`⚠️ Aviso: El patrón "${patronData.descripcion}" ya está EN PRÉSTAMO por ${patronData.usuarioEnUso || 'alguien'}.`);
+        if (patronData.estadoProceso === 'en_servicio' || patronData.estadoProceso === 'en_prestamo') {
+          alert(`⚠️ El patrón "${patronData.descripcion}" ya está EN USO por ${patronData.usuarioEnUso}.`);
           setIsProcessing(false);
           return;
         }
-        if (patronData.estadoProceso === 'en_proceso' || patronData.estadoProceso === 'fuera_servicio') {
-          alert(`❌ Error: El patrón "${patronData.descripcion}" no se puede prestar. Estado actual: ${patronData.estadoProceso.toUpperCase()}.`);
-          setIsProcessing(false);
-          return;
+        if (patronData.estadoProceso !== 'operativo' && patronData.estadoProceso !== 'programado') {
+           alert(`❌ Error: El patrón no está disponible. Estado: ${patronData.estadoProceso.toUpperCase()}`);
+           setIsProcessing(false);
+           return;
         }
 
-        // Crear historial
         nuevaEntradaHistorial = {
+          id: crypto.randomUUID(),
           fecha: fechaActual,
-          accion: 'Salida (Préstamo)',
+          accion: 'Salida (Escáner)',
           usuario: usuarioSeleccionado,
-          observaciones: `Equipo retirado para uso en campo.`
+          tipoEvento: 'prestamo',
+          observaciones: `Equipo retirado mediante escáner.`
         };
 
-        // Actualizar Firebase
-        await setDoc(docRef, {
-          estadoProceso: 'en_prestamo',
+        const updatedData = {
+          estadoProceso: 'en_servicio',
           usuarioEnUso: usuarioSeleccionado,
-          ubicacion: 'En Campo',
+          ubicacion: `En Uso - ${usuarioSeleccionado}`,
           fechaPrestamo: fechaActual,
           historial: [nuevaEntradaHistorial, ...patronData.historial]
-        }, { merge: true }); // 'merge: true' es CRUCIAL para no borrar otros campos
+        };
 
-        alert(`✅ Salida Registrada:\n${patronData.descripcion}\nPor: ${usuarioSeleccionado}`);
+        // @ts-ignore
+        await setDoc(docRef, updatedData, { merge: true });
+        
+        // 🚨 ACTUALIZAR LISTA LOCAL (Agregamos el item visualmente)
+        setItemsEnPosesion(prev => [...prev, { ...patronData, ...updatedData, id: patronId } as RegistroPatron]);
+
+        alert(`✅ Salida Registrada: ${patronData.descripcion}`);
 
       } 
-      // 3. Lógica de ENTRADA (Check-In)
+      // === ENTRADA (CHECK-IN) ===
       else if (scanMode === 'entrada') {
         
         if (patronData.estadoProceso === 'operativo' && patronData.ubicacion === 'Laboratorio') {
-           alert(`⚠️ Aviso: El patrón "${patronData.descripcion}" ya se encuentra EN LABORATORIO.`);
+           alert(`⚠️ Este equipo ya está en Laboratorio.`);
            setIsProcessing(false);
            return;
         }
         
-        // Crear historial
         nuevaEntradaHistorial = {
+          id: crypto.randomUUID(),
           fecha: fechaActual,
-          accion: 'Entrada (Devolución)',
-          usuario: usuarioSeleccionado || 'Sistema', // 'usuarioSeleccionado' puede estar vacío si solo se registra entrada
-          observaciones: `Equipo devuelto a Laboratorio. (Recibido de: ${patronData.usuarioEnUso || 'N/A'})`
+          accion: 'Entrada (Devolución Escáner)',
+          usuario: usuarioSeleccionado || 'Sistema',
+          tipoEvento: 'prestamo',
+          observaciones: `Devuelto a Laboratorio. (Usuario anterior: ${patronData.usuarioEnUso || 'N/A'})`
         };
         
-        // Actualizar Firebase
         await setDoc(docRef, {
           estadoProceso: 'operativo',
-          usuarioEnUso: '', // Limpiamos el usuario
+          usuarioEnUso: '', 
           ubicacion: 'Laboratorio',
-          fechaPrestamo: '', // Limpiamos la fecha
+          fechaPrestamo: '', 
           historial: [nuevaEntradaHistorial, ...patronData.historial]
         }, { merge: true });
 
-        alert(`✅ Entrada Registrada:\n${patronData.descripcion}`);
+        // 🚨 ACTUALIZAR LISTA LOCAL (Quitamos el item visualmente)
+        setItemsEnPosesion(prev => prev.filter(item => item.noControl !== noControl));
+
+        alert(`✅ Entrada Registrada: ${patronData.descripcion}`);
       }
       
     } catch (error) {
       console.error("Error al actualizar Firebase:", error);
-      alert("❌ Error de Conexión: No se pudo actualizar la base de datos.");
+      alert("❌ Error de Conexión.");
     } finally {
-      setIsProcessing(false); // 🚀 Desbloquea la UI
+      setIsProcessing(false); 
     }
   }, [scanMode, usuarioSeleccionado, stopScan]);
 
-  // --- 4. useEffect para encender la cámara ---
+  // --- 5. Video Stream ---
   useEffect(() => {
     if (isScannerOpen && videoRef.current) {
       const startScanLogic = async () => {
@@ -207,22 +249,17 @@ export const ControlPrestamosScreen: React.FC = () => {
                 handleScanResult(result.getText());
                 controls.stop();
               }
-              // Ignorar errores comunes
-              if (error && !(error instanceof DOMException && error.name === 'NotAllowedError')) {
-                // console.error(error); 
-              }
             }
           );
           scannerControlsRef.current = controls;
         } catch (e) {
-          console.error("Error al iniciar el escáner:", e);
-          alert("Error al iniciar la cámara. Revisa los permisos (HTTPS es requerido).");
+          console.error("Error al iniciar escáner:", e);
+          alert("Error al iniciar la cámara.");
           stopScan();
         }
       };
       startScanLogic();
     }
-    // Función de limpieza
     return () => {
       if (scannerControlsRef.current) {
         scannerControlsRef.current.stop();
@@ -234,12 +271,11 @@ export const ControlPrestamosScreen: React.FC = () => {
   return (
     <div style={styles.container}>
       
-      {/* --- MODAL DEL ESCÁNER --- */}
       {isScannerOpen && (
         <div style={styles.scannerModal} onClick={stopScan}>
           <div style={styles.scannerContent} onClick={(e) => e.stopPropagation()}>
             <h3 style={styles.scannerTitle}>
-              {scanMode === 'salida' ? 'Escanear Salida' : 'Escanear Entrada'}
+              {scanMode === 'salida' ? 'Escanear para SALIDA' : 'Escanear para DEVOLUCIÓN'}
             </h3>
             <video ref={videoRef} style={styles.video} />
             <button 
@@ -253,7 +289,6 @@ export const ControlPrestamosScreen: React.FC = () => {
         </div>
       )}
 
-      {/* --- Encabezado --- */}
       <div style={styles.header}>
         <button 
           onClick={() => navigateTo('/')} 
@@ -262,14 +297,12 @@ export const ControlPrestamosScreen: React.FC = () => {
         >
           <ArrowLeft size={20} />
         </button>
-        <h1 style={styles.title}>Control de Préstamos de Equipo</h1>
+        <h1 style={styles.title}>Control de Préstamos</h1>
       </div>
 
-      {/* --- Contenido Principal --- */}
       <div style={styles.content}>
         <div style={styles.card}>
           
-          {/* 🚀 Overlay de Carga */}
           {isProcessing && (
             <div style={styles.loadingOverlay}>
               <Loader2 size={40} className="animate-spin" />
@@ -278,7 +311,7 @@ export const ControlPrestamosScreen: React.FC = () => {
           )}
           
           <div style={styles.formGroup}>
-            <label style={styles.label}><User size={16} /> Selecciona tu Usuario</label>
+            <label style={styles.label}><User size={16} /> Usuario Responsable</label>
             <select
               style={styles.select}
               value={usuarioSeleccionado}
@@ -286,7 +319,7 @@ export const ControlPrestamosScreen: React.FC = () => {
               disabled={isLoadingUsers || isProcessing}
             >
               <option value="">
-                {isLoadingUsers ? 'Cargando...' : '-- Tu nombre --'}
+                {isLoadingUsers ? 'Cargando...' : '-- Seleccionar Usuario --'}
               </option>
               {metrologos.map(user => (
                 <option key={user.id} value={user.nombre}>
@@ -295,7 +328,7 @@ export const ControlPrestamosScreen: React.FC = () => {
               ))}
             </select>
             {scanMode === 'salida' && !usuarioSeleccionado &&
-              <p style={styles.note}>*Requerido para registrar una salida.</p>
+              <p style={styles.note}>* Selecciona un usuario para registrar salida.</p>
             }
           </div>
 
@@ -304,10 +337,9 @@ export const ControlPrestamosScreen: React.FC = () => {
               style={{...styles.button, ...styles.primaryButton}}
               onClick={() => handleOpenScanner('salida')}
               disabled={!usuarioSeleccionado || isProcessing}
-              title={!usuarioSeleccionado ? "Debes seleccionar un usuario primero" : "Registrar salida de equipo"}
             >
               <LogOut size={20} style={{ marginRight: '10px' }} />
-              Registrar Salida (Check-Out)
+              Escanear Salida (Llevarse)
             </button>
             <button
               style={{...styles.button, ...styles.secondaryButton}}
@@ -315,17 +347,66 @@ export const ControlPrestamosScreen: React.FC = () => {
               disabled={isProcessing}
             >
               <LogIn size={20} style={{ marginRight: '10px' }} />
-              Registrar Entrada (Check-In)
+              Escanear Devolución (Entregar)
             </button>
           </div>
         </div>
+
+        {/* 🚨 LISTA DINÁMICA DE LO QUE TIENE EL USUARIO */}
+        {usuarioSeleccionado && (
+             <div style={{ marginTop: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#334155' }}>
+                        Equipos en poder de: <span style={{color: '#2563eb'}}>{usuarioSeleccionado}</span>
+                    </h3>
+                    <button onClick={() => fetchItemsUsuario(usuarioSeleccionado)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>
+                        <RefreshCw size={18} className={loadingItems ? 'animate-spin' : ''} />
+                    </button>
+                </div>
+                
+                {loadingItems ? (
+                    <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>Cargando inventario...</div>
+                ) : itemsEnPosesion.length === 0 ? (
+                    <div style={{ backgroundColor: '#f0fdf4', padding: '20px', borderRadius: '12px', border: '1px solid #bbf7d0', textAlign: 'center', color: '#166534' }}>
+                        <CheckCircle size={32} style={{ marginBottom: '8px', opacity: 0.8 }} />
+                        <p style={{ margin: 0, fontWeight: 500 }}>¡Todo limpio! No tiene equipos pendientes.</p>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {itemsEnPosesion.map(item => (
+                            <div key={item.id} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', borderLeft: '4px solid #f59e0b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: 700, marginBottom: '4px' }}>
+                                        {item.noControl}
+                                    </div>
+                                    <div style={{ fontSize: '1rem', fontWeight: 600, color: '#1e293b' }}>
+                                        {item.descripcion}
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                        {item.marca} - {item.modelo}
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <span style={{ fontSize: '0.75rem', backgroundColor: '#fffbeb', color: '#b45309', padding: '4px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                        PENDIENTE
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                        <p style={{ textAlign: 'center', fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px' }}>
+                            Escanea un equipo en "Devolución" para quitarlo de esta lista.
+                        </p>
+                    </div>
+                )}
+             </div>
+        )}
+
       </div>
     </div>
   );
 };
 
-// --- ESTILOS (Sencillos para esta pantalla) ---
-// (Añadimos el overlay de carga)
+// --- ESTILOS ---
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
     minHeight: '100vh',
@@ -333,112 +414,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '16px 24px',
-    backgroundColor: '#ffffff',
-    borderBottom: '1px solid #e0e0e0',
+    display: 'flex', alignItems: 'center', padding: '16px 24px', backgroundColor: '#ffffff', borderBottom: '1px solid #e0e0e0',
   },
   backButton: {
-    background: '#f0f0f0', color: '#333', border: 'none', borderRadius: '50%',
-    width: '40px', height: '40px', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    marginRight: '16px',
+    background: '#f0f0f0', color: '#333', border: 'none', borderRadius: '50%', width: '40px', height: '40px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '16px',
   },
-  title: {
-    margin: 0, color: '#333', fontSize: '1.5rem', fontWeight: 600,
-  },
-  content: {
-    padding: '32px 24px',
-    maxWidth: '700px',
-    margin: '0 auto',
-  },
+  title: { margin: 0, color: '#333', fontSize: '1.5rem', fontWeight: 600 },
+  content: { padding: '32px 24px', maxWidth: '600px', margin: '0 auto' },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: '12px',
-    padding: '32px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-    position: 'relative', // Para el overlay
+    backgroundColor: '#ffffff', borderRadius: '12px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative',
   },
   loadingOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-    borderRadius: '12px',
-    color: '#333',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255, 255, 255, 0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: '12px', color: '#333',
   },
-  formGroup: {
-    marginBottom: '24px',
-  },
-  label: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    fontWeight: 600, color: '#555', marginBottom: '8px',
-  },
-  select: {
-    width: '100%',
-    padding: '12px',
-    fontSize: '1rem',
-    borderRadius: '8px',
-    border: '1px solid #ddd',
-    backgroundColor: '#fff',
-  },
-  note: {
-    fontSize: '0.8rem',
-    color: '#dc2626',
-    marginTop: '8px',
-  },
-  buttonGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    marginTop: '32px',
-  },
-  button: {
-    width: '100%',
-    padding: '16px',
-    fontSize: '1rem',
-    fontWeight: 600,
-    borderRadius: '8px',
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'all 0.3s',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButton: {
-    backgroundColor: '#dc2626', // Rojo para "Salida"
-    color: '#ffffff',
-  },
-  secondaryButton: {
-    backgroundColor: '#16a34a', // Verde para "Entrada"
-    color: '#ffffff',
-  },
-  dangerButton: {
-    backgroundColor: '#e0e0e0',
-    color: '#333',
-  },
-  scannerModal: {
-    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-    background: 'rgba(0, 0, 0, 0.7)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-  },
-  scannerContent: {
-    background: '#fff', padding: '20px', borderRadius: '12px',
-    width: '90%', maxWidth: '600px', textAlign: 'center',
-  },
-  scannerTitle: {
-    marginTop: 0, color: '#333',
-  },
-  video: {
-    width: '100%', height: 'auto', borderRadius: '8px', border: '1px solid #ddd',
-    marginBottom: '16px',
-  },
+  formGroup: { marginBottom: '24px' },
+  label: { display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#555', marginBottom: '8px' },
+  select: { width: '100%', padding: '12px', fontSize: '1rem', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: '#fff' },
+  note: { fontSize: '0.8rem', color: '#dc2626', marginTop: '8px' },
+  buttonGroup: { display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' },
+  button: { width: '100%', padding: '16px', fontSize: '1rem', fontWeight: 600, borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  primaryButton: { backgroundColor: '#2563eb', color: '#ffffff' }, // Azul para salida
+  secondaryButton: { backgroundColor: '#16a34a', color: '#ffffff' }, // Verde para entrada
+  dangerButton: { backgroundColor: '#e0e0e0', color: '#333' },
+  scannerModal: { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0, 0, 0, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  scannerContent: { background: '#fff', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '600px', textAlign: 'center' },
+  scannerTitle: { marginTop: 0, color: '#333' },
+  video: { width: '100%', height: 'auto', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '16px' },
 };
 
 export default ControlPrestamosScreen;
