@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -9,7 +9,7 @@ import { LoginScreen } from './LoginScreen';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
-import SplashScreen from "./SplashScreen";
+// import SplashScreen from "./SplashScreen"; // Ya no lo invocamos aquí para evitar el bucle
 
 // --- Lazy Loading de Screens ---
 const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
@@ -30,7 +30,7 @@ const CalendarScreen = lazy(() => import('./CalendarScreen'));
 // 🚨 NUEVO: Importación Lazy de VencimientosScreen
 const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
 
-// --- Loader Component ---
+// --- Loader Component (Solo para transiciones internas) ---
 const Loader = () => (
   <div className="w-full h-screen flex flex-col items-center justify-center bg-slate-950 z-50 fixed top-0 left-0">
     <svg className="animate-spin h-10 w-10 text-blue-500" viewBox="0 0 24 24">
@@ -44,44 +44,29 @@ const Loader = () => (
 export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
-  const [loading, setLoading] = useState(true);
+  
+  // Eliminamos el estado local 'loading' y el setTimeout. 
+  // Confiamos en que el SplashScreen inicial ya hizo su trabajo.
 
   usePushNotifications(
     user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
     user?.email || localStorage.getItem('usuario.email') || ''
   );
 
-  useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 3200);
-    return () => clearTimeout(timeout);
-  }, []);
+  // Eliminamos el useEffect de window.history.replaceState para evitar parpadeos de URL.
 
-  useEffect(() => {
-    if (isAuthenticated && (currentScreen === 'menu' || currentScreen === 'login')) {
-      if (window.location.pathname !== '/') {
-        window.history.replaceState(null, '', '/');
-      }
-    }
-  }, [currentScreen, isAuthenticated]);
-
-  if (loading) {
-    return <SplashScreen />;
-  }
-
-  // --- LÓGICA DE TRANSICIÓN PREMIUM ---
+  // --- LÓGICA DE TRANSICIÓN ---
   if (!isAuthenticated) {
-    // Usamos un contenedor oscuro (slate-950) para evitar flashes blancos
     return (
       <div className="relative h-screen w-full overflow-hidden bg-slate-950">
         <AnimatePresence mode="wait">
           {currentScreen === 'register' ? (
             <motion.div
               key="register"
-              // Entra grande y borroso, se asienta nítido
               initial={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
               animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
               exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} // Curva suave
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
               className="absolute inset-0 w-full h-full z-10"
             >
               <Suspense fallback={<Loader />}>
@@ -91,7 +76,6 @@ export const MainApp: React.FC = () => {
           ) : (
             <motion.div
               key="login"
-              // Lo mismo para el login
               initial={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
               animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
               exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
@@ -103,7 +87,6 @@ export const MainApp: React.FC = () => {
           )}
         </AnimatePresence>
         
-        {/* Capa de fondo base para asegurar consistencia visual */}
         <div className="absolute inset-0 bg-slate-950 z-0" />
       </div>
     );
@@ -131,7 +114,7 @@ export const MainApp: React.FC = () => {
     case 'check-list': return <Suspense fallback={<Loader />}><InventoryProScreen /></Suspense>;
     case 'friday': return <Suspense fallback={<Loader />}><FridayScreen /></Suspense>;
     
-    // 🚨 NUEVO CASE PARA VENCIMIENTOS
+    // 🚨 CASE PARA VENCIMIENTOS
     case 'vencimientos': return <Suspense fallback={<Loader />}><VencimientosScreen /></Suspense>;
 
     default: return <MainMenu />;
