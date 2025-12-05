@@ -17,7 +17,11 @@ import {
   Mail, 
   Download,
   Send,
-  Building2 // 🚨 AGREGADO AQUÍ (Faltaba este import)
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  Minimize2
 } from 'lucide-react';
 import { addMonths, addYears, differenceInDays, parseISO, format, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -45,8 +49,12 @@ export const VencimientosScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('todos'); 
+  
+  // Estado para manejar qué clientes están expandidos
+  // Un objeto donde la llave es el nombre del cliente y el valor es true (abierto) o false (cerrado)
+  const [clientesExpandidos, setClientesExpandidos] = useState<Record<string, boolean>>({});
 
-  // --- Lógica de Cálculo de Fechas ---
+  // --- Lógica de Cálculo de Fechas (Igual que antes) ---
   const calcularFechaVencimiento = (fechaStr: string, frecuenciaStr: string): Date | null => {
     if (!fechaStr || !frecuenciaStr) return null;
     try {
@@ -110,7 +118,7 @@ export const VencimientosScreen: React.FC = () => {
     fetchEquipos();
   }, []);
 
-  // --- Filtros ---
+  // --- Filtros (Igual que antes) ---
   const equiposFiltrados = useMemo(() => {
     return equipos.filter(item => {
       const matchTexto = 
@@ -128,39 +136,61 @@ export const VencimientosScreen: React.FC = () => {
     });
   }, [equipos, busqueda, filtroEstado]);
 
-  // --- NUEVO: DETECTAR EQUIPOS A 60 DÍAS ---
+  // --- NUEVA LÓGICA: AGRUPAR POR CLIENTE ---
+  const equiposAgrupados = useMemo(() => {
+    const grupos: Record<string, EquipoVencimiento[]> = {};
+    
+    equiposFiltrados.forEach(item => {
+      if (!grupos[item.cliente]) {
+        grupos[item.cliente] = [];
+      }
+      grupos[item.cliente].push(item);
+    });
+
+    // Ordenar los clientes alfabéticamente
+    return Object.keys(grupos).sort().reduce((obj, key) => { 
+        obj[key] = grupos[key]; 
+        return obj;
+    }, {} as Record<string, EquipoVencimiento[]>);
+  }, [equiposFiltrados]);
+
+  // --- Funciones de Control de UI ---
+  const toggleCliente = (cliente: string) => {
+    setClientesExpandidos(prev => ({
+      ...prev,
+      [cliente]: !prev[cliente]
+    }));
+  };
+
+  const expandirTodos = () => {
+    const nuevoEstado: Record<string, boolean> = {};
+    Object.keys(equiposAgrupados).forEach(c => nuevoEstado[c] = true);
+    setClientesExpandidos(nuevoEstado);
+  };
+
+  const colapsarTodos = () => {
+    setClientesExpandidos({});
+  };
+
+  // --- Alertas y Exportaciones (Igual que antes) ---
   const equiposA60Dias = useMemo(() => {
-    // Filtramos equipos que vencen entre 50 y 65 días (un rango seguro para no perder ninguno)
     return equipos.filter(e => e.diasRestantes >= 50 && e.diasRestantes <= 65);
   }, [equipos]);
 
-  // --- NUEVO: FUNCIÓN PARA ENVIAR REPORTE A CALIDAD ---
   const enviarReporteCalidad = () => {
     if (equiposA60Dias.length === 0) {
         alert("No hay equipos en el rango de 60 días para reportar hoy.");
         return;
     }
-
     const destinatario = "calidad@ese-ag.mx";
     const asunto = `⚠️ ALERTA: ${equiposA60Dias.length} Equipos próximos a vencer (60 días)`;
-    
-    let cuerpo = `Hola Calidad,\n\nEl sistema ha detectado los siguientes equipos que vencerán en aproximadamente 60 días. Es momento de contactar al cliente:\n\n`;
-
+    let cuerpo = `Hola Calidad,\n\nEl sistema ha detectado equipos por vencer. Favor gestionar.\n\n`;
     equiposA60Dias.forEach(e => {
-        cuerpo += `🔹 ${e.equipoId} - ${e.descripcion}\n`;
-        cuerpo += `   Cliente: ${e.cliente}\n`;
-        cuerpo += `   Vence: ${format(e.fechaVencimiento, 'dd/MM/yyyy')} (Faltan ${e.diasRestantes} días)\n\n`;
+        cuerpo += `🔹 ${e.equipoId} - ${e.descripcion} (${e.cliente})\n`;
     });
-
-    cuerpo += `\nPor favor gestionar su reprogramación.\n\nSistema de Gestión ESE-AG`;
-
-    const mailtoLink = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
-    
-    // Abrir cliente de correo
-    window.location.href = mailtoLink;
+    window.location.href = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
   };
 
-  // --- Exportar a Excel ---
   const exportarExcel = () => {
     const dataExportar = equiposFiltrados.map(e => ({
       Cliente: e.cliente,
@@ -177,15 +207,14 @@ export const VencimientosScreen: React.FC = () => {
     XLSX.writeFile(wb, `Reporte_Vencimientos_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
-  // --- Generar Link de Correo Individual ---
   const generarLinkCorreo = (equipo: EquipoVencimiento) => {
-    const subject = `Recordatorio de Calibración Próxima - ${equipo.equipoId}`;
-    const body = `Estimado cliente,\n\nLe informamos que el equipo ${equipo.descripcion} (ID: ${equipo.equipoId}) tiene su calibración vencida o próxima a vencer el día ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}.\n\nPor favor contáctenos para programar su servicio.\n\nSaludos,\nEquipos y Servicios AG`;
+    const subject = `Recordatorio de Calibración - ${equipo.equipoId}`;
+    const body = `Estimado cliente, su equipo ${equipo.descripcion} vence el ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}.`;
     return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 px-4 py-4 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -198,22 +227,19 @@ export const VencimientosScreen: React.FC = () => {
                 <Calendar className="text-blue-600" />
                 Monitor de Vencimientos
               </h1>
-              <p className="text-xs text-gray-500">CRM para seguimiento de clientes</p>
+              <p className="text-xs text-gray-500">Vista agrupada por cliente</p>
             </div>
           </div>
           
           <div className="flex gap-2">
-             {/* BOTÓN NUEVO: NOTIFICAR A CALIDAD */}
              {equiposA60Dias.length > 0 && (
                  <button 
                     onClick={enviarReporteCalidad}
                     className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-all shadow-sm text-sm font-medium animate-pulse"
-                    title="Enviar reporte de equipos a 60 días"
                  >
-                    <Send size={16} /> Notificar a Calidad ({equiposA60Dias.length})
+                    <Send size={16} /> Notificar ({equiposA60Dias.length})
                  </button>
              )}
-
              <button 
                 onClick={exportarExcel}
                 className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium"
@@ -224,33 +250,23 @@ export const VencimientosScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Contenido Principal */}
       <div className="max-w-7xl mx-auto p-4 md:p-6">
         
-        {/* Alerta visual si hay equipos a 60 días */}
+        {/* Alerta Calidad */}
         {equiposA60Dias.length > 0 && (
             <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-orange-100 rounded-full text-orange-600">
-                        <AlertTriangle size={20} />
-                    </div>
+                    <div className="p-2 bg-orange-100 rounded-full text-orange-600"><AlertTriangle size={20} /></div>
                     <div>
                         <h3 className="font-bold text-orange-800">Atención Calidad</h3>
-                        <p className="text-sm text-orange-700">
-                            Hay <strong>{equiposA60Dias.length} equipos</strong> que vencen en el rango de 60 días. 
-                            Revisa la lista o envía el reporte.
-                        </p>
+                        <p className="text-sm text-orange-700">Hay <strong>{equiposA60Dias.length} equipos</strong> por vencer en 60 días.</p>
                     </div>
                 </div>
-                <button onClick={() => setFiltroEstado('proximo')} className="text-sm font-semibold text-orange-600 hover:text-orange-800 underline">
-                    Ver Equipos
-                </button>
             </div>
         )}
 
         {/* Filtros y KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            {/* Stats Cards */}
             <div className="bg-white p-4 rounded-xl border border-red-100 shadow-sm flex items-center gap-3 cursor-pointer hover:bg-red-50 transition" onClick={() => setFiltroEstado('vencido')}>
                 <div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle size={20} /></div>
                 <div>
@@ -261,109 +277,152 @@ export const VencimientosScreen: React.FC = () => {
             <div className="bg-white p-4 rounded-xl border border-orange-100 shadow-sm flex items-center gap-3 cursor-pointer hover:bg-orange-50 transition" onClick={() => setFiltroEstado('critico')}>
                 <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><Clock size={20} /></div>
                 <div>
-                    <p className="text-xs text-gray-500 font-bold uppercase">Críticos (30 días)</p>
+                    <p className="text-xs text-gray-500 font-bold uppercase">Críticos</p>
                     <p className="text-2xl font-bold text-gray-800">{equipos.filter(e => e.status === 'critico').length}</p>
                 </div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-yellow-100 shadow-sm flex items-center gap-3 cursor-pointer hover:bg-yellow-50 transition" onClick={() => setFiltroEstado('proximo')}>
-                <div className="p-3 bg-yellow-100 text-yellow-600 rounded-lg"><Calendar size={20} /></div>
-                <div>
-                    <p className="text-xs text-gray-500 font-bold uppercase">Próximos (60 días)</p>
-                    <p className="text-2xl font-bold text-gray-800">{equipos.filter(e => e.status === 'proximo').length}</p>
-                </div>
-            </div>
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center gap-2">
+            
+            {/* Buscador y Filtro */}
+            <div className="md:col-span-2 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row gap-3 items-center">
                  <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input 
                         type="text" 
-                        placeholder="Buscar cliente o equipo..." 
+                        placeholder="Buscar cliente, equipo o ID..." 
                         className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                         value={busqueda}
                         onChange={(e) => setBusqueda(e.target.value)}
                     />
                  </div>
                  <select 
-                    className="w-full p-2 text-sm border border-gray-300 rounded-lg bg-gray-50"
+                    className="w-full md:w-auto p-2 text-sm border border-gray-300 rounded-lg bg-gray-50"
                     value={filtroEstado}
                     onChange={(e) => setFiltroEstado(e.target.value)}
                  >
-                     <option value="todos">Mostrar Todos</option>
-                     <option value="accion">Requieren Acción (Venc/Crit/Prox)</option>
-                     <option value="vencido">Solo Vencidos</option>
-                     <option value="vigente">Solo Vigentes</option>
+                     <option value="todos">Todos los Estados</option>
+                     <option value="accion">Requieren Acción</option>
+                     <option value="vencido">Vencidos</option>
+                     <option value="vigente">Vigentes</option>
                  </select>
             </div>
         </div>
 
-        {/* Tabla de Resultados */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {/* Controles de Vista Agrupada */}
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-700">
+                Resultados ({equiposFiltrados.length} equipos en {Object.keys(equiposAgrupados).length} clientes)
+            </h2>
+            <div className="flex gap-2">
+                <button onClick={expandirTodos} className="text-xs flex items-center gap-1 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-md transition">
+                    <Layers size={14}/> Expandir Todos
+                </button>
+                <button onClick={colapsarTodos} className="text-xs flex items-center gap-1 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-md transition">
+                    <Minimize2 size={14}/> Colapsar Todos
+                </button>
+            </div>
+        </div>
+
+        {/* LISTA AGRUPADA (ACORDEÓN) */}
+        <div className="space-y-4">
             {loading ? (
-                <div className="p-10 text-center text-gray-500">Cargando base de datos de equipos...</div>
-            ) : equiposFiltrados.length === 0 ? (
-                <div className="p-10 text-center text-gray-500">No se encontraron equipos con los filtros actuales.</div>
+                <div className="p-10 text-center text-gray-500 bg-white rounded-xl shadow-sm">Cargando datos...</div>
+            ) : Object.keys(equiposAgrupados).length === 0 ? (
+                <div className="p-10 text-center text-gray-500 bg-white rounded-xl shadow-sm">No se encontraron equipos con los filtros actuales.</div>
             ) : (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
-                            <tr>
-                                <th className="px-6 py-3">Estado</th>
-                                <th className="px-6 py-3">Cliente</th>
-                                <th className="px-6 py-3">Equipo / ID</th>
-                                <th className="px-6 py-3">Última Calib.</th>
-                                <th className="px-6 py-3">Vencimiento</th>
-                                <th className="px-6 py-3 text-center">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {equiposFiltrados.map((item) => (
-                                <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
-                                    <td className="px-6 py-3">
-                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold capitalize
-                                            ${item.status === 'vencido' ? 'bg-red-100 text-red-700' : 
-                                              item.status === 'critico' ? 'bg-orange-100 text-orange-700' :
-                                              item.status === 'proximo' ? 'bg-yellow-100 text-yellow-700' :
-                                              'bg-green-100 text-green-700'
-                                            }`}>
-                                            {item.status === 'vencido' ? <AlertTriangle size={12}/> : 
-                                             item.status === 'vigente' ? <CheckCircle2 size={12}/> : <Clock size={12}/>}
-                                            {item.status} ({item.diasRestantes} días)
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-3 font-medium text-gray-900">
-                                        <div className="flex items-center gap-2">
-                                            <Building2 size={16} className="text-gray-400"/>
-                                            {item.cliente}
+                Object.entries(equiposAgrupados).map(([cliente, itemsCliente]) => {
+                    const isExpanded = clientesExpandidos[cliente];
+                    const countVencidos = itemsCliente.filter(i => i.status === 'vencido').length;
+                    const countCriticos = itemsCliente.filter(i => i.status === 'critico').length;
+                    const hasAlerts = countVencidos > 0 || countCriticos > 0;
+
+                    return (
+                        <div key={cliente} className={`bg-white rounded-xl border transition-all duration-200 ${hasAlerts ? 'border-l-4 border-l-red-500 border-gray-200' : 'border-gray-200'}`}>
+                            
+                            {/* CABECERA DEL CLIENTE (Clickable) */}
+                            <button 
+                                onClick={() => toggleCliente(cliente)}
+                                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors rounded-t-xl focus:outline-none"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-lg ${hasAlerts ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                                        <Building2 size={20} />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="font-bold text-gray-800 text-sm md:text-base">{cliente}</h3>
+                                        <div className="flex gap-2 text-xs mt-1">
+                                            <span className="text-gray-500">{itemsCliente.length} Equipos</span>
+                                            {countVencidos > 0 && <span className="text-red-600 font-semibold">• {countVencidos} Vencidos</span>}
+                                            {countCriticos > 0 && <span className="text-orange-600 font-semibold">• {countCriticos} Críticos</span>}
                                         </div>
-                                    </td>
-                                    <td className="px-6 py-3">
-                                        <div className="font-medium text-gray-800">{item.descripcion}</div>
-                                        <div className="text-xs text-gray-500">ID: {item.equipoId}</div>
-                                    </td>
-                                    <td className="px-6 py-3 text-gray-600">
-                                        {format(parseISO(item.fechaCalibracion), 'dd MMM yyyy', { locale: es })}
-                                    </td>
-                                    <td className="px-6 py-3">
-                                        <span className={`font-medium ${item.diasRestantes < 0 ? 'text-red-600' : 'text-gray-700'}`}>
-                                            {format(item.fechaVencimiento, 'dd MMM yyyy', { locale: es })}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-3">
-                                        <div className="flex justify-center gap-2">
-                                            <a 
-                                                href={generarLinkCorreo(item)}
-                                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                title="Enviar correo recordatorio al cliente"
-                                            >
-                                                <Mail size={18} />
-                                            </a>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                    </div>
+                                </div>
+                                <div className="text-gray-400">
+                                    {isExpanded ? <ChevronDown size={20}/> : <ChevronRight size={20}/>}
+                                </div>
+                            </button>
+
+                            {/* TABLA DESPLEGABLE */}
+                            {isExpanded && (
+                                <div className="border-t border-gray-100 animate-fadeIn">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-gray-50 text-gray-600 text-xs uppercase font-semibold">
+                                                <tr>
+                                                    <th className="px-6 py-3">Estado</th>
+                                                    <th className="px-6 py-3">Equipo / ID</th>
+                                                    <th className="px-6 py-3">Fechas</th>
+                                                    <th className="px-6 py-3 text-center">Acción</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {itemsCliente.map((item) => (
+                                                    <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                                                        <td className="px-6 py-3">
+                                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold w-fit
+                                                                ${item.status === 'vencido' ? 'bg-red-100 text-red-700' : 
+                                                                  item.status === 'critico' ? 'bg-orange-100 text-orange-700' :
+                                                                  item.status === 'proximo' ? 'bg-yellow-100 text-yellow-700' :
+                                                                  'bg-green-100 text-green-700'
+                                                                }`}>
+                                                                {item.status === 'vencido' ? <AlertTriangle size={12}/> : 
+                                                                 item.status === 'vigente' ? <CheckCircle2 size={12}/> : <Clock size={12}/>}
+                                                                <span className="capitalize">{item.status}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-3">
+                                                            <div className="font-medium text-gray-800">{item.descripcion}</div>
+                                                            <div className="text-xs text-gray-500 font-mono">ID: {item.equipoId}</div>
+                                                        </td>
+                                                        <td className="px-6 py-3">
+                                                            <div className="text-xs text-gray-500">
+                                                                Calib: {format(parseISO(item.fechaCalibracion), 'dd/MM/yy')}
+                                                            </div>
+                                                            <div className={`font-medium ${item.diasRestantes < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+                                                                Vence: {format(item.fechaVencimiento, 'dd/MM/yy')}
+                                                            </div>
+                                                            <div className="text-xs text-gray-400">
+                                                                ({item.diasRestantes} días)
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-3 text-center">
+                                                            <a 
+                                                                href={generarLinkCorreo(item)}
+                                                                className="inline-flex items-center justify-center p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                                                                title="Enviar correo"
+                                                            >
+                                                                <Mail size={16} />
+                                                            </a>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })
             )}
         </div>
       </div>

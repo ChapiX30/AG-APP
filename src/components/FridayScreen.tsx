@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
-import { doc, updateDoc, collection, query, where, onSnapshot, setDoc, writeBatch } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -70,18 +70,26 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
 ];
 
-// --- COMPONENTES DE CELDAS ---
-const TextCell = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => {
+// --- COMPONENTES DE CELDAS (OPTIMIZADOS) ---
+
+const TextCell = React.memo(({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const handleBlur = () => { if (inputRef.current && inputRef.current.value !== value) onChange(inputRef.current.value); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') inputRef.current?.blur(); };
   return <input ref={inputRef} defaultValue={value || ""} placeholder={placeholder} onBlur={handleBlur} onKeyDown={handleKeyDown} className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#0073ea] focus:z-10 transition-all text-sm truncate placeholder-gray-300" />;
-};
+}, (prev, next) => prev.value === next.value);
 
-const ClientCell = ({ value, clientes, onChange }: { value: string, clientes: any[], onChange: (val: string) => void }) => {
+const ClientCell = React.memo(({ value, clientes, onChange }: { value: string, clientes: any[], onChange: (val: string) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const filtered = clientes.filter(c => (c.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    // Filtro perezoso: Solo filtra si el usuario abre el menú
+    const filtered = useMemo(() => {
+        if (!isOpen) return [];
+        if (!searchTerm) return clientes;
+        return clientes.filter(c => (c.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [clientes, searchTerm, isOpen]);
+
     return (
         <div className="w-full h-full relative group">
             <div className="w-full h-full px-3 flex items-center cursor-pointer hover:bg-gray-50" onClick={() => { setIsOpen(true); setSearchTerm(""); }}>
@@ -105,9 +113,9 @@ const ClientCell = ({ value, clientes, onChange }: { value: string, clientes: an
             )}
         </div>
     );
-};
+});
 
-const DropdownCell = ({ value, options, config, onChange }: { value: string, options: string[], config: any, onChange: (val: string) => void }) => {
+const DropdownCell = React.memo(({ value, options, config, onChange }: { value: string, options: string[], config: any, onChange: (val: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const item = config[value] || { label: value, bg: "#c4c4c4" };
   return (
@@ -129,9 +137,9 @@ const DropdownCell = ({ value, options, config, onChange }: { value: string, opt
       )}
     </div>
   );
-};
+}, (prev, next) => prev.value === next.value && prev.options === next.options);
 
-const DateCell = ({ value, onChange }: { value: string, onChange: (val: string) => void }) => {
+const DateCell = React.memo(({ value, onChange }: { value: string, onChange: (val: string) => void }) => {
     const displayDate = value ? new Date(value).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
     const inputRef = useRef<HTMLInputElement>(null);
     return (
@@ -140,9 +148,9 @@ const DateCell = ({ value, onChange }: { value: string, onChange: (val: string) 
              <input ref={inputRef} type="date" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer" onChange={(e) => onChange(e.target.value)} />
         </div>
     );
-};
+}, (prev, next) => prev.value === next.value);
 
-const PersonCell = ({ value, metrologos, onChange }: { value: string, metrologos: any[], onChange: (val: string) => void }) => {
+const PersonCell = React.memo(({ value, metrologos, onChange }: { value: string, metrologos: any[], onChange: (val: string) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const initial = (value && typeof value === 'string') ? value.charAt(0).toUpperCase() : "?";
     return (
@@ -169,7 +177,7 @@ const PersonCell = ({ value, metrologos, onChange }: { value: string, metrologos
             )}
         </div>
     );
-};
+});
 
 // --- COMPONENTE FILA (OPTIMIZADO) ---
 const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd }: any) => {
@@ -181,7 +189,7 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
             draggable="true"
             onDragStart={(e) => onDragStart(e, { type: 'row', id: row.id })}
             onDragOver={(e) => e.preventDefault()}
-            onDragEnd={onDragEnd} // Importante: Limpieza al soltar
+            onDragEnd={onDragEnd} 
             onDrop={(e) => { e.stopPropagation(); onDrop(e, { type: 'row', id: row.id }); }}
         >
             <div className="w-1.5 flex-shrink-0 sticky left-0 z-20" style={{ backgroundColor: color }}></div>
@@ -215,17 +223,20 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
         </div>
     );
 }, (prev, next) => {
-    return prev.row === next.row && prev.isSelected === next.isSelected && prev.columns === next.columns && prev.clientes === next.clientes;
+    return prev.row === next.row && prev.isSelected === next.isSelected && prev.columns === next.columns && prev.clientes === next.clientes && prev.metrologos === next.metrologos;
 });
 
 // --- MAIN COMPONENT ---
 const FridayScreen: React.FC = () => {
     const { navigateTo } = useNavigation();
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    const [sidebarAbierto, setSidebarAbierto] = useState(!isMobile);
+    
+    // --- CAMBIO AQUÍ: INICIA EN FALSE (CERRADO) ---
+    const [sidebarAbierto, setSidebarAbierto] = useState(false); 
+    
     const [rows, setRows] = useState<WorksheetData[]>([]);
     const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
-    const dragItemRef = useRef<DragItem | null>(null); // REF PARA EVITAR RENDERIZADOS MASIVOS
+    const dragItemRef = useRef<DragItem | null>(null); 
 
     const [groupsConfig, setGroupsConfig] = useState<GroupData[]>([
         { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false },
@@ -259,8 +270,10 @@ const FridayScreen: React.FC = () => {
         });
 
         const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo")), (snap) => setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubClientes = onSnapshot(collection(db, "clientes"), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubRows = onSnapshot(query(collection(db, "hojasDeTrabajo")), (snapshot) => {
+        const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        
+        // --- SIN LÍMITE DE DATOS (Muestra todo) ---
+        const unsubRows = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
             const newRows: WorksheetData[] = [];
             snapshot.forEach(doc => newRows.push({ id: doc.id, ...doc.data() } as WorksheetData));
             setRows(newRows);
@@ -284,7 +297,7 @@ const FridayScreen: React.FC = () => {
 
     const handleDeleteSelected = async () => {
         if (selectedIds.size === 0) return;
-        if (!confirm(`¿Eliminar ${selectedIds.size} elementos?`)) return; // Confirmación de seguridad
+        if (!confirm(`¿Eliminar ${selectedIds.size} elementos?`)) return; 
         const batch = writeBatch(db);
         selectedIds.forEach(id => { batch.delete(doc(db, "hojasDeTrabajo", id)); });
         setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
@@ -296,14 +309,13 @@ const FridayScreen: React.FC = () => {
         setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     }, []);
 
-    // --- DRAG & DROP OPTIMIZADO ---
+    // --- DRAG & DROP ---
     const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
         dragItemRef.current = item;
         e.dataTransfer.effectAllowed = "move";
         if (e.currentTarget instanceof HTMLElement) e.currentTarget.style.opacity = '0.4';
     }, []);
 
-    // Limpieza universal al terminar
     const onDragEnd = useCallback((e: React.DragEvent) => {
         if (e.currentTarget instanceof HTMLElement) e.currentTarget.style.opacity = '1';
         dragItemRef.current = null;
@@ -314,12 +326,10 @@ const FridayScreen: React.FC = () => {
         const dragItem = dragItemRef.current;
         if (!dragItem) return;
 
-        // Columnas
         if (dragItem.type === 'column' && target.type === 'column' && dragItem.index !== undefined && target.index !== undefined) {
              const fromIdx = dragItem.index;
              const toIdx = target.index;
              if (fromIdx !== toIdx) {
-                // PRIMERO calculamos, LUEGO actualizamos estado y DB por separado
                 let newCols = [...columns];
                 const [moved] = newCols.splice(fromIdx, 1);
                 newCols.splice(toIdx, 0, moved);
@@ -328,7 +338,6 @@ const FridayScreen: React.FC = () => {
              }
         }
 
-        // Filas
         if (dragItem.type === 'row' && target.type === 'row' && dragItem.id && target.id) {
             setRows(currentRows => {
                 const sourceRow = currentRows.find(r => r.id === dragItem.id);
@@ -343,7 +352,7 @@ const FridayScreen: React.FC = () => {
                 return currentRows;
             });
         }
-    }, [columns]); // Dependencia columns necesaria para DnD columnas
+    }, [columns]); 
 
     const onDropGroup = useCallback(async (e: React.DragEvent, groupId: string) => {
         e.preventDefault();
@@ -396,7 +405,7 @@ const FridayScreen: React.FC = () => {
                         <div className="flex flex-col"><h1 className="text-2xl font-bold leading-tight">Tablero Principal</h1><div className="flex items-center gap-2 text-sm text-gray-500"><span>Gestión de Calibración</span></div></div>
                     </div>
                     <div className="flex gap-3">
-                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar" className="pl-9 pr-4 py-1.5 border border-gray-300 rounded-full text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow" value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar en pantalla..." className="pl-9 pr-4 py-1.5 border border-gray-300 rounded-full text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow" value={search} onChange={e => setSearch(e.target.value)} /></div>
                         <button className="p-2 hover:bg-gray-100 rounded-full text-gray-500"><Bell className="w-5 h-5"/></button>
                         <button className="p-2 hover:bg-gray-100 rounded-full text-gray-500"><Settings className="w-5 h-5"/></button>
                     </div>

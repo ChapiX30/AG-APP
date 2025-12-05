@@ -1,19 +1,24 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { useForm, useFieldArray, SubmitHandler, Controller, useWatch } from 'react-hook-form';
-import { PDFDocument, rgb, StandardFonts, PDFFont } from 'pdf-lib';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
-import { differenceInDays, parseISO, format } from 'date-fns'; 
+import { differenceInDays, parseISO } from 'date-fns'; 
 import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore'; 
 import { db } from '../utils/firebase';
-import { ArrowLeft, User, Archive, ListPlus, Loader2, AlertCircle, Camera, XCircle, Save } from 'lucide-react'; 
-
+import { 
+  ArrowLeft, User, Package, Plus, Loader2, AlertTriangle, 
+  Camera, X, Save, FileText, CheckCircle2, AlertCircle, Briefcase 
+} from 'lucide-react'; 
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 
 // ==================================================================
-// --- 1. DATOS Y CATÁLOGOS ---
+// --- 1. CONFIGURACIÓN Y UTILIDADES (Fuera del Componente) ---
 // ==================================================================
 
+const COLLECTION_NAME_PATRONES = "patronesCalibracion"; 
+
+// Interfaces
 interface PatronBase {
     id: string; 
     noControl: string; 
@@ -27,7 +32,26 @@ interface PatronBase {
     usuarioEnUso?: string; 
 }
 
-// Catálogo de mochilas (Sin cambios en tus datos)
+type ToolItem = {
+  herramienta: string;
+  qty: string | number;
+  marca: string;
+  modelo: string;
+  serie: string;
+  estadoProceso?: PatronBase['estadoProceso']; 
+};
+
+type FormInputs = {
+  fecha: string;
+  usuario: string;
+  gafeteContratista: string;
+  companiaDepto: string;
+  noEmpleado: string;
+  selectedBackpacks: string[];
+  manualTools: ToolItem & { isVencida?: boolean, isUnavailable?: boolean }[]; 
+};
+
+// Datos Estáticos (Catalogos)
 const BACKPACK_CATALOG = {
   mochila_abraham: {
     nombre: 'Mochila 1 (Abraham)',
@@ -98,7 +122,6 @@ const BACKPACK_CATALOG = {
       { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
       { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' },
       { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, 
-      
     ],
   },
   mochila_Ricardo: {
@@ -116,26 +139,7 @@ const BACKPACK_CATALOG = {
  }
 };
 
-const COLLECTION_NAME_PATRONES = "patronesCalibracion"; 
-
-type ToolItem = {
-  herramienta: string;
-  qty: string | number;
-  marca: string;
-  modelo: string;
-  serie: string;
-  estadoProceso?: PatronBase['estadoProceso']; 
-};
-
-type FormInputs = {
-  fecha: string;
-  usuario: string;
-  gafeteContratista: string;
-  companiaDepto: string;
-  noEmpleado: string;
-  selectedBackpacks: string[];
-  manualTools: ToolItem & { isVencida?: boolean, isUnavailable?: boolean }[]; 
-};
+// --- Helpers de Negocio ---
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
     if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'pendiente';
@@ -147,71 +151,6 @@ const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
         return 'vigente';
     } catch (error) { return 'pendiente'; }
 };
-
-const styles = `
-  @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-  .form-container { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 0; background: #f4f7f6; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); min-height: 100vh; }
-  .header-bar { display: flex; align-items: center; padding: 16px 24px; border-bottom: 1px solid #e0e0e0; background: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-  .header-bar h2 { margin: 0; margin-left: 16px; color: #333; font-size: 1.25rem; }
-  .btn-back { background: #f0f0f0; color: #333; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
-  .btn-back:hover { background: #e0e0e0; transform: scale(1.1); }
-  .form-content { padding: 24px 16px; min-height: calc(100vh - 120px); }
-  .form-section { background: #ffffff; border-radius: 8px; padding: 16px; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); animation: fadeInUp 0.5s ease-out forwards; opacity: 0; }
-  .form-section h3 { color: #004a99; border-bottom: 2px solid #004a99; padding-bottom: 8px; margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
-  .form-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
-  @media (min-width: 768px) { .form-grid { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; } }
-  .form-field label { margin-bottom: 6px; font-weight: 600; color: #555; font-size: 0.875rem; }
-  .form-field input, .form-field select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95rem; width: 100%; box-sizing: border-box; background-color: #ffffff !important; color: #333333 !important; }
-  .form-field select option { background-color: #ffffff; color: #333333; }
-  .error-message { color: #dc3545; font-size: 0.8rem; font-weight: 600; margin-top: 5px; margin-bottom: 0; }
-  .form-field input.readonly, .tool-table input.readonly { background-color: #f4f4f4; color: #777; cursor: not-allowed; border: 1px solid #eee; }
-  .tool-table-wrapper { overflow-x: auto; width: 100%; background-color: #fff; }
-  .tool-table { min-width: 800px; width: 100%; border-collapse: collapse; margin-top: 10px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  .tool-table th, .tool-table td { padding: 8px 12px; font-size: 0.8rem; white-space: nowrap; color: #333; border-bottom: 1px solid #f0f0f0; }
-  .tool-table th { background-color: #f9f9f9; font-size: 0.75rem; color: #333; text-align: left; }
-  .tool-table tbody tr:last-child td { border-bottom: none; }
-  .tool-table input, .tool-table select { width: 100%; padding: 8px; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; background-color: #ffffff !important; color: #333333 !important; }
-  .tool-table input:focus, .tool-table select:focus { border-color: #004a99; box-shadow: 0 0 0 2px rgba(0, 74, 153, 0.2); outline: none; }
-  .tool-table select option { background-color: #ffffff; color: #333; }
-  .tool-row-vencido { background-color: #fcebeb !important; color: #9f1c2b !important; font-weight: 600; }
-  .tool-row-vencido td { border-left: 4px solid #dc3545; }
-  .tool-row-critico { background-color: #fff8eb !important; color: #925c0e !important; }
-  .tool-row-critico td { border-left: 4px solid #ffc107; }
-  .tool-row-vigente { background-color: #f1fff4 !important; }
-  .tool-row-vigente td { border-left: 4px solid #198754; }
-  .tool-row-unavailable { background-color: #f6f6f6 !important; color: #a8a29e !important; font-style: italic; }
-  .tool-row-unavailable td { border-left: 4px solid #a8a29e; text-decoration: line-through; }
-  .backpack-selector { display: flex; flex-wrap: wrap; gap: 8px; }
-  .backpack-option { padding: 8px 12px; border-radius: 16px; font-size: 0.85rem; background: #f0f0f0; border: 1px solid #ddd; cursor: pointer; transition: all 0.2s; }
-  .backpack-option input { display: none; }
-  .backpack-option span { color: #333; cursor: pointer; }
-  .backpack-option input:checked + span { color: #004a99; font-weight: 600; }
-  .backpack-option:has(input:checked) { background-color: #e6f0ff; border-color: #004a99; }
-  .btn { padding: 10px 15px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem; text-decoration: none; }
-  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-  .btn-primary { background-color: #004a99; color: #ffffff !important; border-color: #004a99; }
-  .btn-primary:hover:not(:disabled) { background-color: #003a75; }
-  .btn-secondary { background-color: #f0f0f0; color: #333333 !important; border-color: #ddd; }
-  .btn-secondary:hover:not(:disabled) { background-color: #e0e0e0; }
-  .btn-danger { background-color: #dc3545; color: #ffffff !important; border-color: #dc3545; }
-  .btn-danger:hover:not(:disabled) { background-color: #c82333; }
-  .btn-success { background-color: #16a34a; color: #ffffff !important; border-color: #16a34a; }
-  .btn-success:hover:not(:disabled) { background-color: #15803d; }
-  .ml-auto { margin-left: auto; }
-  .tool-table .btn-danger { padding: 6px 10px; font-size: 0.7rem; width: 100%; }
-  .button-bar { display: flex; flex-direction: column; justify-content: space-between; align-items: center; gap: 10px; background: #fff; padding: 16px; border-top: 1px solid #e0e0e0; position: sticky; bottom: 0; width: 100%; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 10; box-sizing: border-box; }
-  .button-bar > span { text-align: center; padding-bottom: 5px; font-size: 0.9rem; }
-  .button-bar-right { display: flex; flex-direction: column; width: 100%; gap: 8px; }
-  .button-bar-right .btn { width: 100%; padding: 12px; }
-  @media (min-width: 768px) { .form-container { margin: 20px auto; } .form-content { padding: 24px; } .header-bar h2 { font-size: 1.5rem; } .btn-back { width: 40px; height: 40px; } .button-bar { flex-direction: row; padding: 16px 24px; position: static; box-shadow: none; border-radius: 0 0 12px 12px; } .button-bar-right { flex-direction: row; width: auto; } .button-bar-right .btn { width: auto; padding: 12px 20px; } .tool-table-wrapper { overflow-x: hidden; } .tool-table { min-width: 100%; } }
-  .text-sm { font-size: 0.875rem; } .font-bold { font-weight: 700; } .text-red-700 { color: #b91c1c; } .text-red-600 { color: #dc2626; } .p-2 { padding: 0.5rem; } .bg-red-100 { background-color: #fee2e2; } .border { border-width: 1px; } .border-red-300 { border-color: #fca5a5; } .rounded-lg { border-radius: 0.5rem; } .rounded-full { border-radius: 9999px; } .mb-2 { margin-bottom: 0.5rem; } .w-4 { width: 1rem; } .h-4 { height: 1rem; } .mr-2 { margin-right: 0.5rem; } .inline { display: inline; } .inline-block { display: inline-block; } .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; } .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; } .text-xs { font-size: 0.75rem; } .font-semibold { font-weight: 600; } .text-center { text-align: center; } .bg-red-300 { background-color: #fca5a5; } .text-red-800 { color: #991b1b; } .bg-orange-300 { background-color: #fdba74; } .text-orange-800 { color: #9a3412; } .bg-green-300 { background-color: #86efac; } .text-green-800 { color: #166534; } .bg-gray-300 { background-color: #d1d5db; } .text-gray-800 { color: #1f2937; } .bg-slate-300 { background-color: #cbd5e1; } .text-slate-800 { color: #1e293b; }
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } .animate-spin { animation: spin 1s linear infinite; }
-  .scanner-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-  .scanner-content { background: #fff; padding: 20px; border-radius: 12px; width: 90%; max-width: 600px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
-  .scanner-content h3 { margin-top: 0; color: #333; }
-  .scanner-video { width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; background: #000; }
-  .scanner-content .btn-danger { margin-top: 15px; background-color: #dc3545; color: #fff !important; }
-`;
 
 function aggregateTools(backpackIds: string[]): ToolItem[] {
   const aggregator = new Map<string, ToolItem>();
@@ -247,6 +186,7 @@ const cleanToolNameForPdf = (name: string): string => {
   return name;
 };
 
+// --- Generadores de PDF (Simplificados para no saturar) ---
 const MAX_ITEMS_CELESTICA_PDF = 30;
 
 async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
@@ -256,7 +196,7 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const firstPage = pdfDoc.getPages()[0];
-    const { width, height } = firstPage.getSize();
+    const { height } = firstPage.getSize();
     const fontSize = 9;
     const color = rgb(0, 0, 0);
 
@@ -268,38 +208,28 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
 
     let yStartTable = height - 222; 
     const rowHeight = 16.7;       
-    const xColTool = 40;
-    const xColQty = 270;
-    const xColMarca = 310;
-    const xColModelo = 400;
-    const xColSerie = 480;
-
+    
     const availableTools = allTools.filter(tool => 
-        tool.estadoProceso !== 'en_proceso' && 
-        tool.estadoProceso !== 'fuera_servicio' &&
-        tool.estadoProceso !== 'en_servicio' 
+        tool.estadoProceso !== 'en_proceso' && tool.estadoProceso !== 'fuera_servicio' && tool.estadoProceso !== 'en_servicio' 
     );
 
     availableTools.forEach((tool, index) => {
       if (index >= MAX_ITEMS_CELESTICA_PDF) return; 
       const y = yStartTable - (index * rowHeight);
-      const toolName = cleanToolNameForPdf(tool.herramienta);
-      firstPage.drawText(toolName,         { x: xColTool,   y: y, size: fontSize, font, color });
-      firstPage.drawText(String(tool.qty), { x: xColQty,    y: y, size: fontSize, font, color });
-      firstPage.drawText(tool.marca,       { x: xColMarca,  y: y, size: fontSize, font, color });
-      firstPage.drawText(tool.modelo,      { x: xColModelo, y: y, size: fontSize, font, color });
-      firstPage.drawText(tool.serie,       { x: xColSerie,  y: y, size: fontSize, font, color });
+      firstPage.drawText(cleanToolNameForPdf(tool.herramienta), { x: 40, y, size: fontSize, font, color });
+      firstPage.drawText(String(tool.qty), { x: 270, y, size: fontSize, font, color });
+      firstPage.drawText(tool.marca, { x: 310, y, size: fontSize, font, color });
+      firstPage.drawText(tool.modelo, { x: 400, y, size: fontSize, font, color });
+      firstPage.drawText(tool.serie, { x: 480, y, size: fontSize, font, color });
     });
     
     if (allTools.length > availableTools.length) {
-        const margin = 50;
         firstPage.drawText(`* NOTA: ${allTools.length - availableTools.length} equipo(s) excluido(s) por estado 'NO DISPONIBLE'.`, { 
-            x: xColTool, y: margin + 30, size: fontSize + 1, font: font, color: rgb(0.5, 0.5, 0.5) 
+            x: 40, y: 80, size: fontSize + 1, font, color: rgb(0.5, 0.5, 0.5) 
         });
     }
 
-    const pdfBytes = await pdfDoc.save();
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Celestica_${data.usuario}.pdf`);
   } catch (error) {
     console.error('Error al generar el PDF de Celestica:', error);
@@ -314,27 +244,23 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
     const { width, height } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const color = rgb(0, 0, 0);
     const margin = 50;
 
-    const logoUrl = '/lab_logo.png';
-    const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
-    const logoImage = await pdfDoc.embedPng(logoBytes);
-    const logoDims = logoImage.scale(0.25); 
+    // Intentar cargar logo, fallback si falla
+    try {
+        const logoBytes = await fetch('/lab_logo.png').then(res => res.arrayBuffer());
+        const logoImage = await pdfDoc.embedPng(logoBytes);
+        const logoDims = logoImage.scale(0.25); 
+        page.drawImage(logoImage, { x: margin, y: height - margin - logoDims.height, width: logoDims.width, height: logoDims.height });
+    } catch(e) { /* Ignorar error de logo */ }
 
-    page.drawImage(logoImage, {
-      x: margin, y: height - margin - logoDims.height, width: logoDims.width, height: logoDims.height,
-    });
+    page.drawText('Registro de Herramienta o Equipo', { x: margin + 110, y: height - margin - 30, size: 18, font: fontBold });
 
-    page.drawText('Registro de Herramienta o Equipo', {
-      x: margin + logoDims.width + 10, y: height - margin - 30, size: 18, font: fontBold, color: color,
-    });
-
-    let yPos = height - margin - logoDims.height - 30;
+    let yPos = height - 130;
     const drawField = (label: string, value: string) => {
       if (!value) return; 
       page.drawText(label, { x: margin, y: yPos, size: 9, font: fontBold });
-      page.drawText(value, { x: margin + 120, y: yPos, size: 9, font: font });
+      page.drawText(value, { x: margin + 120, y: yPos, size: 9, font });
       yPos -= 15;
     };
     
@@ -347,23 +273,18 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
     yPos -= 20;
     const rowHeight = 20;
     const tableMargin = margin - 10;
-
     const cols = [
       { header: 'Herramienta', x: tableMargin, width: 140 },
       { header: 'Qty', x: tableMargin + 140, width: 30 },
       { header: 'Marca', x: tableMargin + 170, width: 80 },
-      { header: 'Modelo/Color', x: tableMargin + 250, width: 90 },
+      { header: 'Modelo', x: tableMargin + 250, width: 90 },
       { header: 'Serie', x: tableMargin + 340, width: 100 },
       { header: 'Estado', x: tableMargin + 440, width: 80 },
     ];
 
-    const drawTableHeader = (currentPage: any) => {
-      currentPage.drawRectangle({
-        x: tableMargin, y: yPos - 5, width: width - 2 * tableMargin, height: rowHeight, color: rgb(0.9, 0.9, 0.9),
-      });
-      cols.forEach(col => {
-        currentPage.drawText(col.header, { x: col.x + 5, y: yPos, size: 10, font: fontBold });
-      });
+    const drawTableHeader = (p: any) => {
+      p.drawRectangle({ x: tableMargin, y: yPos - 5, width: width - 2 * tableMargin, height: rowHeight, color: rgb(0.95, 0.95, 0.95) });
+      cols.forEach(col => p.drawText(col.header, { x: col.x + 5, y: yPos, size: 10, font: fontBold }));
       yPos -= rowHeight;
     };
 
@@ -375,58 +296,107 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
         yPos = height - margin;
         drawTableHeader(page);
       }
-
-      const toolName = cleanToolNameForPdf(tool.herramienta);
-      const estadoLabel = tool.estadoProceso ? tool.estadoProceso.toUpperCase().replace('_', ' ') : 'OPERATIVO';
-
       const rowData = [
-        String(toolName), String(tool.qty), String(tool.marca), String(tool.modelo), String(tool.serie), String(estadoLabel),
+        cleanToolNameForPdf(tool.herramienta), String(tool.qty), tool.marca, tool.modelo, tool.serie, 
+        tool.estadoProceso ? tool.estadoProceso.toUpperCase().replace('_', ' ') : 'OPERATIVO'
       ];
-      
-      cols.forEach((col, i) => {
-        page.drawText(rowData[i], { x: col.x + 5, y: yPos, size: 9, font: font });
-      });
-      
-      page.drawLine({
-          start: { x: tableMargin, y: yPos - 5 }, end: { x: width - tableMargin, y: yPos - 5 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8),
-      });
-
+      cols.forEach((col, i) => page.drawText(rowData[i], { x: col.x + 5, y: yPos, size: 9, font }));
+      page.drawLine({ start: { x: tableMargin, y: yPos - 5 }, end: { x: width - tableMargin, y: yPos - 5 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
       yPos -= rowHeight;
     }
 
-    const pdfBytes = await pdfDoc.save();
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Generico_${data.usuario}.pdf`);
   } catch (error) {
-    console.error('Error al generar el PDF Genérico:', error);
-    alert('Error al generar el PDF Genérico. Revisa la consola.');
+    alert('Error al generar el PDF Genérico.');
   }
 }
 
-type Metrologo = { id: string; nombre: string; };
-type PatronesMapDropdown = Map<string, PatronBase>; 
-type PatronesMapScanner = Map<string, PatronBase>; 
+// --- Estilos CSS mejorados (Inyectados como objeto para mantener todo en un archivo) ---
+const styles = `
+  :root { --primary: #2563eb; --primary-dark: #1e40af; --bg-page: #f3f4f6; --bg-card: #ffffff; --text-main: #111827; --text-muted: #6b7280; --border: #e5e7eb; --danger: #ef4444; --success: #10b981; --warning: #f59e0b; }
+  body { background-color: var(--bg-page); color: var(--text-main); font-family: 'Inter', -apple-system, sans-serif; }
+  
+  .layout-container { max-width: 1200px; margin: 0 auto; padding: 20px; min-height: 100vh; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .header h1 { font-size: 1.5rem; font-weight: 700; color: #1f2937; margin: 0; }
+  
+  .card { background: var(--bg-card); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 24px; border: 1px solid var(--border); transition: transform 0.2s; }
+  .card-title { font-size: 1.1rem; font-weight: 600; color: #374151; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+  
+  .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .input-group { display: flex; flex-direction: column; gap: 6px; }
+  .input-group label { font-size: 0.875rem; font-weight: 500; color: #4b5563; }
+  .input-control { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.95rem; transition: border-color 0.15s; outline: none; background: #fff; width: 100%; box-sizing: border-box; }
+  .input-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+  .error-text { color: var(--danger); font-size: 0.75rem; margin-top: 4px; }
+
+  /* Backpack Grid */
+  .backpack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .backpack-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 10px; background: #f9fafb; position: relative; overflow: hidden; }
+  .backpack-card:hover { border-color: var(--primary); background: #eff6ff; }
+  .backpack-card.selected { background: #eff6ff; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+  .backpack-card input { position: absolute; opacity: 0; cursor: pointer; height: 100%; width: 100%; top: 0; left: 0; }
+  .backpack-icon { color: var(--text-muted); }
+  .backpack-card.selected .backpack-icon { color: var(--primary); }
+
+  /* Tables */
+  .table-responsive { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+  .modern-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+  .modern-table th { background: #f9fafb; text-align: left; padding: 12px 16px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; font-weight: 600; border-bottom: 1px solid var(--border); }
+  .modern-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 0.9rem; color: #1f2937; vertical-align: middle; }
+  .modern-table tbody tr:last-child td { border-bottom: none; }
+  
+  .status-badge { display: inline-flex; padding: 2px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+  .status-vencido { background: #fecaca; color: #991b1b; }
+  .status-critico { background: #fed7aa; color: #9a3412; }
+  .status-vigente { background: #bbf7d0; color: #166534; }
+  .status-unavailable { background: #e5e7eb; color: #374151; text-decoration: line-through; }
+  
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 18px; border-radius: 8px; font-weight: 500; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; border: none; gap: 8px; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-secondary { background: white; border: 1px solid #d1d5db; color: #374151; }
+  .btn-secondary:hover { background: #f3f4f6; }
+  .btn-danger { background: #fee2e2; color: #b91c1c; }
+  .btn-danger:hover { background: #fecaca; }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover { background: #059669; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .floating-bar { position: sticky; bottom: 20px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); padding: 16px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); z-index: 50; margin-top: 20px; flex-wrap: wrap; gap: 10px; }
+  .alert-banner { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500; }
+  
+  .scanner-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; display: flex; align-items: center; justify-content: center; }
+  .scanner-box { background: white; padding: 20px; border-radius: 16px; width: 90%; max-width: 500px; text-align: center; }
+  .scanner-video { width: 100%; border-radius: 8px; margin-bottom: 15px; background: #000; }
+
+  @media (max-width: 640px) {
+    .header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .floating-bar { flex-direction: column; align-items: stretch; }
+    .btn { width: 100%; }
+    .table-responsive { box-shadow: inset -10px 0 10px -10px rgba(0,0,0,0.1); }
+  }
+`;
+
+// ==================================================================
+// --- 2. COMPONENTE PRINCIPAL ---
+// ==================================================================
 
 const NormasScreen = () => {
   const { navigateTo } = useNavigation();
-  const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
-  const [userFetchError, setUserFetchError] = useState<string | null>(null);
+  const [metrologos, setMetrologos] = useState<{ id: string; nombre: string; }[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
   
-  const [patronesDisponibles, setPatronesDisponibles] = useState<PatronesMapDropdown>(new Map());
-  const [patronesPorNoControl, setPatronesPorNoControl] = useState<PatronesMapScanner>(new Map());
-  
-  const [isLoadingPatrones, setIsLoadingPatrones] = useState(true);
+  const [patronesMap, setPatronesMap] = useState<Map<string, PatronBase>>(new Map());
+  const [patronesScannerMap, setPatronesScannerMap] = useState<Map<string, PatronBase>>(new Map());
   const [isSavingBatch, setIsSavingBatch] = useState(false); 
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
 
-  const { 
-    register, control, handleSubmit, setValue, watch, trigger, getValues, 
-    formState: { errors } 
-  } = useForm<FormInputs>({
+  const { register, control, handleSubmit, setValue, watch, trigger, getValues, formState: { errors } } = useForm<FormInputs>({
     defaultValues: {
       fecha: new Date().toISOString().split('T')[0],
       selectedBackpacks: [],
@@ -436,612 +406,428 @@ const NormasScreen = () => {
     mode: 'onChange'
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'manualTools',
-  });
+  const { fields, append, remove } = useFieldArray({ control, name: 'manualTools' });
 
+  // --- Carga Inicial de Datos ---
   useEffect(() => {
-    const fetchMetrologos = async () => {
-      setUserFetchError(null); 
+    const initData = async () => {
+      setIsLoadingData(true);
       try {
-        const q = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
-        const querySnapshot = await getDocs(q);
-        const usersList: Metrologo[] = [];
-        querySnapshot.forEach((doc) => {
-          usersList.push({ id: doc.id, nombre: doc.data().name || doc.data().nombre });
+        // 1. Usuarios
+        const usersQ = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
+        const usersSnap = await getDocs(usersQ);
+        setMetrologos(usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })));
+
+        // 2. Patrones
+        const patronesQ = query(collection(db, COLLECTION_NAME_PATRONES));
+        const patronesSnap = await getDocs(patronesQ);
+        
+        const mapDropdown = new Map<string, PatronBase>();
+        const mapScanner = new Map<string, PatronBase>();
+
+        patronesSnap.forEach((doc) => {
+          const data = doc.data() as any;
+          const descripcion = (data.descripcion || '').trim(); 
+          const noControl = data.noControl || 'S/N'; 
+          const displayName = `${noControl} - ${descripcion}`; 
+          
+          const patronData: PatronBase = {
+              id: doc.id,
+              noControl,
+              nombre: displayName,
+              marca: data.marca || 'S/M', modelo: data.modelo || 'S/M', serie: data.serie || 'S/N',
+              fechaVencimiento: data.fecha,
+              status: getVencimientoStatus(data.fecha),
+              estadoProceso: data.estadoProceso || 'operativo',
+              usuarioEnUso: data.usuarioEnUso 
+          };
+
+          if (displayName) mapDropdown.set(displayName, patronData);
+          if (noControl !== 'S/N') mapScanner.set(noControl, patronData);
         });
-        setMetrologos(usersList);
+
+        setPatronesMap(mapDropdown);
+        setPatronesScannerMap(mapScanner);
       } catch (error) {
-        console.error("Error cargando metrólogos (puesto Metrólogo): ", error);
-        setUserFetchError("Error al cargar usuarios. Revise la consola.");
+        console.error("Error cargando datos:", error);
       } finally {
-        setIsLoadingUsers(false);
+        setIsLoadingData(false);
       }
     };
-    fetchMetrologos();
+    initData();
   }, []);
-  
-  const fetchPatrones = useCallback(async () => {
-    setIsLoadingPatrones(true);
-    try {
-      const q = query(collection(db, COLLECTION_NAME_PATRONES));
-      const querySnapshot = await getDocs(q);
-      
-      const patronesMapDropdown: PatronesMapDropdown = new Map();
-      const patronesMapScanner: PatronesMapScanner = new Map();
 
-      querySnapshot.forEach((doc) => {
-        const data = doc.data() as RegistroPatron;
-        const descripcion = data.descripcion.trim(); 
-        const noControl = data.noControl || 'S/N'; 
-        
-        const displayName = `${noControl} - ${descripcion}`; 
-        const status = getVencimientoStatus(data.fecha);
-        const estadoProceso = data.estadoProceso || 'operativo';
-
-        const patronData: PatronBase = {
-            id: doc.id, 
-            noControl: noControl,
-            nombre: displayName,
-            marca: data.marca || 'S/M', 
-            modelo: data.modelo || 'S/M', 
-            serie: data.serie || 'S/N',
-            fechaVencimiento: data.fecha, 
-            status: status,
-            estadoProceso: estadoProceso,
-            usuarioEnUso: data.usuarioEnUso 
-        };
-
-        if (displayName && !patronesMapDropdown.has(displayName)) {
-            patronesMapDropdown.set(displayName, patronData);
-        }
-        
-        if (noControl !== 'S/N' && !patronesMapScanner.has(noControl)) {
-            patronesMapScanner.set(noControl, patronData);
-        }
-      });
-
-      setPatronesDisponibles(patronesMapDropdown);
-      setPatronesPorNoControl(patronesMapScanner);
-      
-    } catch (error) {
-      console.error("Error cargando patrones de medición: ", error);
-    } finally {
-      setIsLoadingPatrones(false);
-    }
-  }, []);
-  
-  useEffect(() => {
-    fetchPatrones();
-  }, [fetchPatrones]);
-
+  // --- Observadores y Memoización ---
   const watchedManualTools = watch('manualTools');
+  const watchedBackpacks = watch('selectedBackpacks');
+  
+  const aggregatedTools = useMemo(() => aggregateTools(watchedBackpacks || []), [watchedBackpacks]);
   
   const isAnyPatronVencido = useMemo(() => {
     return watchedManualTools.some(tool => tool.isVencida || tool.isUnavailable);
   }, [watchedManualTools]);
-  
-  const selectedManualToolNames = useMemo(() => 
-    new Set(watchedManualTools.map(tool => tool.herramienta).filter(Boolean)),
-    [watchedManualTools]
-  );
-  
-  const watchedBackpacks = watch('selectedBackpacks');
-  const aggregatedTools = useMemo(() => 
-    aggregateTools(watchedBackpacks || []), 
-    [watchedBackpacks]
-  );
-  
-  const availablePatrones = useMemo(() => 
-    Array.from(patronesDisponibles.values()).filter(patron => 
-        patron.estadoProceso === 'operativo' || patron.estadoProceso === 'programado' || patron.estadoProceso === 'completado'
-    ).sort((a,b) => a.nombre.localeCompare(b.nombre)),
-    [patronesDisponibles]
-  );
 
-  const allAvailableOptions = useMemo(() => 
-    Array.from(patronesDisponibles.values()).sort((a,b) => a.nombre.localeCompare(b.nombre)),
-    [patronesDisponibles]
-  );
+  const sortedPatronOptions = useMemo(() => 
+    Array.from(patronesMap.values()).sort((a,b) => a.nombre.localeCompare(b.nombre)),
+  [patronesMap]);
 
-  // 🚨🚨 LÓGICA DE REGISTRO DE SALIDA 🚨🚨
-  const handleRegistrarSalidaMasiva = async () => {
-    const isValid = await trigger('usuario'); 
-    if (!isValid) {
-        alert('⚠️ Por favor, selecciona un USUARIO primero.');
-        return;
-    }
-    const usuarioSeleccionado = getValues('usuario');
-    
-    const herramientasParaSalida = watchedManualTools.filter(tool => {
-        const patronData = patronesDisponibles.get(tool.herramienta);
-        return patronData && patronData.id; 
-    });
-
-    if (herramientasParaSalida.length === 0) {
-        alert('⚠️ No hay patrones válidos en la lista "Manual" para registrar salida.');
-        return;
-    }
-
-    // 🚨 VALIDACIÓN DE DISPONIBILIDAD
-    for (const tool of herramientasParaSalida) {
-        const patronData = patronesDisponibles.get(tool.herramienta);
-        if (patronData && patronData.estadoProceso !== 'operativo') {
-             let msg = `❌ ERROR: El equipo "${patronData.nombre}" NO está disponible.`;
-             if (patronData.usuarioEnUso) {
-                 msg += `\nLo tiene actualmente: ${patronData.usuarioEnUso}.`;
-             }
-             msg += `\nEstado: ${patronData.estadoProceso.toUpperCase()}`;
-             alert(msg);
-             return; // DETIENE TODO
-        }
-    }
-
-    if (isAnyPatronVencido) {
-        const confirmar = window.confirm('⚠️ ADVERTENCIA: Hay patrones vencidos en la lista. ¿Deseas forzar la salida?');
-        if (!confirmar) return;
-    } else {
-        const confirmar = window.confirm(`¿Estás seguro de registrar la salida de ${herramientasParaSalida.length} equipos a nombre de ${usuarioSeleccionado}?`);
-        if (!confirmar) return;
-    }
-
-    setIsSavingBatch(true);
-
-    try {
-        const batch = writeBatch(db); 
-        const fechaActual = new Date().toISOString().split('T')[0];
-
-        let count = 0;
-
-        for (const tool of herramientasParaSalida) {
-            const patronData = patronesDisponibles.get(tool.herramienta);
-            if (!patronData || !patronData.id) continue;
-
-            const docRef = doc(db, COLLECTION_NAME_PATRONES, patronData.id);
-
-            // 🚨 GUARDADO CRÍTICO
-            batch.update(docRef, {
-                estadoProceso: 'en_servicio', // Cambia estado
-                usuarioEnUso: usuarioSeleccionado, // Guarda QUIÉN
-                ubicacion: `En Uso - ${usuarioSeleccionado}`, // Visualización rápida
-                fechaPrestamo: fechaActual,
-            });
-            count++;
-        }
-
-        await batch.commit();
-        alert(`✅ ¡Éxito! Se registró la salida de ${count} equipos a nombre de ${usuarioSeleccionado}.`);
-        
-        // Limpiar tabla manual
-        setValue('manualTools', []);
-        fetchPatrones();
-
-    } catch (error) {
-        console.error("Error en registro masivo:", error);
-        alert("❌ Error al registrar la salida en la base de datos.");
-    } finally {
-        setIsSavingBatch(false);
-    }
-  };
-
-  const handleGeneratePdf = async (type: 'celestica' | 'generic') => {
-    if (isAnyPatronVencido) {
-        alert('ADVERTENCIA: No se puede generar el PDF. Hay patrones de medición vencidos, críticos, o NO DISPONIBLES en la lista.');
-        return;
-    }
-    const isValid = await trigger();
-    if (!isValid) {
-      console.warn("Formulario inválido. Errores:", errors);
-      alert('Formulario incompleto. Revisa los campos marcados en rojo.');
-      return;
-    }
-    const data = getValues();
-    const validManualTools = data.manualTools
-        .filter(tool => tool.herramienta)
-        .map(tool => ({
-            ...tool, 
-            estadoProceso: patronesDisponibles.get(tool.herramienta)?.estadoProceso || 'operativo'
-        }));
-    const allTools = [...aggregatedTools, ...validManualTools];
-    if (type === 'celestica') await generateCelesticaPdf(data, allTools);
-    else await generateGenericPdf(data, allTools);
-  };
-
-  const handleOpenScanner = () => {
-    setIsScannerOpen(true);
-  };
-
-  const handleScanResult = useCallback((noControl: string) => {
-    if (!noControl) return;
+  // --- Manejo del Scanner ---
+  const handleScanResult = useCallback((code: string) => {
+    if (!code) return;
     stopScan();
-    console.log(`Código escaneado: ${noControl}`);
-    const patron = patronesPorNoControl.get(noControl);
-    if (!patron) {
-      alert(`Patrón con No. de Control "${noControl}" no encontrado en la base de datos.`);
-      return;
-    }
-    const displayName = patron.nombre;
-    if (selectedManualToolNames.has(displayName)) {
-        alert(`Patrón "${displayName}" ya está en la lista.`);
-        return;
-    }
+    const patron = patronesScannerMap.get(code);
     
-    // 🚨 VALIDACIÓN ESTRICTA
-    const isUnavailable = 
-        patron.estadoProceso === 'en_proceso' || 
-        patron.estadoProceso === 'fuera_servicio' || 
-        patron.estadoProceso === 'en_servicio' || 
-        patron.estadoProceso === 'en_prestamo' ||
-        patron.estadoProceso === 'en_mantenimiento';
-
-    if (isUnavailable) {
-        let msg = `Patrón "${displayName}" NO DISPONIBLE. Estado: ${patron.estadoProceso.toUpperCase()}.`;
-        if (patron.usuarioEnUso) {
-            msg += `\nLo tiene: ${patron.usuarioEnUso}`;
-        }
-        alert(msg);
+    if (!patron) { alert(`Patrón "${code}" no encontrado.`); return; }
+    
+    // Validar duplicados visuales
+    const currentTools = getValues('manualTools');
+    if (currentTools.some(t => t.herramienta === patron.nombre)) {
+        alert(`El patrón "${patron.nombre}" ya está en la lista.`);
         return;
     }
-    const isVencida = (patron.status === 'vencido' || patron.status === 'critico');
-    append({
-      herramienta: patron.nombre,
-      qty: '1',
-      marca: patron.marca,
-      modelo: patron.modelo,
-      serie: patron.serie,
-      isVencida: isVencida,
-      isUnavailable: isUnavailable,
-    });
-    alert(`Patrón "${displayName}" agregado exitosamente.`);
-  }, [patronesPorNoControl, selectedManualToolNames, append]);
 
-  const stopScan = useCallback(() => {
-    if (scannerControlsRef.current) {
-      scannerControlsRef.current.stop();
-      scannerControlsRef.current = null;
+    const isUnavailable = ['en_proceso','fuera_servicio','en_servicio','en_prestamo','en_mantenimiento'].includes(patron.estadoProceso);
+    if (isUnavailable) {
+        alert(`Patrón "${patron.nombre}" NO DISPONIBLE. Estado: ${patron.estadoProceso.toUpperCase()}.`);
+        return;
     }
+
+    append({
+      herramienta: patron.nombre, qty: '1', marca: patron.marca, modelo: patron.modelo, serie: patron.serie,
+      isVencida: (patron.status === 'vencido' || patron.status === 'critico'),
+      isUnavailable: false
+    });
+  }, [patronesScannerMap, append, getValues]);
+
+  const stopScan = () => {
+    if (scannerControlsRef.current) { scannerControlsRef.current.stop(); scannerControlsRef.current = null; }
     setIsScannerOpen(false);
-  }, []);
+  };
 
   useEffect(() => {
     if (isScannerOpen && videoRef.current) {
-      const startScanLogic = async () => {
         const reader = new BrowserMultiFormatReader();
-        try {
-          const controls = await reader.decodeFromVideoDevice(
-            undefined, videoRef.current,
-            (result, error, controls) => {
-              if (result) {
-                handleScanResult(result.getText());
-                controls.stop();
-              }
-              if (error && !(error instanceof DOMException && error.name === 'NotAllowedError')) {
-                // console.error(error); 
-              }
-            }
-          );
-          scannerControlsRef.current = controls;
-        } catch (e) {
-          console.error("Error al iniciar el escáner:", e);
-          alert("Error al iniciar la cámara. Revisa los permisos.");
-          setIsScannerOpen(false);
-        }
-      };
-      startScanLogic();
+        reader.decodeFromVideoDevice(undefined, videoRef.current, (result, err, controls) => {
+            if (result) { handleScanResult(result.getText()); controls.stop(); }
+            if (controls) scannerControlsRef.current = controls;
+        }).catch(err => { console.error(err); setIsScannerOpen(false); });
     }
-    return () => {
-      if (scannerControlsRef.current) {
-        scannerControlsRef.current.stop();
-        scannerControlsRef.current = null;
-      }
-    };
-  }, [isScannerOpen, handleScanResult, stopScan]);
+    return () => { if (scannerControlsRef.current) scannerControlsRef.current.stop(); };
+  }, [isScannerOpen, handleScanResult]);
+
+
+  // --- Acciones Principales ---
+  const handleRegistrarSalida = async () => {
+    const isValid = await trigger('usuario'); 
+    if (!isValid) return alert('Selecciona un usuario primero.');
+    
+    const usuario = getValues('usuario');
+    const toolsToUpdate = watchedManualTools.filter(t => patronesMap.has(t.herramienta));
+
+    if (!toolsToUpdate.length) return alert('No hay equipos manuales válidos para registrar.');
+    if (!window.confirm(`¿Registrar salida de ${toolsToUpdate.length} equipos para ${usuario}?`)) return;
+
+    setIsSavingBatch(true);
+    try {
+        const batch = writeBatch(db); 
+        const fecha = new Date().toISOString().split('T')[0];
+        
+        toolsToUpdate.forEach(tool => {
+            const pid = patronesMap.get(tool.herramienta)?.id;
+            if (pid) {
+                batch.update(doc(db, COLLECTION_NAME_PATRONES, pid), {
+                    estadoProceso: 'en_servicio', usuarioEnUso: usuario, ubicacion: `En Uso - ${usuario}`, fechaPrestamo: fecha
+                });
+            }
+        });
+
+        await batch.commit();
+        alert('✅ Salida registrada correctamente.');
+        setValue('manualTools', []);
+        
+        // Recargar datos rápidos
+        const q = query(collection(db, COLLECTION_NAME_PATRONES));
+        const snap = await getDocs(q);
+        const newMap = new Map(patronesMap);
+        snap.forEach(d => { 
+            const data = d.data() as any;
+            const name = `${data.noControl} - ${data.descripcion}`;
+            if (newMap.has(name)) newMap.set(name, { ...newMap.get(name)!, estadoProceso: data.estadoProceso, usuarioEnUso: data.usuarioEnUso });
+        });
+        setPatronesMap(newMap);
+
+    } catch (e) { console.error(e); alert('Error al guardar.'); }
+    finally { setIsSavingBatch(false); }
+  };
+
+  const handlePdf = async (type: 'cel' | 'gen') => {
+    if (isAnyPatronVencido) return alert('No se puede generar PDF con equipos Vencidos o No Disponibles.');
+    if (!(await trigger())) return alert('Completa los campos obligatorios.');
+    
+    const data = getValues();
+    const manualClean = data.manualTools.filter(t => t.herramienta).map(t => ({
+        ...t, estadoProceso: patronesMap.get(t.herramienta)?.estadoProceso || 'operativo'
+    }));
+    const all = [...aggregatedTools, ...manualClean];
+
+    if (type === 'cel') generateCelesticaPdf(data, all);
+    else generateGenericPdf(data, all);
+  };
+
+  // ==================================================================
+  // --- 3. RENDERIZADO DEL UI ---
+  // ==================================================================
 
   return (
     <>
       <style>{styles}</style>
       
+      {/* --- Modal Scanner --- */}
       {isScannerOpen && (
-        <div className="scanner-modal" onClick={stopScan}>
-          <div className="scanner-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Escanear Código de Barras</h3>
+        <div className="scanner-overlay" onClick={stopScan}>
+          <div className="scanner-box" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-4">Escanear Código</h3>
             <video ref={videoRef} className="scanner-video" />
-            <button type="button" className="btn btn-danger" onClick={stopScan}>
-              <XCircle size={18} style={{ marginRight: '8px' }} />
-              Cancelar
-            </button>
+            <button className="btn btn-danger w-full" onClick={stopScan}><X size={18} /> Cancelar</button>
           </div>
         </div>
       )}
 
-      <div className="form-container">
-        <div className="header-bar">
-          <button type="button" className="btn-back" onClick={() => navigateTo('/')} title="Regresar a Menú Principal">
-            <ArrowLeft size={20} />
-          </button>
-          <h2>Registro de Herramienta y Equipo</h2>
+      <div className="layout-container">
+        {/* --- Header --- */}
+        <div className="header">
+           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <button className="btn btn-secondary rounded-full p-2 w-10 h-10" onClick={() => navigateTo('/')}><ArrowLeft size={20} /></button>
+              <div>
+                <h1>Registro de Salida</h1>
+                <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Control de herramientas y equipos de medición</p>
+              </div>
+           </div>
+           <div className="text-right hidden sm:block">
+              <span className="text-xs font-bold text-gray-400">FECHA ACTUAL</span>
+              <div className="text-lg font-mono font-semibold">{new Date().toLocaleDateString()}</div>
+           </div>
         </div>
 
-        <form className="form-content" onSubmit={(e) => e.preventDefault()}> 
-          <div className="form-section" style={{ animationDelay: '100ms' }}>
-            <h3><User size={20} /> Datos del Usuario</h3>
-            <div className="form-grid">
-              <div className="form-field">
-                <label>Fecha</label>
-                <input type="date" {...register('fecha', { required: "La fecha es requerida" })} />
-                {errors.fecha && <p className="error-message">{errors.fecha.message}</p>}
-              </div>
-              <div className="form-field">
-                <label>Usuario (Nombre Completo)</label>
+        {/* --- Card 1: Datos Usuario --- */}
+        <div className="card">
+          <div className="card-title"><User size={20} className="text-blue-600" /> Información del Responsable</div>
+          <div className="grid-form">
+            <div className="input-group">
+                <label>Fecha de Registro</label>
+                <input type="date" className="input-control" {...register('fecha', { required: "Requerido" })} />
+            </div>
+            <div className="input-group">
+                <label>Metrólogo / Usuario</label>
                 <Controller
-                  name="usuario"
-                  control={control}
-                  rules={{ required: "Debes seleccionar un usuario" }}
+                  name="usuario" control={control} rules={{ required: "Seleccione un usuario" }}
                   render={({ field }) => (
-                    <select {...field} disabled={isLoadingUsers}>
-                      <option value="" style={{ color: '#555555', backgroundColor: '#ffffff' }}>
-                        {isLoadingUsers ? 'Cargando usuarios...' : (metrologos.length === 0 ? 'No se encontraron Metrólogos' : '-- Seleccionar Metrólogo --')}
-                      </option>
-                      {metrologos.map(user => (
-                        <option key={user.id} value={user.nombre} style={{ color: '#333333', backgroundColor: '#ffffff' }}>{user.nombre}</option>
-                      ))}
+                    <select {...field} className="input-control" disabled={isLoadingData}>
+                      <option value="">{isLoadingData ? 'Cargando...' : '-- Seleccionar --'}</option>
+                      {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
                     </select>
                   )}
                 />
-                {errors.usuario && <p className="error-message">{errors.usuario.message}</p>}
-                {userFetchError && <p className="error-message">{userFetchError}</p>}
-              </div>
-              <div className="form-field">
-                <label>Gafete Contratista</label>
-                <input type="text" {...register('gafeteContratista')} />
-              </div>
-              <div className="form-field">
-                <label>Compañía y/o Departamento</label>
-                <input type="text" {...register('companiaDepto', { required: "La compañía es requerida" })} />
-                {errors.companiaDepto && <p className="error-message">{errors.companiaDepto.message}</p>}
-              </div>
-              <div className="form-field">
-                <label>No. Empleado</label>
-                <input type="text" {...register('noEmpleado')} />
-              </div>
+                {errors.usuario && <span className="error-text">{errors.usuario.message}</span>}
+            </div>
+            <div className="input-group">
+                <label>Compañía / Depto</label>
+                <input className="input-control" {...register('companiaDepto', { required: "Requerido" })} />
+            </div>
+            <div className="input-group">
+                 <label>No. Empleado</label>
+                 <input className="input-control" {...register('noEmpleado')} placeholder="Opcional" />
+            </div>
+             <div className="input-group">
+                 <label>Gafete Contratista</label>
+                 <input className="input-control" {...register('gafeteContratista')} placeholder="Opcional" />
             </div>
           </div>
+        </div>
 
-          <div className="form-section" style={{ animationDelay: '200ms' }}>
-            <h3><Archive size={20} /> Selector de Mochilas</h3>
-            <div className="backpack-selector">
+        {/* --- Card 2: Mochilas --- */}
+        <div className="card">
+            <div className="card-title"><Briefcase size={20} className="text-blue-600" /> Kits y Mochilas Predefinidas</div>
+            <div className="backpack-grid">
               <Controller
-                name="selectedBackpacks"
-                control={control}
+                name="selectedBackpacks" control={control}
                 render={({ field }) => (
                   <>
-                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack], index) => (
-                      <label key={id} className="backpack-option" htmlFor={`backpack-${id}`} style={{ animationDelay: `${index * 50}ms` }}>
-                        <input
-                          type="checkbox" id={`backpack-${id}`} value={id}
-                          onChange={(e) => {
-                            const newSelection = e.target.checked ? [...field.value, id] : field.value.filter((value) => value !== id);
-                            field.onChange(newSelection);
-                          }}
-                          checked={field.value.includes(id)}
-                        />
-                        <span>{backpack.nombre}</span>
-                      </label>
-                    ))}
+                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => {
+                      const isSelected = field.value.includes(id);
+                      return (
+                        <label key={id} className={`backpack-card ${isSelected ? 'selected' : ''}`}>
+                          <input type="checkbox" value={id} checked={isSelected}
+                            onChange={(e) => {
+                                const newVal = e.target.checked ? [...field.value, id] : field.value.filter(v => v !== id);
+                                field.onChange(newVal);
+                            }}
+                          />
+                          <Package className="backpack-icon" size={24} />
+                          <div>
+                              <div className="font-semibold text-sm">{backpack.nombre}</div>
+                              <div className="text-xs text-gray-500">{backpack.items.length} items</div>
+                          </div>
+                          {isSelected && <CheckCircle2 size={16} className="text-blue-600 absolute top-2 right-2" />}
+                        </label>
+                      );
+                    })}
                   </>
                 )}
               />
             </div>
-            {aggregatedTools.length > 0 && (
-              <div className="tool-table-wrapper">
-                <table className="tool-table" style={{ marginTop: '20px' }}>
-                  <thead>
-                    <tr><th>Herramienta (Agregada)</th><th>Qty Total</th><th>Marca</th><th>Modelo/Color</th><th>Serie</th></tr>
-                  </thead>
-                  <tbody>
-                    {aggregatedTools.sort((a, b) => a.herramienta.localeCompare(b.herramienta)).map((tool, index) => (
-                      <tr key={`${tool.herramienta}-${tool.marca}-${tool.modelo}-${tool.serie}`} style={{ animationDelay: `${index * 30}ms` }}>
-                        <td className="readonly">{tool.herramienta}</td>
-                        <td className="readonly" style={{ textAlign: 'center' }}>{tool.qty}</td>
-                        <td className="readonly">{tool.marca}</td>
-                        <td className="readonly">{tool.modelo}</td>
-                        <td className="readonly">{tool.serie}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
 
-          <div className="form-section" style={{ animationDelay: '300ms' }}>
-            <h3><ListPlus size={20} /> Herramientas Manuales Adicionales</h3>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                {isAnyPatronVencido && (
-                    <div className="text-sm font-bold text-red-700 p-2 bg-red-100 border border-red-300 rounded-lg mb-2 flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" />
-                        ⚠️ **ERROR:** Patrón(es) VENCIDO(s)/CRÍTICO(s) o **NO DISPONIBLE** seleccionado(s).
+            {/* Tabla Resumen Mochilas */}
+            {aggregatedTools.length > 0 && (
+                <div className="mt-6">
+                    <h4 className="text-sm font-bold text-gray-500 mb-2 uppercase tracking-wider">Contenido de Kits Seleccionados</h4>
+                    <div className="table-responsive">
+                        <table className="modern-table">
+                            <thead><tr><th>Item</th><th>Cant.</th><th>Marca</th><th>Modelo</th><th>Serie</th></tr></thead>
+                            <tbody>
+                                {aggregatedTools.map((t, i) => (
+                                    <tr key={i}>
+                                        <td>{t.herramienta}</td>
+                                        <td className="text-center font-bold bg-gray-50">{t.qty}</td>
+                                        <td>{t.marca}</td><td>{t.modelo}</td><td className="font-mono text-xs">{t.serie}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                )}
-                
-                <div className="ml-auto" style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      type="button" className="btn btn-secondary" onClick={handleOpenScanner}
-                      disabled={isLoadingPatrones} title="Escanear un patrón con la cámara"
-                    >
-                      <Camera size={16} style={{ marginRight: '8px' }} />
-                      Escanear Patrón
+                </div>
+            )}
+        </div>
+
+        {/* --- Card 3: Herramientas Manuales --- */}
+        <div className="card">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4 border-bottom pb-4 border-gray-100">
+                <div className="card-title mb-0 border-none p-0"><Camera size={20} className="text-blue-600" /> Registro Individual de Patrones</div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <button type="button" className="btn btn-secondary flex-1 sm:flex-none" onClick={() => setIsScannerOpen(true)}>
+                        <Camera size={16} /> Escanear
                     </button>
-                    <button
-                      type="button" className="btn btn-secondary"
-                      onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '', isVencida: false, isUnavailable: false })}
-                      disabled={isLoadingPatrones} title="Agregar una fila manualmente"
-                    >
-                      {isLoadingPatrones ? (<Loader2 className="w-4 h-4 mr-2 animate-spin inline" />) : ('+ Agregar Manual')}
+                    <button type="button" className="btn btn-secondary flex-1 sm:flex-none" onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}>
+                        <Plus size={16} /> Agregar Manual
                     </button>
                 </div>
             </div>
 
-            <div className="tool-table-wrapper">
-                <table className="tool-table">
-                  <thead>
-                    <tr><th>#</th><th>Patrón de Medición</th><th>Estatus Venc.</th><th>Estatus Proceso</th><th style={{ width: '60px' }}>Qty</th><th>Marca</th><th>Modelo/Color</th><th>Serie</th><th style={{ width: '80px' }}>Acción</th></tr>
-                  </thead>
-                  <tbody>
-                    {fields.length === 0 && (
-                      <tr><td colSpan={9} style={{ textAlign: 'center', color: '#888' }}>{isLoadingPatrones ? 'Cargando patrones de medición...' : 'No se han agregado patrones manuales.'}</td></tr>
-                    )}
-                    {fields.map((item, index) => {
-                      const currentToolName = watchedManualTools[index]?.herramienta;
-                      const toolData = patronesDisponibles.get(currentToolName);
-                      const rowStatus = toolData?.status || 'pendiente';
-                      const rowEstadoProceso = toolData?.estadoProceso || 'operativo';
-                      let rowClassName = '';
-                      
-                      const isUnavailable = 
-                          rowEstadoProceso === 'en_proceso' || 
-                          rowEstadoProceso === 'fuera_servicio' || 
-                          rowEstadoProceso === 'en_servicio' || 
-                          rowEstadoProceso === 'en_prestamo' ||
-                          rowEstadoProceso === 'en_mantenimiento';
-                      
-                      if (isUnavailable) rowClassName = 'tool-row-unavailable';
-                      else if (rowStatus === 'vencido') rowClassName = 'tool-row-vencido';
-                      else if (rowStatus === 'critico') rowClassName = 'tool-row-critico';
-                      else if (rowStatus === 'vigente') rowClassName = 'tool-row-vigente';
+            {isAnyPatronVencido && (
+                <div className="alert-banner">
+                    <AlertTriangle size={20} />
+                    <span>Atención: Has seleccionado equipos VENCIDOS, CRÍTICOS o NO DISPONIBLES. Revisa la lista.</span>
+                </div>
+            )}
 
-                      return (
-                        <tr key={item.id} className={rowClassName} style={{ animationDelay: `${index * 30}ms` }}>
-                          <td style={{ width: '40px', textAlign: 'center' }}>{index + 1}</td>
-                          <td>
-                            <Controller
-                              name={`manualTools.${index}.herramienta`} control={control} rules={{ required: true }}
-                              render={({ field }) => (
-                                <select 
-                                  {...field} disabled={isLoadingPatrones}
-                                  style={{ color: isUnavailable ? '#a8a29e' : (rowStatus === 'vencido' ? '#9f1c2b' : (rowStatus === 'critico' ? '#925c0e' : '#333')), fontWeight: (rowStatus === 'vencido' || rowStatus === 'critico' || isUnavailable) ? '600' : 'normal', backgroundColor: isUnavailable ? '#f4f4f4' : '#ffffff' }}
-                                  onChange={(e) => {
-                                    const selectedToolName = e.target.value; 
-                                    field.onChange(selectedToolName);
-                                    const newToolData = patronesDisponibles.get(selectedToolName); 
-                                    if (newToolData) {
-                                      const isVencida = (newToolData.status === 'vencido' || newToolData.status === 'critico');
-                                      const isUnavailable = (
-                                          newToolData.estadoProceso === 'en_proceso' || 
-                                          newToolData.estadoProceso === 'fuera_servicio' ||
-                                          newToolData.estadoProceso === 'en_servicio' ||
-                                          newToolData.estadoProceso === 'en_prestamo' ||
-                                          newToolData.estadoProceso === 'en_mantenimiento'
-                                      );
-                                      setValue(`manualTools.${index}.qty`, '1');
-                                      setValue(`manualTools.${index}.marca`, newToolData.marca);
-                                      setValue(`manualTools.${index}.modelo`, newToolData.modelo);
-                                      setValue(`manualTools.${index}.serie`, newToolData.serie);
-                                      setValue(`manualTools.${index}.isVencida`, isVencida);
-                                      setValue(`manualTools.${index}.isUnavailable`, isUnavailable);
-                                    } else {
-                                      setValue(`manualTools.${index}.qty`, '1'); setValue(`manualTools.${index}.marca`, ''); setValue(`manualTools.${index}.modelo`, ''); setValue(`manualTools.${index}.serie`, ''); setValue(`manualTools.${index}.isVencida`, false); setValue(`manualTools.${index}.isUnavailable`, false); 
-                                    }
-                                  }}
-                                >
-                                  <option value="">{isLoadingPatrones ? 'Cargando patrones...' : '-- Seleccionar Patrón --'}</option>
-                                  {allAvailableOptions.map(patron => {
-                                      const isSelectedInAnotherRow = selectedManualToolNames.has(patron.nombre) && patron.nombre !== currentToolName;
-                                      
-                                      const isUnavailableOption = 
-                                          patron.estadoProceso === 'en_proceso' || 
-                                          patron.estadoProceso === 'fuera_servicio' ||
-                                          patron.estadoProceso === 'en_servicio' ||
-                                          patron.estadoProceso === 'en_prestamo' ||
-                                          patron.estadoProceso === 'en_mantenimiento';
-                                          
-                                      let optionColor = '#333';
-                                      if (isUnavailableOption) optionColor = '#a8a29e';
-                                      else if (patron.status === 'vencido') optionColor = '#9f1c2b';
-                                      else if (patron.status === 'critico') optionColor = '#925c0e';
-                                      else if (patron.status === 'vigente') optionColor = '#198754';
-                                      const isDisabled = isSelectedInAnotherRow || isUnavailableOption;
-                                      
-                                      const whoHasIt = patron.usuarioEnUso ? ` por ${patron.usuarioEnUso}` : '';
-
-                                      return (
-                                          <option key={patron.nombre} value={patron.nombre} disabled={isDisabled} style={{ color: optionColor, fontWeight: (patron.status === 'vencido' || patron.status === 'critico' || isUnavailableOption) ? 'bold' : 'normal', backgroundColor: '#ffffff' }}>
-                                              {patron.nombre} {patron.status === 'vencido' && ' (Vencido)'} {patron.status === 'critico' && ' (Crítico)'} 
-                                              {isUnavailableOption && ` (${patron.estadoProceso.toUpperCase().replace('_', ' ')}${whoHasIt})`}
-                                          </option>
-                                      );
-                                  })}
-                                </select>
-                              )}
-                            />
-                            {isUnavailable && (<p className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3 inline" /> NO DISPONIBLE</p>)}
-                          </td>
-                          <td style={{ width: '120px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
-                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${rowStatus === 'vencido' ? 'bg-red-300 text-red-800' : rowStatus === 'critico' ? 'bg-orange-300 text-orange-800' : rowStatus === 'vigente' ? 'bg-green-300 text-green-800' : 'bg-gray-300 text-gray-800'}`}>{rowStatus.toUpperCase()}</span>
-                          </td>
-                          <td style={{ width: '140px', fontSize: '0.8rem', fontWeight: 600, textAlign: 'center' }}>
-                              <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${rowEstadoProceso === 'en_proceso' ? 'bg-orange-300 text-orange-800' : rowEstadoProceso === 'fuera_servicio' ? 'bg-red-300 text-red-800' : (rowEstadoProceso === 'en_servicio' || rowEstadoProceso === 'en_prestamo') ? 'bg-slate-300 text-slate-800' : 'bg-green-300 text-green-800'}`}>{rowEstadoProceso.toUpperCase().replace('_', ' ')}</span>
-                          </td>
-                          <td style={{ width: '80px' }}>
-                            <input {...register(`manualTools.${index}.qty`, { required: true, valueAsNumber: true })} placeholder="1" type="number" min="1" disabled={isUnavailable} />
-                          </td>
-                          <td><input {...register(`manualTools.${index}.marca`)} placeholder="Marca" readOnly tabIndex={-1} className="readonly" /></td>
-                          <td><input {...register(`manualTools.${index}.modelo`)} placeholder="Modelo" readOnly tabIndex={-1} className="readonly" /></td>
-                          <td><input {...register(`manualTools.${index}.serie`)} placeholder="Serie" readOnly tabIndex={-1} className="readonly" /></td>
-                          <td style={{ width: '80px', textAlign: 'center' }}>
-                            <button type="button" className="btn btn-danger" onClick={() => remove(index)}>Quitar</button>
-                          </td>
+            <div className="table-responsive">
+                <table className="modern-table">
+                    <thead>
+                        <tr>
+                            <th style={{width: '40px'}}>#</th>
+                            <th>Patrón / Equipo</th>
+                            <th>Estado Calib.</th>
+                            <th>Disponibilidad</th>
+                            <th style={{width: '60px'}}>Cant.</th>
+                            <th>Info Técnica</th>
+                            <th style={{width: '80px'}}></th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
+                    </thead>
+                    <tbody>
+                        {fields.length === 0 && (
+                             <tr><td colSpan={7} className="text-center py-8 text-gray-400 italic">No hay equipos manuales agregados. Usa el escáner o agrega manualmente.</td></tr>
+                        )}
+                        {fields.map((item, index) => {
+                            const currentTool = watchedManualTools[index]?.herramienta;
+                            const patronData = patronesMap.get(currentTool);
+                            const status = patronData?.status || 'pendiente';
+                            const proceso = patronData?.estadoProceso || 'operativo';
+                            
+                            const isUnavailable = ['en_proceso', 'fuera_servicio', 'en_servicio', 'en_prestamo', 'en_mantenimiento'].includes(proceso);
+                            
+                            return (
+                                <tr key={item.id} className={isUnavailable ? 'bg-gray-50' : ''}>
+                                    <td className="text-center text-gray-400">{index + 1}</td>
+                                    <td style={{ minWidth: '250px' }}>
+                                        <Controller
+                                            name={`manualTools.${index}.herramienta`} control={control}
+                                            render={({ field }) => (
+                                                <select {...field} className="input-control text-sm" 
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        field.onChange(val);
+                                                        const p = patronesMap.get(val);
+                                                        if (p) {
+                                                            const badStatus = p.status === 'vencido' || p.status === 'critico';
+                                                            const badProcess = ['en_proceso', 'fuera_servicio', 'en_servicio', 'en_prestamo', 'en_mantenimiento'].includes(p.estadoProceso);
+                                                            setValue(`manualTools.${index}.qty`, '1');
+                                                            setValue(`manualTools.${index}.marca`, p.marca);
+                                                            setValue(`manualTools.${index}.modelo`, p.modelo);
+                                                            setValue(`manualTools.${index}.serie`, p.serie);
+                                                            setValue(`manualTools.${index}.isVencida`, badStatus);
+                                                            setValue(`manualTools.${index}.isUnavailable`, badProcess);
+                                                        }
+                                                    }}
+                                                >
+                                                    <option value="">-- Buscar Patrón --</option>
+                                                    {sortedPatronOptions.map(op => (
+                                                        <option key={op.id} value={op.nombre} disabled={op.estadoProceso !== 'operativo' && op.nombre !== currentTool}>
+                                                            {op.nombre}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )} 
+                                        />
+                                        {isUnavailable && <div className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={10} /> NO DISPONIBLE ({patronData?.usuarioEnUso || '?'})</div>}
+                                    </td>
+                                    <td>
+                                        <span className={`status-badge status-${status}`}>{status}</span>
+                                    </td>
+                                    <td>
+                                        <span className={`text-xs font-mono uppercase ${isUnavailable ? 'text-red-600 font-bold' : 'text-green-600'}`}>
+                                            {proceso.replace('_', ' ')}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <input type="number" className="input-control text-center p-1" {...register(`manualTools.${index}.qty`)} disabled={isUnavailable} />
+                                    </td>
+                                    <td>
+                                        <div className="text-xs text-gray-500">
+                                            <div><span className="font-semibold">Marca:</span> {watch(`manualTools.${index}.marca`)}</div>
+                                            <div><span className="font-semibold">Serie:</span> {watch(`manualTools.${index}.serie`)}</div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <button type="button" className="text-red-500 hover:text-red-700 p-2" onClick={() => remove(index)}><X size={18} /></button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
                 </table>
             </div>
-          </div>
-          
-          <div className="button-bar">
-            {isAnyPatronVencido && (
-                <span className="text-sm font-bold text-red-600">🔴 Acción bloqueada por patrones VENCIDOS/CRÍTICOS o NO DISPONIBLES.</span>
-            )}
-            
-            <div className="button-bar-right ml-auto" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              
-              {fields.length > 0 && (
-                  <button 
-                    type="button" 
-                    className="btn btn-success"
-                    onClick={handleRegistrarSalidaMasiva}
-                    title="Registrar que el usuario seleccionado se lleva estos equipos"
-                    disabled={isAnyPatronVencido || isSavingBatch || isLoadingUsers || isLoadingPatrones}
-                  >
-                    {isSavingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                    Registrar Salida en Sistema
-                  </button>
-              )}
+        </div>
 
-              <button 
-                type="button" 
-                className="btn btn-primary" 
-                onClick={() => handleGeneratePdf('celestica')}
-                title={isAnyPatronVencido ? 'Acción bloqueada' : "Generar formato oficial de Celestica"}
-                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0) || isLoadingUsers || isLoadingPatrones}
-              >
-                Generar PDF Celestica
-              </button>
-              <button 
-                type="button" 
-                className="btn btn-primary" 
-                onClick={() => handleGeneratePdf('generic')}
-                title={isAnyPatronVencido ? 'Acción bloqueada' : "Generar formato interno con logo"}
-                disabled={isAnyPatronVencido || (fields.length === 0 && aggregatedTools.length === 0) || isLoadingUsers || isLoadingPatrones}
-              >
-                Generar PDF Genérico
-              </button>
+        {/* --- Floating Action Bar --- */}
+        <div className="floating-bar">
+            <div className="text-sm text-gray-500 hidden sm:block">
+                Total Equipos: <b>{aggregatedTools.length + fields.length}</b>
             </div>
-          </div>
-        </form>
+            <div className="flex gap-3 w-full sm:w-auto">
+                {fields.length > 0 && (
+                    <button type="button" className="btn btn-success flex-1" onClick={handleRegistrarSalida} disabled={isAnyPatronVencido || isSavingBatch}>
+                        {isSavingBatch ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />} Registrar Salida
+                    </button>
+                )}
+                <button type="button" className="btn btn-primary flex-1" onClick={() => handlePdf('cel')} disabled={isAnyPatronVencido}>
+                    <FileText size={18} /> PDF Celestica
+                </button>
+                <button type="button" className="btn btn-secondary flex-1" onClick={() => handlePdf('gen')} disabled={isAnyPatronVencido}>
+                    <FileText size={18} /> PDF Genérico
+                </button>
+            </div>
+        </div>
+
       </div>
     </>
   );

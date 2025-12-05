@@ -4,14 +4,12 @@ import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { AnimatePresence, motion } from 'framer-motion';
 
-// --- Screens Ligeras ---
 import { LoginScreen } from './LoginScreen';
+import { Layout } from './Layout';
 import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
-// import SplashScreen from "./SplashScreen"; // Ya no lo invocamos aquí para evitar el bucle
 
-// --- Lazy Loading de Screens ---
 const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
 const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen').then(module => ({ default: module.ProgramaCalibracionScreen })));
 const ControlPrestamosScreen = lazy(() => import('./ControlPrestamosScreen').then(module => ({ default: module.ControlPrestamosScreen })));
@@ -26,17 +24,15 @@ const NormasScreen = lazy(() => import('./NormasScreen'));
 const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
-
-// 🚨 NUEVO: Importación Lazy de VencimientosScreen
 const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
 
-// --- Loader Component (Solo para transiciones internas) ---
+// --- NUEVO SCREEN ---
+const EntradaSalidaScreen = lazy(() => import('./EntradaSalidaScreen').then(module => ({ default: module.EntradaSalidaScreen })));
+// --------------------
+
 const Loader = () => (
-  <div className="w-full h-screen flex flex-col items-center justify-center bg-slate-950 z-50 fixed top-0 left-0">
-    <svg className="animate-spin h-10 w-10 text-blue-500" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-    </svg>
+  <div className="w-full h-full flex flex-col items-center justify-center min-h-screen bg-slate-950 z-50 fixed top-0 left-0">
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
     <span className="mt-4 text-blue-400 text-sm font-medium tracking-wider">CARGANDO...</span>
   </div>
 );
@@ -45,17 +41,11 @@ export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
   
-  // Eliminamos el estado local 'loading' y el setTimeout. 
-  // Confiamos en que el SplashScreen inicial ya hizo su trabajo.
-
   usePushNotifications(
     user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
     user?.email || localStorage.getItem('usuario.email') || ''
   );
 
-  // Eliminamos el useEffect de window.history.replaceState para evitar parpadeos de URL.
-
-  // --- LÓGICA DE TRANSICIÓN ---
   if (!isAuthenticated) {
     return (
       <div className="relative h-screen w-full overflow-hidden bg-slate-950">
@@ -86,37 +76,44 @@ export const MainApp: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
-        
         <div className="absolute inset-0 bg-slate-950 z-0" />
       </div>
     );
   }
 
-  // Flujo autenticado normal
-  switch (currentScreen) {
+  return (
+    <Layout>
+      <Suspense fallback={<Loader />}>
+        {renderScreen(currentScreen, user)}
+      </Suspense>
+    </Layout>
+  );
+};
+
+const renderScreen = (screen: string, user: any) => {
+  switch (screen) {
     case 'menu': return <MainMenu />;
     case 'consecutivos': return <ConsecutivosScreen />;
     case 'magnitude-detail': return <MagnitudeDetailScreen />;
-    case 'work-sheet': return <Suspense fallback={<Loader />}><WorkSheetScreen /></Suspense>;
-    case 'empresas': return <Suspense fallback={<Loader />}><EmpresasScreen /></Suspense>;
-    case 'calendario': return <Suspense fallback={<Loader />}><CalendarScreen /></Suspense>;
-    case 'hoja-servicio': return <Suspense fallback={<Loader />}><HojaDeServicioScreen /></Suspense>;
-    case 'calibration-manager': return <Suspense fallback={<Loader />}><CalibrationManager /></Suspense>;
-    case 'drive': return <Suspense fallback={<Loader />}><DriveScreen /></Suspense>;
-    case 'tableros': return <MainMenu />; 
+    case 'work-sheet': return <WorkSheetScreen />;
+    case 'empresas': return <EmpresasScreen />;
+    case 'calendario': return <CalendarScreen />;
+    case 'hoja-servicio': return <HojaDeServicioScreen />;
+    case 'calibration-manager': return <CalibrationManager />;
+    case 'drive': return <DriveScreen />;
     case 'calibration-stats':
       const role = (user?.puesto || user?.position || user?.role || "").trim().toLowerCase();
-      return role === "administrativo" ? <Suspense fallback={<Loader />}><CalibrationStatsScreen /></Suspense> : <MainMenu />;
-    case 'programa-calibracion': return <Suspense fallback={<Loader />}><ProgramaCalibracionScreen /></Suspense>;
-    case 'control-prestamos': return <Suspense fallback={<Loader />}><ControlPrestamosScreen /></Suspense>;
-    case 'friday-servicios': return <Suspense fallback={<Loader />}><FridayServiciosScreen /></Suspense>;
-    case 'normas': return <Suspense fallback={<Loader />}><NormasScreen /></Suspense>;
-    case 'check-list': return <Suspense fallback={<Loader />}><InventoryProScreen /></Suspense>;
-    case 'friday': return <Suspense fallback={<Loader />}><FridayScreen /></Suspense>;
-    
-    // 🚨 CASE PARA VENCIMIENTOS
-    case 'vencimientos': return <Suspense fallback={<Loader />}><VencimientosScreen /></Suspense>;
-
+      return role === "administrativo" ? <CalibrationStatsScreen /> : <MainMenu />;
+    case 'programa-calibracion': return <ProgramaCalibracionScreen />;
+    case 'control-prestamos': return <ControlPrestamosScreen />;
+    case 'friday-servicios': return <FridayServiciosScreen />;
+    case 'normas': return <NormasScreen />;
+    case 'check-list': return <InventoryProScreen />;
+    case 'friday': return <FridayScreen />;
+    case 'vencimientos': return <VencimientosScreen />;
+    // --- NUEVO CASE ---
+    case 'entrada-salida': return <EntradaSalidaScreen />;
+    // ------------------
     default: return <MainMenu />;
   }
 };
