@@ -1,788 +1,628 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { differenceInDays, parseISO, format } from 'date-fns';
+import { differenceInDays, parseISO, format, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, AlertTriangle, CheckCircle, Clock, Plus, Search,
-  Activity, TrendingUp, AlertCircle, Wrench,
-  Target, ArrowLeft, XCircle, Edit, History, 
-  User, FileText, DollarSign, MapPin, CornerDownLeft // 🚨 Iconos nuevos
+  Activity, Wrench, ArrowLeft, X, Filter,
+  User, FileText, ChevronRight, Truck, ClipboardCheck, Ban,
+  DollarSign, History, Edit3, Save, FileBarChart, MoreVertical
 } from 'lucide-react';
 
 import { useNavigation } from '../hooks/useNavigation';
+import { collection, getDocs, setDoc, doc, query } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 import { patronesData } from './patronesData'; 
-import { 
-  collection, getDocs, addDoc, setDoc, doc, query 
-} from 'firebase/firestore';
-import { db } from '../utils/firebase'; 
 
-// --- INTERFACES ---
+// --- 1. DEFINICIÓN DE DATOS ---
 
-export interface MantenimientoDetalle {
-  tipo: 'Preventivo' | 'Correctivo' | 'Predictivo';
-  costo: number;
-  moneda: string;
-  tecnico: string;
-  refacciones: string;
-  descripcionFalla?: string;
-  accionesRealizadas: string;
-  tiempoInvertidoHoras?: number;
-}
+type EstadoProceso = 'operativo' | 'en_uso' | 'en_calibracion' | 'en_mantenimiento' | 'baja' | 'cuarentena' | 'programado' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_prestamo';
 
 export interface HistorialEntry {
-  id: string; 
+  id: string;
   fecha: string;
-  accion: string; 
+  titulo: string;
   usuario: string;
-  tipoEvento: 'sistema' | 'calibracion' | 'mantenimiento' | 'verificacion' | 'administrativo' | 'prestamo';
-  observaciones?: string;
-  detallesMantenimiento?: MantenimientoDetalle; 
-  detalles?: any; 
+  tipo: 'sistema' | 'flujo' | 'mantenimiento' | 'calibracion';
+  descripcion?: string;
+  costo?: number;
 }
 
 export interface RegistroPatron {
   id?: string;
   noControl: string;
   descripcion: string;
-  serie: string;
   marca: string;
   modelo: string;
-  frecuencia: string;
-  tipoServicio: string;
-  fecha: string; // Fecha de vencimiento
-  prioridad: 'Alta' | 'Media' | 'Baja';
-  ubicacion: string;
-  responsable: string;
-  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_mantenimiento';
-  fechaInicioProceso?: string;
-  observaciones?: string;
-  usuarioEnUso?: string; // 🚨 IMPORTANTE
-  fechaPrestamo?: string;
+  serie: string;
+  
+  // Metrología (Compatibilidad Total con NormasScreen)
+  frecuenciaMeses: number; 
+  fecha?: string; // Campo principal usado por NormasScreen
+  fechaVencimiento?: string; // Campo secundario/nuevo
+  
+  // Estado
+  estadoProceso: EstadoProceso;
+  ubicacionActual?: string; 
+  ubicacion?: string; // Legacy
+  usuarioAsignado?: string;
+  usuarioEnUso?: string; // Legacy NormasScreen
+  
+  // KPIs
+  costoAcumuladoMantenimiento: number;
   historial: HistorialEntry[];
 }
 
-const mockCurrentUser = {
-  nombre: "Viridiana Moreno",
-  puesto: "calidad"
-};
-
 const COLLECTION_NAME = "patronesCalibracion";
 
-// --- ESTILOS ---
-const styles = `
-  .timeline-line {
-    position: absolute;
-    left: 1.25rem;
-    top: 2.5rem;
-    bottom: 0;
-    width: 2px;
-    background-color: #e5e7eb;
-  }
-  .scrollbar-hide::-webkit-scrollbar { display: none; }
-  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-`;
-
-type SortableColumn = keyof RegistroPatron | 'statusVencimiento';
-
-// --- FUNCIÓN SAFE DATE ---
-const formatearFechaSafe = (fecha: string | undefined, formato: string = 'dd MMM yyyy') => {
-  if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'Pendiente';
-  try {
-    const fechaObj = parseISO(fecha);
-    if (isNaN(fechaObj.getTime())) return 'Fecha Inválida';
-    return format(fechaObj, formato, { locale: es });
-  } catch (error) { return 'Error Fecha'; }
+// --- HELPERS SEGUROS (Evitan Pantalla Blanca) ---
+const getFechaVencimiento = (item: RegistroPatron): string => {
+    // Prioridad: fecha (legacy/NormasScreen) -> fechaVencimiento -> vacio
+    return item.fecha || item.fechaVencimiento || '';
 };
 
-export const ProgramaCalibracionScreen: React.FC = () => {
+const getUbicacion = (item: RegistroPatron): string => {
+    return item.ubicacionActual || item.ubicacion || 'Laboratorio';
+};
+
+const getUsuario = (item: RegistroPatron): string => {
+    return item.usuarioEnUso || item.usuarioAsignado || 'Sin Asignar';
+};
+
+// --- 2. LÓGICA DE NEGOCIO ---
+
+const usePatronesLogic = () => {
   const [data, setData] = useState<RegistroPatron[]>([]);
-  const [loading, setLoading] = useState(true); 
-  const [busqueda, setBusqueda] = useState('');
-  const [fechaFiltro, setFechaFiltro] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('todos');
-  
-  const [sortColumn, setSortColumn] = useState<SortableColumn>('statusVencimiento');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [loading, setLoading] = useState(true);
 
-  const [modalNuevoOpen, setModalNuevoOpen] = useState(false);
-  const [expedienteOpen, setExpedienteOpen] = useState(false); 
-  const [mantenimientoModalOpen, setMantenimientoModalOpen] = useState(false); 
-  
-  const [equipoSeleccionado, setEquipoSeleccionado] = useState<RegistroPatron | null>(null);
-  
-  const [nuevoMantenimiento, setNuevoMantenimiento] = useState<Partial<MantenimientoDetalle> & { fecha: string, observaciones: string }>({
-    fecha: format(new Date(), 'yyyy-MM-dd'),
-    tipo: 'Correctivo',
-    costo: 0,
-    moneda: 'MXN',
-    tecnico: '',
-    refacciones: '',
-    accionesRealizadas: '',
-    observaciones: ''
-  });
+  // KPIs en tiempo real
+  const stats = useMemo(() => {
+    const total = data.length;
+    const vencidos = data.filter(d => {
+       const f = getFechaVencimiento(d);
+       if(!f) return false;
+       try { return differenceInDays(parseISO(f), new Date()) < 0; } catch(e){ return false; }
+    }).length;
+    const enMantenimiento = data.filter(d => d.estadoProceso === 'en_mantenimiento').length;
+    const enUso = data.filter(d => d.estadoProceso === 'en_servicio' || d.estadoProceso === 'en_uso').length;
+    const gastoTotal = data.reduce((acc, curr) => acc + (curr.costoAcumuladoMantenimiento || 0), 0);
+    return { total, vencidos, enMantenimiento, gastoTotal, enUso };
+  }, [data]);
 
-  const [nuevoRegistro, setNuevoRegistro] = useState<RegistroPatron>({
-    noControl: '', descripcion: '', serie: '', marca: '', modelo: '',
-    frecuencia: '12 Meses ± 5 Días', tipoServicio: 'Calibración', fecha: '', prioridad: 'Media',
-    ubicacion: 'Laboratorio', responsable: mockCurrentUser.nombre, estadoProceso: 'operativo', historial: []
-  });
-
-  const [currentUser] = useState(mockCurrentUser);
-  const { navigateTo } = useNavigation();
-  const hoy = new Date();
-
-  const canEdit = useMemo(() => {
-    return ['Viridiana Moreno', 'Jesús Sustaita'].includes(currentUser.nombre);
-  }, [currentUser]);
-
-  const fetchPatrones = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, COLLECTION_NAME));
-      const querySnapshot = await getDocs(q);
-      const fetchedData: RegistroPatron[] = [];
-      querySnapshot.forEach((doc) => fetchedData.push({ id: doc.id, ...doc.data() } as RegistroPatron));
+      const q = query(collection(db, COLLECTION_NAME)); 
+      const snapshot = await getDocs(q);
+      const items: RegistroPatron[] = [];
+      snapshot.forEach(d => items.push({ id: d.id, ...d.data() } as RegistroPatron));
       
-      if (fetchedData.length === 0) {
-        setData(patronesData as RegistroPatron[]);
-      } else {
-        setData(fetchedData);
-      }
-    } catch (e) {
-      console.error("Error fetching", e);
-      setData(patronesData as RegistroPatron[]);
+      // Si está vacío, usa datos de prueba (para desarrollo)
+      setData(items.length > 0 ? items : (patronesData as any));
+    } catch (error) {
+      console.error("Error Firebase:", error);
+      setData(patronesData as any);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchPatrones(); }, [fetchPatrones]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const getStatusInfo = (fecha: string) => {
-    if (!fecha || fecha === 'Por Comprar' || fecha === '') return { status: 'pendiente', color: 'text-gray-500', bg: 'bg-gray-100', label: 'Pendiente', icon: Clock, dias: 0, sort: 4 };
-    try {
-        const fechaObj = parseISO(fecha);
-        if (isNaN(fechaObj.getTime())) return { status: 'pendiente', color: 'text-gray-500', bg: 'bg-gray-100', label: 'Error', icon: AlertTriangle, dias: 0, sort: 5 };
-        const dias = differenceInDays(fechaObj, hoy);
-        if (dias < 0) return { status: 'vencido', color: 'text-red-600', bg: 'bg-red-50', label: 'Vencido', icon: AlertTriangle, dias: Math.abs(dias), sort: 0 };
-        if (dias <= 7) return { status: 'critico', color: 'text-orange-600', bg: 'bg-orange-50', label: 'Crítico', icon: AlertCircle, dias, sort: 1 };
-        if (dias <= 30) return { status: 'proximo', color: 'text-yellow-600', bg: 'bg-yellow-50', label: 'Próximo', icon: Clock, dias, sort: 2 };
-        return { status: 'vigente', color: 'text-green-600', bg: 'bg-green-50', label: 'Vigente', icon: CheckCircle, dias, sort: 3 };
-    } catch (e) { return { status: 'pendiente', color: 'text-gray-500', bg: 'bg-gray-100', label: 'Error', icon: AlertTriangle, dias: 0, sort: 5 }; }
-  };
-
-  const getProcessInfo = (estado: string) => {
-    const map: Record<string, { label: string, color: string, bg: string, border: string }> = {
-      'operativo': { label: 'Operativo', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-      'programado': { label: 'Programado', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
-      'en_proceso': { label: 'En Calibración', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-      'completado': { label: 'Listo', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200' },
-      'fuera_servicio': { label: 'Baja / Dañado', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200' },
-      'en_servicio': { label: 'En Uso', color: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200' },
-      'en_mantenimiento': { label: 'En Mantenimiento', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' }
-    };
-    return map[estado] || map['operativo'];
-  };
-
-  // --- ACCIONES ---
-
-  const handleGuardarNuevo = async () => {
-    if (!nuevoRegistro.noControl || !nuevoRegistro.descripcion) return alert("Complete campos obligatorios");
-    setLoading(true);
-    try {
-      const historialInit: HistorialEntry = {
-        id: crypto.randomUUID(),
-        fecha: format(new Date(), 'yyyy-MM-dd'),
-        accion: 'Alta de Equipo',
-        usuario: currentUser.nombre,
-        tipoEvento: 'sistema',
-        observaciones: 'Registro inicial en el sistema.'
-      };
-      await addDoc(collection(db, COLLECTION_NAME), { ...nuevoRegistro, historial: [historialInit] });
-      await fetchPatrones();
-      setModalNuevoOpen(false);
-      setNuevoRegistro({ ...nuevoRegistro, noControl: '', descripcion: '' }); 
-    } catch (e) { console.error(e); alert("Error al guardar"); }
-    setLoading(false);
-  };
-
-  const handleRegistrarMantenimiento = async () => {
-    if (!equipoSeleccionado || !equipoSeleccionado.id) return;
-    setLoading(true);
-
-    const detalle: MantenimientoDetalle = {
-      tipo: nuevoMantenimiento.tipo as any,
-      costo: Number(nuevoMantenimiento.costo),
-      moneda: nuevoMantenimiento.moneda,
-      tecnico: nuevoMantenimiento.tecnico || 'Interno',
-      refacciones: nuevoMantenimiento.refacciones || 'N/A',
-      accionesRealizadas: nuevoMantenimiento.accionesRealizadas || '',
-      tiempoInvertidoHoras: 0
-    };
-
-    const nuevaEntrada: HistorialEntry = {
+  const registrarEvento = async (patron: RegistroPatron, titulo: string, descripcion: string, tipo: HistorialEntry['tipo'], updates: Partial<RegistroPatron>, costo: number = 0) => {
+    if (!patron.id) return false;
+    
+    const nuevoHistorial: HistorialEntry = {
       id: crypto.randomUUID(),
-      fecha: nuevoMantenimiento.fecha,
-      accion: `Mantenimiento ${nuevoMantenimiento.tipo}`,
-      usuario: currentUser.nombre,
-      tipoEvento: 'mantenimiento',
-      observaciones: nuevoMantenimiento.observaciones,
-      detallesMantenimiento: detalle
+      fecha: new Date().toISOString(),
+      titulo,
+      usuario: "Viridiana Moreno", // Idealmente Auth Context
+      tipo,
+      descripcion,
+      costo
     };
 
-    const equipoActualizado = {
-      ...equipoSeleccionado,
-      estadoProceso: 'operativo' as any, // Asumimos que al registrar queda listo
-      historial: [nuevaEntrada, ...equipoSeleccionado.historial]
+    const updatePayload: any = {
+      ...updates,
+      costoAcumuladoMantenimiento: (patron.costoAcumuladoMantenimiento || 0) + costo,
+      historial: [nuevoHistorial, ...(patron.historial || [])]
     };
 
+    // Sincronización de campos Legacy para NormasScreen
+    if (updates.fechaVencimiento) updatePayload.fecha = updates.fechaVencimiento;
+    if (updates.usuarioAsignado) updatePayload.usuarioEnUso = updates.usuarioAsignado;
+    if (updates.ubicacionActual) updatePayload.ubicacion = updates.ubicacionActual;
+
     try {
-      const { id, ...dataToUpdate } = equipoActualizado;
-      await setDoc(doc(db, COLLECTION_NAME, id), dataToUpdate, { merge: true });
-      await fetchPatrones();
-      setMantenimientoModalOpen(false);
-      setExpedienteOpen(false); 
-      setNuevoMantenimiento({ fecha: format(new Date(), 'yyyy-MM-dd'), tipo: 'Correctivo', costo: 0, moneda: 'MXN', tecnico: '', refacciones: '', accionesRealizadas: '', observaciones: '' });
-    } catch (e) { console.error(e); alert("Error al registrar mantenimiento"); }
-    setLoading(false);
+      await setDoc(doc(db, COLLECTION_NAME, patron.id), updatePayload, { merge: true });
+      await fetchData(); 
+      return true;
+    } catch (e) {
+      console.error(e);
+      alert("Error al guardar cambios");
+      return false;
+    }
   };
 
-  const handleUpdateFromExpediente = async (patronActualizado: RegistroPatron) => {
-    if (!patronActualizado.id) return;
-    setLoading(true);
-    try {
-        const { id, ...rest } = patronActualizado;
-        await setDoc(doc(db, COLLECTION_NAME, id), rest, { merge: true });
-        await fetchPatrones();
-        setExpedienteOpen(false);
-    } catch (e) { console.error(e); alert("Error al actualizar"); }
-    setLoading(false);
+  const editarDatosBase = async (id: string, datos: Partial<RegistroPatron>) => {
+      try {
+          // Sincronizar fechas si se editan manualmente
+          const payload = { ...datos };
+          if (datos.fechaVencimiento) payload.fecha = datos.fechaVencimiento;
+          
+          await setDoc(doc(db, COLLECTION_NAME, id), payload, { merge: true });
+          await fetchData();
+          return true;
+      } catch(e) { return false; }
   };
 
-  // 🚨 NUEVA FUNCIÓN: LIBERAR EQUIPO (Devolución)
-  const handleLiberarEquipo = async (equipo: RegistroPatron) => {
-    if (!equipo.id) return;
-    if(!window.confirm(`¿Confirmas la devolución del equipo ${equipo.noControl}?`)) return;
+  return { data, loading, stats, registrarEvento, editarDatosBase };
+};
 
-    setLoading(true);
-    try {
-        const nuevaEntrada: HistorialEntry = {
-            id: crypto.randomUUID(),
-            fecha: format(new Date(), 'yyyy-MM-dd'),
-            accion: 'Devolución de Equipo',
-            usuario: currentUser.nombre,
-            tipoEvento: 'prestamo',
-            observaciones: `Equipo devuelto por ${equipo.usuarioEnUso || 'usuario'}.`
-        };
+// --- 3. COMPONENTES VISUALES ---
 
-        const equipoActualizado = {
-            ...equipo,
-            estadoProceso: 'operativo' as any,
-            usuarioEnUso: '', // Limpiamos el usuario
-            ubicacion: 'Laboratorio', // Regresa a su lugar base
-            fechaPrestamo: '',
-            historial: [nuevaEntrada, ...equipo.historial]
-        };
+const StatusBadge = ({ fecha, estado }: { fecha?: string, estado: EstadoProceso }) => {
+  if (estado === 'en_mantenimiento') return <Badge color="orange" icon={Wrench} label="En Taller" />;
+  if (estado === 'en_calibracion') return <Badge color="blue" icon={Activity} label="Calibrando" />;
+  if (estado === 'baja' || estado === 'fuera_servicio') return <Badge color="gray" icon={Ban} label="Baja" />;
 
-        const { id, ...dataToUpdate } = equipoActualizado;
-        await setDoc(doc(db, COLLECTION_NAME, id), dataToUpdate, { merge: true });
-        await fetchPatrones();
-        setExpedienteOpen(false);
-    } catch(e) { console.error(e); alert("Error al liberar equipo"); }
-    setLoading(false);
-  };
+  // Validación robusta de fecha
+  if (!fecha || fecha === 'Por Comprar') return <Badge color="gray" label="Sin Fecha" />;
 
-  const dataFiltrada = useMemo(() => {
-    return data.filter(item => {
-      const status = getStatusInfo(item.fecha);
-      const matchSearch = 
-        item.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-        item.noControl.toLowerCase().includes(busqueda.toLowerCase()) ||
-        (item.usuarioEnUso && item.usuarioEnUso.toLowerCase().includes(busqueda.toLowerCase())) || // Buscar también por usuario asignado
-        item.marca.toLowerCase().includes(busqueda.toLowerCase());
-      const matchFecha = fechaFiltro ? item.fecha.startsWith(fechaFiltro) : true;
-      const matchEstado = filtroEstado === 'todos' || status.status === filtroEstado;
+  try {
+      const f = parseISO(fecha);
+      if (!isValid(f)) return <Badge color="gray" label="Fecha Error" />;
       
-      return matchSearch && matchFecha && matchEstado;
-    }).sort((a, b) => {
-        return sortDirection === 'asc' ? a.noControl.localeCompare(b.noControl) : b.noControl.localeCompare(a.noControl);
+      const days = differenceInDays(f, new Date());
+      if (days < 0) return <Badge color="red" icon={AlertTriangle} label={`Vencido (${Math.abs(days)}d)`} />;
+      if (days <= 30) return <Badge color="yellow" icon={Clock} label="Por Vencer" />;
+      
+      return <Badge color="green" icon={CheckCircle} label="Vigente" />;
+  } catch (error) { return <Badge color="gray" label="Error" />; }
+};
+
+const Badge = ({ color, icon: Icon, label }: any) => {
+    const colors: any = {
+        red: "bg-red-100 text-red-700 border-red-200",
+        green: "bg-emerald-100 text-emerald-700 border-emerald-200",
+        blue: "bg-blue-100 text-blue-700 border-blue-200",
+        orange: "bg-orange-100 text-orange-700 border-orange-200",
+        yellow: "bg-amber-100 text-amber-700 border-amber-200",
+        gray: "bg-gray-100 text-gray-600 border-gray-200",
+    };
+    return (
+        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 w-fit whitespace-nowrap ${colors[color] || colors.gray}`}>
+            {Icon && <Icon className="w-3 h-3" />}
+            {label}
+        </span>
+    );
+};
+
+const KPICard = ({ title, value, icon: Icon, color, subtext }: any) => (
+    <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
+        <div>
+            <p className="text-sm text-gray-500 font-medium">{title}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+            {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
+        </div>
+        <div className={`p-3 rounded-lg bg-${color}-50 text-${color}-600`}>
+            <Icon className="w-6 h-6" />
+        </div>
+    </div>
+);
+
+// --- 4. PANTALLA PRINCIPAL ---
+
+export const ProgramaCalibracionScreen: React.FC = () => {
+  const { navigateTo } = useNavigation();
+  const { data, loading, stats, registrarEvento, editarDatosBase } = usePatronesLogic();
+  
+  const [tab, setTab] = useState<'todo' | 'alertas' | 'servicio'>('alertas');
+  const [busqueda, setBusqueda] = useState('');
+  
+  const [selectedItem, setSelectedItem] = useState<RegistroPatron | null>(null);
+  const [workflowAction, setWorkflowAction] = useState<any>(null);
+
+  // Filtrado Seguro
+  const filteredData = useMemo(() => {
+    let result = data;
+    if (tab === 'alertas') {
+      result = result.filter(d => {
+        const f = getFechaVencimiento(d);
+        if (!f) return false;
+        try { return differenceInDays(parseISO(f), new Date()) <= 30 || d.estadoProceso === 'en_mantenimiento' || d.estadoProceso === 'en_calibracion'; } catch { return false; }
+      });
+    } else if (tab === 'servicio') {
+        result = result.filter(d => d.estadoProceso === 'en_uso' || d.estadoProceso === 'en_servicio' || d.estadoProceso === 'en_prestamo');
+    }
+
+    if (busqueda) {
+      const lower = busqueda.toLowerCase();
+      result = result.filter(d => 
+        (d.descripcion || '').toLowerCase().includes(lower) || 
+        (d.noControl || '').toLowerCase().includes(lower) || 
+        (d.serie || '').toLowerCase().includes(lower)
+      );
+    }
+    
+    // Ordenamiento seguro (evita crash en sort)
+    return result.sort((a, b) => {
+        const fa = getFechaVencimiento(a) || '2099-12-31';
+        const fb = getFechaVencimiento(b) || '2099-12-31';
+        return fa.localeCompare(fb);
     });
-  }, [data, busqueda, fechaFiltro, filtroEstado, sortDirection]);
+  }, [data, tab, busqueda]);
+
+  const handleProcessWorkflow = async (formData: any) => {
+      if(!selectedItem || !workflowAction) return;
+
+      let success = false;
+      switch(workflowAction) {
+          case 'calibrar_envio':
+              success = await registrarEvento(selectedItem, 'Envío a Calibración', `Proveedor: ${formData.proveedor}`, 'flujo', { estadoProceso: 'en_calibracion', ubicacionActual: 'Externo' });
+              break;
+          case 'calibrar_recepcion':
+              success = await registrarEvento(selectedItem, 'Calibración Finalizada', `Certificado: ${formData.certificado}`, 'calibracion', { 
+                  estadoProceso: 'operativo', 
+                  ubicacionActual: 'Laboratorio',
+                  fechaVencimiento: formData.nuevaFecha // Esto actualiza tambien "fecha" para NormasScreen
+              });
+              break;
+          case 'mantenimiento_inicio':
+               success = await registrarEvento(selectedItem, 'Entrada a Mantenimiento', `Motivo: ${formData.motivo}`, 'mantenimiento', { estadoProceso: 'en_mantenimiento', ubicacionActual: 'Taller' });
+               break;
+          case 'mantenimiento_fin':
+               success = await registrarEvento(selectedItem, 'Mantenimiento Finalizado', formData.acciones, 'mantenimiento', { estadoProceso: 'operativo', ubicacionActual: 'Laboratorio' }, Number(formData.costo));
+               break;
+          case 'asignar':
+               success = await registrarEvento(selectedItem, 'Asignación Manual', `Entregado a: ${formData.usuario}`, 'flujo', { estadoProceso: 'en_servicio', usuarioAsignado: formData.usuario, ubicacionActual: 'Planta' });
+               break;
+          case 'liberar':
+               success = await registrarEvento(selectedItem, 'Devolución de Equipo', 'Equipo retornado a laboratorio y verificado.', 'flujo', { estadoProceso: 'operativo', usuarioAsignado: '', usuarioEnUso: '', ubicacionActual: 'Laboratorio' });
+               break;
+          case 'editar_base':
+               success = await editarDatosBase(selectedItem.id!, formData);
+               break;
+      }
+
+      if(success) {
+          setWorkflowAction(null);
+          setSelectedItem(null);
+      }
+  };
 
   return (
-    <>
-      <style>{styles}</style>
-      <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
-        
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center gap-4">
-                <button onClick={() => navigateTo('menu')} className="p-2 rounded-full hover:bg-gray-100 transition">
-                  <ArrowLeft className="w-5 h-5 text-gray-500" />
-                </button>
-                <div className="flex items-center gap-2">
-                  <div className="bg-blue-600 p-2 rounded-lg text-white shadow-sm">
-                    <Activity className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-bold text-gray-900 leading-tight">Metrología y Mantenimiento</h1>
-                    <p className="text-xs text-gray-500">Gestión integral de activos</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                 {canEdit && (
-                  <button 
-                    onClick={() => setModalNuevoOpen(true)}
-                    className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Nuevo Equipo
-                  </button>
-                 )}
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-10">
+      
+      {/* HEADER */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Control de Metrología</h1>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span> Modo Administrador
               </div>
             </div>
           </div>
-        </header>
+          <button className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-md transition-all">
+            <Plus className="w-4 h-4" /> Nuevo Activo
+          </button>
+        </div>
+      </header>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <KPICard title="Total Activos" value={data.length} icon={Target} color="blue" />
-                <KPICard title="Vencidos / Críticos" value={data.filter(d => ['vencido', 'critico'].includes(getStatusInfo(d.fecha).status)).length} icon={AlertTriangle} color="red" />
-                <KPICard title="En Uso (Asignados)" value={data.filter(d => d.estadoProceso === 'en_servicio').length} icon={User} color="indigo" />
-                <KPICard title="En Mantenimiento" value={data.filter(d => d.estadoProceso === 'en_mantenimiento').length} icon={Wrench} color="orange" />
-            </div>
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        
+        {/* DASHBOARD KPIS */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <KPICard title="Inventario Total" value={stats.total} icon={FileBarChart} color="blue" />
+            <KPICard title="Vencidos / Riesgo" value={stats.vencidos} icon={AlertTriangle} color="red" subtext="Requieren Acción" />
+            <KPICard title="Equipos en Planta" value={stats.enUso} icon={User} color="indigo" subtext="En uso actualmente" />
+            <KPICard title="Gasto Mantenimiento" value={`$${stats.gastoTotal.toLocaleString()}`} icon={DollarSign} color="green" subtext="Acumulado Histórico" />
+        </div>
 
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full md:w-96">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input 
-                        type="text" 
-                        placeholder="Buscar por control, usuario, descripción..." 
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                        value={busqueda}
-                        onChange={(e) => setBusqueda(e.target.value)}
-                    />
-                </div>
-                <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
-                    <select 
-                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                        value={filtroEstado}
-                        onChange={(e) => setFiltroEstado(e.target.value)}
-                    >
-                        <option value="todos">Todos los estados</option>
-                        <option value="vencido">Vencidos</option>
-                        <option value="vigente">Vigentes</option>
-                    </select>
-                </div>
-            </div>
+        {/* BARRA DE HERRAMIENTAS */}
+        <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 mb-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+             <TabButton active={tab === 'alertas'} onClick={() => setTab('alertas')} label="Atención Requerida" count={stats.vencidos} />
+             <TabButton active={tab === 'servicio'} onClick={() => setTab('servicio')} label="En Planta / Prestados" count={stats.enUso} />
+             <TabButton active={tab === 'todo'} onClick={() => setTab('todo')} label="Inventario Completo" />
+          </div>
+          <div className="relative w-full md:w-80">
+             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+             <input 
+               type="text" 
+               placeholder="Buscar control, serie..." 
+               className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+               value={busqueda}
+               onChange={e => setBusqueda(e.target.value)}
+             />
+          </div>
+        </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
-                            <tr>
-                                <th className="px-6 py-4">Equipo / Control</th>
-                                <th className="px-6 py-4">Marca / Modelo</th>
-                                <th className="px-6 py-4">Estado Calibración</th>
-                                <th className="px-6 py-4">Estado Operativo</th>
-                                <th className="px-6 py-4">Ubicación / Asignado</th> {/* 🚨 Título actualizado */}
-                                <th className="px-6 py-4 text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {loading ? (
-                                <tr><td colSpan={6} className="text-center py-10 text-gray-500">Cargando activos...</td></tr>
-                            ) : dataFiltrada.map((item) => {
-                                const status = getStatusInfo(item.fecha);
-                                const proceso = getProcessInfo(item.estadoProceso);
-                                return (
-                                    <tr key={item.id || item.noControl} className="hover:bg-gray-50 group transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="font-semibold text-gray-900">{item.descripcion}</div>
-                                            <div className="text-xs text-gray-500 font-mono bg-gray-100 inline-block px-1 rounded mt-1">{item.noControl}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-gray-600">
-                                            <div>{item.marca}</div>
-                                            <div className="text-xs text-gray-400">{item.modelo}</div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${status.bg} ${status.color} border-transparent`}>
-                                                <status.icon className="w-3 h-3" />
-                                                {status.label}
-                                            </div>
-                                            <div className="text-xs text-gray-400 mt-1 ml-1">
-                                                {formatearFechaSafe(item.fecha)}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${proceso.bg} ${proceso.color} ${proceso.border}`}>
-                                                <span className="relative flex h-2 w-2">
-                                                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${proceso.color.replace('text', 'bg')}`}></span>
-                                                  <span className={`relative inline-flex rounded-full h-2 w-2 ${proceso.color.replace('text', 'bg')}`}></span>
-                                                </span>
-                                                {proceso.label}
-                                            </div>
-                                        </td>
-                                        {/* 🚨 COLUMNA UBICACIÓN INTELIGENTE */}
-                                        <td className="px-6 py-4">
-                                            {item.estadoProceso === 'en_servicio' ? (
-                                                <div className="flex flex-col">
-                                                    <div className="flex items-center gap-2 text-indigo-700 font-medium">
-                                                        <User className="w-4 h-4" />
-                                                        <span>{item.usuarioEnUso || 'Usuario Asignado'}</span>
-                                                    </div>
-                                                    <span className="text-xs text-indigo-400 pl-6">En uso activo</span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-2 text-gray-600">
-                                                    <MapPin className="w-4 h-4 text-gray-400" />
-                                                    <span>{item.ubicacion}</span>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button 
-                                                onClick={() => { setEquipoSeleccionado(item); setExpedienteOpen(true); }}
-                                                className="text-blue-600 hover:text-blue-800 font-medium text-xs border border-blue-200 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition"
-                                            >
-                                                Ver Expediente
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </main>
-
-        {/* --- MODAL EXPEDIENTE --- */}
-        <AnimatePresence>
-            {expedienteOpen && equipoSeleccionado && (
-                <ExpedienteModal 
-                    equipo={equipoSeleccionado} 
-                    onClose={() => setExpedienteOpen(false)}
-                    canEdit={canEdit}
-                    onUpdate={handleUpdateFromExpediente}
-                    onOpenMaintenance={() => { setMantenimientoModalOpen(true); }} 
-                    onLiberar={() => handleLiberarEquipo(equipoSeleccionado)} // 🚨 Pasar función de liberar
-                />
-            )}
-        </AnimatePresence>
-
-        {/* --- MODAL MANTENIMIENTO --- */}
-        <AnimatePresence>
-            {mantenimientoModalOpen && equipoSeleccionado && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <motion.div 
-                        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-                    >
-                        <div className="bg-amber-500 px-6 py-4 flex justify-between items-center text-white">
-                            <div className="flex items-center gap-2">
-                                <Wrench className="w-5 h-5" />
-                                <h3 className="font-bold text-lg">Registrar Mantenimiento</h3>
-                            </div>
-                            <button onClick={() => setMantenimientoModalOpen(false)} className="hover:bg-white/20 p-1 rounded-full"><XCircle className="w-5 h-5" /></button>
-                        </div>
-                        
-                        <div className="p-6 space-y-4">
-                            <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 text-sm text-amber-800 mb-4">
-                                Registrando mantenimiento para: <strong>{equipoSeleccionado.noControl}</strong>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
-                                    <select 
-                                        className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500"
-                                        value={nuevoMantenimiento.tipo}
-                                        onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, tipo: e.target.value as any})}
-                                    >
-                                        <option>Correctivo</option>
-                                        <option>Preventivo</option>
-                                        <option>Predictivo</option>
-                                    </select>
+        {/* TABLA PRINCIPAL */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
+                  <tr>
+                    <th className="px-6 py-4">Activo</th>
+                    <th className="px-6 py-4">Estado</th>
+                    <th className="px-6 py-4">Ubicación / Responsable</th>
+                    <th className="px-6 py-4">Vencimiento</th>
+                    <th className="px-6 py-4 text-right">Detalles</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {loading ? (
+                       <tr><td colSpan={5} className="p-8 text-center text-gray-400">Cargando datos...</td></tr>
+                  ) : filteredData.map((item) => {
+                    const fechaVenc = getFechaVencimiento(item);
+                    return (
+                        <tr 
+                            key={item.id || item.noControl} 
+                            onClick={() => setSelectedItem(item)}
+                            className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
+                        >
+                        <td className="px-6 py-4">
+                            <div className="font-semibold text-gray-900">{item.descripcion}</div>
+                            <div className="text-xs text-gray-500">{item.marca} • <span className="font-mono bg-gray-100 px-1 rounded">{item.noControl}</span></div>
+                        </td>
+                        <td className="px-6 py-4">
+                            <StatusBadge fecha={fechaVenc} estado={item.estadoProceso} />
+                        </td>
+                        <td className="px-6 py-4 text-gray-600">
+                            {(item.estadoProceso === 'en_servicio' || item.estadoProceso === 'en_uso') ? (
+                                <div className="flex items-center gap-1.5 text-indigo-600 font-medium">
+                                    <User className="w-3.5 h-3.5" /> {getUsuario(item)}
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Fecha</label>
-                                    <input type="date" className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500"
-                                        value={nuevoMantenimiento.fecha} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, fecha: e.target.value})} />
+                            ) : (
+                                <div className="flex items-center gap-1.5">
+                                    <Truck className="w-3.5 h-3.5" /> {getUbicacion(item)}
                                 </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Descripción de la Falla / Trabajo</label>
-                                <textarea 
-                                    className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500 h-20"
-                                    placeholder="¿Qué falló o qué se va a revisar?"
-                                    value={nuevoMantenimiento.observaciones} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, observaciones: e.target.value})}
-                                ></textarea>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Costo Total</label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                                        <input type="number" className="w-full pl-7 border-gray-300 rounded-lg text-sm focus:ring-amber-500"
-                                            value={nuevoMantenimiento.costo} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, costo: Number(e.target.value)})} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Técnico / Proveedor</label>
-                                    <input type="text" className="w-full border-gray-300 rounded-lg text-sm focus:ring-amber-500"
-                                        placeholder="Interno o Empresa X"
-                                        value={nuevoMantenimiento.tecnico} onChange={e => setNuevoMantenimiento({...nuevoMantenimiento, tecnico: e.target.value})} />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
-                             <button onClick={() => setMantenimientoModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm">Cancelar</button>
-                             <button onClick={handleRegistrarMantenimiento} className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium shadow-md">
-                                Registrar Mantenimiento
+                            )}
+                        </td>
+                        <td className="px-6 py-4 font-medium text-gray-900">
+                             {fechaVenc ? (isValid(parseISO(fechaVenc)) ? format(parseISO(fechaVenc), 'dd MMM yyyy', {locale: es}) : '-') : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                             <button className="text-gray-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition-colors">
+                                <ChevronRight className="w-5 h-5" />
                              </button>
-                        </div>
-                    </motion.div>
-                </div>
-            )}
-        </AnimatePresence>
-
-        {/* Modal Nuevo (Simple) */}
-        {modalNuevoOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                 <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
-                    <h2 className="text-lg font-bold mb-4">Nuevo Activo</h2>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">No. Control</label>
-                    <input className="w-full border border-gray-300 mb-2 p-2 rounded-lg" value={nuevoRegistro.noControl} onChange={e => setNuevoRegistro({...nuevoRegistro, noControl: e.target.value})} />
-                    
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Descripción</label>
-                    <input className="w-full border border-gray-300 mb-2 p-2 rounded-lg" value={nuevoRegistro.descripcion} onChange={e => setNuevoRegistro({...nuevoRegistro, descripcion: e.target.value})} />
-                    
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Marca</label>
-                    <input className="w-full border border-gray-300 mb-2 p-2 rounded-lg" value={nuevoRegistro.marca} onChange={e => setNuevoRegistro({...nuevoRegistro, marca: e.target.value})} />
-                    
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Fecha Vencimiento (Calibración)</label>
-                    <input type="date" className="w-full border border-gray-300 mb-4 p-2 rounded-lg" value={nuevoRegistro.fecha} onChange={e => setNuevoRegistro({...nuevoRegistro, fecha: e.target.value})} />
-
-                    <div className="flex justify-end gap-2 mt-4">
-                        <button onClick={() => setModalNuevoOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">Cancelar</button>
-                        <button onClick={handleGuardarNuevo} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
-                    </div>
-                 </div>
+                        </td>
+                        </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-        )}
+        </div>
+      </main>
 
-      </div>
-    </>
+      {/* --- SIDE PANEL: EXPEDIENTE --- */}
+      <AnimatePresence>
+        {selectedItem && !workflowAction && (
+            <>
+                <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm" onClick={() => setSelectedItem(null)} />
+                <motion.div 
+                    initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="fixed right-0 top-0 bottom-0 w-full md:w-[600px] bg-white z-50 shadow-2xl flex flex-col border-l border-gray-200"
+                >
+                    <div className="p-6 border-b border-gray-100 flex justify-between items-start bg-gray-50">
+                        <div>
+                            <div className="flex items-center gap-2 mb-1">
+                                <h2 className="text-2xl font-bold text-gray-900">{selectedItem.noControl}</h2>
+                                <StatusBadge fecha={getFechaVencimiento(selectedItem)} estado={selectedItem.estadoProceso} />
+                            </div>
+                            <p className="text-gray-600">{selectedItem.descripcion}</p>
+                        </div>
+                        <button onClick={() => setSelectedItem(null)} className="p-2 hover:bg-gray-200 rounded-full"><X className="w-6 h-6 text-gray-500"/></button>
+                    </div>
+
+                    <div className="p-4 grid grid-cols-2 gap-3 border-b border-gray-100 bg-white">
+                        <SmartActionButton item={selectedItem} setAction={setWorkflowAction} />
+                        <button onClick={() => setWorkflowAction('editar_base')} className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition">
+                            <Edit3 className="w-4 h-4" /> Editar Datos
+                        </button>
+                        {selectedItem.estadoProceso !== 'en_mantenimiento' && (
+                             <button onClick={() => setWorkflowAction('mantenimiento_inicio')} className="col-span-2 flex items-center justify-center gap-2 px-4 py-2 bg-orange-50 border border-orange-200 text-orange-700 font-medium rounded-lg hover:bg-orange-100 transition">
+                                <Wrench className="w-4 h-4" /> Registrar Mantenimiento
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 border-b pb-2">Ficha Técnica</h3>
+                            <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+                                <div><span className="block text-gray-400 text-xs">Marca</span> <span className="font-medium">{selectedItem.marca}</span></div>
+                                <div><span className="block text-gray-400 text-xs">Modelo</span> <span className="font-medium">{selectedItem.modelo}</span></div>
+                                <div><span className="block text-gray-400 text-xs">Serie</span> <span className="font-medium">{selectedItem.serie}</span></div>
+                                <div><span className="block text-gray-400 text-xs">Frecuencia</span> <span className="font-medium">{selectedItem.frecuenciaMeses || 12} Meses</span></div>
+                                <div><span className="block text-gray-400 text-xs">Costo Mantenimiento Total</span> <span className="font-medium text-green-600">${selectedItem.costoAcumuladoMantenimiento || 0}</span></div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 border-b pb-2 flex items-center gap-2">
+                                <History className="w-4 h-4"/> Historial Operativo
+                            </h3>
+                            <div className="relative pl-4 border-l-2 border-gray-100 space-y-6">
+                                {(selectedItem.historial || []).map((h, i) => (
+                                    <div key={i} className="relative pl-6">
+                                        <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white ${h.tipo === 'calibracion' ? 'bg-blue-500' : h.tipo === 'mantenimiento' ? 'bg-orange-500' : 'bg-gray-400'}`} />
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-sm font-bold text-gray-900">{h.titulo}</span>
+                                            <span className="text-xs text-gray-400">{format(parseISO(h.fecha), 'dd MMM yy')}</span>
+                                        </div>
+                                        <p className="text-sm text-gray-600 mt-1">{h.descripcion}</p>
+                                        {h.costo && h.costo > 0 && (
+                                            <div className="mt-1 inline-block bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded border border-green-100 font-mono">
+                                                Costo: ${h.costo}
+                                            </div>
+                                        )}
+                                        <div className="mt-1 flex items-center gap-1 text-xs text-gray-400">
+                                            <User className="w-3 h-3"/> {h.usuario}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </div>
+                </motion.div>
+            </>
+        )}
+      </AnimatePresence>
+
+      {/* --- MODAL DE FLUJO (WORKFLOW) --- */}
+      <AnimatePresence>
+        {workflowAction && selectedItem && (
+            <WorkflowDialog 
+                action={workflowAction} 
+                item={selectedItem} 
+                onClose={() => setWorkflowAction(null)}
+                onConfirm={handleProcessWorkflow}
+            />
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
 // --- COMPONENTES AUXILIARES ---
 
-const KPICard = ({ title, value, icon: Icon, color }: any) => {
-    const colorClasses: any = {
-        blue: 'bg-blue-50 text-blue-600 border-blue-100',
-        red: 'bg-red-50 text-red-600 border-red-100',
-        orange: 'bg-orange-50 text-orange-600 border-orange-100',
-        green: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-        indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-    };
-    return (
-        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-                <p className="text-sm text-gray-500 font-medium mb-1">{title}</p>
-                <p className="text-2xl font-bold text-gray-900">{value}</p>
-            </div>
-            <div className={`p-3 rounded-lg border ${colorClasses[color]}`}>
-                <Icon className="w-6 h-6" />
-            </div>
-        </div>
-    );
+const SmartActionButton = ({ item, setAction }: any) => {
+    // Detectar vencimiento usando el helper seguro
+    const f = getFechaVencimiento(item);
+    let isExpired = false;
+    try { isExpired = f ? differenceInDays(parseISO(f), new Date()) <= 0 : false; } catch(e){}
+
+    if (item.estadoProceso === 'en_calibracion') {
+        return <BigBtn onClick={() => setAction('calibrar_recepcion')} icon={ClipboardCheck} label="Recibir de Calibración" color="green" />;
+    }
+    if (item.estadoProceso === 'en_mantenimiento') {
+        return <BigBtn onClick={() => setAction('mantenimiento_fin')} icon={CheckCircle} label="Finalizar Mantenimiento" color="green" />;
+    }
+    if (item.estadoProceso === 'en_servicio' || item.estadoProceso === 'en_uso' || item.estadoProceso === 'en_prestamo') {
+        return <BigBtn onClick={() => setAction('liberar')} icon={ArrowLeft} label="Devolución a Lab" color="indigo" />;
+    }
+    if (isExpired && item.estadoProceso === 'operativo') {
+        return <BigBtn onClick={() => setAction('calibrar_envio')} icon={AlertTriangle} label="Enviar a Calibrar" color="red" animate />;
+    }
+    return <BigBtn onClick={() => setAction('asignar')} icon={User} label="Asignación Manual" color="blue" />;
 };
 
-const ExpedienteModal = ({ equipo, onClose, canEdit, onUpdate, onOpenMaintenance, onLiberar }: { equipo: RegistroPatron, onClose: () => void, canEdit: boolean, onUpdate: (data: RegistroPatron) => void, onOpenMaintenance: () => void, onLiberar: () => void }) => {
-    const [activeTab, setActiveTab] = useState<'info' | 'history' | 'maintenance'>('info');
-    const [editMode, setEditMode] = useState(false);
-    const [localData, setLocalData] = useState(equipo);
+const BigBtn = ({ onClick, icon: Icon, label, color, animate }: any) => {
+    const colors: any = {
+        blue: 'bg-blue-600 hover:bg-blue-700 text-white',
+        green: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+        red: 'bg-red-600 hover:bg-red-700 text-white',
+        indigo: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+    };
+    return (
+        <button onClick={onClick} className={`col-span-2 w-full py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 font-bold shadow-sm transition-all ${colors[color]} ${animate ? 'animate-pulse' : ''}`}>
+            <Icon className="w-5 h-5" /> {label}
+        </button>
+    )
+};
 
-    const mantenimientos = equipo.historial.filter(h => h.tipoEvento === 'mantenimiento');
+const TabButton = ({ active, onClick, label, count }: any) => (
+    <button onClick={onClick} className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${active ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}>
+        {label} {count > 0 && <span className="ml-1 bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full text-xs">{count}</span>}
+    </button>
+);
+
+const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
+    const [form, setForm] = useState<any>({ ...item, nuevaFecha: getFechaVencimiento(item) });
+
+    const renderContent = () => {
+        switch(action) {
+            case 'editar_base':
+                return (
+                    <div className="space-y-3">
+                        <Input label="Descripción" val={form.descripcion} onChange={v => setForm({...form, descripcion: v})} />
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Marca" val={form.marca} onChange={v => setForm({...form, marca: v})} />
+                            <Input label="Modelo" val={form.modelo} onChange={v => setForm({...form, modelo: v})} />
+                            <Input label="Serie" val={form.serie} onChange={v => setForm({...form, serie: v})} />
+                            <Input label="No. Control" val={form.noControl} onChange={v => setForm({...form, noControl: v})} />
+                        </div>
+                        <Input label="Frecuencia (Meses)" type="number" val={form.frecuenciaMeses} onChange={v => setForm({...form, frecuenciaMeses: Number(v)})} />
+                        <Input label="Fecha Vencimiento" type="date" val={form.fechaVencimiento} onChange={v => setForm({...form, fechaVencimiento: v})} />
+                    </div>
+                );
+            case 'mantenimiento_inicio':
+                return (
+                    <div className="space-y-3">
+                        <label className="block text-sm font-medium text-gray-700">Tipo de Falla / Motivo</label>
+                        <textarea className="w-full border p-2 rounded-lg" rows={3} onChange={e => setForm({...form, motivo: e.target.value})}></textarea>
+                    </div>
+                );
+            case 'mantenimiento_fin':
+                return (
+                    <div className="space-y-3">
+                        <Input label="Acciones Realizadas" val={form.acciones} onChange={v => setForm({...form, acciones: v})} />
+                        <Input label="Costo Total ($)" type="number" val={form.costo} onChange={v => setForm({...form, costo: v})} />
+                    </div>
+                );
+            case 'calibrar_envio':
+                return <Input label="Proveedor de Servicio" val={form.proveedor} onChange={v => setForm({...form, proveedor: v})} />;
+            case 'calibrar_recepcion':
+                 return (
+                    <div className="space-y-3">
+                        <Input label="No. Certificado" val={form.certificado} onChange={v => setForm({...form, certificado: v})} />
+                        <Input label="Nueva Fecha Vencimiento" type="date" val={form.nuevaFecha} onChange={v => setForm({...form, nuevaFecha: v})} />
+                    </div>
+                 );
+            case 'asignar':
+                return <Input label="Nombre del Técnico" val={form.usuario} onChange={v => setForm({...form, usuario: v})} />;
+            default: return <p>Confirmar acción...</p>;
+        }
+    };
+
+    const getTitle = () => {
+        const titles: any = {
+            editar_base: 'Editar Datos Maestros',
+            mantenimiento_inicio: 'Iniciar Mantenimiento',
+            mantenimiento_fin: 'Finalizar Mantenimiento',
+            calibrar_envio: 'Enviar a Calibración',
+            calibrar_recepcion: 'Recepción de Certificado',
+            asignar: 'Préstamo Manual',
+            liberar: 'Devolución'
+        };
+        return titles[action] || 'Acción';
+    };
 
     return (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <motion.div 
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-                className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
-                onClick={e => e.stopPropagation()}
-            >
-                {/* Header Expediente */}
-                <div className="bg-white border-b border-gray-200 p-6 flex justify-between items-start">
-                    <div className="flex gap-4">
-                        <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
-                            <Target className="w-8 h-8" />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-2xl font-bold text-gray-900">{localData.noControl}</h2>
-                                <span className={`text-xs px-2 py-0.5 rounded-full border ${editMode ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                                    {editMode ? 'Modo Edición' : 'Solo Lectura'}
-                                </span>
-                            </div>
-                            <p className="text-gray-500">{localData.descripcion}</p>
-                            
-                            {/* 🚨 INDICADOR DE PRÉSTAMO EN HEADER */}
-                            {localData.estadoProceso === 'en_servicio' && (
-                                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 text-sm">
-                                    <User className="w-4 h-4" />
-                                    <span>En uso por: <strong>{localData.usuarioEnUso}</strong></span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex gap-2">
-                        {/* 🚨 BOTÓN DEVOLUCIÓN RÁPIDA */}
-                        {canEdit && !editMode && localData.estadoProceso === 'en_servicio' && (
-                            <button onClick={onLiberar} className="flex items-center gap-2 px-3 py-2 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg text-sm font-medium transition">
-                                <CornerDownLeft className="w-4 h-4" />
-                                Devolver / Liberar
-                            </button>
-                        )}
-                        {canEdit && !editMode && (
-                            <button onClick={() => onOpenMaintenance()} className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium transition">
-                                <Wrench className="w-4 h-4" />
-                                Mantenimiento
-                            </button>
-                        )}
-                        {canEdit && (
-                            <button onClick={() => editMode ? onUpdate(localData) : setEditMode(true)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${editMode ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-900 text-white hover:bg-gray-800'}`}>
-                                {editMode ? <><CheckCircle className="w-4 h-4" /> Guardar</> : <><Edit className="w-4 h-4" /> Editar Datos</>}
-                            </button>
-                        )}
-                        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><XCircle className="w-6 h-6 text-gray-400" /></button>
-                    </div>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800">{getTitle()}</h3>
+                    <button onClick={onClose}><X className="w-5 h-5 text-gray-400"/></button>
                 </div>
-
-                {/* Tabs */}
-                <div className="flex border-b border-gray-200 px-6">
-                    <TabButton active={activeTab === 'info'} onClick={() => setActiveTab('info')} icon={FileText} label="Información General" />
-                    <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={History} label="Línea de Tiempo" />
-                    <TabButton active={activeTab === 'maintenance'} onClick={() => setActiveTab('maintenance')} icon={Wrench} label="Historial de Mantenimiento" count={mantenimientos.length} />
+                <div className="p-6">
+                    {renderContent()}
                 </div>
-
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-                    {activeTab === 'info' && (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                           <Field label="Marca" value={localData.marca} editing={editMode} onChange={v => setLocalData({...localData, marca: v})} />
-                           <Field label="Modelo" value={localData.modelo} editing={editMode} onChange={v => setLocalData({...localData, modelo: v})} />
-                           <Field label="Serie" value={localData.serie} editing={editMode} onChange={v => setLocalData({...localData, serie: v})} />
-                           <Field label="Ubicación Base" value={localData.ubicacion} editing={editMode} onChange={v => setLocalData({...localData, ubicacion: v})} />
-                           <Field label="Responsable" value={localData.responsable} editing={editMode} onChange={v => setLocalData({...localData, responsable: v})} />
-                           <Field label="Frecuencia" value={localData.frecuencia} editing={editMode} onChange={v => setLocalData({...localData, frecuencia: v})} />
-                           <div className="col-span-full mt-4">
-                                <h4 className="text-sm font-medium text-gray-900 mb-2">Observaciones Generales</h4>
-                                {editMode ? (
-                                    <textarea className="w-full border-gray-300 rounded-lg text-sm" rows={3} value={localData.observaciones || ''} onChange={e => setLocalData({...localData, observaciones: e.target.value})} />
-                                ) : (
-                                    <p className="text-sm text-gray-600 bg-white p-3 rounded border border-gray-200">{localData.observaciones || 'Sin observaciones.'}</p>
-                                )}
-                           </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'history' && (
-                        <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-0 before:w-0.5 before:bg-gray-200">
-                            {equipo.historial.map((h, i) => (
-                                <div key={i} className="relative">
-                                    <div className={`absolute -left-[29px] w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${h.tipoEvento === 'mantenimiento' ? 'bg-amber-500' : h.tipoEvento === 'prestamo' ? 'bg-indigo-500' : 'bg-blue-500'}`}>
-                                        <div className="w-2 h-2 bg-white rounded-full" />
-                                    </div>
-                                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className="font-semibold text-gray-900">{h.accion}</span>
-                                            <span className="text-xs text-gray-400">{formatearFechaSafe(h.fecha, 'dd MMM yyyy, HH:mm')}</span>
-                                        </div>
-                                        <p className="text-sm text-gray-600">{h.observaciones}</p>
-                                        <div className="mt-2 text-xs text-gray-400 flex items-center gap-1">
-                                            <User className="w-3 h-3" /> {h.usuario}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {activeTab === 'maintenance' && (
-                        <div>
-                             {mantenimientos.length === 0 ? (
-                                 <div className="text-center py-12 text-gray-400">
-                                     <Wrench className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                     <p>No hay registros de mantenimiento correctivo o preventivo.</p>
-                                 </div>
-                             ) : (
-                                 <div className="space-y-4">
-                                     {mantenimientos.map((m, i) => (
-                                         <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition">
-                                             <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
-                                                 <div>
-                                                     <div className="flex items-center gap-2">
-                                                         <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${m.detallesMantenimiento?.tipo === 'Correctivo' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                                             {m.detallesMantenimiento?.tipo || 'Mantenimiento'}
-                                                         </span>
-                                                         <span className="text-sm font-medium text-gray-900">{formatearFechaSafe(m.fecha, 'dd/MM/yyyy')}</span>
-                                                     </div>
-                                                 </div>
-                                                 <div className="text-right">
-                                                     <span className="text-sm font-bold text-gray-900">${m.detallesMantenimiento?.costo}</span>
-                                                     <p className="text-xs text-gray-500">{m.detallesMantenimiento?.moneda}</p>
-                                                 </div>
-                                             </div>
-                                             <div className="grid grid-cols-2 gap-4 text-sm">
-                                                 <div>
-                                                     <span className="text-gray-400 text-xs">Falla / Trabajo:</span>
-                                                     <p className="text-gray-700">{m.observaciones}</p>
-                                                 </div>
-                                                 <div>
-                                                     <span className="text-gray-400 text-xs">Refacciones:</span>
-                                                     <p className="text-gray-700">{m.detallesMantenimiento?.refacciones}</p>
-                                                 </div>
-                                                  <div className="col-span-2">
-                                                     <span className="text-gray-400 text-xs">Técnico:</span>
-                                                     <span className="text-gray-700 ml-2">{m.detallesMantenimiento?.tecnico}</span>
-                                                 </div>
-                                             </div>
-                                         </div>
-                                     ))}
-                                 </div>
-                             )}
-                        </div>
-                    )}
+                <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm">Cancelar</button>
+                    <button onClick={() => onConfirm(form)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm">Confirmar</button>
                 </div>
             </motion.div>
         </div>
     );
 };
 
-const TabButton = ({ active, onClick, icon: Icon, label, count }: any) => (
-    <button 
-        onClick={onClick}
-        className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${active ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-    >
-        <Icon className="w-4 h-4" />
-        {label}
-        {count !== undefined && count > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-xs">{count}</span>}
-    </button>
-);
-
-const Field = ({ label, value, editing, onChange }: any) => (
+const Input = ({ label, val, onChange, type = "text" }: any) => (
     <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
-        {editing ? (
-            <input className="w-full border-gray-300 rounded-md text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 p-2" value={value} onChange={e => onChange(e.target.value)} />
-        ) : (
-            <p className="text-sm font-medium text-gray-900">{value || '-'}</p>
-        )}
+        <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">{label}</label>
+        <input 
+            type={type} 
+            className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+            value={val || ''} 
+            onChange={e => onChange(e.target.value)} 
+        />
     </div>
 );

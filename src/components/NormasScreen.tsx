@@ -8,17 +8,60 @@ import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/fir
 import { db } from '../utils/firebase';
 import { 
   ArrowLeft, User, Package, Plus, Loader2, AlertTriangle, 
-  Camera, X, Save, FileText, CheckCircle2, AlertCircle, Briefcase 
+  Camera, X, Save, FileText, Briefcase, Info
 } from 'lucide-react'; 
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 
 // ==================================================================
-// --- 1. CONFIGURACIÓN Y UTILIDADES (Fuera del Componente) ---
+// --- 1. CONFIGURACIÓN Y ESTILOS ---
 // ==================================================================
 
 const COLLECTION_NAME_PATRONES = "patronesCalibracion"; 
 
-// Interfaces
+const styles = `
+  :root { --primary: #2563eb; --bg-page: #f8fafc; --text-main: #1e293b; }
+  body { background: var(--bg-page); color: var(--text-main); font-family: sans-serif; }
+  .layout-container { max-width: 1200px; margin: 0 auto; padding: 20px; padding-bottom: 100px; }
+  .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+  
+  /* Botones mejorados */
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; gap: 8px; transition: all 0.2s; }
+  .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.3); }
+  .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+  .btn-success { background: #10b981; color: white; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3); }
+  .btn-success:hover { background: #059669; transform: translateY(-1px); }
+  .btn-danger { background: #fee2e2; color: #b91c1c; }
+  .btn-secondary { background: white; border: 1px solid #cbd5e1; color: #475569; }
+  .btn-secondary:hover { background: #f1f5f9; border-color: #94a3b8; }
+  
+  /* Inputs forzados a blanco para corregir error visual */
+  .input-control { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-top: 5px; background-color: #ffffff !important; color: #1e293b !important; font-size: 0.95rem; }
+  .input-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+  label { font-weight: 600; color: #475569; font-size: 0.85rem; margin-bottom: 4px; display: block; }
+  
+  /* Tablas */
+  .modern-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+  .modern-table th { text-align: left; padding: 12px 16px; background: #f8fafc; font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700; border-bottom: 1px solid #e2e8f0; letter-spacing: 0.05em; }
+  .modern-table td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 0.9rem; }
+  .modern-table tr:last-child td { border-bottom: none; }
+  
+  .status-badge { padding: 4px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+  .status-vencido { background: #fecaca; color: #991b1b; }
+  .status-vigente { background: #dcfce7; color: #166534; }
+  .status-pendiente { background: #f1f5f9; color: #64748b; }
+  
+  .floating-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 1100px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 16px; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); display: flex; gap: 12px; justify-content: space-between; align-items: center; z-index: 50; border: 1px solid #e2e8f0; }
+  
+  .scanner-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+  .scanner-box { background: white; padding: 24px; width: 90%; max-width: 500px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+  .scanner-video { width: 100%; border-radius: 12px; background: black; margin-bottom: 16px; overflow: hidden; }
+
+  /* Estilos para las opciones del Select */
+  option.opt-vencido { color: #dc2626; font-weight: bold; background-color: #fef2f2; }
+  option.opt-unavailable { color: #94a3b8; font-style: italic; background-color: #f8fafc; }
+  option.opt-normal { color: #1e293b; }
+`;
+
 interface PatronBase {
     id: string; 
     noControl: string; 
@@ -51,95 +94,17 @@ type FormInputs = {
   manualTools: ToolItem & { isVencida?: boolean, isUnavailable?: boolean }[]; 
 };
 
-// Datos Estáticos (Catalogos)
+// CATALOGO DE MOCHILAS
 const BACKPACK_CATALOG = {
-  mochila_abraham: {
-    nombre: 'Mochila 1 (Abraham)',
-    items: [
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
-      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
-      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700459' },
-    ],
-  },
-  mochila_Dante: {
-    nombre: 'Mochila 2 (Dante)',
-    items: [
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
-      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
-      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVEPNEU0017947' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X1Y00150' },
-    ],
-  },
-  mochila_Angel: {
-    nombre: 'Mochila 3 (Angel)',
-    items: [
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
-      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
-      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700192' },
-    ],
-  },
-  mochila_Edgar: {
-    nombre: 'Mochila 4 (Edgar)',
-    items: [
-      { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' },
-      { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' },
-      { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' },
-      { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' },
-    ],
-  },
-  mochila_Daniel: {
-    nombre: 'Mochila 5 (Daniel)',
-    items: [
-      { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' },
-      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
-      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' },
-      { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, 
-    ],
-  },
-  mochila_Ricardo: {
-    nombre: 'Mochila 6 (Ricardo)',
-    items: [
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' },
-      { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' },
-      { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' },
-      { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' },
-      { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' },
-      { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017933' },
-    ],
- }
+  mochila_abraham: { nombre: 'Mochila 1 (Abraham)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700459' } ] },
+  mochila_Dante: { nombre: 'Mochila 2 (Dante)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVEPNEU0017947' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X1Y00150' } ] },
+  mochila_Angel: { nombre: 'Mochila 3 (Angel)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700192' } ] },
+  mochila_Edgar: { nombre: 'Mochila 4 (Edgar)', items: [ { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' }, { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' } ] },
+  mochila_Daniel: { nombre: 'Mochila 5 (Daniel)', items: [ { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' }, { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' } ] },
+  mochila_Ricardo: { nombre: 'Mochila 6 (Ricardo)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017933' } ] },
 };
 
-// --- Helpers de Negocio ---
+// --- Helpers ---
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
     if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'pendiente';
@@ -158,19 +123,12 @@ function aggregateTools(backpackIds: string[]): ToolItem[] {
     const backpack = BACKPACK_CATALOG[id as keyof typeof BACKPACK_CATALOG];
     if (!backpack) continue;
     for (const item of backpack.items) {
-      const cleanTool = item.herramienta.trim();
-      const cleanMarca = item.marca.trim();
-      const cleanModelo = item.modelo.trim();
-      const cleanSerie = item.serie.trim();
-      const key = `${cleanTool}|${cleanMarca}|${cleanModelo}|${cleanSerie}`;
+      const key = `${item.herramienta.trim()}|${item.marca.trim()}|${item.modelo.trim()}|${item.serie.trim()}`;
       if (aggregator.has(key)) {
         const existing = aggregator.get(key)!;
-        const newQty = (Number(existing.qty) || 0) + (Number(item.qty) || 0);
-        existing.qty = String(newQty); 
+        existing.qty = String((Number(existing.qty) || 0) + (Number(item.qty) || 0)); 
       } else {
-        aggregator.set(key, { 
-            herramienta: cleanTool, marca: cleanMarca, modelo: cleanModelo, serie: cleanSerie, qty: String(item.qty) 
-        });
+        aggregator.set(key, { ...item, qty: String(item.qty) });
       }
     }
   }
@@ -179,20 +137,13 @@ function aggregateTools(backpackIds: string[]): ToolItem[] {
 
 const cleanToolNameForPdf = (name: string): string => {
   if (!name) return '';
-  const regexAg = /^AG-\d+\s+-\s+/; 
-  if (regexAg.test(name)) return name.replace(regexAg, '');
-  const regexAsterisk = /^\*+\s*-\s+/;
-  if (regexAsterisk.test(name)) return name.replace(regexAsterisk, '');
-  return name;
+  return name.replace(/^AG-\d+\s+-\s+/, '').replace(/^\*+\s*-\s+/, '');
 };
 
-// --- Generadores de PDF (Simplificados para no saturar) ---
-const MAX_ITEMS_CELESTICA_PDF = 30;
-
+// --- PDF Generators ---
 async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
   try {
-    const templateUrl = '/template.pdf'; 
-    const existingPdfBytes = await fetch(templateUrl).then(res => res.arrayBuffer());
+    const existingPdfBytes = await fetch('/template.pdf').then(res => res.arrayBuffer());
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const firstPage = pdfDoc.getPages()[0];
@@ -201,21 +152,18 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const color = rgb(0, 0, 0);
 
     firstPage.drawText(data.fecha, { x: 60, y: height - 82, size: fontSize, font, color });
-    firstPage.drawText(data.usuario,           { x: 320, y: height - 82, size: fontSize, font, color });
+    firstPage.drawText(data.usuario, { x: 320, y: height - 82, size: fontSize, font, color });
     firstPage.drawText(data.gafeteContratista, { x: 490, y: height - 80, size: fontSize, font, color });
-    firstPage.drawText(data.companiaDepto,     { x: 320, y: height - 114, size: fontSize, font, color });
-    firstPage.drawText(data.noEmpleado,        { x: 500, y: height - 114, size: fontSize, font, color });
+    firstPage.drawText(data.companiaDepto, { x: 320, y: height - 114, size: fontSize, font, color });
+    firstPage.drawText(data.noEmpleado, { x: 500, y: height - 114, size: fontSize, font, color });
 
     let yStartTable = height - 222; 
-    const rowHeight = 16.7;       
-    
     const availableTools = allTools.filter(tool => 
-        tool.estadoProceso !== 'en_proceso' && tool.estadoProceso !== 'fuera_servicio' && tool.estadoProceso !== 'en_servicio' 
+        !['en_proceso', 'fuera_servicio', 'en_servicio', 'en_prestamo', 'en_mantenimiento'].includes(tool.estadoProceso || '')
     );
 
-    availableTools.forEach((tool, index) => {
-      if (index >= MAX_ITEMS_CELESTICA_PDF) return; 
-      const y = yStartTable - (index * rowHeight);
+    availableTools.slice(0, 30).forEach((tool, index) => {
+      const y = yStartTable - (index * 16.7);
       firstPage.drawText(cleanToolNameForPdf(tool.herramienta), { x: 40, y, size: fontSize, font, color });
       firstPage.drawText(String(tool.qty), { x: 270, y, size: fontSize, font, color });
       firstPage.drawText(tool.marca, { x: 310, y, size: fontSize, font, color });
@@ -223,161 +171,46 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
       firstPage.drawText(tool.serie, { x: 480, y, size: fontSize, font, color });
     });
     
-    if (allTools.length > availableTools.length) {
-        firstPage.drawText(`* NOTA: ${allTools.length - availableTools.length} equipo(s) excluido(s) por estado 'NO DISPONIBLE'.`, { 
-            x: 40, y: 80, size: fontSize + 1, font, color: rgb(0.5, 0.5, 0.5) 
-        });
-    }
-
     const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Celestica_${data.usuario}.pdf`);
-  } catch (error) {
-    console.error('Error al generar el PDF de Celestica:', error);
-    alert('Error al generar el PDF de Celestica. Revisa la consola.');
-  }
+  } catch (error) { alert('Error generando PDF Celestica. Revisa la consola.'); }
 }
 
 async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
   try {
     const pdfDoc = await PDFDocument.create();
-    let page = pdfDoc.addPage([595.28, 841.89]); 
+    let page = pdfDoc.addPage();
     const { width, height } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const margin = 50;
-
-    // Intentar cargar logo, fallback si falla
-    try {
-        const logoBytes = await fetch('/lab_logo.png').then(res => res.arrayBuffer());
-        const logoImage = await pdfDoc.embedPng(logoBytes);
-        const logoDims = logoImage.scale(0.25); 
-        page.drawImage(logoImage, { x: margin, y: height - margin - logoDims.height, width: logoDims.width, height: logoDims.height });
-    } catch(e) { /* Ignorar error de logo */ }
-
-    page.drawText('Registro de Herramienta o Equipo', { x: margin + 110, y: height - margin - 30, size: 18, font: fontBold });
-
-    let yPos = height - 130;
-    const drawField = (label: string, value: string) => {
-      if (!value) return; 
-      page.drawText(label, { x: margin, y: yPos, size: 9, font: fontBold });
-      page.drawText(value, { x: margin + 120, y: yPos, size: 9, font });
-      yPos -= 15;
-    };
     
-    drawField('Fecha:', data.fecha);
-    drawField('Usuario:', data.usuario);
-    drawField('Compañía:', data.companiaDepto);
-    drawField('No. Empleado:', data.noEmpleado);
-    drawField('Gafete Contratista:', data.gafeteContratista);
+    let y = height - 50;
+    page.drawText('Registro de Herramienta', { x: 50, y, size: 18, font: fontBold });
+    y -= 30;
+    page.drawText(`Fecha: ${data.fecha}`, { x: 50, y, size: 10, font });
+    page.drawText(`Usuario: ${data.usuario}`, { x: 200, y, size: 10, font });
+    y -= 20;
+    
+    const headers = ['Herramienta', 'Qty', 'Marca', 'Modelo', 'Serie'];
+    const xPos = [50, 200, 250, 350, 450];
+    
+    headers.forEach((h, i) => page.drawText(h, { x: xPos[i], y, size: 10, font: fontBold }));
+    y -= 15;
 
-    yPos -= 20;
-    const rowHeight = 20;
-    const tableMargin = margin - 10;
-    const cols = [
-      { header: 'Herramienta', x: tableMargin, width: 140 },
-      { header: 'Qty', x: tableMargin + 140, width: 30 },
-      { header: 'Marca', x: tableMargin + 170, width: 80 },
-      { header: 'Modelo', x: tableMargin + 250, width: 90 },
-      { header: 'Serie', x: tableMargin + 340, width: 100 },
-      { header: 'Estado', x: tableMargin + 440, width: 80 },
-    ];
-
-    const drawTableHeader = (p: any) => {
-      p.drawRectangle({ x: tableMargin, y: yPos - 5, width: width - 2 * tableMargin, height: rowHeight, color: rgb(0.95, 0.95, 0.95) });
-      cols.forEach(col => p.drawText(col.header, { x: col.x + 5, y: yPos, size: 10, font: fontBold }));
-      yPos -= rowHeight;
-    };
-
-    drawTableHeader(page);
-
-    for (const tool of allTools) {
-      if (yPos < margin + rowHeight) {
-        page = pdfDoc.addPage([595.28, 841.89]);
-        yPos = height - margin;
-        drawTableHeader(page);
-      }
-      const rowData = [
-        cleanToolNameForPdf(tool.herramienta), String(tool.qty), tool.marca, tool.modelo, tool.serie, 
-        tool.estadoProceso ? tool.estadoProceso.toUpperCase().replace('_', ' ') : 'OPERATIVO'
-      ];
-      cols.forEach((col, i) => page.drawText(rowData[i], { x: col.x + 5, y: yPos, size: 9, font }));
-      page.drawLine({ start: { x: tableMargin, y: yPos - 5 }, end: { x: width - tableMargin, y: yPos - 5 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-      yPos -= rowHeight;
-    }
+    allTools.forEach(t => {
+        if (y < 50) { page = pdfDoc.addPage(); y = height - 50; }
+        page.drawText(cleanToolNameForPdf(t.herramienta).substring(0, 30), { x: 50, y, size: 9, font });
+        page.drawText(String(t.qty), { x: 200, y, size: 9, font });
+        page.drawText(t.marca, { x: 250, y, size: 9, font });
+        page.drawText(t.modelo, { x: 350, y, size: 9, font });
+        page.drawText(t.serie, { x: 450, y, size: 9, font });
+        y -= 15;
+    });
 
     const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Generico_${data.usuario}.pdf`);
-  } catch (error) {
-    alert('Error al generar el PDF Genérico.');
-  }
+  } catch (e) { alert('Error generando PDF Genérico.'); }
 }
-
-// --- Estilos CSS mejorados (Inyectados como objeto para mantener todo en un archivo) ---
-const styles = `
-  :root { --primary: #2563eb; --primary-dark: #1e40af; --bg-page: #f3f4f6; --bg-card: #ffffff; --text-main: #111827; --text-muted: #6b7280; --border: #e5e7eb; --danger: #ef4444; --success: #10b981; --warning: #f59e0b; }
-  body { background-color: var(--bg-page); color: var(--text-main); font-family: 'Inter', -apple-system, sans-serif; }
-  
-  .layout-container { max-width: 1200px; margin: 0 auto; padding: 20px; min-height: 100vh; }
-  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-  .header h1 { font-size: 1.5rem; font-weight: 700; color: #1f2937; margin: 0; }
-  
-  .card { background: var(--bg-card); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 24px; border: 1px solid var(--border); transition: transform 0.2s; }
-  .card-title { font-size: 1.1rem; font-weight: 600; color: #374151; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
-  
-  .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
-  .input-group { display: flex; flex-direction: column; gap: 6px; }
-  .input-group label { font-size: 0.875rem; font-weight: 500; color: #4b5563; }
-  .input-control { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.95rem; transition: border-color 0.15s; outline: none; background: #fff; width: 100%; box-sizing: border-box; }
-  .input-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
-  .error-text { color: var(--danger); font-size: 0.75rem; margin-top: 4px; }
-
-  /* Backpack Grid */
-  .backpack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-  .backpack-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 10px; background: #f9fafb; position: relative; overflow: hidden; }
-  .backpack-card:hover { border-color: var(--primary); background: #eff6ff; }
-  .backpack-card.selected { background: #eff6ff; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
-  .backpack-card input { position: absolute; opacity: 0; cursor: pointer; height: 100%; width: 100%; top: 0; left: 0; }
-  .backpack-icon { color: var(--text-muted); }
-  .backpack-card.selected .backpack-icon { color: var(--primary); }
-
-  /* Tables */
-  .table-responsive { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
-  .modern-table { width: 100%; border-collapse: collapse; min-width: 800px; }
-  .modern-table th { background: #f9fafb; text-align: left; padding: 12px 16px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; font-weight: 600; border-bottom: 1px solid var(--border); }
-  .modern-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 0.9rem; color: #1f2937; vertical-align: middle; }
-  .modern-table tbody tr:last-child td { border-bottom: none; }
-  
-  .status-badge { display: inline-flex; padding: 2px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-  .status-vencido { background: #fecaca; color: #991b1b; }
-  .status-critico { background: #fed7aa; color: #9a3412; }
-  .status-vigente { background: #bbf7d0; color: #166534; }
-  .status-unavailable { background: #e5e7eb; color: #374151; text-decoration: line-through; }
-  
-  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 18px; border-radius: 8px; font-weight: 500; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; border: none; gap: 8px; }
-  .btn-primary { background: var(--primary); color: white; }
-  .btn-primary:hover { background: var(--primary-dark); }
-  .btn-secondary { background: white; border: 1px solid #d1d5db; color: #374151; }
-  .btn-secondary:hover { background: #f3f4f6; }
-  .btn-danger { background: #fee2e2; color: #b91c1c; }
-  .btn-danger:hover { background: #fecaca; }
-  .btn-success { background: var(--success); color: white; }
-  .btn-success:hover { background: #059669; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .floating-bar { position: sticky; bottom: 20px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); padding: 16px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); z-index: 50; margin-top: 20px; flex-wrap: wrap; gap: 10px; }
-  .alert-banner { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-weight: 500; }
-  
-  .scanner-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; display: flex; align-items: center; justify-content: center; }
-  .scanner-box { background: white; padding: 20px; border-radius: 16px; width: 90%; max-width: 500px; text-align: center; }
-  .scanner-video { width: 100%; border-radius: 8px; margin-bottom: 15px; background: #000; }
-
-  @media (max-width: 640px) {
-    .header { flex-direction: column; align-items: flex-start; gap: 10px; }
-    .floating-bar { flex-direction: column; align-items: stretch; }
-    .btn { width: 100%; }
-    .table-responsive { box-shadow: inset -10px 0 10px -10px rgba(0,0,0,0.1); }
-  }
-`;
 
 // ==================================================================
 // --- 2. COMPONENTE PRINCIPAL ---
@@ -386,118 +219,84 @@ const styles = `
 const NormasScreen = () => {
   const { navigateTo } = useNavigation();
   const [metrologos, setMetrologos] = useState<{ id: string; nombre: string; }[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  
   const [patronesMap, setPatronesMap] = useState<Map<string, PatronBase>>(new Map());
   const [patronesScannerMap, setPatronesScannerMap] = useState<Map<string, PatronBase>>(new Map());
   const [isSavingBatch, setIsSavingBatch] = useState(false); 
-
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
 
   const { register, control, handleSubmit, setValue, watch, trigger, getValues, formState: { errors } } = useForm<FormInputs>({
-    defaultValues: {
-      fecha: new Date().toISOString().split('T')[0],
-      selectedBackpacks: [],
-      manualTools: [],
-      companiaDepto: 'Equipos y Servicios AG',
-    },
-    mode: 'onChange'
+    defaultValues: { fecha: new Date().toISOString().split('T')[0], selectedBackpacks: [], manualTools: [], companiaDepto: 'Equipos y Servicios AG' }
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'manualTools' });
+  const watchedBackpacks = watch('selectedBackpacks');
+  const watchedManualTools = watch('manualTools');
+  const aggregatedTools = useMemo(() => aggregateTools(watchedBackpacks || []), [watchedBackpacks]);
+  
+  const isAnyPatronVencido = useMemo(() => watchedManualTools.some(tool => tool.isVencida || tool.isUnavailable), [watchedManualTools]);
 
-  // --- Carga Inicial de Datos ---
   useEffect(() => {
     const initData = async () => {
-      setIsLoadingData(true);
       try {
-        // 1. Usuarios
         const usersQ = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
         const usersSnap = await getDocs(usersQ);
         setMetrologos(usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })));
 
-        // 2. Patrones
         const patronesQ = query(collection(db, COLLECTION_NAME_PATRONES));
         const patronesSnap = await getDocs(patronesQ);
-        
         const mapDropdown = new Map<string, PatronBase>();
         const mapScanner = new Map<string, PatronBase>();
 
         patronesSnap.forEach((doc) => {
-          const data = doc.data() as any;
-          const descripcion = (data.descripcion || '').trim(); 
-          const noControl = data.noControl || 'S/N'; 
-          const displayName = `${noControl} - ${descripcion}`; 
+          const d = doc.data() as any;
+          const fechaReal = d.fecha || d.fechaVencimiento || '';
           
-          const patronData: PatronBase = {
+          const p: PatronBase = {
               id: doc.id,
-              noControl,
-              nombre: displayName,
-              marca: data.marca || 'S/M', modelo: data.modelo || 'S/M', serie: data.serie || 'S/N',
-              fechaVencimiento: data.fecha,
-              status: getVencimientoStatus(data.fecha),
-              estadoProceso: data.estadoProceso || 'operativo',
-              usuarioEnUso: data.usuarioEnUso 
+              noControl: d.noControl || 'S/N',
+              nombre: `${d.noControl} - ${d.descripcion}`,
+              marca: d.marca, modelo: d.modelo, serie: d.serie,
+              fechaVencimiento: fechaReal,
+              status: getVencimientoStatus(fechaReal),
+              estadoProceso: d.estadoProceso || 'operativo',
+              usuarioEnUso: d.usuarioEnUso || d.usuarioAsignado
           };
-
-          if (displayName) mapDropdown.set(displayName, patronData);
-          if (noControl !== 'S/N') mapScanner.set(noControl, patronData);
+          if (p.nombre) mapDropdown.set(p.nombre, p);
+          if (p.noControl !== 'S/N') mapScanner.set(p.noControl, p);
         });
-
         setPatronesMap(mapDropdown);
         setPatronesScannerMap(mapScanner);
-      } catch (error) {
-        console.error("Error cargando datos:", error);
-      } finally {
-        setIsLoadingData(false);
-      }
+      } catch (e) { console.error("Error carga inicial", e); }
     };
     initData();
   }, []);
 
-  // --- Observadores y Memoización ---
-  const watchedManualTools = watch('manualTools');
-  const watchedBackpacks = watch('selectedBackpacks');
-  
-  const aggregatedTools = useMemo(() => aggregateTools(watchedBackpacks || []), [watchedBackpacks]);
-  
-  const isAnyPatronVencido = useMemo(() => {
-    return watchedManualTools.some(tool => tool.isVencida || tool.isUnavailable);
-  }, [watchedManualTools]);
+  // --- ORDENAMIENTO DE LISTA ---
+  const sortedPatronOptions = useMemo(() => {
+      return Array.from(patronesMap.values()).sort((a, b) => {
+          // Orden natural (ej: AG-2 antes que AG-10)
+          return a.nombre.localeCompare(b.nombre, undefined, { numeric: true, sensitivity: 'base' });
+      });
+  }, [patronesMap]);
 
-  const sortedPatronOptions = useMemo(() => 
-    Array.from(patronesMap.values()).sort((a,b) => a.nombre.localeCompare(b.nombre)),
-  [patronesMap]);
-
-  // --- Manejo del Scanner ---
-  const handleScanResult = useCallback((code: string) => {
+  const handleScan = (code: string) => {
     if (!code) return;
+    const p = patronesScannerMap.get(code);
+    if (!p) return alert(`No encontrado: ${code}`);
     stopScan();
-    const patron = patronesScannerMap.get(code);
     
-    if (!patron) { alert(`Patrón "${code}" no encontrado.`); return; }
-    
-    // Validar duplicados visuales
-    const currentTools = getValues('manualTools');
-    if (currentTools.some(t => t.herramienta === patron.nombre)) {
-        alert(`El patrón "${patron.nombre}" ya está en la lista.`);
-        return;
-    }
-
-    const isUnavailable = ['en_proceso','fuera_servicio','en_servicio','en_prestamo','en_mantenimiento'].includes(patron.estadoProceso);
-    if (isUnavailable) {
-        alert(`Patrón "${patron.nombre}" NO DISPONIBLE. Estado: ${patron.estadoProceso.toUpperCase()}.`);
-        return;
-    }
+    if (getValues('manualTools').some(t => t.herramienta === p.nombre)) return alert('Ya está en lista');
+    if (['en_servicio', 'en_prestamo', 'fuera_servicio'].includes(p.estadoProceso)) return alert(`NO DISPONIBLE: ${p.estadoProceso}`);
 
     append({
-      herramienta: patron.nombre, qty: '1', marca: patron.marca, modelo: patron.modelo, serie: patron.serie,
-      isVencida: (patron.status === 'vencido' || patron.status === 'critico'),
-      isUnavailable: false
+        herramienta: p.nombre, qty: '1', marca: p.marca, modelo: p.modelo, serie: p.serie,
+        isVencida: p.status === 'vencido' || p.status === 'critico',
+        isUnavailable: false
     });
-  }, [patronesScannerMap, append, getValues]);
+  };
 
   const stopScan = () => {
     if (scannerControlsRef.current) { scannerControlsRef.current.stop(); scannerControlsRef.current = null; }
@@ -507,86 +306,51 @@ const NormasScreen = () => {
   useEffect(() => {
     if (isScannerOpen && videoRef.current) {
         const reader = new BrowserMultiFormatReader();
-        reader.decodeFromVideoDevice(undefined, videoRef.current, (result, err, controls) => {
-            if (result) { handleScanResult(result.getText()); controls.stop(); }
-            if (controls) scannerControlsRef.current = controls;
-        }).catch(err => { console.error(err); setIsScannerOpen(false); });
+        reader.decodeFromVideoDevice(undefined, videoRef.current, (res, err, ctrl) => {
+            if (res) { handleScan(res.getText()); ctrl.stop(); }
+            if (ctrl) scannerControlsRef.current = ctrl;
+        }).catch(() => setIsScannerOpen(false));
     }
     return () => { if (scannerControlsRef.current) scannerControlsRef.current.stop(); };
-  }, [isScannerOpen, handleScanResult]);
+  }, [isScannerOpen]);
 
-
-  // --- Acciones Principales ---
   const handleRegistrarSalida = async () => {
-    const isValid = await trigger('usuario'); 
-    if (!isValid) return alert('Selecciona un usuario primero.');
-    
+    if (!(await trigger('usuario'))) return alert('Falta Usuario');
     const usuario = getValues('usuario');
-    const toolsToUpdate = watchedManualTools.filter(t => patronesMap.has(t.herramienta));
-
-    if (!toolsToUpdate.length) return alert('No hay equipos manuales válidos para registrar.');
-    if (!window.confirm(`¿Registrar salida de ${toolsToUpdate.length} equipos para ${usuario}?`)) return;
+    const tools = watchedManualTools.filter(t => patronesMap.has(t.herramienta));
+    if (!tools.length) return alert('Lista vacía');
+    if (!window.confirm(`¿Salida de ${tools.length} equipos a ${usuario}?`)) return;
 
     setIsSavingBatch(true);
     try {
-        const batch = writeBatch(db); 
-        const fecha = new Date().toISOString().split('T')[0];
-        
-        toolsToUpdate.forEach(tool => {
-            const pid = patronesMap.get(tool.herramienta)?.id;
+        const batch = writeBatch(db);
+        tools.forEach(t => {
+            const pid = patronesMap.get(t.herramienta)?.id;
             if (pid) {
                 batch.update(doc(db, COLLECTION_NAME_PATRONES, pid), {
-                    estadoProceso: 'en_servicio', usuarioEnUso: usuario, ubicacion: `En Uso - ${usuario}`, fechaPrestamo: fecha
+                    estadoProceso: 'en_servicio',
+                    usuarioEnUso: usuario,
+                    usuarioAsignado: usuario,
+                    ubicacionActual: `Planta - ${usuario}`,
+                    ubicacion: `Planta - ${usuario}`,
+                    fechaPrestamo: new Date().toISOString().split('T')[0]
                 });
             }
         });
-
         await batch.commit();
-        alert('✅ Salida registrada correctamente.');
+        alert('Salida Exitosa');
         setValue('manualTools', []);
-        
-        // Recargar datos rápidos
-        const q = query(collection(db, COLLECTION_NAME_PATRONES));
-        const snap = await getDocs(q);
-        const newMap = new Map(patronesMap);
-        snap.forEach(d => { 
-            const data = d.data() as any;
-            const name = `${data.noControl} - ${data.descripcion}`;
-            if (newMap.has(name)) newMap.set(name, { ...newMap.get(name)!, estadoProceso: data.estadoProceso, usuarioEnUso: data.usuarioEnUso });
-        });
-        setPatronesMap(newMap);
-
-    } catch (e) { console.error(e); alert('Error al guardar.'); }
+    } catch (e) { alert('Error al guardar'); } 
     finally { setIsSavingBatch(false); }
   };
-
-  const handlePdf = async (type: 'cel' | 'gen') => {
-    if (isAnyPatronVencido) return alert('No se puede generar PDF con equipos Vencidos o No Disponibles.');
-    if (!(await trigger())) return alert('Completa los campos obligatorios.');
-    
-    const data = getValues();
-    const manualClean = data.manualTools.filter(t => t.herramienta).map(t => ({
-        ...t, estadoProceso: patronesMap.get(t.herramienta)?.estadoProceso || 'operativo'
-    }));
-    const all = [...aggregatedTools, ...manualClean];
-
-    if (type === 'cel') generateCelesticaPdf(data, all);
-    else generateGenericPdf(data, all);
-  };
-
-  // ==================================================================
-  // --- 3. RENDERIZADO DEL UI ---
-  // ==================================================================
 
   return (
     <>
       <style>{styles}</style>
-      
-      {/* --- Modal Scanner --- */}
       {isScannerOpen && (
         <div className="scanner-overlay" onClick={stopScan}>
           <div className="scanner-box" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-4">Escanear Código</h3>
+            <h3 className="font-bold mb-4 text-gray-900 text-lg">Escanear Código</h3>
             <video ref={videoRef} className="scanner-video" />
             <button className="btn btn-danger w-full" onClick={stopScan}><X size={18} /> Cancelar</button>
           </div>
@@ -594,102 +358,89 @@ const NormasScreen = () => {
       )}
 
       <div className="layout-container">
-        {/* --- Header --- */}
-        <div className="header">
-           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <button className="btn btn-secondary rounded-full p-2 w-10 h-10" onClick={() => navigateTo('/')}><ArrowLeft size={20} /></button>
+        {/* HEADER */}
+        <div className="flex items-center justify-between mb-8">
+           <div className="flex items-center gap-4">
+              <button className="btn btn-secondary rounded-full p-3 shadow-sm" onClick={() => navigateTo('/')}><ArrowLeft size={24} /></button>
               <div>
-                <h1>Registro de Salida</h1>
-                <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Control de herramientas y equipos de medición</p>
+                  <h1 className="text-2xl font-bold text-gray-900">Registro de Salida</h1>
+                  <p className="text-gray-500 text-sm">Control de herramientas y patrones</p>
               </div>
            </div>
-           <div className="text-right hidden sm:block">
-              <span className="text-xs font-bold text-gray-400">FECHA ACTUAL</span>
-              <div className="text-lg font-mono font-semibold">{new Date().toLocaleDateString()}</div>
+           <div className="text-right hidden sm:block bg-white px-4 py-2 rounded-lg border border-gray-200">
+              <span className="text-xs font-bold text-gray-400 block uppercase">Fecha Actual</span>
+              <div className="font-mono font-bold text-lg text-gray-800">{new Date().toLocaleDateString()}</div>
            </div>
         </div>
 
-        {/* --- Card 1: Datos Usuario --- */}
+        {/* DATOS RESPONSABLE */}
         <div className="card">
-          <div className="card-title"><User size={20} className="text-blue-600" /> Información del Responsable</div>
-          <div className="grid-form">
-            <div className="input-group">
-                <label>Fecha de Registro</label>
-                <input type="date" className="input-control" {...register('fecha', { required: "Requerido" })} />
+          <div className="flex items-center gap-3 mb-6 border-b pb-4">
+              <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><User size={24}/></div>
+              <h2 className="text-lg font-bold text-gray-800">Información del Responsable</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label>Metrólogo / Técnico</label>
+                <select {...register('usuario', { required: true })} className="input-control bg-white">
+                  <option value="">-- Seleccionar --</option>
+                  {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
+                </select>
+                {errors.usuario && <span className="text-red-500 text-xs mt-1 block">Este campo es requerido</span>}
             </div>
-            <div className="input-group">
-                <label>Metrólogo / Usuario</label>
-                <Controller
-                  name="usuario" control={control} rules={{ required: "Seleccione un usuario" }}
-                  render={({ field }) => (
-                    <select {...field} className="input-control" disabled={isLoadingData}>
-                      <option value="">{isLoadingData ? 'Cargando...' : '-- Seleccionar --'}</option>
-                      {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
-                    </select>
-                  )}
-                />
-                {errors.usuario && <span className="error-text">{errors.usuario.message}</span>}
+            <div>
+                 <label>Compañía</label>
+                 <input className="input-control bg-white" {...register('companiaDepto')} />
             </div>
-            <div className="input-group">
-                <label>Compañía / Depto</label>
-                <input className="input-control" {...register('companiaDepto', { required: "Requerido" })} />
-            </div>
-            <div className="input-group">
+            <div>
                  <label>No. Empleado</label>
-                 <input className="input-control" {...register('noEmpleado')} placeholder="Opcional" />
+                 <input className="input-control bg-white" {...register('noEmpleado')} />
             </div>
-             <div className="input-group">
-                 <label>Gafete Contratista</label>
-                 <input className="input-control" {...register('gafeteContratista')} placeholder="Opcional" />
+            <div>
+                 <label>Gafete (Opcional)</label>
+                 <input className="input-control bg-white" {...register('gafeteContratista')} />
             </div>
           </div>
         </div>
 
-        {/* --- Card 2: Mochilas --- */}
+        {/* KITS RÁPIDOS */}
         <div className="card">
-            <div className="card-title"><Briefcase size={20} className="text-blue-600" /> Kits y Mochilas Predefinidas</div>
-            <div className="backpack-grid">
-              <Controller
-                name="selectedBackpacks" control={control}
-                render={({ field }) => (
-                  <>
-                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => {
-                      const isSelected = field.value.includes(id);
-                      return (
-                        <label key={id} className={`backpack-card ${isSelected ? 'selected' : ''}`}>
-                          <input type="checkbox" value={id} checked={isSelected}
-                            onChange={(e) => {
-                                const newVal = e.target.checked ? [...field.value, id] : field.value.filter(v => v !== id);
-                                field.onChange(newVal);
-                            }}
-                          />
-                          <Package className="backpack-icon" size={24} />
-                          <div>
-                              <div className="font-semibold text-sm">{backpack.nombre}</div>
-                              <div className="text-xs text-gray-500">{backpack.items.length} items</div>
-                          </div>
-                          {isSelected && <CheckCircle2 size={16} className="text-blue-600 absolute top-2 right-2" />}
-                        </label>
-                      );
-                    })}
-                  </>
-                )}
-              />
+            <div className="flex items-center gap-3 mb-6 border-b pb-4">
+                <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Briefcase size={24}/></div>
+                <h2 className="text-lg font-bold text-gray-800">Kits Rápidos</h2>
             </div>
-
-            {/* Tabla Resumen Mochilas */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+              <Controller name="selectedBackpacks" control={control} render={({ field }) => (
+                  <>
+                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => (
+                        <label key={id} className={`border p-4 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${field.value.includes(id) ? 'bg-blue-50 border-blue-500 shadow-md' : 'hover:bg-gray-50'}`}>
+                          <input type="checkbox" className="hidden" checked={field.value.includes(id)} 
+                            onChange={e => field.onChange(e.target.checked ? [...field.value, id] : field.value.filter(v => v !== id))} />
+                          <Package size={28} className={field.value.includes(id) ? 'text-blue-600' : 'text-gray-400'} />
+                          <div>
+                              <span className={`block font-semibold ${field.value.includes(id) ? 'text-blue-900' : 'text-gray-600'}`}>{backpack.nombre}</span>
+                              <span className="text-xs text-gray-400">{backpack.items.length} items</span>
+                          </div>
+                        </label>
+                    ))}
+                  </>
+              )} />
+            </div>
+            
+            {/* TABLA DE CONTENIDO MOCHILAS */}
             {aggregatedTools.length > 0 && (
-                <div className="mt-6">
-                    <h4 className="text-sm font-bold text-gray-500 mb-2 uppercase tracking-wider">Contenido de Kits Seleccionados</h4>
-                    <div className="table-responsive">
-                        <table className="modern-table">
-                            <thead><tr><th>Item</th><th>Cant.</th><th>Marca</th><th>Modelo</th><th>Serie</th></tr></thead>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Info size={16}/> Contenido de Kits Seleccionados</h3>
+                    <div className="overflow-x-auto">
+                        <table className="modern-table bg-white rounded-lg overflow-hidden shadow-sm">
+                            <thead><tr><th>Herramienta</th><th className="text-center">Cant.</th><th>Marca</th><th>Modelo</th></tr></thead>
                             <tbody>
                                 {aggregatedTools.map((t, i) => (
                                     <tr key={i}>
-                                        <td>{t.herramienta}</td>
-                                        <td className="text-center font-bold bg-gray-50">{t.qty}</td>
-                                        <td>{t.marca}</td><td>{t.modelo}</td><td className="font-mono text-xs">{t.serie}</td>
+                                        <td className="font-medium text-gray-900">{t.herramienta}</td>
+                                        <td className="text-center font-bold bg-blue-50 text-blue-700">{t.qty}</td>
+                                        <td>{t.marca}</td>
+                                        <td>{t.modelo}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -699,135 +450,100 @@ const NormasScreen = () => {
             )}
         </div>
 
-        {/* --- Card 3: Herramientas Manuales --- */}
+        {/* ESCANEO INDIVIDUAL */}
         <div className="card">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4 border-bottom pb-4 border-gray-100">
-                <div className="card-title mb-0 border-none p-0"><Camera size={20} className="text-blue-600" /> Registro Individual de Patrones</div>
-                <div className="flex gap-2 w-full sm:w-auto">
-                    <button type="button" className="btn btn-secondary flex-1 sm:flex-none" onClick={() => setIsScannerOpen(true)}>
-                        <Camera size={16} /> Escanear
-                    </button>
-                    <button type="button" className="btn btn-secondary flex-1 sm:flex-none" onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}>
-                        <Plus size={16} /> Agregar Manual
-                    </button>
+            <div className="flex justify-between items-center mb-6 border-b pb-4">
+                <div className="flex items-center gap-3">
+                    <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Camera size={24}/></div>
+                    <h2 className="text-lg font-bold text-gray-800">Escaneo Individual</h2>
+                </div>
+                <div className="flex gap-2">
+                    <button type="button" className="btn btn-secondary" onClick={() => setIsScannerOpen(true)}><Camera size={18}/> Escanear</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}><Plus size={18}/> Manual</button>
                 </div>
             </div>
+            
+            {isAnyPatronVencido && <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 flex items-center gap-3"><AlertTriangle size={24}/> <strong>Atención:</strong> Hay equipos vencidos o no disponibles en la lista.</div>}
 
-            {isAnyPatronVencido && (
-                <div className="alert-banner">
-                    <AlertTriangle size={20} />
-                    <span>Atención: Has seleccionado equipos VENCIDOS, CRÍTICOS o NO DISPONIBLES. Revisa la lista.</span>
-                </div>
-            )}
-
-            <div className="table-responsive">
+            <div className="overflow-x-auto">
                 <table className="modern-table">
-                    <thead>
-                        <tr>
-                            <th style={{width: '40px'}}>#</th>
-                            <th>Patrón / Equipo</th>
-                            <th>Estado Calib.</th>
-                            <th>Disponibilidad</th>
-                            <th style={{width: '60px'}}>Cant.</th>
-                            <th>Info Técnica</th>
-                            <th style={{width: '80px'}}></th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th className="w-12">#</th><th>Equipo / Patrón</th><th>Estado</th><th>Serie</th><th className="w-12"></th></tr></thead>
                     <tbody>
                         {fields.length === 0 && (
-                             <tr><td colSpan={7} className="text-center py-8 text-gray-400 italic">No hay equipos manuales agregados. Usa el escáner o agrega manualmente.</td></tr>
+                            <tr><td colSpan={5} className="text-center py-8 text-gray-400 italic">No hay equipos individuales agregados.</td></tr>
                         )}
                         {fields.map((item, index) => {
-                            const currentTool = watchedManualTools[index]?.herramienta;
-                            const patronData = patronesMap.get(currentTool);
-                            const status = patronData?.status || 'pendiente';
-                            const proceso = patronData?.estadoProceso || 'operativo';
-                            
-                            const isUnavailable = ['en_proceso', 'fuera_servicio', 'en_servicio', 'en_prestamo', 'en_mantenimiento'].includes(proceso);
-                            
-                            return (
-                                <tr key={item.id} className={isUnavailable ? 'bg-gray-50' : ''}>
-                                    <td className="text-center text-gray-400">{index + 1}</td>
-                                    <td style={{ minWidth: '250px' }}>
-                                        <Controller
-                                            name={`manualTools.${index}.herramienta`} control={control}
-                                            render={({ field }) => (
-                                                <select {...field} className="input-control text-sm" 
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        field.onChange(val);
-                                                        const p = patronesMap.get(val);
-                                                        if (p) {
-                                                            const badStatus = p.status === 'vencido' || p.status === 'critico';
-                                                            const badProcess = ['en_proceso', 'fuera_servicio', 'en_servicio', 'en_prestamo', 'en_mantenimiento'].includes(p.estadoProceso);
-                                                            setValue(`manualTools.${index}.qty`, '1');
-                                                            setValue(`manualTools.${index}.marca`, p.marca);
-                                                            setValue(`manualTools.${index}.modelo`, p.modelo);
-                                                            setValue(`manualTools.${index}.serie`, p.serie);
-                                                            setValue(`manualTools.${index}.isVencida`, badStatus);
-                                                            setValue(`manualTools.${index}.isUnavailable`, badProcess);
-                                                        }
-                                                    }}
-                                                >
-                                                    <option value="">-- Buscar Patrón --</option>
-                                                    {sortedPatronOptions.map(op => (
-                                                        <option key={op.id} value={op.nombre} disabled={op.estadoProceso !== 'operativo' && op.nombre !== currentTool}>
-                                                            {op.nombre}
+                             const current = patronesMap.get(watchedManualTools[index]?.herramienta);
+                             const isBad = current?.status === 'vencido';
+                             return (
+                                <tr key={item.id} className={isBad ? 'bg-red-50' : ''}>
+                                    <td className="font-bold text-gray-400">{index + 1}</td>
+                                    <td style={{ minWidth: '300px' }}>
+                                        <Controller name={`manualTools.${index}.herramienta`} control={control} render={({ field }) => (
+                                            <select 
+                                                {...field} 
+                                                className="input-control text-sm bg-white text-gray-900" 
+                                                onChange={e => {
+                                                    field.onChange(e.target.value);
+                                                    const p = patronesMap.get(e.target.value);
+                                                    if (p) {
+                                                        setValue(`manualTools.${index}.marca`, p.marca);
+                                                        setValue(`manualTools.${index}.modelo`, p.modelo);
+                                                        setValue(`manualTools.${index}.serie`, p.serie);
+                                                        setValue(`manualTools.${index}.isVencida`, p.status === 'vencido');
+                                                        setValue(`manualTools.${index}.isUnavailable`, p.estadoProceso !== 'operativo');
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">-- Buscar Patrón --</option>
+                                                {sortedPatronOptions.map(op => {
+                                                    const isVencido = op.status === 'vencido' || op.status === 'critico';
+                                                    const isUnavailable = op.estadoProceso !== 'operativo';
+                                                    return (
+                                                        <option 
+                                                            key={op.id} 
+                                                            value={op.nombre} 
+                                                            disabled={isUnavailable}
+                                                            className={isVencido ? 'opt-vencido' : (isUnavailable ? 'opt-unavailable' : 'opt-normal')}
+                                                            style={{
+                                                                color: isVencido ? '#dc2626' : (isUnavailable ? '#94a3b8' : '#1e293b'),
+                                                                fontWeight: isVencido ? 'bold' : 'normal',
+                                                                fontStyle: isUnavailable ? 'italic' : 'normal'
+                                                            }}
+                                                        >
+                                                            {op.nombre} {isUnavailable ? `(${op.estadoProceso.toUpperCase()})` : ''} {isVencido ? '(VENCIDO)' : ''}
                                                         </option>
-                                                    ))}
-                                                </select>
-                                            )} 
-                                        />
-                                        {isUnavailable && <div className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={10} /> NO DISPONIBLE ({patronData?.usuarioEnUso || '?'})</div>}
+                                                    );
+                                                })}
+                                            </select>
+                                        )} />
                                     </td>
-                                    <td>
-                                        <span className={`status-badge status-${status}`}>{status}</span>
-                                    </td>
-                                    <td>
-                                        <span className={`text-xs font-mono uppercase ${isUnavailable ? 'text-red-600 font-bold' : 'text-green-600'}`}>
-                                            {proceso.replace('_', ' ')}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <input type="number" className="input-control text-center p-1" {...register(`manualTools.${index}.qty`)} disabled={isUnavailable} />
-                                    </td>
-                                    <td>
-                                        <div className="text-xs text-gray-500">
-                                            <div><span className="font-semibold">Marca:</span> {watch(`manualTools.${index}.marca`)}</div>
-                                            <div><span className="font-semibold">Serie:</span> {watch(`manualTools.${index}.serie`)}</div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <button type="button" className="text-red-500 hover:text-red-700 p-2" onClick={() => remove(index)}><X size={18} /></button>
-                                    </td>
+                                    <td>{current ? <span className={`status-badge status-${current.status}`}>{current.status}</span> : '-'}</td>
+                                    <td className="font-mono text-xs text-gray-500">{watch(`manualTools.${index}.serie`)}</td>
+                                    <td><button type="button" onClick={() => remove(index)} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition"><X size={20}/></button></td>
                                 </tr>
-                            );
+                             )
                         })}
                     </tbody>
                 </table>
             </div>
         </div>
 
-        {/* --- Floating Action Bar --- */}
+        {/* BARRA FLOTANTE */}
         <div className="floating-bar">
-            <div className="text-sm text-gray-500 hidden sm:block">
-                Total Equipos: <b>{aggregatedTools.length + fields.length}</b>
+            <div className="hidden md:block text-sm text-gray-500 font-medium">
+                Total Equipos: <strong className="text-gray-900">{aggregatedTools.length + fields.length}</strong>
             </div>
-            <div className="flex gap-3 w-full sm:w-auto">
+            <div className="flex gap-3 w-full md:w-auto">
                 {fields.length > 0 && (
-                    <button type="button" className="btn btn-success flex-1" onClick={handleRegistrarSalida} disabled={isAnyPatronVencido || isSavingBatch}>
-                        {isSavingBatch ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />} Registrar Salida
+                    <button type="button" className="btn btn-success flex-1 md:flex-none" onClick={handleRegistrarSalida} disabled={isAnyPatronVencido || isSavingBatch}>
+                        {isSavingBatch ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} Registrar Salida
                     </button>
                 )}
-                <button type="button" className="btn btn-primary flex-1" onClick={() => handlePdf('cel')} disabled={isAnyPatronVencido}>
-                    <FileText size={18} /> PDF Celestica
-                </button>
-                <button type="button" className="btn btn-secondary flex-1" onClick={() => handlePdf('gen')} disabled={isAnyPatronVencido}>
-                    <FileText size={18} /> PDF Genérico
-                </button>
+                <button type="button" className="btn btn-primary flex-1 md:flex-none" onClick={() => handlePdf('cel')} disabled={isAnyPatronVencido}><FileText size={20}/> Celestica</button>
+                <button type="button" className="btn btn-secondary flex-1 md:flex-none" onClick={() => handlePdf('gen')} disabled={isAnyPatronVencido}><FileText size={20}/> Genérico</button>
             </div>
         </div>
-
       </div>
     </>
   );
