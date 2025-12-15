@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import {
   Plus, Trash2, ChevronDown, Search, 
   Bell, UserCircle, Calendar, GripVertical, X, 
-  Menu, Building2, ArrowLeft, Settings
+  Menu, Building2, ArrowLeft, Settings,
+  ArrowUp, ArrowDown, ArrowUpDown // Iconos para el ordenamiento
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
@@ -12,6 +13,7 @@ import { useNavigation } from '../hooks/useNavigation';
 
 // --- TIPOS ---
 type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client";
+type SortDirection = 'asc' | 'desc' | null;
 
 interface Column {
   key: string;
@@ -70,6 +72,15 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
 ];
 
+// --- COMPONENTES SKELETON (Para carga rápida percibida) ---
+const RowSkeleton = () => (
+  <div className="flex border-b border-[#d0d4e4] bg-white h-[36px] animate-pulse">
+    <div className="w-1.5 bg-gray-200"></div>
+    <div className="w-[40px] border-r border-[#d0d4e4] bg-gray-50"></div>
+    <div className="flex-1 bg-white"></div>
+  </div>
+);
+
 // --- COMPONENTES DE CELDAS (OPTIMIZADOS) ---
 
 const TextCell = React.memo(({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => {
@@ -83,7 +94,6 @@ const ClientCell = React.memo(({ value, clientes, onChange }: { value: string, c
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     
-    // Filtro perezoso: Solo filtra si el usuario abre el menú
     const filtered = useMemo(() => {
         if (!isOpen) return [];
         if (!searchTerm) return clientes;
@@ -230,9 +240,8 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
 const FridayScreen: React.FC = () => {
     const { navigateTo } = useNavigation();
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    
-    // --- CAMBIO AQUÍ: INICIA EN FALSE (CERRADO) ---
     const [sidebarAbierto, setSidebarAbierto] = useState(false); 
+    const [isLoadingData, setIsLoadingData] = useState(true); // Estado de carga global
     
     const [rows, setRows] = useState<WorksheetData[]>([]);
     const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
@@ -247,6 +256,9 @@ const FridayScreen: React.FC = () => {
     const [clientes, setClientes] = useState<any[]>([]); 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState("");
+
+    // Estado para el ordenamiento (Sorting)
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: SortDirection } | null>(null);
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -272,11 +284,11 @@ const FridayScreen: React.FC = () => {
         const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo")), (snap) => setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
-        // --- SIN LÍMITE DE DATOS (Muestra todo) ---
         const unsubRows = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
             const newRows: WorksheetData[] = [];
             snapshot.forEach(doc => newRows.push({ id: doc.id, ...doc.data() } as WorksheetData));
             setRows(newRows);
+            setIsLoadingData(false); // Datos cargados
         });
 
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
@@ -308,6 +320,17 @@ const FridayScreen: React.FC = () => {
     const toggleSelect = useCallback((id: string) => {
         setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     }, []);
+
+    // --- SORTING HANDLER ---
+    const handleSort = (key: string) => {
+        setSortConfig(current => {
+            if (current?.key === key) {
+                if (current.direction === 'asc') return { key, direction: 'desc' };
+                if (current.direction === 'desc') return null; // Reset
+            }
+            return { key, direction: 'asc' };
+        });
+    };
 
     // --- DRAG & DROP ---
     const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
@@ -373,11 +396,24 @@ const FridayScreen: React.FC = () => {
     }, []);
 
     const groupedRows = useMemo(() => {
-        const filtered = rows.filter(r => {
+        let filtered = rows.filter(r => {
             if (!search) return true;
             const s = search.toLowerCase();
             return (r.cliente || "").toLowerCase().includes(s) || (r.folio || "").toLowerCase().includes(s) || (r.equipo || "").toLowerCase().includes(s);
         });
+
+        // Aplicar ordenamiento
+        if (sortConfig && sortConfig.direction) {
+            filtered = [...filtered].sort((a, b) => {
+                const valA = a[sortConfig.key] || "";
+                const valB = b[sortConfig.key] || "";
+                
+                if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
         return groupsConfig.map(group => ({
             ...group,
             rows: filtered.filter(r => {
@@ -385,7 +421,7 @@ const FridayScreen: React.FC = () => {
                 return rowLocation === group.id;
             })
         }));
-    }, [rows, groupsConfig, search]);
+    }, [rows, groupsConfig, search, sortConfig]);
 
     return (
         <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
@@ -419,44 +455,67 @@ const FridayScreen: React.FC = () => {
                             {columns.filter(c => !c.hidden).map((col, index) => (
                                 <div key={col.key} draggable="true" onDragStart={(e) => onDragStart(e, { type: 'column', index })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => onDrop(e, { type: 'column', index })} 
                                      style={{ width: col.width, left: col.sticky ? 46 : undefined, position: col.sticky ? 'sticky' : undefined, zIndex: col.sticky ? 30 : undefined }}
-                                     className={clsx("px-2 text-xs font-semibold text-gray-500 flex items-center justify-center border-r border-transparent hover:bg-gray-50 cursor-grab active:cursor-grabbing select-none bg-white", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
-                                    {col.label}
+                                     className={clsx("px-2 text-xs font-semibold text-gray-500 flex items-center justify-center border-r border-transparent hover:bg-gray-50 cursor-pointer select-none bg-white group hover:text-gray-800 transition-colors", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}
+                                     onClick={() => handleSort(col.key)}>
+                                    <span className="truncate">{col.label}</span>
+                                    {/* ICONO DE ORDENAMIENTO */}
+                                    <div className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {sortConfig?.key === col.key ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-[#0073ea]"/> : <ArrowDown className="w-3 h-3 text-[#0073ea]"/>
+                                        ) : (
+                                            <ArrowUpDown className="w-3 h-3 text-gray-300"/>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                             <div className="w-10 flex items-center justify-center border-l border-gray-200 hover:bg-gray-100 cursor-pointer"><Plus className="w-4 h-4 text-gray-400"/></div>
                         </div>
 
                         <div className="px-4 mt-6">
-                            {groupedRows.map((group) => (
-                                <div key={group.id} className="mb-10">
-                                    <div className="flex items-center mb-2 group sticky left-0 z-10 p-2 rounded hover:bg-gray-50 transition-colors"
-                                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
-                                        onDragLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
-                                        onDrop={(e) => { e.currentTarget.style.backgroundColor = ''; onDropGroup(e, group.id); }}>
-                                        <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-gray-200", group.collapsed && "-rotate-90")} style={{ color: group.color }}
-                                            onClick={() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }}/>
-                                        <h2 className="text-lg font-medium ml-2 px-1 rounded hover:border hover:border-gray-300 cursor-text" style={{ color: group.color }}>{group.name}</h2>
-                                        <span className="ml-3 text-xs text-gray-400 font-light">{group.rows.length} equipos</span>
-                                    </div>
-                                    {!group.collapsed && (
-                                        <div className="shadow-sm rounded-tr-md rounded-tl-md overflow-hidden border-l border-t border-r border-[#d0d4e4] min-h-[50px]"
-                                            onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDropGroup(e, group.id)}>
-                                            {group.rows.map(row => (
-                                                <BoardRow key={row.id} row={row} columns={columns} color={group.color} isSelected={selectedIds.has(row.id)} onToggleSelect={toggleSelect} onUpdateRow={handleUpdateRow} metrologos={metrologos} clientes={clientes} onDragStart={onDragStart} onDrop={onDrop} onDragEnd={onDragEnd} />
-                                            ))}
-                                            <div className="flex h-[36px] border-b border-[#d0d4e4] bg-white group hover:bg-gray-50">
-                                                <div className="w-1.5 sticky left-0 z-20" style={{ backgroundColor: group.color, opacity: 0.5 }}></div>
-                                                <div className="w-[40px] sticky left-1.5 bg-white z-20 border-r border-[#d0d4e4]"></div>
-                                                <div className="sticky left-[46px] z-20 bg-white flex items-center px-2">
-                                                    <input type="text" placeholder="+ Agregar Equipo" className="outline-none text-sm w-[200px] h-full placeholder-gray-400 bg-transparent"
-                                                        onKeyDown={(e) => { if (e.key === 'Enter') { handleAddRow(group.id); (e.target as HTMLInputElement).value = ''; } }} onMouseDown={(e) => e.stopPropagation()} />
-                                                    <button onClick={() => handleAddRow(group.id)} className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Agregar</button>
+                            {/* ESTADO DE CARGA (SKELETON) */}
+                            {isLoadingData ? (
+                                <div className="space-y-4">
+                                    {[1,2,3].map(g => (
+                                        <div key={g}>
+                                             <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-2"></div>
+                                             <div className="border border-gray-200 rounded-md overflow-hidden">
+                                                 {[1,2,3,4].map(r => <RowSkeleton key={r} />)}
+                                             </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                groupedRows.map((group) => (
+                                    <div key={group.id} className="mb-10">
+                                        <div className="flex items-center mb-2 group sticky left-0 z-10 p-2 rounded hover:bg-gray-50 transition-colors"
+                                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
+                                            onDragLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                                            onDrop={(e) => { e.currentTarget.style.backgroundColor = ''; onDropGroup(e, group.id); }}>
+                                            <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-gray-200", group.collapsed && "-rotate-90")} style={{ color: group.color }}
+                                                onClick={() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }}/>
+                                            <h2 className="text-lg font-medium ml-2 px-1 rounded hover:border hover:border-gray-300 cursor-text" style={{ color: group.color }}>{group.name}</h2>
+                                            <span className="ml-3 text-xs text-gray-400 font-light">{group.rows.length} equipos</span>
+                                        </div>
+                                        {!group.collapsed && (
+                                            <div className="shadow-sm rounded-tr-md rounded-tl-md overflow-hidden border-l border-t border-r border-[#d0d4e4] min-h-[50px]"
+                                                onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDropGroup(e, group.id)}>
+                                                {group.rows.map(row => (
+                                                    <BoardRow key={row.id} row={row} columns={columns} color={group.color} isSelected={selectedIds.has(row.id)} onToggleSelect={toggleSelect} onUpdateRow={handleUpdateRow} metrologos={metrologos} clientes={clientes} onDragStart={onDragStart} onDrop={onDrop} onDragEnd={onDragEnd} />
+                                                ))}
+                                                <div className="flex h-[36px] border-b border-[#d0d4e4] bg-white group hover:bg-gray-50">
+                                                    <div className="w-1.5 sticky left-0 z-20" style={{ backgroundColor: group.color, opacity: 0.5 }}></div>
+                                                    <div className="w-[40px] sticky left-1.5 bg-white z-20 border-r border-[#d0d4e4]"></div>
+                                                    <div className="sticky left-[46px] z-20 bg-white flex items-center px-2">
+                                                        <input type="text" placeholder="+ Agregar Equipo" className="outline-none text-sm w-[200px] h-full placeholder-gray-400 bg-transparent"
+                                                            onKeyDown={(e) => { if (e.key === 'Enter') { handleAddRow(group.id); (e.target as HTMLInputElement).value = ''; } }} onMouseDown={(e) => e.stopPropagation()} />
+                                                        <button onClick={() => handleAddRow(group.id)} className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Agregar</button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                        )}
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>

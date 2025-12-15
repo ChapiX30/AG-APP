@@ -21,7 +21,8 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
-  Minimize2
+  Minimize2,
+  RefreshCw // Icono para indicar que está cargando o actualizando
 } from 'lucide-react';
 import { addMonths, addYears, differenceInDays, parseISO, format, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -29,8 +30,8 @@ import * as XLSX from 'xlsx';
 
 // --- Tipos ---
 interface EquipoVencimiento {
-  id: string; 
-  equipoId: string; 
+  id: string; // ID del documento en Firebase
+  equipoId: string; // ID interno del equipo (Ej: MS-1128)
   descripcion: string;
   cliente: string;
   fechaCalibracion: string;
@@ -51,10 +52,9 @@ export const VencimientosScreen: React.FC = () => {
   const [filtroEstado, setFiltroEstado] = useState('todos'); 
   
   // Estado para manejar qué clientes están expandidos
-  // Un objeto donde la llave es el nombre del cliente y el valor es true (abierto) o false (cerrado)
   const [clientesExpandidos, setClientesExpandidos] = useState<Record<string, boolean>>({});
 
-  // --- Lógica de Cálculo de Fechas (Igual que antes) ---
+  // --- Lógica de Cálculo de Fechas ---
   const calcularFechaVencimiento = (fechaStr: string, frecuenciaStr: string): Date | null => {
     if (!fechaStr || !frecuenciaStr) return null;
     try {
@@ -68,35 +68,60 @@ export const VencimientosScreen: React.FC = () => {
       if (freqLower.includes('3 meses')) return addMonths(fechaBase, 3);
       if (freqLower.includes('6 meses')) return addMonths(fechaBase, 6);
       
-      return addYears(fechaBase, 1); 
+      return addYears(fechaBase, 1); // Default 1 año
     } catch (e) { return null; }
   };
 
-  // --- Carga de Datos ---
+  // --- Carga de Datos (Lógica Mejorada) ---
   useEffect(() => {
     const fetchEquipos = async () => {
       setLoading(true);
       try {
+        // 1. Traemos TODO ordenado por fecha descendente (Lo más nuevo primero)
         const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc"));
         const querySnapshot = await getDocs(q);
+        
         const listaProcesada: EquipoVencimiento[] = [];
         const hoy = new Date();
+        
+        // 2. SET PARA EVITAR DUPLICADOS (La Clave de la solución)
+        // Guardaremos aquí los IDs que ya procesamos para no repetir equipos viejos
+        const equiposProcesados = new Set<string>();
 
         querySnapshot.forEach((doc) => {
           const data = doc.data();
+          
+          // Normalizamos el ID: Quitamos espacios y aseguramos que sea string
+          const rawId = data.id || data.certificado;
+          const identificadorUnico = rawId ? String(rawId).trim() : null;
+
+          // 3. FILTRO DE DUPLICADOS
+          // Si ya vimos este ID, significa que ya procesamos su registro más reciente.
+          // Ignoramos este registro porque es una calibración vieja.
+          if (identificadorUnico && equiposProcesados.has(identificadorUnico)) {
+             return; // Saltamos al siguiente registro
+          }
+
+          // Si tiene ID, lo marcamos como visto para bloquear futuras apariciones (viejas)
+          if (identificadorUnico) {
+            equiposProcesados.add(identificadorUnico);
+          }
+
+          // --- Cálculo normal ---
           const fechaVenc = calcularFechaVencimiento(data.fecha, data.frecuenciaCalibracion);
 
           if (fechaVenc) {
             const dias = differenceInDays(fechaVenc, hoy);
             let status: EquipoVencimiento['status'] = 'vigente';
             
+            // Lógica de semáforo
             if (dias < 0) status = 'vencido';
             else if (dias <= 30) status = 'critico'; 
             else if (dias <= 60) status = 'proximo'; 
 
             listaProcesada.push({
               id: doc.id,
-              equipoId: data.id || data.certificado || 'S/N',
+              equipoId: identificadorUnico || 'S/N', // Si no tiene ID, mostramos S/N
               descripcion: data.equipo || data.nombre || 'Equipo sin nombre',
               cliente: data.cliente || 'Cliente desconocido',
               fechaCalibracion: data.fecha,
@@ -107,8 +132,11 @@ export const VencimientosScreen: React.FC = () => {
             });
           }
         });
+        
+        // Ordenar la lista general por urgencia (menor días restantes primero)
         listaProcesada.sort((a, b) => a.diasRestantes - b.diasRestantes);
         setEquipos(listaProcesada);
+
       } catch (error) {
         console.error("Error cargando equipos:", error);
       } finally {
@@ -118,13 +146,14 @@ export const VencimientosScreen: React.FC = () => {
     fetchEquipos();
   }, []);
 
-  // --- Filtros (Igual que antes) ---
+  // --- Filtros ---
   const equiposFiltrados = useMemo(() => {
     return equipos.filter(item => {
+      const termino = busqueda.toLowerCase();
       const matchTexto = 
-        item.cliente.toLowerCase().includes(busqueda.toLowerCase()) ||
-        item.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-        item.equipoId.toLowerCase().includes(busqueda.toLowerCase());
+        item.cliente.toLowerCase().includes(termino) ||
+        item.descripcion.toLowerCase().includes(termino) ||
+        item.equipoId.toLowerCase().includes(termino);
       
       const matchEstado = filtroEstado === 'todos' 
         ? true 
@@ -136,7 +165,7 @@ export const VencimientosScreen: React.FC = () => {
     });
   }, [equipos, busqueda, filtroEstado]);
 
-  // --- NUEVA LÓGICA: AGRUPAR POR CLIENTE ---
+  // --- Agrupación por Cliente ---
   const equiposAgrupados = useMemo(() => {
     const grupos: Record<string, EquipoVencimiento[]> = {};
     
@@ -147,19 +176,17 @@ export const VencimientosScreen: React.FC = () => {
       grupos[item.cliente].push(item);
     });
 
-    // Ordenar los clientes alfabéticamente
+    // Ordenar clientes alfabéticamente
     return Object.keys(grupos).sort().reduce((obj, key) => { 
-        obj[key] = grupos[key]; 
+        // Dentro de cada cliente, ordenamos también por urgencia
+        obj[key] = grupos[key].sort((a, b) => a.diasRestantes - b.diasRestantes); 
         return obj;
     }, {} as Record<string, EquipoVencimiento[]>);
   }, [equiposFiltrados]);
 
-  // --- Funciones de Control de UI ---
+  // --- Funciones UI ---
   const toggleCliente = (cliente: string) => {
-    setClientesExpandidos(prev => ({
-      ...prev,
-      [cliente]: !prev[cliente]
-    }));
+    setClientesExpandidos(prev => ({ ...prev, [cliente]: !prev[cliente] }));
   };
 
   const expandirTodos = () => {
@@ -168,12 +195,11 @@ export const VencimientosScreen: React.FC = () => {
     setClientesExpandidos(nuevoEstado);
   };
 
-  const colapsarTodos = () => {
-    setClientesExpandidos({});
-  };
+  const colapsarTodos = () => setClientesExpandidos({});
 
-  // --- Alertas y Exportaciones (Igual que antes) ---
+  // --- Alertas y Exportaciones ---
   const equiposA60Dias = useMemo(() => {
+    // Filtramos solo los que están en el rango específico de alerta de calidad
     return equipos.filter(e => e.diasRestantes >= 50 && e.diasRestantes <= 65);
   }, [equipos]);
 
@@ -186,7 +212,7 @@ export const VencimientosScreen: React.FC = () => {
     const asunto = `⚠️ ALERTA: ${equiposA60Dias.length} Equipos próximos a vencer (60 días)`;
     let cuerpo = `Hola Calidad,\n\nEl sistema ha detectado equipos por vencer. Favor gestionar.\n\n`;
     equiposA60Dias.forEach(e => {
-        cuerpo += `🔹 ${e.equipoId} - ${e.descripcion} (${e.cliente})\n`;
+        cuerpo += `🔹 ${e.equipoId} - ${e.descripcion} (${e.cliente}) -> Vence: ${format(e.fechaVencimiento, 'dd/MM/yyyy')}\n`;
     });
     window.location.href = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
   };
@@ -196,7 +222,7 @@ export const VencimientosScreen: React.FC = () => {
       Cliente: e.cliente,
       Equipo: e.descripcion,
       ID: e.equipoId,
-      'Fecha Calibración': e.fechaCalibracion,
+      'Fecha Calibración': format(parseISO(e.fechaCalibracion), 'yyyy-MM-dd'),
       'Vencimiento': format(e.fechaVencimiento, 'yyyy-MM-dd'),
       'Días Restantes': e.diasRestantes,
       Estado: e.status.toUpperCase()
@@ -209,7 +235,7 @@ export const VencimientosScreen: React.FC = () => {
 
   const generarLinkCorreo = (equipo: EquipoVencimiento) => {
     const subject = `Recordatorio de Calibración - ${equipo.equipoId}`;
-    const body = `Estimado cliente, su equipo ${equipo.descripcion} vence el ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}.`;
+    const body = `Estimado cliente, su equipo ${equipo.descripcion} (ID: ${equipo.equipoId}) vence el ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}. Favor de confirmar recolección.`;
     return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -227,7 +253,7 @@ export const VencimientosScreen: React.FC = () => {
                 <Calendar className="text-blue-600" />
                 Monitor de Vencimientos
               </h1>
-              <p className="text-xs text-gray-500">Vista agrupada por cliente</p>
+              <p className="text-xs text-gray-500">Mostrando solo la última calibración por equipo</p>
             </div>
           </div>
           
@@ -259,7 +285,7 @@ export const VencimientosScreen: React.FC = () => {
                     <div className="p-2 bg-orange-100 rounded-full text-orange-600"><AlertTriangle size={20} /></div>
                     <div>
                         <h3 className="font-bold text-orange-800">Atención Calidad</h3>
-                        <p className="text-sm text-orange-700">Hay <strong>{equiposA60Dias.length} equipos</strong> por vencer en 60 días.</p>
+                        <p className="text-sm text-orange-700">Hay <strong>{equiposA60Dias.length} equipos</strong> por vencer en rango de 60 días.</p>
                     </div>
                 </div>
             </div>
@@ -267,14 +293,21 @@ export const VencimientosScreen: React.FC = () => {
 
         {/* Filtros y KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-xl border border-red-100 shadow-sm flex items-center gap-3 cursor-pointer hover:bg-red-50 transition" onClick={() => setFiltroEstado('vencido')}>
+            <div 
+                className={`p-4 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer transition ${filtroEstado === 'vencido' ? 'bg-red-50 border-red-300 ring-2 ring-red-200' : 'bg-white border-red-100 hover:bg-red-50'}`} 
+                onClick={() => setFiltroEstado(filtroEstado === 'vencido' ? 'todos' : 'vencido')}
+            >
                 <div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle size={20} /></div>
                 <div>
                     <p className="text-xs text-gray-500 font-bold uppercase">Vencidos</p>
                     <p className="text-2xl font-bold text-gray-800">{equipos.filter(e => e.status === 'vencido').length}</p>
                 </div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-orange-100 shadow-sm flex items-center gap-3 cursor-pointer hover:bg-orange-50 transition" onClick={() => setFiltroEstado('critico')}>
+            
+            <div 
+                className={`p-4 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer transition ${filtroEstado === 'critico' ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-200' : 'bg-white border-orange-100 hover:bg-orange-50'}`}
+                onClick={() => setFiltroEstado(filtroEstado === 'critico' ? 'todos' : 'critico')}
+            >
                 <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><Clock size={20} /></div>
                 <div>
                     <p className="text-xs text-gray-500 font-bold uppercase">Críticos</p>
@@ -289,35 +322,37 @@ export const VencimientosScreen: React.FC = () => {
                     <input 
                         type="text" 
                         placeholder="Buscar cliente, equipo o ID..." 
-                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                         value={busqueda}
                         onChange={(e) => setBusqueda(e.target.value)}
                     />
                  </div>
                  <select 
-                    className="w-full md:w-auto p-2 text-sm border border-gray-300 rounded-lg bg-gray-50"
+                    className="w-full md:w-auto p-2 text-sm border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
                     value={filtroEstado}
                     onChange={(e) => setFiltroEstado(e.target.value)}
                  >
                      <option value="todos">Todos los Estados</option>
                      <option value="accion">Requieren Acción</option>
                      <option value="vencido">Vencidos</option>
+                     <option value="critico">Críticos (≤30 días)</option>
+                     <option value="proximo">Próximos (30-60 días)</option>
                      <option value="vigente">Vigentes</option>
                  </select>
             </div>
         </div>
 
         {/* Controles de Vista Agrupada */}
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
             <h2 className="text-lg font-semibold text-gray-700">
                 Resultados ({equiposFiltrados.length} equipos en {Object.keys(equiposAgrupados).length} clientes)
             </h2>
             <div className="flex gap-2">
-                <button onClick={expandirTodos} className="text-xs flex items-center gap-1 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-md transition">
-                    <Layers size={14}/> Expandir Todos
+                <button onClick={expandirTodos} className="text-xs flex items-center gap-1 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-md transition font-medium border border-transparent hover:border-blue-100">
+                    <Layers size={14}/> Expandir
                 </button>
-                <button onClick={colapsarTodos} className="text-xs flex items-center gap-1 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-md transition">
-                    <Minimize2 size={14}/> Colapsar Todos
+                <button onClick={colapsarTodos} className="text-xs flex items-center gap-1 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-md transition font-medium border border-transparent hover:border-gray-200">
+                    <Minimize2 size={14}/> Colapsar
                 </button>
             </div>
         </div>
@@ -325,9 +360,15 @@ export const VencimientosScreen: React.FC = () => {
         {/* LISTA AGRUPADA (ACORDEÓN) */}
         <div className="space-y-4">
             {loading ? (
-                <div className="p-10 text-center text-gray-500 bg-white rounded-xl shadow-sm">Cargando datos...</div>
+                <div className="flex flex-col items-center justify-center p-12 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm animate-pulse">
+                    <RefreshCw size={32} className="animate-spin mb-3 text-blue-500"/>
+                    <p>Analizando historial de calibraciones...</p>
+                </div>
             ) : Object.keys(equiposAgrupados).length === 0 ? (
-                <div className="p-10 text-center text-gray-500 bg-white rounded-xl shadow-sm">No se encontraron equipos con los filtros actuales.</div>
+                <div className="flex flex-col items-center justify-center p-12 text-gray-500 bg-white rounded-xl border border-gray-200 shadow-sm">
+                    <Search size={32} className="mb-3 text-gray-300"/>
+                    <p>No se encontraron equipos con los filtros actuales.</p>
+                </div>
             ) : (
                 Object.entries(equiposAgrupados).map(([cliente, itemsCliente]) => {
                     const isExpanded = clientesExpandidos[cliente];
@@ -336,23 +377,23 @@ export const VencimientosScreen: React.FC = () => {
                     const hasAlerts = countVencidos > 0 || countCriticos > 0;
 
                     return (
-                        <div key={cliente} className={`bg-white rounded-xl border transition-all duration-200 ${hasAlerts ? 'border-l-4 border-l-red-500 border-gray-200' : 'border-gray-200'}`}>
+                        <div key={cliente} className={`bg-white rounded-xl border transition-all duration-200 shadow-sm ${hasAlerts ? 'border-l-4 border-l-red-500 border-gray-200' : 'border-gray-200'}`}>
                             
                             {/* CABECERA DEL CLIENTE (Clickable) */}
                             <button 
                                 onClick={() => toggleCliente(cliente)}
-                                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors rounded-t-xl focus:outline-none"
+                                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors rounded-t-xl focus:outline-none group"
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg ${hasAlerts ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                                    <div className={`p-2 rounded-lg transition-colors ${hasAlerts ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100'}`}>
                                         <Building2 size={20} />
                                     </div>
                                     <div className="text-left">
                                         <h3 className="font-bold text-gray-800 text-sm md:text-base">{cliente}</h3>
-                                        <div className="flex gap-2 text-xs mt-1">
-                                            <span className="text-gray-500">{itemsCliente.length} Equipos</span>
-                                            {countVencidos > 0 && <span className="text-red-600 font-semibold">• {countVencidos} Vencidos</span>}
-                                            {countCriticos > 0 && <span className="text-orange-600 font-semibold">• {countCriticos} Críticos</span>}
+                                        <div className="flex flex-wrap gap-2 text-xs mt-1">
+                                            <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{itemsCliente.length} Equipos</span>
+                                            {countVencidos > 0 && <span className="text-red-700 bg-red-100 px-2 py-0.5 rounded-full font-semibold">{countVencidos} Vencidos</span>}
+                                            {countCriticos > 0 && <span className="text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full font-semibold">{countCriticos} Críticos</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -368,9 +409,9 @@ export const VencimientosScreen: React.FC = () => {
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-gray-50 text-gray-600 text-xs uppercase font-semibold">
                                                 <tr>
-                                                    <th className="px-6 py-3">Estado</th>
-                                                    <th className="px-6 py-3">Equipo / ID</th>
-                                                    <th className="px-6 py-3">Fechas</th>
+                                                    <th className="px-6 py-3 min-w-[120px]">Estado</th>
+                                                    <th className="px-6 py-3 min-w-[200px]">Equipo / ID</th>
+                                                    <th className="px-6 py-3 min-w-[150px]">Fechas</th>
                                                     <th className="px-6 py-3 text-center">Acción</th>
                                                 </tr>
                                             </thead>
@@ -378,39 +419,46 @@ export const VencimientosScreen: React.FC = () => {
                                                 {itemsCliente.map((item) => (
                                                     <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
                                                         <td className="px-6 py-3">
-                                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-bold w-fit
-                                                                ${item.status === 'vencido' ? 'bg-red-100 text-red-700' : 
-                                                                  item.status === 'critico' ? 'bg-orange-100 text-orange-700' :
-                                                                  item.status === 'proximo' ? 'bg-yellow-100 text-yellow-700' :
-                                                                  'bg-green-100 text-green-700'
+                                                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold w-fit shadow-sm
+                                                                ${item.status === 'vencido' ? 'bg-red-100 text-red-700 border border-red-200' : 
+                                                                  item.status === 'critico' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                                                                  item.status === 'proximo' ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
+                                                                  'bg-green-100 text-green-700 border border-green-200'
                                                                 }`}>
-                                                                {item.status === 'vencido' ? <AlertTriangle size={12}/> : 
-                                                                 item.status === 'vigente' ? <CheckCircle2 size={12}/> : <Clock size={12}/>}
+                                                                {item.status === 'vencido' ? <AlertTriangle size={14}/> : 
+                                                                 item.status === 'vigente' ? <CheckCircle2 size={14}/> : <Clock size={14}/>}
                                                                 <span className="capitalize">{item.status}</span>
                                                             </div>
                                                         </td>
                                                         <td className="px-6 py-3">
-                                                            <div className="font-medium text-gray-800">{item.descripcion}</div>
-                                                            <div className="text-xs text-gray-500 font-mono">ID: {item.equipoId}</div>
+                                                            <div className="font-semibold text-gray-800">{item.descripcion}</div>
+                                                            <div className="text-xs text-gray-500 font-mono mt-0.5 bg-gray-100 inline-block px-1 rounded">
+                                                                ID: {item.equipoId}
+                                                            </div>
                                                         </td>
                                                         <td className="px-6 py-3">
-                                                            <div className="text-xs text-gray-500">
-                                                                Calib: {format(parseISO(item.fechaCalibracion), 'dd/MM/yy')}
+                                                            <div className="text-xs text-gray-500 mb-1">
+                                                                Calib: <span className="font-medium text-gray-700">{format(parseISO(item.fechaCalibracion), 'dd/MM/yy')}</span>
                                                             </div>
-                                                            <div className={`font-medium ${item.diasRestantes < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+                                                            <div className={`font-bold text-sm ${item.diasRestantes < 0 ? 'text-red-600' : 'text-gray-800'}`}>
                                                                 Vence: {format(item.fechaVencimiento, 'dd/MM/yy')}
                                                             </div>
-                                                            <div className="text-xs text-gray-400">
-                                                                ({item.diasRestantes} días)
+                                                            <div className={`text-xs mt-1 font-medium ${
+                                                                item.diasRestantes < 0 ? 'text-red-500' : 
+                                                                item.diasRestantes <= 30 ? 'text-orange-500' : 'text-green-600'
+                                                            }`}>
+                                                                {item.diasRestantes < 0 
+                                                                    ? `Vencido hace ${Math.abs(item.diasRestantes)} días` 
+                                                                    : `${item.diasRestantes} días restantes`}
                                                             </div>
                                                         </td>
                                                         <td className="px-6 py-3 text-center">
                                                             <a 
                                                                 href={generarLinkCorreo(item)}
-                                                                className="inline-flex items-center justify-center p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                                                                title="Enviar correo"
+                                                                className="inline-flex items-center justify-center p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 rounded-lg transition-all border border-blue-200 shadow-sm"
+                                                                title="Enviar correo recordatorio"
                                                             >
-                                                                <Mail size={16} />
+                                                                <Mail size={18} />
                                                             </a>
                                                         </td>
                                                     </tr>

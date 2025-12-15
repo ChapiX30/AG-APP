@@ -10,7 +10,7 @@ import {
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
 import {
-  collection, onSnapshot, doc, setDoc, updateDoc, query, where, getDocs
+  collection, onSnapshot, doc, setDoc, updateDoc, query, where, getDocs, orderBy
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { addYears, addMonths, differenceInDays, parseISO, isValid, format, isToday, parse } from 'date-fns';
@@ -74,14 +74,10 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
       
       <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
         {services.map((s) => {
-          // Detectar datos de Friday
           const esUrgente = s.prioridad === 'alta' || s.prioridad === 'critica';
-          
-          // Lógica para detectar si es HOY
           let esHoy = false;
           let fechaTexto = s.fecha || 'Sin fecha';
           try {
-             // Ajusta esto si tu formato de fecha en Friday es diferente a YYYY-MM-DD
              if (s.fecha) {
                 const fechaDate = parseISO(s.fecha);
                 if (isToday(fechaDate)) {
@@ -94,7 +90,6 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
           return (
             <div 
               key={s.id}
-              // Redirige a Friday que es donde viven estos servicios
               onClick={() => navigateTo('friday')} 
               className={`border rounded-xl p-3 cursor-pointer transition-all group relative overflow-hidden ${esHoy ? 'bg-indigo-600/20 border-indigo-400/50' : 'bg-slate-800/80 border-white/5 hover:bg-indigo-900/40'}`}
             >
@@ -102,7 +97,6 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
               
               <div className="flex justify-between items-start mb-1 pl-2">
                 <div className="flex items-center gap-2">
-                    {/* Badge de HOY o Fecha */}
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${esHoy ? 'bg-green-500 text-white animate-pulse' : 'bg-slate-700 text-slate-300'}`}>
                         {fechaTexto}
                     </span>
@@ -112,7 +106,6 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
                         </span>
                     )}
                 </div>
-                
                 {esUrgente && <AlertTriangle size={12} className="text-red-400" />}
               </div>
               
@@ -148,46 +141,62 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
   );
 };
 
-// 2. Widget: Radar de Calidad (Vertical)
+// 2. Widget: Radar de Calidad (CORREGIDO PARA IGNORAR DUPLICADOS)
 const QualityRadarWidget = ({ navigateTo }: { navigateTo: any }) => {
   const [stats, setStats] = useState({ vencidos: 0, criticos: 0, proximos: 0, loading: true });
 
   useEffect(() => {
     const checkVencimientos = async () => {
-      const fechaLimite = new Date();
-      fechaLimite.setFullYear(fechaLimite.getFullYear() - 1); 
-      const fechaStr = fechaLimite.toISOString().split('T')[0];
-
-      const q = query(collection(db, "hojasDeTrabajo"), where("fecha", ">=", fechaStr)); 
-      const snap = await getDocs(q);
-      
-      let v = 0, c = 0, p = 0;
-      const hoy = new Date();
-
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (!d.fecha || !d.frecuenciaCalibracion) return;
+      try {
+        // CORRECCIÓN: Usamos orderBy fecha desc para asegurar que el primero sea el más reciente
+        const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc")); 
+        const snap = await getDocs(q);
         
-        let vencimiento: Date | null = null;
-        try {
-            const base = parseISO(d.fecha);
-            if (isValid(base)) {
-              const freq = d.frecuenciaCalibracion.toLowerCase();
-              if (freq.includes('1 año')) vencimiento = addYears(base, 1);
-              else if (freq.includes('6 meses')) vencimiento = addMonths(base, 6);
-              else if (freq.includes('3 meses')) vencimiento = addMonths(base, 3);
-              else vencimiento = addYears(base, 1); 
-            }
-        } catch(e) {}
+        let v = 0, c = 0, p = 0;
+        const hoy = new Date();
+        const equiposProcesados = new Set<string>(); // Set para evitar duplicados
 
-        if (vencimiento) {
-            const dias = differenceInDays(vencimiento, hoy);
-            if (dias < 0) v++;
-            else if (dias <= 30) c++;
-            else if (dias <= 60) p++;
-        }
-      });
-      setStats({ vencidos: v, criticos: c, proximos: p, loading: false });
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (!d.fecha || !d.frecuenciaCalibracion) return;
+          
+          // Normalizar ID
+          const idUnico = d.id ? d.id.trim() : (d.certificado || 'S/N');
+
+          // SI YA VIMOS ESTE ID, LO IGNORAMOS (Es un registro viejo)
+          if (idUnico && equiposProcesados.has(idUnico) && idUnico !== 'S/N') {
+            return;
+          }
+
+          // Agregamos al Set para no volver a contarlo
+          if (idUnico) equiposProcesados.add(idUnico);
+
+          // Cálculo de fechas
+          let vencimiento: Date | null = null;
+          try {
+              const base = parseISO(d.fecha);
+              if (isValid(base)) {
+                const freq = d.frecuenciaCalibracion.toLowerCase();
+                if (freq.includes('1 año')) vencimiento = addYears(base, 1);
+                else if (freq.includes('2 años')) vencimiento = addYears(base, 2);
+                else if (freq.includes('6 meses')) vencimiento = addMonths(base, 6);
+                else if (freq.includes('3 meses')) vencimiento = addMonths(base, 3);
+                else vencimiento = addYears(base, 1); 
+              }
+          } catch(e) {}
+
+          if (vencimiento) {
+              const dias = differenceInDays(vencimiento, hoy);
+              if (dias < 0) v++;
+              else if (dias <= 30) c++;
+              else if (dias <= 60) p++;
+          }
+        });
+        setStats({ vencidos: v, criticos: c, proximos: p, loading: false });
+      } catch (error) {
+        console.error("Error en radar de calidad:", error);
+        setStats(prev => ({ ...prev, loading: false }));
+      }
     };
     checkVencimientos();
   }, []);
@@ -210,26 +219,26 @@ const QualityRadarWidget = ({ navigateTo }: { navigateTo: any }) => {
     <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 animate-fadeIn">
       <div className="flex items-center gap-2 mb-3 border-b border-white/5 pb-2">
         <AlertTriangle className="text-orange-400" size={16} />
-        <h3 className="font-bold text-white text-sm">Atención</h3>
+        <h3 className="font-bold text-white text-sm">Radar de Calidad</h3>
       </div>
       
       <div className="space-y-2">
         {stats.vencidos > 0 && (
-          <div onClick={() => navigateTo('vencimientos')} className="flex items-center justify-between p-2 rounded-lg bg-red-500/10 border border-red-500/20 cursor-pointer hover:bg-red-500/20 transition">
+          <div onClick={() => navigateTo('vencimientos')} className="flex items-center justify-between p-2 rounded-lg bg-red-500/10 border border-red-500/20 cursor-pointer hover:bg-red-500/20 transition group">
             <span className="text-xs text-red-200 font-medium">Vencidos</span>
-            <span className="text-sm font-bold text-red-400 bg-red-500/20 px-2 rounded">{stats.vencidos}</span>
+            <span className="text-sm font-bold text-red-400 bg-red-500/20 px-2 rounded group-hover:bg-red-500/30">{stats.vencidos}</span>
           </div>
         )}
         {stats.criticos > 0 && (
-          <div onClick={() => navigateTo('vencimientos')} className="flex items-center justify-between p-2 rounded-lg bg-orange-500/10 border border-orange-500/20 cursor-pointer hover:bg-orange-500/20 transition">
-            <span className="text-xs text-orange-200 font-medium">Críticos</span>
-            <span className="text-sm font-bold text-orange-400 bg-orange-500/20 px-2 rounded">{stats.criticos}</span>
+          <div onClick={() => navigateTo('vencimientos')} className="flex items-center justify-between p-2 rounded-lg bg-orange-500/10 border border-orange-500/20 cursor-pointer hover:bg-orange-500/20 transition group">
+            <span className="text-xs text-orange-200 font-medium">Críticos (≤30d)</span>
+            <span className="text-sm font-bold text-orange-400 bg-orange-500/20 px-2 rounded group-hover:bg-orange-500/30">{stats.criticos}</span>
           </div>
         )}
         {stats.proximos > 0 && (
-           <div onClick={() => navigateTo('vencimientos')} className="flex items-center justify-between p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 cursor-pointer hover:bg-yellow-500/20 transition">
-            <span className="text-xs text-yellow-200 font-medium">Próximos</span>
-            <span className="text-sm font-bold text-yellow-400 bg-yellow-500/20 px-2 rounded">{stats.proximos}</span>
+           <div onClick={() => navigateTo('vencimientos')} className="flex items-center justify-between p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 cursor-pointer hover:bg-yellow-500/20 transition group">
+            <span className="text-xs text-yellow-200 font-medium">Próximos (≤60d)</span>
+            <span className="text-sm font-bold text-yellow-400 bg-yellow-500/20 px-2 rounded group-hover:bg-yellow-500/30">{stats.proximos}</span>
           </div>
         )}
       </div>
@@ -352,7 +361,7 @@ export const MainMenu: React.FC = () => {
 
   const [showProfile, setShowProfile] = useState(false);
   const [assignedCount, setAssignedCount] = useState(0);
-  const [assignedServices, setAssignedServices] = useState<any[]>([]); // Lista de servicios
+  const [assignedServices, setAssignedServices] = useState<any[]>([]); 
   const [equipmentCount, setEquipmentCount] = useState(0);
   const [greeting, setGreeting] = useState('');
 
@@ -381,19 +390,17 @@ export const MainMenu: React.FC = () => {
     });
   }, [userData]);
 
-  // --- CARGA DE SERVICIOS ASIGNADOS (LA CLAVE) ---
+  // --- CARGA DE SERVICIOS ASIGNADOS ---
   useEffect(() => {
     if (!userData.uid) return;
     
-    // Consulta a Firebase: Trae servicios donde "personas" contiene MI ID y no ha finalizado
     const q = query(
       collection(db, 'servicios'),
-      where('personas', 'array-contains', userData.uid), // <--- ESTO FILTRA POR EL USUARIO LOGUEADO
+      where('personas', 'array-contains', userData.uid), 
       where('estado', '!=', 'Finalizado') 
     );
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Filtro extra por seguridad visual
       const activos = docs.filter((s: any) => s.estado !== 'finalizado' && s.estado !== 'cancelado');
       setAssignedCount(activos.length);
       setAssignedServices(activos); 

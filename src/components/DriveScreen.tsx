@@ -9,7 +9,8 @@ import {
   CheckCircle2, FileText, Download, Star, Info, X, 
   FolderPlus, UploadCloud, ChevronRight, File, Image as ImageIcon, 
   Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, User,
-  CalendarClock, ArrowLeft, FolderCheck, MoveRight, ArrowUp, FolderOpen
+  CalendarClock, ArrowLeft, MoveRight, ArrowUp, FolderOpen,
+  ArrowDownWideNarrow, ArrowUpWideNarrow, ArrowDownAZ, ArrowUpAZ
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -45,15 +46,27 @@ interface UserData {
 
 type ViewMode = 'grid' | 'list';
 type FilterType = 'all' | 'starred' | 'recent' | 'pending_review' | 'completed';
+type SortType = 'dateDesc' | 'dateAsc' | 'nameAsc' | 'nameDesc';
 
-// --- UTILS ---
-
+// --- UTILS (FUNCIÓN DE LIMPIEZA CORREGIDA) ---
 const cleanFileName = (rawName: string) => {
     if (!rawName) return "Sin Nombre";
+    
+    // 1. Quitar prefijo worksheets_ si existe
     let name = rawName.replace(/^worksheets_/, '');
+
+    // 2. REGLA DE ORO: Si contiene "_AG", cortar todo lo anterior.
+    // Esto arregla los archivos "HT SS 1036_AGFL..." dejándolos en "AGFL..."
+    const indexAG = name.indexOf('_AG');
+    if (indexAG !== -1) {
+        return name.substring(indexAG + 1);
+    }
+
+    // 3. Fallback: Si no tiene AG pero tiene un guion bajo y texto con espacios antes
     const firstUnderscore = name.indexOf('_');
     if (firstUnderscore !== -1) {
         const firstPart = name.substring(0, firstUnderscore);
+        // Si la parte antes del guion tiene espacios (ej: "Copia de archivo_nombre")
         if (firstPart.includes(' ')) {
             return name.substring(firstUnderscore + 1);
         }
@@ -156,14 +169,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // Estados Principales
   const [folders, setFolders] = useState<DriveFolder[]>([]);
-  const [files, setFiles] = useState<DriveFile[]>([]);
+  const [files, setFiles] = useState<DriveFile[]>([]); 
   const [loading, setLoading] = useState(true);
   const [currentUserData, setCurrentUserData] = useState<UserData | null>(null);
   
-  // Navegación
+  // Navegación y Filtros
   const [path, setPath] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>('grid'); 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [sortBy, setSortBy] = useState<SortType>('dateDesc'); 
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false); 
+  
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [completedGroupView, setCompletedGroupView] = useState<string | null>(null);
 
@@ -205,7 +221,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadUser();
   }, [user]);
 
-  // 2. Cargar Contenido
+  // 2. Cargar Contenido 
   const loadContent = async () => {
     setLoading(true);
     setContextMenu(null);
@@ -213,21 +229,26 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       if (activeFilter !== 'all' || searchQuery) {
         const querySnapshot = await getDocs(collection(db, 'fileMetadata'));
         const results: DriveFile[] = [];
-        const term = searchQuery.toLowerCase();
         const isQuality = isQualityUser(currentUserData);
         const myName = (currentUserData?.name || "").toLowerCase();
+        const term = searchQuery.toLowerCase();
 
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id; 
+          // APLICAMOS LA NUEVA FUNCIÓN DE LIMPIEZA AQUÍ
           const cleanNameStr = cleanFileName(rawName);
 
-          if (!isQuality && activeFilter !== 'all') { 
+          if (!isQuality) { 
               const pathIncludesName = (data.filePath || "").toLowerCase().includes(myName);
               if (!pathIncludesName) return; 
           }
 
-          if (term && !cleanNameStr.toLowerCase().includes(term)) return;
+          if (term) {
+              const matchesName = cleanNameStr.toLowerCase().includes(term);
+              const matchesRaw = rawName.toLowerCase().includes(term);
+              if (!matchesName && !matchesRaw) return;
+          }
 
           let matchesTab = true;
           if (activeFilter === 'starred') matchesTab = data.starred === true;
@@ -236,7 +257,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
           if (matchesTab) {
               results.push({
-                  name: cleanNameStr,
+                  name: cleanNameStr, // Usamos el nombre limpio
                   rawName: rawName,
                   url: "",
                   fullPath: data.filePath || docSnap.id.replace(/_/g, '/'),
@@ -254,11 +275,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           }
         });
         
-        if (activeFilter === 'recent') {
-            results.sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
-        }
         setFiles(results);
-        setFolders([]);
+        setFolders([]); 
 
       } else {
         const pathStr = [ROOT_PATH, ...path].join('/');
@@ -306,9 +324,27 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (currentUserData) loadContent(); }, [path, activeFilter, searchQuery, currentUserData]);
+  useEffect(() => { if (currentUserData) loadContent(); }, [path, activeFilter, currentUserData, searchQuery]);
 
-  // 3. EFECTO PARA CARGAR CARPETAS DE "MOVER"
+  // 3. Procesamiento en cliente 
+  const processedFiles = useMemo(() => {
+    let result = [...files];
+    // Ordenar
+    result.sort((a, b) => {
+        const dateA = new Date(a.created).getTime();
+        const dateB = new Date(b.created).getTime();
+        switch (sortBy) {
+            case 'nameAsc': return a.name.localeCompare(b.name);
+            case 'nameDesc': return b.name.localeCompare(a.name);
+            case 'dateAsc': return dateA - dateB;
+            case 'dateDesc': return dateB - dateA;
+            default: return 0;
+        }
+    });
+    return result;
+  }, [files, sortBy]); 
+
+  // 4. EFECTO PARA CARGAR CARPETAS DE "MOVER"
   useEffect(() => {
     const loadMoveFolders = async () => {
         if (!moveDialogOpen) return;
@@ -326,13 +362,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const completedGroups = useMemo(() => {
     if (activeFilter !== 'completed') return {};
     const groups: Record<string, DriveFile[]> = {};
-    files.forEach(file => {
+    processedFiles.forEach(file => {
         const folderName = getFolderNameFromPath(file.fullPath);
         if (!groups[folderName]) groups[folderName] = [];
         groups[folderName].push(file);
     });
     return groups;
-  }, [files, activeFilter]);
+  }, [processedFiles, activeFilter]);
 
   // Acciones
   const handleBack = () => { if (onBack) onBack(); else goBack(); };
@@ -368,7 +404,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const handleMoveFile = async () => {
     if (!moveTargetFile) return;
     const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
-    // Usamos el nombre limpio para el destino para sanear el archivo si es necesario
     const newFullPath = `${destinationPathString}/${moveTargetFile.name}`;
     
     if (newFullPath === moveTargetFile.fullPath) {
@@ -377,16 +412,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     
     setIsMoving(true);
     try {
-        // 1. Obtener URL descarga
         let fileUrl = moveTargetFile.url;
         if (!fileUrl) fileUrl = await getDownloadURL(ref(storage, moveTargetFile.fullPath));
         
-        // 2. Descargar y subir al nuevo lugar (Copia)
         const response = await fetch(fileUrl);
         const blob = await response.blob();
         await uploadBytes(ref(storage, newFullPath), blob);
 
-        // 3. Mover Metadata
         const oldMetaId = moveTargetFile.fullPath.replace(/\//g, '_');
         const newMetaId = newFullPath.replace(/\//g, '_');
         const oldMetaDoc = await getDoc(doc(db, 'fileMetadata', oldMetaId));
@@ -397,16 +429,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         await setDoc(doc(db, 'fileMetadata', newMetaId), { 
             ...metaData, 
             filePath: newFullPath,
-            name: moveTargetFile.name, // Aseguramos nombre limpio
+            name: moveTargetFile.name,
             updated: new Date().toISOString() 
         }, { merge: true });
 
-        // 4. Borrar viejo
         await deleteObject(ref(storage, moveTargetFile.fullPath));
         
         setMoveDialogOpen(false);
         setMoveTargetFile(null);
-        setMoveToPath([]); // Reset path
+        setMoveToPath([]);
         loadContent();
     } catch (e: any) {
         console.error("Error moving:", e);
@@ -422,6 +453,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     const newCompletedBy = field === 'completed' && value ? userName : (field === 'completed' && !value ? null : file.completedByName);
 
     const updatedFile = { ...file, [field]: value, reviewedByName: newReviewedBy, completedByName: newCompletedBy };
+    
     setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
     if (selectedFile?.fullPath === file.fullPath) setSelectedFile(updatedFile as DriveFile);
 
@@ -481,19 +513,24 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         );
     }
 
-    let displayFiles = files;
+    let displayFiles = processedFiles;
     if (activeFilter === 'completed' && completedGroupView) displayFiles = completedGroups[completedGroupView] || [];
 
-    if (displayFiles.length === 0 && folders.length === 0) return <div className="text-center py-20 text-gray-400 flex flex-col items-center"><Folder className="w-16 h-16 mb-4 text-gray-200" /><p className="text-lg font-medium text-gray-500">Carpeta vacía</p></div>;
+    const showFolders = activeFilter === 'all' && !searchQuery && folders.length > 0;
+
+    if (displayFiles.length === 0 && !showFolders) {
+        if(searchQuery) return <div className="text-center py-20 text-gray-400 flex flex-col items-center"><Search className="w-16 h-16 mb-4 text-gray-200" /><p className="text-lg font-medium text-gray-500">No se encontraron resultados para "{searchQuery}"</p></div>;
+        return <div className="text-center py-20 text-gray-400 flex flex-col items-center"><Folder className="w-16 h-16 mb-4 text-gray-200" /><p className="text-lg font-medium text-gray-500">Carpeta vacía</p></div>;
+    }
 
     return (
         <>
-            {activeFilter === 'all' && folders.length > 0 && (
+            {showFolders && (
                 <div className="mb-8">
                     <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><Folder size={14}/> Carpetas</h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                         {folders.map((f) => (
-                            <div key={f.fullPath} onDoubleClick={() => setPath([...path, f.name])} className="group p-4 border border-gray-200 bg-white rounded-2xl hover:border-blue-400 cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 select-none relative overflow-hidden">
+                            <div key={f.fullPath} onDoubleClick={() => { setPath([...path, f.name]); setSearchQuery(""); }} className="group p-4 border border-gray-200 bg-white rounded-2xl hover:border-blue-400 cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 select-none relative overflow-hidden">
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-cyan-300 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                 <Folder size={32} className="text-blue-200 fill-blue-50 group-hover:text-blue-500 group-hover:fill-blue-100 transition-colors" />
                                 <span className="text-sm font-semibold text-gray-700 truncate w-full text-center">{f.name}</span>
@@ -503,6 +540,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </div>
             )}
             <div>
+                {displayFiles.length > 0 && (
+                    <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2 justify-between">
+                        <div className="flex items-center gap-2"><File size={14}/> {searchQuery ? 'Resultados de Búsqueda Global' : 'Archivos'} ({displayFiles.length})</div>
+                    </h2>
+                )}
+                
                 {view === 'grid' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 pb-20">
                         {displayFiles.map((file) => (
@@ -510,7 +553,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                         ))}
                     </div>
                 ) : (
-                    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm mb-20">
                         <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-400 uppercase tracking-wider"><div className="col-span-4">Nombre</div><div className="col-span-3">Progreso</div><div className="col-span-2">Estado</div><div className="col-span-2 text-right">Tamaño</div><div className="col-span-1"></div></div>
                         {displayFiles.map((file) => (
                             <FileListRow key={file.fullPath} file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => setSelectedFile(file)} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
@@ -523,7 +566,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   return (
-    <div className="flex h-full w-full bg-[#f8f9fa] text-gray-800 font-sans overflow-hidden" onClick={() => setContextMenu(null)}>
+    <div className="flex h-full w-full bg-[#f8f9fa] text-gray-800 font-sans overflow-hidden" onClick={() => { setContextMenu(null); setFilterMenuOpen(false); }}>
       
       {/* SIDEBAR */}
       <div className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col pt-5 pb-4 z-20">
@@ -537,29 +580,92 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         )}
 
         <nav className="flex-1 px-3 space-y-1">
-            <SidebarItem icon={<Home size={18}/>} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setCompletedGroupView(null); }} />
-            <SidebarItem icon={<Star size={18}/>} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setCompletedGroupView(null); }} />
-            <SidebarItem icon={<Clock size={18}/>} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setCompletedGroupView(null); }} />
-            {isQualityUser(currentUserData) && (<><div className="pt-6 pb-3 px-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Calidad</div><SidebarItem icon={<Settings size={18}/>} label="Por Revisar" active={activeFilter === 'pending_review'} onClick={() => { setActiveFilter('pending_review'); setCompletedGroupView(null); }} badge /><SidebarItem icon={<FileCheck size={18}/>} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setCompletedGroupView(null); }} /></>)}
+            <SidebarItem icon={<Home size={18}/>} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setCompletedGroupView(null); setSearchQuery(""); }} />
+            <SidebarItem icon={<Star size={18}/>} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setCompletedGroupView(null); setSearchQuery(""); }} />
+            <SidebarItem icon={<Clock size={18}/>} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setCompletedGroupView(null); setSearchQuery(""); }} />
+            {isQualityUser(currentUserData) && (<><div className="pt-6 pb-3 px-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Calidad</div><SidebarItem icon={<Settings size={18}/>} label="Por Revisar" active={activeFilter === 'pending_review'} onClick={() => { setActiveFilter('pending_review'); setCompletedGroupView(null); setSearchQuery(""); }} badge /><SidebarItem icon={<FileCheck size={18}/>} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setCompletedGroupView(null); setSearchQuery(""); }} /></>)}
         </nav>
       </div>
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 border-b border-gray-200 flex items-center justify-between px-6 bg-white sticky top-0 z-10">
-            <div className="flex-1 max-w-2xl relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} /><input type="text" placeholder="Buscar..." className="w-full bg-gray-100 hover:bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-100 border-transparent focus:border-blue-500 rounded-xl py-2.5 pl-10 pr-4 transition-all outline-none text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-            <div className="flex items-center gap-3 ml-4"><button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95">{isUploading ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}<span>Subir</span></button><input ref={fileInputRef} type="file" multiple hidden onChange={handleUpload} /><div className="h-8 w-px bg-gray-200 mx-1"></div><div className="bg-gray-100 p-1 rounded-lg flex border border-gray-200"><button onClick={() => setView('list')} className={clsx("p-2 rounded-md transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}><List size={18} /></button><button onClick={() => setView('grid')} className={clsx("p-2 rounded-md transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}><LayoutGrid size={18} /></button></div><button onClick={() => setDetailsOpen(!detailsOpen)} className={clsx("p-2.5 rounded-xl transition-colors border", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}><Info size={18} /></button></div>
+            <div className="flex-1 max-w-2xl relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input 
+                    type="text" 
+                    placeholder="Buscar en globalmente..." 
+                    className="w-full bg-gray-100 hover:bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-100 border-transparent focus:border-blue-500 rounded-xl py-2.5 pl-10 pr-4 transition-all outline-none text-sm" 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                />
+            </div>
+            <div className="flex items-center gap-3 ml-4">
+                <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95">{isUploading ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}<span>Subir</span></button>
+                <input ref={fileInputRef} type="file" multiple hidden onChange={handleUpload} />
+                <div className="h-8 w-px bg-gray-200 mx-1"></div>
+                <div className="bg-gray-100 p-1 rounded-lg flex border border-gray-200">
+                    <button onClick={() => setView('list')} className={clsx("p-2 rounded-md transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}><List size={18} /></button>
+                    <button onClick={() => setView('grid')} className={clsx("p-2 rounded-md transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}><LayoutGrid size={18} /></button>
+                </div>
+                <button onClick={() => setDetailsOpen(!detailsOpen)} className={clsx("p-2.5 rounded-xl transition-colors border", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}><Info size={18} /></button>
+            </div>
         </header>
 
-        <div className="px-6 py-4 flex items-center text-sm text-gray-600 bg-white/50 backdrop-blur-sm sticky top-16 z-10 border-b border-gray-200 min-h-[60px]">
-            {activeFilter !== 'all' ? (
-                <div className="flex items-center gap-3">
-                    <span className="font-bold text-gray-800 capitalize flex items-center gap-2 bg-white px-3 py-1 rounded-md border border-gray-200 shadow-sm"><Filter size={14} className="text-blue-500"/> {activeFilter === 'pending_review' ? 'Pendientes de Revisión' : (activeFilter === 'completed' ? 'Historial Completado' : activeFilter.replace('_', ' '))}</span>
-                    {activeFilter === 'completed' && completedGroupView && (<><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setCompletedGroupView(null)} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium">Todos</button><ChevronRight size={14} className="text-gray-400" /><span className="font-bold text-green-700 flex items-center gap-2 bg-green-50 px-2 py-1 rounded-md border border-green-100"><FolderCheck size={14}/> {completedGroupView}</span></>)}
-                </div>
-            ) : (
-                <div className="flex items-center gap-1"><button onClick={() => setPath([])} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium transition-colors">Unidad</button>{path.map((folder, i) => (<React.Fragment key={folder}><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setPath(path.slice(0, i + 1))} className="hover:bg-gray-200 px-2 py-1 rounded-md font-semibold text-gray-800 transition-colors">{folder}</button></React.Fragment>))}</div>
-            )}
+        <div className="px-6 py-4 flex items-center text-sm text-gray-600 bg-white/50 backdrop-blur-sm sticky top-16 z-10 border-b border-gray-200 min-h-[60px] justify-between">
+            <div className="flex items-center flex-1">
+                {activeFilter !== 'all' ? (
+                    <div className="flex items-center gap-3">
+                        <span className="font-bold text-gray-800 capitalize flex items-center gap-2 bg-white px-3 py-1 rounded-md border border-gray-200 shadow-sm"><Filter size={14} className="text-blue-500"/> {activeFilter === 'pending_review' ? 'Pendientes de Revisión' : (activeFilter === 'completed' ? 'Historial Completado' : activeFilter.replace('_', ' '))}</span>
+                        {activeFilter === 'completed' && completedGroupView && (<><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setCompletedGroupView(null)} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium">Todos</button><ChevronRight size={14} className="text-gray-400" /><span className="font-bold text-green-700 flex items-center gap-2 bg-green-50 px-2 py-1 rounded-md border border-green-100"><FolderCheck size={14}/> {completedGroupView}</span></>)}
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1">
+                        {searchQuery ? (
+                            <span className="font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 flex items-center gap-2">
+                                <Search size={14}/> Resultados para: "{searchQuery}"
+                            </span>
+                        ) : (
+                            <>
+                                <button onClick={() => setPath([])} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium transition-colors">Unidad</button>
+                                {path.map((folder, i) => (<React.Fragment key={folder}><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setPath(path.slice(0, i + 1))} className="hover:bg-gray-200 px-2 py-1 rounded-md font-semibold text-gray-800 transition-colors">{folder}</button></React.Fragment>))}
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* BOTÓN DE FILTROS REAL */}
+            <div className="relative">
+                <button 
+                    onClick={(e) => { e.stopPropagation(); setFilterMenuOpen(!filterMenuOpen); }} 
+                    className={clsx("flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all", filterMenuOpen ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}
+                >
+                    <ArrowUpWideNarrow size={14} />
+                    Ordenar
+                </button>
+                
+                {filterMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                        <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ordenar por</div>
+                        <div className="p-1">
+                            <button onClick={() => setSortBy('dateDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}>
+                                <ArrowDownWideNarrow size={16} /> Más recientes
+                            </button>
+                            <button onClick={() => setSortBy('dateAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}>
+                                <ArrowUpWideNarrow size={16} /> Más antiguos
+                            </button>
+                            <div className="my-1 border-t border-gray-100"></div>
+                            <button onClick={() => setSortBy('nameAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}>
+                                <ArrowDownAZ size={16} /> Nombre (A-Z)
+                            </button>
+                            <button onClick={() => setSortBy('nameDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}>
+                                <ArrowUpAZ size={16} /> Nombre (Z-A)
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6" onContextMenu={(e) => e.preventDefault()}>
