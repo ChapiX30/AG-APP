@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { setDoc, doc } from "firebase/firestore";
 import { auth, db } from "../utils/firebase"; 
-import { Eye, EyeOff, Lock, User, Mail, Briefcase, Microscope, ArrowLeft, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Mail, Briefcase, Microscope, ArrowLeft, CheckCircle, AlertCircle, ChevronDown, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
 
 interface RegisterScreenProps {
@@ -18,6 +18,20 @@ const getFirebaseErrorMessage = (error: any): string => {
   }
 };
 
+// Variantes para animaciones escalonadas
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1, delayChildren: 0.3 }
+  }
+};
+
+const itemVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: { y: 0, opacity: 1, transition: { duration: 0.5, ease: "easeOut" } }
+};
+
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogin }) => {
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
@@ -27,6 +41,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // Lógica simple de fortaleza de contraseña
+  const passwordStrength = password.length === 0 ? 0 : password.length < 6 ? 1 : password.length < 10 ? 2 : 3;
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +56,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
       await setDoc(doc(db, "usuarios", userCredential.user.uid), {
         nombre, correo, puesto, creado: new Date()
       });
-      setSuccess("¡Usuario registrado exitosamente! Redirigiendo...");
+      setSuccess("¡Cuenta creada con éxito!");
       setTimeout(() => onNavigateToLogin(), 2000);
     } catch (err: any) {
       setError(getFirebaseErrorMessage(err));
@@ -49,121 +66,194 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
   };
 
   return (
-    // CORRECCIÓN AQUÍ: w-full y h-full para adaptarse al contenedor animado
-    <div
-      className="h-full w-full relative overflow-hidden flex items-center justify-center p-4"
-      style={{ background: "linear-gradient(135deg, #102347 0%, #134974 75%, #4ea4d9 100%)" }}
-    >
-      {/* Efectos de fondo animados */}
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0.3 }}
-        animate={{ scale: 1.2, opacity: 0.6 }}
-        transition={{ repeat: Infinity, repeatType: "mirror", duration: 4, ease: "easeInOut" }}
-        className="absolute top-1/4 left-1/4 w-[25rem] h-[25rem] rounded-full bg-radial-gradient(circle, #8dc6f166, #1d406133, transparent) pointer-events-none blur-md z-0"
-      />
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0.2 }}
-        animate={{ scale: 1.1, opacity: 0.4 }}
-        transition={{ repeat: Infinity, repeatType: "mirror", duration: 5, ease: "easeInOut", delay: 1 }}
-        className="absolute bottom-1/4 right-1/4 w-[22rem] h-[22rem] rounded-full bg-radial-gradient(circle, #4ea4d955, #13497422, transparent) pointer-events-none blur-lg z-0"
-      />
-      <div className="absolute left-0 bottom-0 w-full h-60 pointer-events-none bg-radial-gradient(ellipse at 50% 140%, #fff9 8%, #48aaff22 25%, transparent) z-0" />
+    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4 bg-[#0a1128]">
+      
+      {/* 1. FONDO TÉCNICO AVANZADO */}
+      <div className="absolute inset-0 z-0">
+        {/* Grid de metrología */}
+        <div className="absolute inset-0 opacity-[0.05]" 
+             style={{ backgroundImage: `linear-gradient(#fff 1px, transparent 1px), linear-gradient(90(#fff 1px, transparent 1px)`, backgroundSize: '40px 40px' }} />
+        
+        {/* Orbes de luz con movimiento suave */}
+        <motion.div
+          animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
+          transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+          className="absolute -top-20 -left-20 w-[40rem] h-[40rem] bg-blue-600/20 rounded-full blur-[120px]"
+        />
+        <motion.div
+          animate={{ x: [0, -40, 0], y: [0, -50, 0] }}
+          transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+          className="absolute -bottom-20 -right-20 w-[35rem] h-[35rem] bg-indigo-500/10 rounded-full blur-[100px]"
+        />
+      </div>
 
-      {/* Tarjeta Principal */}
       <motion.div
-        initial={{ opacity: 0, y: 30 }} // Animación interna sutil, no entra en conflicto con la global
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-        className="relative z-10 w-full max-w-6xl mx-auto flex flex-col lg:flex-row rounded-3xl overflow-hidden bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative z-10 w-full max-w-6xl flex flex-col lg:flex-row rounded-[2.5rem] overflow-hidden bg-white/[0.03] backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
       >
-        {/* Panel Izquierdo */}
-        <div className="hidden lg:flex flex-1 p-8 sm:p-12 flex-col justify-center">
-          <div className="flex items-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-br from-white/20 to-white/10 rounded-2xl flex items-center justify-center mr-4 backdrop-blur-sm border border-white/20">
-              <Microscope className="w-8 h-8 text-white" />
+        {/* PANEL IZQUIERDO: Branding & Info */}
+        <div className="hidden lg:flex flex-1 p-16 flex-col justify-between relative overflow-hidden bg-gradient-to-br from-blue-600/10 to-transparent">
+          <div className="relative z-10">
+            <div className="flex items-center gap-4 mb-12">
+              <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
+                <Microscope className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-2xl font-bold text-white tracking-tighter">ESE <span className="text-blue-400">AG</span></span>
             </div>
-            <h1 className="text-4xl font-bold text-white">ESE-AG</h1>
+            
+            <h2 className="text-6xl font-bold text-white mb-6 leading-[1.1]">
+              Precisión en <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">
+                cada registro.
+              </span>
+            </h2>
+            <p className="text-blue-100/60 text-lg max-w-md leading-relaxed">
+              Sistema integral de gestión para laboratorios de metrología. Control de equipos, calibraciones y reportes en tiempo real.
+            </p>
           </div>
-          <h2 className="text-5xl md:text-6xl font-extrabold text-white mb-6 leading-tight">
-            Únete a nuestro
-            <span className="block bg-gradient-to-r from-blue-300 to-white bg-clip-text text-transparent">equipo</span>
-          </h2>
-          <p className="text-lg text-white/90 mb-10 leading-relaxed max-w-2xl">
-            Crea tu cuenta y accede a la plataforma más avanzada para la gestión de equipos y servicios de laboratorio.
-          </p>
+
+          <div className="relative z-10 pt-10 border-t border-white/10">
+             <div className="flex gap-8">
+                <div>
+                    <p className="text-white font-bold text-xl">100%</p>
+                    <p className="text-white/40 text-xs uppercase tracking-widest">Trazabilidad</p>
+                </div>
+                <div>
+                    <p className="text-white font-bold text-xl">ISO</p>
+                    <p className="text-white/40 text-xs uppercase tracking-widest">Estándares</p>
+                </div>
+             </div>
+          </div>
         </div>
 
-        {/* Panel Derecho (Formulario) */}
-        <div className="flex-1 p-8 sm:p-12 bg-white/5">
-          <div className="w-full max-w-md mx-auto">
-            <div className="text-center mb-8">
-              <h3 className="text-3xl font-bold text-white mb-2">Crear Cuenta</h3>
-              <p className="text-white/70">Sistema Equipos y Servicios AG</p>
-            </div>
+        {/* PANEL DERECHO: Formulario */}
+        <div className="flex-1 p-8 sm:p-14 bg-white/[0.02]">
+          <div className="max-w-md mx-auto">
+            <header className="mb-10">
+              <h3 className="text-3xl font-bold text-white mb-2">Crear perfil</h3>
+              <p className="text-white/40">Introduce tus credenciales de acceso</p>
+            </header>
 
-            <form onSubmit={handleRegister} className="space-y-5">
-              <div>
-                <label className="block text-white/90 text-sm font-medium mb-2">Nombre completo</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                  <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" placeholder="Tu nombre completo" required />
-                </div>
-              </div>
+            <form onSubmit={handleRegister} className="space-y-6">
+              <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4">
+                
+                {/* Input Nombre */}
+                <motion.div variants={itemVariants} className="group">
+                  <label className="block text-white/60 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">Nombre Completo</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-blue-400 transition-colors" />
+                    <input 
+                      type="text" 
+                      value={nombre} 
+                      onChange={(e) => setNombre(e.target.value)} 
+                      className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white focus:outline-none focus:border-blue-500/50 focus:bg-blue-500/5 transition-all" 
+                      placeholder="Ej. Juan Pérez" required 
+                    />
+                  </div>
+                </motion.div>
 
-              <div>
-                <label className="block text-white/90 text-sm font-medium mb-2">Correo electrónico</label>
-                <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                    <input type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" placeholder="ejemplo@ese-ag.com" required />
-                </div>
-              </div>
+                {/* Input Correo */}
+                <motion.div variants={itemVariants} className="group">
+                  <label className="block text-white/60 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">Correo Electrónico</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-blue-400 transition-colors" />
+                    <input 
+                      type="email" 
+                      value={correo} 
+                      onChange={(e) => setCorreo(e.target.value)} 
+                      className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white focus:outline-none focus:border-blue-500/50 focus:bg-blue-500/5 transition-all" 
+                      placeholder="usuario@ese-ag.com" required 
+                    />
+                  </div>
+                </motion.div>
 
-              <div>
-                <label className="block text-white/90 text-sm font-medium mb-2">Contraseña</label>
-                <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-12 pr-12 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" placeholder="Mínimo 6 caracteres" required minLength={6} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors">
+                {/* Input Password */}
+                <motion.div variants={itemVariants} className="group">
+                  <label className="block text-white/60 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">Contraseña</label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-blue-400 transition-colors" />
+                    <input 
+                      type={showPassword ? 'text' : 'password'} 
+                      value={password} 
+                      onChange={(e) => setPassword(e.target.value)} 
+                      className="w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white focus:outline-none focus:border-blue-500/50 focus:bg-blue-500/5 transition-all" 
+                      placeholder="••••••••" required 
+                    />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors">
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
-                </div>
-              </div>
-
-              <div>
-                  <label className="block text-white/90 text-sm font-medium mb-2">Puesto de trabajo</label>
-                  <div className="relative">
-                    <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                    <select value={puesto} onChange={(e) => setPuesto(e.target.value as typeof puesto)} className="appearance-none w-full pl-12 pr-12 py-3 bg-white/5 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" required>
-                      <option value="" disabled className="bg-slate-800 text-gray-400">Selecciona tu puesto…</option>
-                      <option value="Metrólogo" className="bg-slate-800 text-white">Metrólogo</option>
-                      <option value="Calidad" className="bg-slate-800 text-white">Calidad</option>
-                      <option value="Logistica" className="bg-slate-800 text-white">Logística</option>
-                      <option value="Administrativo" className="bg-slate-800 text-white">Administrativo</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
                   </div>
-              </div>
+                  {/* Password Strength Indicator */}
+                  {password.length > 0 && (
+                    <div className="flex gap-1 mt-2 px-1">
+                        {[1, 2, 3].map((level) => (
+                            <div key={level} className={`h-1 flex-1 rounded-full transition-all duration-500 ${passwordStrength >= level ? (passwordStrength === 1 ? 'bg-red-500' : passwordStrength === 2 ? 'bg-yellow-500' : 'bg-green-500') : 'bg-white/10'}`} />
+                        ))}
+                    </div>
+                  )}
+                </motion.div>
 
-              <AnimatePresence>
+                {/* Select Puesto */}
+                <motion.div variants={itemVariants} className="group">
+                  <label className="block text-white/60 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">Puesto de Trabajo</label>
+                  <div className="relative">
+                    <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 group-focus-within:text-blue-400 transition-colors" />
+                    <select 
+                      value={puesto} 
+                      onChange={(e) => setPuesto(e.target.value as any)} 
+                      className="appearance-none w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white focus:outline-none focus:border-blue-500/50 focus:bg-blue-500/5 transition-all cursor-pointer" 
+                      required
+                    >
+                      <option value="" disabled className="bg-[#1a1f2e]">Selecciona...</option>
+                      <option value="Metrólogo" className="bg-[#1a1f2e]">Metrólogo</option>
+                      <option value="Calidad" className="bg-[#1a1f2e]">Calidad</option>
+                      <option value="Logistica" className="bg-[#1a1f2e]">Logística</option>
+                      <option value="Administrativo" className="bg-[#1a1f2e]">Administrativo</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30 pointer-events-none" />
+                  </div>
+                </motion.div>
+              </motion.div>
+
+              <AnimatePresence mode="wait">
                 {error && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="bg-red-500/20 border border-red-400/30 text-red-200 rounded-xl p-3 text-center flex items-center justify-center text-sm">
-                    <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" /> <span>{error}</span>
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl p-4 flex items-center gap-3 text-sm">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0" /> {error}
                   </motion.div>
                 )}
                 {success && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="bg-green-500/20 border border-green-400/30 text-green-200 rounded-xl p-3 text-center flex items-center justify-center text-sm">
-                    <CheckCircle className="w-4 h-4 mr-2 flex-shrink-0" /> <span>{success}</span>
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-green-500/10 border border-green-500/20 text-green-400 rounded-2xl p-4 flex items-center gap-3 text-sm">
+                    <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              <motion.button type="submit" disabled={isLoading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg">
-                {isLoading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>Creando cuenta...</> : 'Crear cuenta'}
+              <motion.button 
+                type="submit" 
+                disabled={isLoading}
+                whileHover={{ scale: 1.01, boxShadow: "0 0 20px rgba(59, 130, 246, 0.4)" }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-3 overflow-hidden relative group"
+              >
+                {isLoading ? (
+                  <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <span>Registrar Usuario</span>
+                    <ShieldCheck className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
               </motion.button>
               
-              <div className="text-center pt-2">
-                <button type="button" onClick={onNavigateToLogin} className="text-white/70 hover:text-white font-medium transition-colors flex items-center justify-center mx-auto text-sm">
-                  <ArrowLeft className="w-4 h-4 mr-1" /> ¿Ya tienes cuenta? Inicia sesión
+              <div className="text-center">
+                <button 
+                  type="button" 
+                  onClick={onNavigateToLogin} 
+                  className="text-white/40 hover:text-white transition-colors text-sm font-medium flex items-center justify-center mx-auto gap-2 group"
+                >
+                  <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> 
+                  ¿Ya tienes acceso? <span className="text-blue-400">Inicia sesión</span>
                 </button>
               </div>
             </form>

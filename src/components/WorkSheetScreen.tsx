@@ -18,7 +18,10 @@ import {
   Calculator,
   ArrowRightLeft,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Wifi,
+  WifiOff,
+  AlertOctagon
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -43,7 +46,7 @@ import { unit } from 'mathjs';
 // Componente Toast (Notificación Flotante)
 const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' | 'warning'; onClose: () => void }> = ({ message, type, onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 5000); // Un poco más de tiempo para leer errores
+    const timer = setTimeout(onClose, 5000); 
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -57,6 +60,23 @@ const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' |
       <button onClick={onClose} className="ml-4 hover:bg-white/20 p-1 rounded"><X className="w-4 h-4"/></button>
     </div>
   );
+};
+
+// --- RANGOS DE METROLOGIA (Sin mostrar nombre en UI, solo lógica interna) ---
+// Referencias internas: NOM-013 (Presión), NOM-038 (Masa), ISO 1 (Dimensional), etc.
+const METROLOGY_LIMITS: Record<string, { tMin: number, tMax: number, hMin: number, hMax: number }> = {
+  "Dimensional": { tMin: 18, tMax: 22, hMin: 35, hMax: 60 }, 
+  "Electrica": { tMin: 18, tMax: 28, hMin: 20, hMax: 70 }, 
+  "Masa": { tMin: 18, tMax: 27, hMin: 40, hMax: 60 }, 
+  "Presión": { tMin: 15, tMax: 30, hMin: 20, hMax: 80 }, 
+  "Temperatura": { tMin: 15, tMax: 30, hMin: 20, hMax: 80 },
+  "Par Torsional": { tMin: 18, tMax: 28, hMin: 20, hMax: 75 }, 
+  "Fuerza": { tMin: 18, tMax: 28, hMin: 30, hMax: 70 },
+  "default": { tMin: 15, tMax: 30, hMin: 20, hMax: 80 }
+};
+
+const getMetrologyLimits = (magnitud: string) => {
+  return METROLOGY_LIMITS[magnitud] || METROLOGY_LIMITS["default"];
 };
 
 type UnitDef = { label: string; value: string };
@@ -334,13 +354,32 @@ const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   return "";
 };
 
-const magnitudesDisponibles = ["Acustica", "Dimensional", "Fuerza", "Flujo", "Frecuencia", "Presión", "Quimica", "Electrica", "Temperatura", "Masa", "Optica", "Reporte de Diagnostico", "Tiempo", "Velocidad", "Vacio", "Vibracion", "Par Torsional"];
+// --- ORDEN ALFABÉTICO ---
+const magnitudesDisponibles = [
+  "Acustica", 
+  "Dimensional", 
+  "Electrica", 
+  "Flujo", 
+  "Frecuencia", 
+  "Fuerza", 
+  "Masa", 
+  "Optica", 
+  "Par Torsional", 
+  "Presión", 
+  "Quimica", 
+  "Reporte de Diagnostico", 
+  "Temperatura", 
+  "Tiempo", 
+  "Vacio", 
+  "Velocidad", 
+  "Vibracion"
+];
 
 const unidadesPorMagnitud: Record<string, any> = {
   Acustica: ["dB", "Hz", "Pa"], Dimensional: ["m", "cm", "mm", "in", "min", "°", "µm"], Fuerza: ["N", "kgf", "lbf"],
   Flujo: ["m3/h", "slpm", "lpm", "scfm", "cfh", "m3/pm", "gpm", "ccm", "SCMH", "SCFH"], Frecuencia: ["RPM", "Hz", "kHz", "MHz", "GHz", "rad/s"],
   Presión: ["kPa", "bar", "mBar", "psi", "InH2O", "MPa", "Pa", "mmH20"], Quimica: ["µS", "pH"],
-  Electrica: { DC: ["mV", "V", "A", "µA", "mA", "Ω"], AC: ["mV", "V", "A", "µA", "mA", "Ω"], Otros: ["Hz", "kHz", "MHz"] },
+  Electrica: { DC: ["mV", "V", "A", "µA", "mA", "Ω"], AC: ["mV", "V", "A", "µA", "mA", "Ω"], Otros: ["Hz", "kHz", "MHz", "°C", "°F"] },
   Temperatura: ["°C", "°F", "°K"], Optica: ["BRIX", "°"], Masa: ["g", "kg", "lb"], Tiempo: ["s", "min", "h"],
   "Reporte de Diagnostico": ["check"], Velocidad: ["m/s", "km/h"], Vacio: ["atm", "Psi", "mbar", "Torr", "mmHg", "micron", "inHg"],
   Vibracion: ["g", "rad/s"], "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
@@ -487,9 +526,96 @@ export const WorkSheetScreen: React.FC = () => {
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
   
+  // -- NUEVO: Estado de Conexión y Metrología --
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [metrologyWarning, setMetrologyWarning] = useState<string | null>(null);
+
   // Estado para UX y Validación
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
+
+  // Monitor de conexión
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Monitor de Normas de Metrología
+  useEffect(() => {
+      if(!state.magnitud || (!state.tempAmbiente && !state.humedadRelativa)) {
+          setMetrologyWarning(null);
+          return;
+      }
+      const limits = getMetrologyLimits(state.magnitud);
+      const temp = Number(state.tempAmbiente);
+      const hr = Number(state.humedadRelativa);
+      let warning = "";
+
+      if (state.tempAmbiente && (temp < limits.tMin || temp > limits.tMax)) {
+          warning += `Temp fuera de rango (${limits.tMin}-${limits.tMax}°C). `;
+      }
+      if (state.humedadRelativa && (hr < limits.hMin || hr > limits.hMax)) {
+          warning += `HR% fuera de rango (${limits.hMin}-${limits.hMax}%). `;
+      }
+
+      if (warning) {
+          // CORRECCIÓN: Se eliminó la concatenación de la Norma
+          setMetrologyWarning(warning.trim());
+      } else {
+          setMetrologyWarning(null);
+      }
+
+  }, [state.tempAmbiente, state.humedadRelativa, state.magnitud]);
+
+  // Handler especial para Inputs Dinámicos de Eléctrica
+  const handleElectricalChange = (targetUnit: string, type: 'Patron' | 'Instrumento', value: string) => {
+    // Obtenemos el texto actual del textarea (o vacío)
+    const currentText = type === 'Patron' ? state.medicionPatron : state.medicionInstrumento;
+    
+    // Convertimos el texto en un objeto mapa { "V DC": "10.00", "A AC": "5.00" }
+    const lines = currentText.split('\n');
+    const map: Record<string, string> = {};
+    lines.forEach(line => {
+        const parts = line.split(':');
+        if(parts.length >= 2) {
+            const k = parts[0].trim();
+            const v = parts.slice(1).join(':').trim();
+            if(k) map[k] = v;
+        }
+    });
+
+    // Actualizamos el valor para la unidad específica
+    map[targetUnit] = value;
+
+    // Reconstruimos el string
+    // Ordenamos según el orden de selección de unidades para consistencia visual
+    const newText = state.unidad.map(u => {
+        const val = map[u] || "";
+        return `${u}: ${val}`;
+    }).join('\n');
+
+    dispatch({ type: 'SET_FIELD', field: type === 'Patron' ? 'medicionPatron' : 'medicionInstrumento', payload: newText });
+  };
+  
+  // Helper para leer valor actual en modo electrico
+  const getElectricalValue = (targetUnit: string, type: 'Patron' | 'Instrumento') => {
+      const text = type === 'Patron' ? state.medicionPatron : state.medicionInstrumento;
+      const lines = text.split('\n');
+      for(const line of lines) {
+          const parts = line.split(':');
+          if(parts.length >= 2 && parts[0].trim() === targetUnit) {
+              return parts.slice(1).join(':').trim();
+          }
+      }
+      return "";
+  };
+
 
   useEffect(() => {
     const backup = localStorage.getItem('backup_worksheet_data');
@@ -607,12 +733,11 @@ export const WorkSheetScreen: React.FC = () => {
     }
     setValidationErrors({});
 
-    // 2. VALIDACIÓN BLINDADA DE FECHAS (Consultamos la DB directamente para no confiar en el estado asíncrono)
+    // 2. VALIDACIÓN BLINDADA DE FECHAS
     if (!state.permitirExcepcion) {
         const idToCheck = state.id?.trim();
         const clientToCheck = state.cliente;
         
-        // Bloqueamos la interfaz para que no den clic doble
         setIsSaving(true); 
 
         try {
@@ -647,12 +772,9 @@ export const WorkSheetScreen: React.FC = () => {
             }
         } catch (err) {
             console.error("Error verificando fechas:", err);
-            // Si falla la verificación por internet, decidimos si bloquear o advertir.
-            // Por seguridad, advertimos.
         }
     }
 
-    // Si pasamos la validación, setIsSaving ya está en true, seguimos...
     setIsSaving(true);
     try {
       if (!navigator.onLine) throw new Error("offline");
@@ -725,7 +847,17 @@ export const WorkSheetScreen: React.FC = () => {
             <button onClick={goBack} className="p-2 hover:bg-white/10 rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><Tag className="w-6 h-6" /></div>
-              <div><h1 className="text-xl font-bold">Hoja de Trabajo</h1><p className="text-blue-100 text-sm">Consecutivo: {state.certificado || "SIN CERTIFICADO"}</p></div>
+              <div>
+                <h1 className="text-xl font-bold flex items-center gap-2">
+                  Hoja de Trabajo 
+                  {/* INDICADOR DE SALUD DE CONEXION */}
+                  <div className={`w-3 h-3 rounded-full shadow-md ${isOnline ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`} title={isOnline ? "Online" : "Offline - Guardando Localmente"}></div>
+                </h1>
+                <p className="text-blue-100 text-sm flex items-center gap-2">
+                  Consecutivo: {state.certificado || "SIN CERTIFICADO"}
+                  {!isOnline && <span className="text-xs bg-orange-500/80 px-2 py-0.5 rounded text-white flex items-center gap-1"><WifiOff className="w-3 h-3"/> Offline</span>}
+                </p>
+              </div>
             </div>
           </div>
           <div className="flex items-center space-x-3">
@@ -887,6 +1019,38 @@ export const WorkSheetScreen: React.FC = () => {
                   </div>
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-orange-400" /><span>Repetibilidad</span></label><input type="text" value={state.repetibilidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                 </>
+              ) : state.magnitud === "Electrica" && state.unidad.length > 0 ? (
+                // --- COLUMNAS DINÁMICAS PARA ELECTRICA ---
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2"><Calculator className="w-4 h-4 text-blue-500"/> Mediciones por Unidad Eléctrica</h3>
+                  <div className="grid grid-cols-12 gap-4 mb-2 px-2 text-xs font-bold text-gray-500 uppercase">
+                      <div className="col-span-2">Unidad</div>
+                      <div className="col-span-5">Medición Patrón</div>
+                      <div className="col-span-5">Medición Instrumento</div>
+                  </div>
+                  {state.unidad.map((u) => (
+                      <div key={u} className="grid grid-cols-12 gap-4 mb-3 items-center">
+                          <div className="col-span-2 text-sm font-bold text-blue-800 bg-blue-100 py-2 px-3 rounded-lg flex items-center justify-center">{u}</div>
+                          <div className="col-span-5">
+                              <input type="text" 
+                                placeholder="Valor Patrón"
+                                value={getElectricalValue(u, 'Patron')}
+                                onChange={(e) => handleElectricalChange(u, 'Patron', e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                              />
+                          </div>
+                          <div className="col-span-5">
+                              <input type="text" 
+                                placeholder="Valor Instrumento"
+                                value={getElectricalValue(u, 'Instrumento')}
+                                onChange={(e) => handleElectricalChange(u, 'Instrumento', e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                              />
+                          </div>
+                      </div>
+                  ))}
+                  <div className="text-xs text-gray-400 mt-2 text-center italic">* Los valores se guardan automáticamente combinados para el reporte.</div>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
@@ -896,9 +1060,20 @@ export const WorkSheetScreen: React.FC = () => {
               
               <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 border-gray-200" rows={2} /></div>
               
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                
+                {/* WARNING DE METROLOGIA (SIN NOMBRE DE NORMA) */}
+                {metrologyWarning && (
+                  <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                      <AlertOctagon className="w-5 h-5 shrink-0 mt-0.5 text-yellow-600"/>
+                      <div>
+                          <p className="font-bold text-sm">Condiciones Ambientales Fuera de Norma</p>
+                          <p className="text-xs mt-1">{metrologyWarning}</p>
+                      </div>
+                  </div>
+                )}
               </div>
             </div>
             {showPreview && (
