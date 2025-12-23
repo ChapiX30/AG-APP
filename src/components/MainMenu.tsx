@@ -1,22 +1,75 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+// --- IMPORTA TUS HOOKS LOCALES AQUÍ ---
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
+// -------------------------------------
 import {
   Calendar, Building2, ClipboardList, BookOpen, Database, FolderKanban, 
   Bell, TrendingUp, X, ChevronRight, Sparkles, Activity, Award, 
   ArrowRightLeft, FileOutput, LogOut, User, Menu as MenuIcon, CheckCircle2,
-  AlertTriangle, Briefcase, MapPin, Clock, ShieldCheck, Play
+  AlertTriangle, Briefcase, MapPin, Clock, ShieldCheck, Play, Loader2
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
 import {
-  collection, onSnapshot, doc, setDoc, updateDoc, query, where, getDocs, orderBy
+  collection, onSnapshot, doc, setDoc, query, where, getDocs, orderBy, limit
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { addYears, addMonths, differenceInDays, parseISO, isValid, format, isToday, parse } from 'date-fns';
+import { addYears, addMonths, differenceInDays, parseISO, isValid, format, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-// --- CONFIGURACIÓN DEL MENÚ ---
+// --- TIPO DE DATOS (TypeScript Interfaces) ---
+interface Service {
+  id: string;
+  cliente: string;
+  titulo?: string;
+  descripcion?: string;
+  prioridad?: 'alta' | 'critica' | 'normal' | 'baja';
+  fecha?: string;
+  horaInicio?: string;
+  ubicacion?: string;
+  tipo?: string;
+  estado?: string;
+  personas?: string[];
+}
+
+interface WorkOrder {
+  id?: string;
+  certificado?: string;
+  fecha?: string;
+  frecuenciaCalibracion?: string;
+}
+
+interface UserData {
+  uid: string;
+  email: string;
+  name: string;
+  role: string;
+  photoUrl?: string;
+  phone?: string;
+}
+
+// --- CONFIGURACIÓN Y CONSTANTES ---
+
+// Lista de correos con permisos especiales (Reemplaza al hardcode de nombre)
+const SUPER_ADMINS = ['jesus.sustaita@agsolutions.com', 'admin@agsolutions.com'];
+
+const COLOR_GRADIENTS: Record<string, string> = {
+  blue: 'from-blue-500 to-indigo-600',
+  orange: 'from-orange-500 to-red-500',
+  emerald: 'from-emerald-500 to-teal-600',
+  purple: 'from-violet-500 to-purple-600',
+  cyan: 'from-cyan-500 to-blue-600',
+  fuchsia: 'from-fuchsia-500 to-pink-600',
+  amber: 'from-amber-500 to-orange-600',
+  teal: 'from-teal-400 to-emerald-600',
+  rose: 'from-rose-500 to-pink-600',
+  red: 'from-red-500 to-orange-600',
+  yellow: 'from-yellow-400 to-orange-500',
+  indigo: 'from-indigo-500 to-violet-600',
+  default: 'from-slate-500 to-slate-700'
+};
+
 const MENU_ITEMS = [
   { id: 'calendario', title: 'Calendario', icon: Calendar, color: 'blue', desc: 'Gestiona tus eventos' },
   { id: 'vencimientos', title: 'Vencimientos', icon: Bell, color: 'orange', desc: 'Equipos por vencer' },
@@ -32,32 +85,40 @@ const MENU_ITEMS = [
   { id: 'control-prestamos', title: 'Préstamos', icon: ArrowRightLeft, color: 'indigo', desc: 'Control de equipo' },
 ];
 
-const getGradient = (color: string) => {
-  const gradients: any = {
-    blue: 'from-blue-500 to-indigo-600',
-    orange: 'from-orange-500 to-red-500',
-    emerald: 'from-emerald-500 to-teal-600',
-    purple: 'from-violet-500 to-purple-600',
-    cyan: 'from-cyan-500 to-blue-600',
-    fuchsia: 'from-fuchsia-500 to-pink-600',
-    amber: 'from-amber-500 to-orange-600',
-    teal: 'from-teal-400 to-emerald-600',
-    rose: 'from-rose-500 to-pink-600',
-    red: 'from-red-500 to-orange-600',
-    yellow: 'from-yellow-400 to-orange-500',
-    indigo: 'from-indigo-500 to-violet-600',
-  };
-  return gradients[color] || 'from-slate-500 to-slate-700';
+// --- UTILIDADES ---
+const safeDateParse = (dateStr?: string): Date | null => {
+  if (!dateStr) return null;
+  const parsed = parseISO(dateStr);
+  return isValid(parsed) ? parsed : null;
 };
 
-// --- WIDGETS VERTICALES ---
+// --- COMPONENTES UI (WIDGETS) ---
 
-// 1. Widget: Mis Servicios (Conectado a Friday)
-const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateTo: any }) => {
-  if (services.length === 0) return null;
+// 1. Widget: Mis Servicios
+const MyServicesWidget = ({ services, navigateTo, loading }: { services: Service[], navigateTo: any, loading: boolean }) => {
+  if (loading) {
+    return (
+      <div className="bg-slate-800/50 rounded-2xl p-4 h-48 animate-pulse border border-white/5">
+        <div className="h-4 w-1/2 bg-slate-700 rounded mb-4" />
+        <div className="space-y-3">
+            <div className="h-16 bg-slate-700/50 rounded-xl" />
+            <div className="h-16 bg-slate-700/50 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (services.length === 0) {
+    return (
+        <div className="bg-slate-800/30 backdrop-blur-md border border-dashed border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-2">
+            <CheckCircle2 className="text-indigo-400/50 w-8 h-8" />
+            <p className="text-slate-400 text-xs">Sin servicios asignados por hoy.</p>
+        </div>
+    );
+  }
 
   return (
-    <div className="bg-indigo-900/30 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-4 overflow-hidden relative animate-fadeIn">
+    <div className="bg-indigo-900/20 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-4 overflow-hidden relative animate-fadeIn">
       {/* Fondo decorativo */}
       <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
       
@@ -75,29 +136,21 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
       <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
         {services.map((s) => {
           const esUrgente = s.prioridad === 'alta' || s.prioridad === 'critica';
-          let esHoy = false;
-          let fechaTexto = s.fecha || 'Sin fecha';
-          try {
-             if (s.fecha) {
-                const fechaDate = parseISO(s.fecha);
-                if (isToday(fechaDate)) {
-                    esHoy = true;
-                    fechaTexto = "HOY";
-                }
-             }
-          } catch(e) {}
+          const fechaDate = safeDateParse(s.fecha);
+          const esHoy = fechaDate ? isToday(fechaDate) : false;
+          const fechaTexto = esHoy ? "HOY" : (fechaDate ? format(fechaDate, 'dd MMM', { locale: es }) : 'S/F');
 
           return (
             <div 
               key={s.id}
               onClick={() => navigateTo('friday')} 
-              className={`border rounded-xl p-3 cursor-pointer transition-all group relative overflow-hidden ${esHoy ? 'bg-indigo-600/20 border-indigo-400/50' : 'bg-slate-800/80 border-white/5 hover:bg-indigo-900/40'}`}
+              className={`border rounded-xl p-3 cursor-pointer transition-all group relative overflow-hidden ${esHoy ? 'bg-indigo-600/20 border-indigo-400/50 shadow-[0_0_15px_rgba(99,102,241,0.15)]' : 'bg-slate-800/60 border-white/5 hover:bg-indigo-900/40'}`}
             >
               {esUrgente && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>}
               
               <div className="flex justify-between items-start mb-1 pl-2">
                 <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${esHoy ? 'bg-green-500 text-white animate-pulse' : 'bg-slate-700 text-slate-300'}`}>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${esHoy ? 'bg-green-500 text-white' : 'bg-slate-700 text-slate-300'}`}>
                         {fechaTexto}
                     </span>
                     {s.horaInicio && (
@@ -123,15 +176,6 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
                         <span className="line-clamp-2 leading-tight">{s.ubicacion}</span>
                     </div>
                 )}
-
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
-                    <span className="text-[9px] text-slate-500 uppercase tracking-wider">{s.tipo || 'Servicio'}</span>
-                    {s.estado === 'en_proceso' && (
-                        <span className="flex items-center gap-1 text-[9px] text-amber-400 font-bold">
-                            <Play size={8} fill="currentColor" /> EN PROCESO
-                        </span>
-                    )}
-                </div>
               </div>
             </div>
           );
@@ -141,85 +185,88 @@ const MyServicesWidget = ({ services, navigateTo }: { services: any[], navigateT
   );
 };
 
-// 2. Widget: Radar de Calidad (CORREGIDO PARA IGNORAR DUPLICADOS)
+// 2. Widget: Radar de Calidad (Optimizado)
 const QualityRadarWidget = ({ navigateTo }: { navigateTo: any }) => {
   const [stats, setStats] = useState({ vencidos: 0, criticos: 0, proximos: 0, loading: true });
 
   useEffect(() => {
+    let isMounted = true;
     const checkVencimientos = async () => {
       try {
-        // CORRECCIÓN: Usamos orderBy fecha desc para asegurar que el primero sea el más reciente
-        const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc")); 
+        // OPTIMIZACIÓN: Limitamos a los últimos 300 registros para evitar leer toda la BD.
+        // Lo ideal sería tener un campo "fechaVencimiento" indexado en Firebase.
+        const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc"), limit(300)); 
         const snap = await getDocs(q);
         
+        if (!isMounted) return;
+
         let v = 0, c = 0, p = 0;
         const hoy = new Date();
-        const equiposProcesados = new Set<string>(); // Set para evitar duplicados
+        const equiposProcesados = new Set<string>();
 
         snap.forEach(doc => {
-          const d = doc.data();
+          const d = doc.data() as WorkOrder;
           if (!d.fecha || !d.frecuenciaCalibracion) return;
           
-          // Normalizar ID
           const idUnico = d.id ? d.id.trim() : (d.certificado || 'S/N');
-
-          // SI YA VIMOS ESTE ID, LO IGNORAMOS (Es un registro viejo)
-          if (idUnico && equiposProcesados.has(idUnico) && idUnico !== 'S/N') {
-            return;
-          }
-
-          // Agregamos al Set para no volver a contarlo
+          // Evitamos duplicados
+          if (idUnico && equiposProcesados.has(idUnico) && idUnico !== 'S/N') return;
           if (idUnico) equiposProcesados.add(idUnico);
 
-          // Cálculo de fechas
-          let vencimiento: Date | null = null;
-          try {
-              const base = parseISO(d.fecha);
-              if (isValid(base)) {
-                const freq = d.frecuenciaCalibracion.toLowerCase();
-                if (freq.includes('1 año')) vencimiento = addYears(base, 1);
-                else if (freq.includes('2 años')) vencimiento = addYears(base, 2);
-                else if (freq.includes('6 meses')) vencimiento = addMonths(base, 6);
-                else if (freq.includes('3 meses')) vencimiento = addMonths(base, 3);
-                else vencimiento = addYears(base, 1); 
-              }
-          } catch(e) {}
+          const base = safeDateParse(d.fecha);
+          if (base) {
+             let vencimiento: Date | null = null;
+             const freq = d.frecuenciaCalibracion.toLowerCase();
+             
+             // Lógica de cálculo segura
+             if (freq.includes('1 año')) vencimiento = addYears(base, 1);
+             else if (freq.includes('2 años')) vencimiento = addYears(base, 2);
+             else if (freq.includes('6 meses')) vencimiento = addMonths(base, 6);
+             else if (freq.includes('3 meses')) vencimiento = addMonths(base, 3);
+             else vencimiento = addYears(base, 1); // Default
 
-          if (vencimiento) {
-              const dias = differenceInDays(vencimiento, hoy);
-              if (dias < 0) v++;
-              else if (dias <= 30) c++;
-              else if (dias <= 60) p++;
+             if (vencimiento) {
+                const dias = differenceInDays(vencimiento, hoy);
+                // Solo contamos si vence en el futuro cercano o ya venció
+                if (dias < 0) v++;
+                else if (dias <= 30) c++;
+                else if (dias <= 60) p++;
+             }
           }
         });
         setStats({ vencidos: v, criticos: c, proximos: p, loading: false });
       } catch (error) {
         console.error("Error en radar de calidad:", error);
-        setStats(prev => ({ ...prev, loading: false }));
+        if (isMounted) setStats(prev => ({ ...prev, loading: false }));
       }
     };
     checkVencimientos();
+    return () => { isMounted = false; };
   }, []);
 
-  if (!stats.loading && stats.vencidos === 0 && stats.criticos === 0 && stats.proximos === 0) {
+  if (stats.loading) {
+      return (
+        <div className="bg-slate-800/50 rounded-2xl p-4 flex items-center justify-center h-24 animate-pulse">
+            <Loader2 className="animate-spin text-slate-600" />
+        </div>
+      );
+  }
+
+  if (stats.vencidos === 0 && stats.criticos === 0 && stats.proximos === 0) {
      return (
-        <div className="bg-emerald-900/20 backdrop-blur-md border border-emerald-500/20 rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-2 animate-fadeIn">
-            <ShieldCheck className="text-emerald-400 w-8 h-8" />
-            <div>
-                <h3 className="text-sm font-bold text-emerald-100">Sin Pendientes</h3>
-                <p className="text-[10px] text-emerald-400/70">Equipos al corriente</p>
-            </div>
+        <div className="bg-emerald-900/10 backdrop-blur-md border border-emerald-500/20 rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-1 animate-fadeIn">
+            <ShieldCheck className="text-emerald-500 w-6 h-6 mb-1" />
+            <h3 className="text-sm font-bold text-emerald-200">Todo en orden</h3>
+            <p className="text-[10px] text-emerald-400/60">No hay equipos pendientes</p>
         </div>
      );
   }
-
-  if (stats.loading) return null;
 
   return (
     <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 animate-fadeIn">
       <div className="flex items-center gap-2 mb-3 border-b border-white/5 pb-2">
         <AlertTriangle className="text-orange-400" size={16} />
-        <h3 className="font-bold text-white text-sm">Radar de Calidad</h3>
+        <h3 className="font-bold text-white text-sm">Atención Requerida</h3>
       </div>
       
       <div className="space-y-2">
@@ -267,12 +314,12 @@ const ClockWidget = () => {
 };
 
 // 4. Modal de Perfil
-const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () => void }) => {
-    const { uid, name, email, phone, position, photoUrl: initialPhotoUrl } = currentUser;
+const ProfileModal = ({ currentUser, onClose }: { currentUser: UserData, onClose: () => void }) => {
+    const { uid, name, email, phone, role, photoUrl: initialPhotoUrl } = currentUser;
     const [localName, setLocalName] = useState(name || '');
     const [localEmail, setLocalEmail] = useState(email || '');
     const [localPhone, setLocalPhone] = useState(phone || '');
-    const [localPosition, setLocalPosition] = useState(position || '');
+    const [localPosition, setLocalPosition] = useState(role || '');
     const [localPhotoUrl, setLocalPhotoUrl] = useState(initialPhotoUrl || '');
     const [localPhotoFile, setLocalPhotoFile] = useState<File | null>(null);
     const [saving, setSaving] = useState(false);
@@ -284,6 +331,8 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () 
       try {
         let newPhotoUrl = localPhotoUrl;
         if (localPhotoFile) {
+          // NOTA: Para producción real, aquí deberías comprimir la imagen antes de subirla
+          // usando una librería como 'browser-image-compression' para ahorrar datos y storage.
           const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
           await uploadBytes(storageReference, localPhotoFile);
           newPhotoUrl = await getDownloadURL(storageReference);
@@ -300,6 +349,7 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () 
         setLocalPhotoFile(null);
       } catch (error) {
         console.error("Error al guardar perfil:", error);
+        alert("Hubo un error al guardar los cambios.");
       } finally {
         setSaving(false);
       }
@@ -307,8 +357,14 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () 
 
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
-        setLocalPhotoFile(e.target.files[0]);
-        setLocalPhotoUrl(URL.createObjectURL(e.target.files[0]));
+        const file = e.target.files[0];
+        // Validación básica de tamaño (ej. max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert("La imagen es muy pesada. Intenta con una menor a 5MB.");
+            return;
+        }
+        setLocalPhotoFile(file);
+        setLocalPhotoUrl(URL.createObjectURL(file));
       }
     };
     
@@ -327,19 +383,22 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () 
           <form onSubmit={(e) => { e.preventDefault(); handleProfileSave(); }} className="p-6 space-y-5">
             <div className="flex flex-col items-center space-y-3">
               <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-white/20 bg-slate-700 shadow-2xl">
-                  {localPhotoUrl ? <img src={localPhotoUrl} className="w-full h-full object-cover" /> : <User className="w-12 h-12 text-white/40 m-auto mt-6" />}
+                  {localPhotoUrl ? <img src={localPhotoUrl} className="w-full h-full object-cover" alt="Perfil" /> : <User className="w-12 h-12 text-white/40 m-auto mt-6" />}
               </div>
               <input type="file" ref={inputFileRef} onChange={handlePhotoChange} accept="image/*" className="hidden" />
-              <button type="button" onClick={() => inputFileRef.current?.click()} className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold">Cambiar foto</button>
+              <button type="button" onClick={() => inputFileRef.current?.click()} className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm transition-colors">Cambiar foto</button>
             </div>
             <div className="space-y-4">
-              <input type="text" value={localName} onChange={(e)=>setLocalName(e.target.value)} placeholder="Nombre" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-violet-500" />
-              <input type="text" value={localPosition} onChange={(e)=>setLocalPosition(e.target.value)} placeholder="Puesto" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-violet-500" />
-              <input type="email" value={localEmail} onChange={(e)=>setLocalEmail(e.target.value)} placeholder="Correo" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-violet-500" />
+              <input type="text" value={localName} onChange={(e)=>setLocalName(e.target.value)} placeholder="Nombre Completo" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-violet-500 transition-colors" />
+              <input type="text" value={localPosition} onChange={(e)=>setLocalPosition(e.target.value)} placeholder="Puesto" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-violet-500 transition-colors" />
+              <input type="email" value={localEmail} onChange={(e)=>setLocalEmail(e.target.value)} placeholder="Correo Electrónico" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-violet-500 transition-colors" />
             </div>
             <div className="flex gap-3 pt-4">
-              <button type="button" onClick={onClose} className="flex-1 px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white">Cancelar</button>
-              <button type="submit" disabled={saving} className="flex-1 px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold">{saving ? "..." : "Guardar"}</button>
+              <button type="button" onClick={onClose} className="flex-1 px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-medium transition-colors">Cancelar</button>
+              <button type="submit" disabled={saving} className="flex-1 px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold flex items-center justify-center gap-2 transition-colors">
+                {saving && <Loader2 className="animate-spin w-4 h-4" />}
+                {saving ? "Guardando..." : "Guardar Cambios"}
+              </button>
             </div>
           </form>
         </div>
@@ -347,88 +406,98 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: any, onClose: () 
     );
 };
 
-// --- COMPONENTE PRINCIPAL ---
+// --- COMPONENTE PRINCIPAL (ORQUESTADOR) ---
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { logout, user } = useAuth();
   
-  const userData = useMemo(() => ({
+  // Memoización segura de los datos del usuario
+  const userData = useMemo((): UserData => ({
     uid: (user as any)?.uid || '',
     email: (user as any)?.email || '',
     name: ((user as any)?.name || '').trim(),
-    role: ((user as any)?.puesto || (user as any)?.role || '').trim().toLowerCase()
+    role: ((user as any)?.puesto || (user as any)?.role || '').trim().toLowerCase(),
+    photoUrl: (user as any)?.photoUrl,
+    phone: (user as any)?.phone
   }), [user]);
 
   const [showProfile, setShowProfile] = useState(false);
-  const [assignedCount, setAssignedCount] = useState(0);
-  const [assignedServices, setAssignedServices] = useState<any[]>([]); 
-  const [equipmentCount, setEquipmentCount] = useState(0);
+  const [assignedServices, setAssignedServices] = useState<Service[]>([]); 
+  const [loadingServices, setLoadingServices] = useState(true);
   const [greeting, setGreeting] = useState('');
 
-  // Saludo
+  // Saludo dinámico
   useEffect(() => {
-    const hr = new Date().getHours();
-    if (hr < 12) setGreeting('Buenos días');
-    else if (hr < 18) setGreeting('Buenas tardes');
-    else setGreeting('Buenas noches');
+    const updateGreeting = () => {
+        const hr = new Date().getHours();
+        if (hr < 12) setGreeting('Buenos días');
+        else if (hr < 18) setGreeting('Buenas tardes');
+        else setGreeting('Buenas noches');
+    };
+    updateGreeting();
+    // Actualizar saludo si la app se queda abierta mucho tiempo
+    const interval = setInterval(updateGreeting, 1000 * 60 * 60); 
+    return () => clearInterval(interval);
   }, []);
 
-  // Filtro de menú
+  // Filtro de menú (Seguridad mejorada)
   const filteredMenu = useMemo(() => {
     const isJefe = userData.role.includes('admin') || userData.role.includes('gerente');
     const isCalidad = userData.role.includes('calidad');
-    const isMetrologo = userData.role.includes('metrólogo');
-    const hasSpecialPermissions = userData.name.toLowerCase().includes('jesus sustaita');
+    const isSuperAdmin = SUPER_ADMINS.includes(userData.email);
 
     return MENU_ITEMS.filter(item => {
-      if (item.id === 'calibration-stats') return isJefe;
-      if (item.id === 'vencimientos') return isJefe || isCalidad || hasSpecialPermissions;
+      // Reglas de acceso
+      if (item.id === 'calibration-stats') return isJefe || isSuperAdmin;
+      if (item.id === 'vencimientos') return isJefe || isCalidad || isSuperAdmin;
       if (item.id === 'programa-calibracion' || item.id === 'control-prestamos') {
-        return isJefe || isCalidad || hasSpecialPermissions; 
+        return isJefe || isCalidad || isSuperAdmin; 
       }
       return true;
     });
   }, [userData]);
 
-  // --- CARGA DE SERVICIOS ASIGNADOS ---
+  // Carga de Servicios Asignados
   useEffect(() => {
-    if (!userData.uid) return;
+    if (!userData.uid) {
+        setLoadingServices(false);
+        return;
+    }
     
+    // Consulta optimizada: Solo servicios activos
     const q = query(
       collection(db, 'servicios'),
       where('personas', 'array-contains', userData.uid), 
-      where('estado', '!=', 'Finalizado') 
+      where('estado', '!=', 'Finalizado')
     );
+
     const unsub = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const activos = docs.filter((s: any) => s.estado !== 'finalizado' && s.estado !== 'cancelado');
-      setAssignedCount(activos.length);
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+      // Filtro doble seguridad en cliente por si acaso 'Cancelado' se escapa
+      const activos = docs.filter(s => 
+        s.estado?.toLowerCase() !== 'finalizado' && 
+        s.estado?.toLowerCase() !== 'cancelado'
+      );
+      // Ordenar localmente por fecha (los más recientes primero)
+      activos.sort((a, b) => {
+        const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
+        const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
+        return dateB - dateA; 
+      });
+
       setAssignedServices(activos); 
+      setLoadingServices(false);
+    }, (err) => {
+        console.error("Error cargando servicios:", err);
+        setLoadingServices(false);
     });
+
     return () => unsub();
   }, [userData.uid]);
 
-  // Carga de Hojas de Trabajo (Metas)
-  useEffect(() => {
-    if (!userData.name) return;
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-    const q = query(
-      collection(db, 'hojasDeTrabajo'),
-      where('nombre', '==', userData.name),
-      where('fecha', '>=', startOfMonth),
-      where('fecha', '<=', endOfMonth)
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      setEquipmentCount(snap.size); 
-    });
-    return () => unsub();
-  }, [userData.name]);
-
-
+  // Renderizado
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white selection:bg-violet-500/30">
+    <div className="min-h-screen bg-[#0f172a] text-white selection:bg-violet-500/30 font-sans">
       
       {/* Background Effects */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -437,15 +506,15 @@ export const MainMenu: React.FC = () => {
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-900/70 border-b border-white/5">
+      <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-900/80 border-b border-white/5 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="relative group cursor-pointer">
+            <div className="relative group cursor-pointer transition-transform active:scale-95">
                <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-cyan-600 blur opacity-40 group-hover:opacity-60 transition-opacity" />
                <img src={labLogo} className="relative h-10 w-auto rounded-lg shadow-2xl" alt="Logo" />
             </div>
             <div className="hidden md:block">
-              <p className="text-xs font-medium text-violet-400 uppercase tracking-wider">Sistema de Gestión</p>
+              <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Sistema de Gestión</p>
               <h1 className="text-xl font-bold text-white tracking-tight">AG Solutions</h1>
             </div>
           </div>
@@ -456,11 +525,11 @@ export const MainMenu: React.FC = () => {
                 <p className="text-sm font-bold text-white group-hover:text-violet-200 transition-colors">
                   {greeting}, {userData.name.split(' ')[0]}
                 </p>
-                <p className="text-xs text-white/40 group-hover:text-white/60">{userData.role || 'Usuario'}</p>
+                <p className="text-xs text-white/40 group-hover:text-white/60 capitalize">{userData.role || 'Colaborador'}</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-white/10 p-0.5 shadow-lg relative">
-                {(user as any)?.photoUrl ? (
-                   <img src={(user as any).photoUrl} className="w-full h-full rounded-full object-cover" />
+                {userData.photoUrl ? (
+                   <img src={userData.photoUrl} className="w-full h-full rounded-full object-cover" alt="Avatar" />
                 ) : (
                    <User className="w-full h-full p-2 text-white/50" />
                 )}
@@ -475,11 +544,11 @@ export const MainMenu: React.FC = () => {
       </header>
 
       {/* --- CONTENIDO PRINCIPAL --- */}
-      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fadeIn">
         
         <div className="flex flex-col lg:flex-row gap-8">
             
-            {/* 1. COLUMNA IZQUIERDA: MENÚ */}
+            {/* 1. COLUMNA IZQUIERDA: MENÚ GRID */}
             <div className="lg:w-3/4">
                 
                 {/* Saludo Móvil */}
@@ -497,12 +566,12 @@ export const MainMenu: React.FC = () => {
                         onClick={() => navigateTo(item.id)}
                         className="group relative bg-slate-800/40 hover:bg-slate-800/60 backdrop-blur-md border border-white/5 hover:border-white/20 rounded-2xl p-5 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-violet-500/10 flex flex-col justify-between h-[140px] md:h-[160px]"
                         >
-                        {/* Hover Gradient Glow */}
-                        <div className={`absolute inset-0 bg-gradient-to-br ${getGradient(item.color)} opacity-0 group-hover:opacity-10 rounded-2xl transition-opacity duration-500`} />
+                        {/* Hover Gradient Glow (Usa constante externa) */}
+                        <div className={`absolute inset-0 bg-gradient-to-br ${COLOR_GRADIENTS[item.color] || COLOR_GRADIENTS.default} opacity-0 group-hover:opacity-10 rounded-2xl transition-opacity duration-500`} />
                         
                         <div className="relative z-10">
                             <div className="flex justify-between items-start mb-3">
-                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${getGradient(item.color)} flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300`}>
+                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${COLOR_GRADIENTS[item.color] || COLOR_GRADIENTS.default} flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300`}>
                                     <item.icon className="text-white w-5 h-5" />
                                 </div>
                                 <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -514,7 +583,7 @@ export const MainMenu: React.FC = () => {
                                 <h3 className="text-base font-bold text-white group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-slate-200 transition-all leading-tight">
                                     {item.title}
                                 </h3>
-                                <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 group-hover:text-slate-300 leading-snug">
+                                <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 group-hover:text-slate-300 leading-snug font-medium">
                                     {item.desc}
                                 </p>
                             </div>
@@ -524,21 +593,23 @@ export const MainMenu: React.FC = () => {
                 </div>
             </div>
 
-            {/* 2. COLUMNA DERECHA: BARRA LATERAL */}
-            <div className="lg:w-1/4 space-y-4">
+            {/* 2. COLUMNA DERECHA: SIDEBAR */}
+            <div className="lg:w-1/4 space-y-5">
                 
                 {/* Widget de Reloj */}
                 <ClockWidget />
 
-                {/* Widget para Calidad */}
-                {(userData.role.includes('calidad') || userData.role.includes('admin') || userData.name.toLowerCase().includes('jesus')) && (
+                {/* Widget para Calidad (Solo roles permitidos) */}
+                {(userData.role.includes('calidad') || userData.role.includes('admin') || SUPER_ADMINS.includes(userData.email)) && (
                     <QualityRadarWidget navigateTo={navigateTo} />
                 )}
 
-                {/* Widget para Metrólogos: SIEMPRE VISIBLE SI TIENE SERVICIOS ASIGNADOS */}
-                {(userData.role.includes('metrólogo') || userData.role.includes('técnico') || assignedServices.length > 0) && (
-                    <MyServicesWidget services={assignedServices} navigateTo={navigateTo} />
-                )}
+                {/* Widget para Servicios (Siempre visible para técnicos) */}
+                <MyServicesWidget 
+                    services={assignedServices} 
+                    navigateTo={navigateTo} 
+                    loading={loadingServices}
+                />
 
             </div>
 
@@ -548,14 +619,7 @@ export const MainMenu: React.FC = () => {
       {/* Profile Modal */}
       {showProfile && (
         <ProfileModal 
-          currentUser={{
-            uid: userData.uid,
-            name: userData.name,
-            email: userData.email,
-            phone: (user as any)?.phone,
-            position: userData.role,
-            photoUrl: (user as any)?.photoUrl
-          }}
+          currentUser={userData}
           onClose={() => setShowProfile(false)}
         />
       )}

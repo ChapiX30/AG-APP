@@ -35,7 +35,11 @@ import {
   format, 
   addMonths, 
   addYears, 
-  parseISO
+  parseISO,
+  // --- NUEVOS IMPORTS PARA SLA ---
+  addBusinessDays,
+  isAfter,
+  differenceInBusinessDays
 } from "date-fns"; 
 import { unit } from 'mathjs';
 
@@ -63,7 +67,6 @@ const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' |
 };
 
 // --- RANGOS DE METROLOGIA (Sin mostrar nombre en UI, solo lógica interna) ---
-// Referencias internas: NOM-013 (Presión), NOM-038 (Masa), ISO 1 (Dimensional), etc.
 const METROLOGY_LIMITS: Record<string, { tMin: number, tMax: number, hMin: number, hMax: number }> = {
   "Dimensional": { tMin: 18, tMax: 22, hMin: 35, hMax: 60 }, 
   "Electrica": { tMin: 18, tMax: 28, hMin: 20, hMax: 70 }, 
@@ -565,7 +568,6 @@ export const WorkSheetScreen: React.FC = () => {
       }
 
       if (warning) {
-          // CORRECCIÓN: Se eliminó la concatenación de la Norma
           setMetrologyWarning(warning.trim());
       } else {
           setMetrologyWarning(null);
@@ -575,10 +577,8 @@ export const WorkSheetScreen: React.FC = () => {
 
   // Handler especial para Inputs Dinámicos de Eléctrica
   const handleElectricalChange = (targetUnit: string, type: 'Patron' | 'Instrumento', value: string) => {
-    // Obtenemos el texto actual del textarea (o vacío)
     const currentText = type === 'Patron' ? state.medicionPatron : state.medicionInstrumento;
     
-    // Convertimos el texto en un objeto mapa { "V DC": "10.00", "A AC": "5.00" }
     const lines = currentText.split('\n');
     const map: Record<string, string> = {};
     lines.forEach(line => {
@@ -590,11 +590,8 @@ export const WorkSheetScreen: React.FC = () => {
         }
     });
 
-    // Actualizamos el valor para la unidad específica
     map[targetUnit] = value;
 
-    // Reconstruimos el string
-    // Ordenamos según el orden de selección de unidades para consistencia visual
     const newText = state.unidad.map(u => {
         const val = map[u] || "";
         return `${u}: ${val}`;
@@ -628,8 +625,6 @@ export const WorkSheetScreen: React.FC = () => {
     }
   }, []);
 
-  // Esta validación visual sirve para feedback instantáneo, 
-  // pero NO es la única defensa. handleSave hace la validación real.
   const validarIdEnPeriodo = useCallback(async () => {
     if (state.permitirExcepcion) { dispatch({ type: 'CLEAR_ID_BLOCK' }); return; }
     dispatch({ type: 'CLEAR_ID_BLOCK' });
@@ -711,7 +706,6 @@ export const WorkSheetScreen: React.FC = () => {
     if(validationErrors.unidad && nuevasUnidades.length > 0) { setValidationErrors({...validationErrors, unidad: false}); }
   };
 
-  // --- LÓGICA DE GUARDADO BLINDADA ---
   const handleSave = useCallback(async () => {
     // 1. Validar campos vacíos
     const errors: Record<string, boolean> = {};
@@ -834,6 +828,35 @@ export const WorkSheetScreen: React.FC = () => {
     }
   }, [showPreview, previewUrl, state]);
 
+  // ====================================================================
+  // LÓGICA DE TIEMPO DE COMPROMISO (SLA)
+  // ====================================================================
+  const slaInfo = React.useMemo(() => {
+    // Solo aplica si es Laboratorio y tenemos ambas fechas
+    if (state.lugarCalibracion !== "Laboratorio" || !state.fechaRecepcion || !state.fecha) {
+      return null;
+    }
+
+    const recepcion = parseISO(state.fechaRecepcion);
+    const calibracion = parseISO(state.fecha);
+
+    // Calculamos el límite (5 días hábiles)
+    // Nota: addBusinessDays salta sábados y domingos automáticamente
+    const fechaLimite = addBusinessDays(recepcion, 5);
+    
+    // Verificamos si la fecha seleccionada es posterior al límite
+    const esTardio = isAfter(calibracion, fechaLimite);
+    
+    // Días de diferencia (solo hábiles) para mostrar en el mensaje
+    const diasHabiliesTomados = differenceInBusinessDays(calibracion, recepcion);
+
+    return {
+      esTardio,
+      fechaLimiteStr: format(fechaLimite, "dd/MM/yyyy"),
+      diasTomados: diasHabiliesTomados
+    };
+  }, [state.lugarCalibracion, state.fechaRecepcion, state.fecha]);
+
   const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200"}`;
 
   return (
@@ -850,7 +873,6 @@ export const WorkSheetScreen: React.FC = () => {
               <div>
                 <h1 className="text-xl font-bold flex items-center gap-2">
                   Hoja de Trabajo 
-                  {/* INDICADOR DE SALUD DE CONEXION */}
                   <div className={`w-3 h-3 rounded-full shadow-md ${isOnline ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`} title={isOnline ? "Online" : "Offline - Guardando Localmente"}></div>
                 </h1>
                 <p className="text-blue-100 text-sm flex items-center gap-2">
@@ -904,11 +926,39 @@ export const WorkSheetScreen: React.FC = () => {
                     <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
                   </select>
                 </div>
+                
+                {/* --- CAMPO DE FECHA CON VALIDACION SLA INTEGRADA --- */}
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
                   <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  
+                  {/* Validación visual de Tiempo Compromiso */}
+                  {slaInfo && (
+                    <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
+                      slaInfo.esTardio 
+                        ? "bg-red-50 border-red-200 text-red-800" 
+                        : "bg-green-50 border-green-200 text-green-800"
+                    }`}>
+                      {slaInfo.esTardio ? (
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <p className="font-bold">
+                          {slaInfo.esTardio ? "Fuera de Tiempo Compromiso" : "Dentro de Tiempo Compromiso"}
+                        </p>
+                        <p className="text-xs opacity-90 mt-1">
+                          {slaInfo.esTardio 
+                            ? `La fecha límite era el ${slaInfo.fechaLimiteStr} (5 días hábiles).` 
+                            : `Estás en el día ${Math.max(0, slaInfo.diasTomados)} de 5 hábiles permitidos.`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label><input type="text" value={state.certificado} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.certificado ? 'border-red-500 ring-1 ring-red-500' : ''}`} placeholder="Automático" /></div>
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Mail className="w-4 h-4 text-red-500" /><span>Nombre*</span></label><input type="text" value={state.nombre} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.nombre ? 'border-red-500 ring-1 ring-red-500' : ''}`} /></div>

@@ -3,10 +3,24 @@ import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import { ArrowLeft, Plus, Minus, Calendar, User, Hash, Zap, Code } from 'lucide-react'; 
 import { generarConsecutivo } from '../utils/firebaseConsecutivos';
-import { collection, query, where, orderBy, limit, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  onSnapshot, 
+  doc, 
+  deleteDoc, 
+  getDocs,
+  getDoc,       
+  updateDoc,    
+  increment,
+  arrayUnion // <--- IMPORTANTE: Para guardar los huecos
+} from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import masterCelestica from "../data/masterCelestica.json";
-import { getPrefijo } from '../utils/prefijos';
+import { getPrefijo } from '../utils/prefijos'; 
 import { m } from 'framer-motion';
 
 const magnitudImages: Record<string, string> = {
@@ -43,15 +57,12 @@ const magnitudImages: Record<string, string> = {
   Masa: "/images/masa.png",
   ParTorsional: "/images/par-torsional.png",
   VibracionTrazable: "/images/vibracion-trazable.png",
-  // agrega las que uses en selectedMagnitude
 };
 
 export const MagnitudeDetailScreen: React.FC = () => {
   const { selectedMagnitude, goBack, navigateTo } = useNavigation();
   const [generando, setGenerando] = useState(false);
   const { user } = useAuth();
-
-  // Estado para consecutivos
   const [consecutivos, setConsecutivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -60,20 +71,20 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const [consecutivoAEliminar, setConsecutivoAEliminar] = useState<any | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // --------------------------------------------------------
 
-  // ----------- ESCUCHA EN TIEMPO REAL (onSnapshot) -----------------
+  // ----------- ESCUCHA EN TIEMPO REAL -----------------
   useEffect(() => {
     if (!selectedMagnitude) return;
     setLoading(true);
 
-    // Consulta para escuchar solo los últimos 2 consecutivos de la magnitud
+    // Escuchar cambios en la colección de consecutivos
     const q = query(
       collection(db, "consecutivos"),
       where("magnitud", "==", selectedMagnitude),
-      orderBy("fecha", "desc"),
+      orderBy("fecha", "desc"), // Asegúrate que tu BD usa 'fecha', si es nueva usa 'fechaCreacion'
       limit(2)
     );
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const cons: any[] = [];
       snapshot.forEach(doc => cons.push(doc.data()));
@@ -86,16 +97,15 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
     return () => unsubscribe();
   }, [selectedMagnitude]);
-  // -----------------------------------------------------------------
 
-  // Generar un nuevo consecutivo y navega a hoja de trabajo
+  // Generar Consecutivo
   const handleGenerarConsecutivo = async () => {
     setGenerando(true);
     try {
       const anio = new Date().getFullYear().toString().slice(-2);
       setLoading(true);
+      // Nota: Asegúrate de haber actualizado firebaseConsecutivos.ts también para que lea los huecos
       const consecutivo = await generarConsecutivo(selectedMagnitude, anio, user.name);
-      // No hace falta refrescar manualmente, onSnapshot lo hace
       navigateTo('work-sheet', { consecutive: consecutivo, magnitud: selectedMagnitude });
     } catch (error) {
       console.error(error);
@@ -105,26 +115,66 @@ export const MagnitudeDetailScreen: React.FC = () => {
     }
   };
 
-  // Abrir modal de deshacer
   const handleOpenDeshacerModal = () => {
     setDeshacerModalOpen(true);
     setError(null);
     setConsecutivoAEliminar(null);
   };
 
-  // Seleccionar consecutivo a eliminar
   const handleSeleccionarAEliminar = (consecutivo: any) => {
     setConsecutivoAEliminar(consecutivo);
   };
 
-  // Eliminar consecutivo y hoja de trabajo
+  // ------------------------------------------------------------------
+  //  LÓGICA MAESTRA DE ELIMINACIÓN Y RECICLAJE
+  // ------------------------------------------------------------------
   const handleEliminarConsecutivo = async () => {
     if (!consecutivoAEliminar) return;
     setEliminando(true);
     setError(null);
 
     try {
-      // Elimina consecutivo de Firestore
+      // 1. Obtener el prefijo CORRECTO (Ej. "Masa Trazable" -> "AGMT")
+      const prefijoContador = getPrefijo(selectedMagnitude);
+
+      // Desarmar el string: AGMT-0181-25
+      const partes = consecutivoAEliminar.consecutivo.split('-');
+      
+      if (partes.length >= 3) {
+        const anioDelBorrado = partes[partes.length - 1]; 
+        const numeroStr = partes[partes.length - 2];
+        const numeroBorrado = parseInt(numeroStr, 10);
+
+        const contadorRef = doc(db, "contadores", prefijoContador);
+        const contadorSnap = await getDoc(contadorRef);
+
+        if (contadorSnap.exists()) {
+          const dataContador = contadorSnap.data();
+          const valorActualEnBaseDatos = dataContador.valor;
+          const anioEnBaseDatos = dataContador.anio || anioDelBorrado;
+
+          // CASO A: Es el ÚLTIMO generado (Ej. vamos en 186 y borras 186)
+          // -> Restamos 1 al contador para que el siguiente vuelva a ser 186.
+          if (valorActualEnBaseDatos === numeroBorrado && anioEnBaseDatos === anioDelBorrado) {
+             console.log(`Borrando el último (${numeroBorrado}). Restando contador.`);
+             await updateDoc(contadorRef, {
+               valor: increment(-1) 
+             });
+          } 
+          // CASO B: Es uno de EN MEDIO (Ej. vamos en 186 y borras 184)
+          // -> Lo guardamos en 'huecos' para que se reutilice en el futuro.
+          else if (anioEnBaseDatos === anioDelBorrado) {
+             console.log(`Guardando el hueco ${numeroBorrado} para reciclar.`);
+             await updateDoc(contadorRef, {
+                huecos: arrayUnion(numeroBorrado)
+             });
+          }
+        } else {
+            console.warn("No se encontró el contador maestro para:", prefijoContador);
+        }
+      }
+
+      // 2. Eliminar historial (El recibo)
       const q = query(
         collection(db, "consecutivos"),
         where("consecutivo", "==", consecutivoAEliminar.consecutivo),
@@ -135,7 +185,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
         await deleteDoc(doc(db, "consecutivos", docu.id));
       }
 
-      // Elimina hoja de trabajo relacionada
+      // 3. Eliminar worksheet (La hoja de trabajo)
       const q2 = query(
         collection(db, "worksheets"),
         where("consecutivo", "==", consecutivoAEliminar.consecutivo),
@@ -149,54 +199,37 @@ export const MagnitudeDetailScreen: React.FC = () => {
       setDeshacerModalOpen(false);
       setConsecutivoAEliminar(null);
     } catch (err: any) {
+      console.error(err);
       setError("Error al eliminar. Intenta de nuevo.");
     } finally {
       setEliminando(false);
     }
   };
 
-  // Iconos por magnitud
   const getMagnitudeIcon = (name: string) => {
     const icons: { [key: string]: string } = {
-      'acustica': '🔊',
-      'dimensional': '📏',
-      'electrica': '⚡',
-      'flujo': '🌊',
-      'frecuencia': '📡',
-      'fuerza': '💪',
-      'humedad': '💧',
-      'masa': '⚖️',
-      'par-torsional': '🔧',
-      'presion': '📊',
-      'quimica': '🔬',
-      'Reporte Diagnostico': '📊',
-      'temperatura': '🌡️',
-      'tiempo': '⏱️',
-      'volumen': '📦'
+      'acustica': '🔊', 'dimensional': '📏', 'electrica': '⚡', 'flujo': '🌊',
+      'frecuencia': '📡', 'fuerza': '💪', 'humedad': '💧', 'masa': '⚖️',
+      'par-torsional': '🔧', 'presion': '📊', 'quimica': '🔬',
+      'Reporte Diagnostico': '📊', 'temperatura': '🌡️', 'tiempo': '⏱️', 'volumen': '📦'
     };
     return icons[name?.toLowerCase()] || '⚙️';
   };
 
-  // Datos para mostrar
   const actual = consecutivos[0];
   const anterior = consecutivos[1];
 
   return (
-    // Fondo más oscuro y con gradiente radial para profundidad
     <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-      {/* Background Radial Gradient */}
       <div className="absolute inset-0 z-0 opacity-20 dark:opacity-30 pointer-events-none">
         <div className="w-[120vw] h-[120vw] bg-blue-900 rounded-full blur-[100px] absolute top-[-50vh] left-[-50vw] sm:top-[-30vh] sm:left-[-30vw] transform" style={{ background: 'radial-gradient(circle, rgba(23,37,84,1) 0%, rgba(15,23,42,0) 70%)' }} />
         <div className="w-96 h-96 bg-indigo-900 rounded-full blur-[100px] absolute bottom-0 right-0 transform translate-x-1/2 translate-y-1/2" style={{ background: 'radial-gradient(circle, rgba(79,70,229,1) 0%, rgba(15,23,42,0) 70%)' }} />
       </div>
 
-      {/* Header (Sticky, High-Contrast Glassmorphism) */}
+      {/* Header */}
       <div className="bg-slate-900/90 shadow-xl sticky top-0 z-30 backdrop-blur-md border-b border-blue-700/50">
         <div className="px-4 sm:px-6 py-4 flex items-center space-x-4 max-w-2xl mx-auto">
-          <button 
-            onClick={goBack}
-            className="p-2 bg-slate-800/80 hover:bg-slate-700 rounded-full transition-all duration-200 shadow-lg border border-blue-800 transform hover:scale-105 active:scale-95"
-          >
+          <button onClick={goBack} className="p-2 bg-slate-800/80 hover:bg-slate-700 rounded-full transition-all duration-200 shadow-lg border border-blue-800 transform hover:scale-105 active:scale-95">
             <ArrowLeft className="w-5 h-5 text-cyan-400" />
           </button>
           <div className="flex items-center space-x-3">
@@ -211,26 +244,21 @@ export const MagnitudeDetailScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content (Centered and Padded) */}
+      {/* Content */}
       <div className="flex-1 flex flex-col items-center px-4 py-8 z-10">
         <div className="w-full max-w-md sm:max-w-xl mx-auto">
           
-          {/* Instrument Display Card (Visual Centerpiece - More "3D") */}
+          {/* Imagen Magnitud */}
           <div className="relative bg-slate-900 rounded-3xl shadow-[0_0_50px_rgba(59,130,246,0.3)] p-6 pt-16 mb-8 overflow-visible transition-all duration-300 border border-blue-700/70">
-            {/* Imagen y Título */}
             <div className="flex flex-col items-center -mt-24">
               <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center drop-shadow-xl z-10">
-                {/* Neon Glow Effect */}
                 <div className="absolute w-full h-full rounded-3xl bg-gradient-to-br from-yellow-400 via-pink-500 to-red-600 opacity-30 blur-xl animate-pulse" />
-                {/* Icon Container with Inner Shadow */}
                 <div className="w-32 h-32 sm:w-36 sm:h-36 bg-slate-950 border-4 border-cyan-500 rounded-3xl flex items-center justify-center shadow-inner shadow-cyan-900/50 ring-4 ring-cyan-500/10 relative overflow-hidden transform transition-transform duration-300 hover:scale-[1.05]">
                   <img
                     src={magnitudImages[selectedMagnitude] || "/images/default.png"}
                     alt={selectedMagnitude}
-                    className="w-28 h-28 sm:w-32 sm:h-32 object-contain drop-shadow-xl transition-all duration-500 hover:rotate-3" // Sutil animación al hacer hover
-                    style={{
-                      filter: "drop-shadow(0 0 10px #22d3ee)" // Cian glow
-                    }}
+                    className="w-28 h-28 sm:w-32 sm:h-32 object-contain drop-shadow-xl transition-all duration-500 hover:rotate-3"
+                    style={{ filter: "drop-shadow(0 0 10px #22d3ee)" }}
                   />
                 </div>
               </div>
@@ -240,28 +268,28 @@ export const MagnitudeDetailScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Consecutive Info Card (Data Display - High Contrast) */}
+          {/* Info Card */}
           <div className="bg-slate-900/90 rounded-2xl shadow-2xl p-5 mb-8 backdrop-blur-sm border border-blue-700/50 shadow-blue-900/30">
             <h3 className="text-lg font-bold mb-4 text-cyan-400 flex items-center gap-2"><Code className="w-5 h-5"/> Registro de Datos</h3>
             <div className="space-y-4">
               {actual && (
                 <div className="flex flex-col gap-2 p-3 bg-slate-800 rounded-xl border border-green-600/50 shadow-inner shadow-green-900/30">
                   <span className="text-xs font-semibold uppercase text-green-400">Último Consecutivo Generado</span>
-                  
                   <div className="flex items-center gap-3">
                     <Hash className="w-6 h-6 text-green-500 min-w-[1.5rem]" />
                     <span className="font-mono text-2xl sm:text-3xl font-extrabold text-green-300 truncate tracking-wider">
                       {actual.consecutivo}
                     </span>
                   </div>
-                  
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm pt-2 border-t border-dashed border-slate-700">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-blue-400 min-w-[1rem]" />
                       <span className="text-slate-300 font-medium truncate">
-                        {actual.fecha && actual.fecha.toDate
-                          ? actual.fecha.toDate().toLocaleString()
-                          : "Fecha Desconocida"}
+                        {actual.fecha && actual.fecha.toDate 
+                          ? actual.fecha.toDate().toLocaleString() 
+                          : (actual.fechaCreacion && actual.fechaCreacion.toDate 
+                              ? actual.fechaCreacion.toDate().toLocaleString() 
+                              : "Fecha Desconocida")}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -287,7 +315,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Action Buttons (More aggressive gradients and shadow) */}
+          {/* Botones */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <button
               onClick={handleGenerarConsecutivo}
@@ -295,9 +323,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
               className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 px-4 rounded-xl font-extrabold shadow-lg shadow-green-700/50 hover:from-green-600 hover:to-emerald-700 active:shadow-none active:translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none disabled:transform-none text-lg border border-green-400/50"
             >
               <Plus className="w-6 h-6" />
-              <span className='truncate'>
-                {loading || generando ? "Generando..." : "Generar Consecutivo"}
-              </span>
+              <span className='truncate'>{loading || generando ? "Generando..." : "Generar Consecutivo"}</span>
             </button>
             <button
               onClick={handleOpenDeshacerModal}
@@ -310,7 +336,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal para Deshacer Consecutivo (Dark & Focused) */}
+      {/* Modal Deshacer */}
       {deshacerModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 transition-opacity duration-300 animate-fadein">
           <div className="bg-slate-900 rounded-2xl shadow-2xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full border border-red-700/50 relative transform transition-transform duration-300 animate-modalpop">

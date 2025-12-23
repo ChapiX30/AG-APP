@@ -11,7 +11,7 @@ import {
   Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, User,
   CalendarClock, ArrowLeft, MoveRight, ArrowUp, FolderOpen,
   ArrowDownWideNarrow, ArrowUpWideNarrow, ArrowDownAZ, ArrowUpAZ, Menu,
-  AlertCircle, LogOut // Importamos LogOut para el botón de salir
+  AlertCircle, LogOut
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -196,20 +196,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
   const [isMoving, setIsMoving] = useState(false);
 
-  // Acciones de Navegación
   const handleBack = () => { 
       if (onBack) onBack(); 
       else goBack(); 
   };
 
-  // --- TOAST SYSTEM ---
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = Date.now();
       setToasts(prev => [...prev, { id, text, type }]);
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   };
 
-  // 1. Cargar Usuario
   useEffect(() => {
     const loadUser = async () => {
       if (!user?.email) return;
@@ -229,7 +226,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadUser();
   }, [user]);
 
-  // 2. Cargar Contenido 
   const loadContent = async () => {
     setLoading(true);
     setContextMenu(null);
@@ -331,7 +327,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => { if (currentUserData) loadContent(); }, [path, activeFilter, currentUserData, searchQuery]);
 
-  // 3. Procesamiento en cliente 
   const processedFiles = useMemo(() => {
     let result = [...files];
     result.sort((a, b) => {
@@ -348,7 +343,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     return result;
   }, [files, sortBy]); 
 
-  // LOGICA COMPLETED GROUPS
   const completedGroups = useMemo(() => {
     if (activeFilter !== 'completed') return {};
     const groups: Record<string, DriveFile[]> = {};
@@ -360,7 +354,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     return groups;
   }, [processedFiles, activeFilter]);
 
-  // --- DRAG AND DROP HANDLERS ---
   const handleDrag = (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -419,7 +412,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       if (e.target.files && e.target.files.length > 0) processFiles(e.target.files);
   };
 
-  // Mover logica
   useEffect(() => {
     const loadMoveFolders = async () => {
         if (!moveDialogOpen) return;
@@ -519,7 +511,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       setSelectedFile(file);
   };
 
-  // --- RENDER CONTENT ---
   const renderContent = () => {
     if (activeFilter === 'completed' && !completedGroupView) {
         const groupNames = Object.keys(completedGroups);
@@ -610,13 +601,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
       )}
       
-      {/* DRAG HANDLER WRAPPER */}
       <div className="absolute inset-0 z-0" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}></div>
 
-      {/* MOBILE OVERLAY */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)}></div>}
 
-      {/* SIDEBAR (Responsive) */}
       <div className={clsx("fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col pt-5 pb-4 transition-transform duration-300 transform md:relative md:translate-x-0", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
         <div className="px-6 mb-8 flex items-center justify-between">
              <button onClick={handleBack} className="p-2 -ml-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors md:hidden" title="Regresar"><ArrowLeft size={20} /></button>
@@ -634,7 +622,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {isQualityUser(currentUserData) && (<><div className="pt-6 pb-3 px-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Calidad</div><SidebarItem icon={<Settings size={18}/>} label="Por Revisar" active={activeFilter === 'pending_review'} onClick={() => { setActiveFilter('pending_review'); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} badge /><SidebarItem icon={<FileCheck size={18}/>} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} /></>)}
         </nav>
 
-        {/* --- NUEVO: BOTÓN DE SALIR AL MENÚ --- */}
         <div className="p-4 border-t border-gray-200 mt-auto">
             <button onClick={handleBack} className="flex items-center gap-3 w-full px-3 py-2.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-xl transition-all font-medium group">
                 <LogOut size={18} className="group-hover:text-red-500 transition-colors"/>
@@ -643,7 +630,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="h-16 border-b border-gray-200 flex items-center justify-between px-4 md:px-6 bg-white sticky top-0 z-20 gap-3">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={20} /></button>
@@ -692,8 +678,52 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
       {detailsOpen && selectedFile && ( <DetailsPanel file={selectedFile} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onDownload={handleDownload} onDelete={handleDelete} /> )}
       
-      {/* CONTEXT MENU, MOVE DIALOG, CREATE FOLDER - Keep same */}
-      {contextMenu && <div className="fixed bg-white/90 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-60 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={(e) => e.stopPropagation()}><div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 rounded-t-xl"><p className="font-bold text-gray-800 truncate text-xs">{contextMenu.file?.name}</p></div><MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} /><MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} /><div className="my-1 border-t border-gray-100"></div>{isQualityUser(currentUserData) && <><MenuOption icon={<CheckCircle2 size={16} className={contextMenu.file?.reviewed ? "text-green-600" : ""}/>} label={contextMenu.file?.reviewed ? "Invalidar Calidad" : "Validar Calidad"} onClick={() => { if(contextMenu.file) updateFileStatus(contextMenu.file, 'reviewed', !contextMenu.file.reviewed); setContextMenu(null); }} /><MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /></>}</div>}
+      {/* --- MENU CONTEXTUAL "POWER USER" --- */}
+      {contextMenu && (
+        <div 
+            className="fixed bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-64 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" 
+            style={{ top: contextMenu.y, left: contextMenu.x }} 
+            onClick={(e) => e.stopPropagation()}
+        >
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
+                <p className="font-bold text-gray-800 truncate text-xs">{contextMenu.file?.name}</p>
+            </div>
+            
+            {/* OPCIONES ESTÁNDAR */}
+            <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+            <MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+            
+            <div className="my-1 border-t border-gray-100"></div>
+
+            {/* --- ACCIÓN RÁPIDA: METRÓLOGO (Marcar Realizado/Pendiente) --- */}
+            {contextMenu.file && (
+                <MenuOption 
+                    icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} 
+                    label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} 
+                    onClick={() => { updateFileStatus(contextMenu.file, 'completed', !contextMenu.file.completed); setContextMenu(null); }} 
+                />
+            )}
+
+            {/* --- ACCIÓN RÁPIDA: CALIDAD (Solo si es QualityUser) --- */}
+            {isQualityUser(currentUserData) && contextMenu.file && (
+                <MenuOption 
+                    icon={<CheckCircle2 size={16} className={contextMenu.file.reviewed ? "text-green-600" : "text-gray-400"} />} 
+                    label={contextMenu.file.reviewed ? "Invalidar Calidad" : "Validar Calidad"} 
+                    onClick={() => { updateFileStatus(contextMenu.file, 'reviewed', !contextMenu.file.reviewed); setContextMenu(null); }} 
+                />
+            )}
+
+            <div className="my-1 border-t border-gray-100"></div>
+
+            {/* ACCIONES DE ADMINISTRACIÓN */}
+            {isQualityUser(currentUserData) && (
+                <>
+                    <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                    <MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} />
+                </>
+            )}
+        </div>
+      )}
 
       {moveDialogOpen && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}><div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95"><div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50"><h3 className="font-bold text-gray-800 flex items-center gap-2"><MoveRight className="text-blue-600" size={20} /> Mover "{moveTargetFile?.name}"</h3><button onClick={() => setMoveDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button></div><div className="p-3 bg-gray-100 border-b border-gray-200 flex items-center gap-2 text-sm"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border rounded hover:bg-gray-50 disabled:opacity-50"><ArrowUp size={16} /></button><div className="flex items-center gap-1 overflow-hidden text-gray-600"><Home size={14} /><span>/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-gray-800">{p} /</span>)}</div></div><div className="flex-1 overflow-y-auto p-2 min-h-[200px]">{moveFolderContent.length === 0 ? <div className="text-center py-10 text-gray-400 flex flex-col items-center"><FolderOpen size={32} className="mb-2 opacity-50" /><p>Carpeta vacía</p></div> : <div className="space-y-1">{moveFolderContent.map((folder, idx) => <button key={idx} onClick={() => setMoveToPath([...moveToPath, folder.name])} className="w-full flex items-center gap-3 p-3 hover:bg-blue-50 rounded-lg text-left transition-colors group"><Folder size={20} className="text-blue-400 group-hover:text-blue-600 fill-blue-50" /><span className="text-sm font-medium text-gray-700">{folder.name}</span><ChevronRight size={16} className="ml-auto text-gray-400" /></button>)}</div>}</div><div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white"><button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button><button onClick={handleMoveFile} disabled={!moveTargetFile || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-lg flex items-center gap-2 disabled:opacity-50">{isMoving ? <Loader2 size={16} className="animate-spin" /> : "Mover Aquí"}</button></div></div></div>}
 
