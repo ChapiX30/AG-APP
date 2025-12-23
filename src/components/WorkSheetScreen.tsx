@@ -21,8 +21,7 @@ import {
   CheckCircle2,
   Wifi,
   WifiOff,
-  AlertOctagon,
-  Printer // Icono para la impresora
+  AlertOctagon
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -37,7 +36,7 @@ import {
   addMonths, 
   addYears, 
   parseISO,
-  // --- IMPORTS PARA SLA (Días Hábiles) ---
+  // --- NUEVOS IMPORTS PARA SLA ---
   addBusinessDays,
   isAfter,
   differenceInBusinessDays
@@ -67,7 +66,7 @@ const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' |
   );
 };
 
-// --- RANGOS DE METROLOGIA ---
+// --- RANGOS DE METROLOGIA (Sin mostrar nombre en UI, solo lógica interna) ---
 const METROLOGY_LIMITS: Record<string, { tMin: number, tMax: number, hMin: number, hMax: number }> = {
   "Dimensional": { tMin: 18, tMax: 22, hMin: 35, hMax: 60 }, 
   "Electrica": { tMin: 18, tMax: 28, hMin: 20, hMax: 70 }, 
@@ -707,73 +706,6 @@ export const WorkSheetScreen: React.FC = () => {
     if(validationErrors.unidad && nuevasUnidades.length > 0) { setValidationErrors({...validationErrors, unidad: false}); }
   };
 
-  // ====================================================================
-  // ETIQUETA EPSON 24mm (DISEÑO BASADO EN IMAGEN - TEXTO PURO)
-  // ====================================================================
-  const handlePrintLabel = async () => {
-    if (!state.id || !state.fecha) {
-      setToast({ message: "Falta ID o Fecha para imprimir.", type: "warning" });
-      return;
-    }
-
-    try {
-      const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
-      const nextDateStr = nextDate ? format(nextDate, "dd/MM/yyyy") : "N/A";
-      const fechaCalStr = state.fecha.split("-").reverse().join("/"); // dd/mm/yyyy
-
-      const { jsPDF } = await import("jspdf");
-
-      // Configuración del PDF (Tamaño Cinta Epson 24mm x 60mm)
-      // @ts-ignore
-      const doc = new jsPDF({
-        orientation: "l", // Landscape
-        unit: "mm",
-        format: [60, 24] 
-      });
-
-      // --- DISEÑO ---
-
-      // 1. TÍTULO / HEADER
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.text("CALIBRADO", 30, 4.5, { align: "center" });
-
-      // Línea divisoria
-      doc.setLineWidth(0.3);
-      doc.line(2, 6, 58, 6);
-
-      // 2. DATOS (Cuerpo)
-      doc.setFontSize(8);
-
-      // RENGLÓN 1: ID
-      doc.setFont(undefined, "bold");
-      doc.text("ID:", 3, 11);
-      doc.setFont(undefined, "normal");
-      doc.text(state.id, 16, 11);
-
-      // RENGLÓN 2: FECHA
-      doc.setFont(undefined, "bold");
-      doc.text("Fecha:", 3, 16);
-      doc.setFont(undefined, "normal");
-      doc.text(fechaCalStr, 16, 16);
-
-      // RENGLÓN 3: VENCE
-      doc.setFont(undefined, "bold");
-      doc.text("Vence:", 3, 21);
-      doc.setFont(undefined, "bold"); // Vencimiento en negrita
-      doc.text(nextDateStr, 16, 21);
-
-      // 3. GENERAR
-      const pdfBlob = doc.output('blob');
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      window.open(pdfUrl, '_blank');
-
-    } catch (error) {
-      console.error("Error generando etiqueta:", error);
-      setToast({ message: "Error al generar etiqueta.", type: "error" });
-    }
-  };
-
   const handleSave = useCallback(async () => {
     // 1. Validar campos vacíos
     const errors: Record<string, boolean> = {};
@@ -952,21 +884,10 @@ export const WorkSheetScreen: React.FC = () => {
           </div>
           <div className="flex items-center space-x-3">
             <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
-              <Calculator className="w-4 h-4" /><span className="text-sm font-medium hidden sm:inline">Convertidor</span>
+              <Calculator className="w-4 h-4" /><span className="text-sm font-medium">Convertidor</span>
             </button>
-            
-            {/* BOTÓN ETIQUETA EPSON */}
-            <button 
-              onClick={handlePrintLabel} 
-              className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all active:scale-95"
-              title="Imprimir Etiqueta Epson"
-            >
-              <Printer className="w-4 h-4" />
-              <span className="text-sm font-medium hidden sm:inline">Etiqueta</span>
-            </button>
-
             <button onClick={handleTogglePreview} className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2">
-              <Edit3 className="w-4 h-4" /><span className="hidden sm:inline">{showPreview ? "Ocultar" : "Vista"}</span>
+              <Edit3 className="w-4 h-4" /><span>{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
             </button>
           </div>
         </div>
