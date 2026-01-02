@@ -11,7 +11,7 @@ import {
   Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, User,
   CalendarClock, ArrowLeft, MoveRight, ArrowUp, FolderOpen,
   ArrowDownWideNarrow, ArrowUpWideNarrow, ArrowDownAZ, ArrowUpAZ, Menu,
-  AlertCircle, LogOut
+  AlertCircle, LogOut, ShieldAlert
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -107,6 +107,7 @@ const countBusinessDaysLeft = (deadlineDate: Date) => {
 };
 
 const getDeadlineInfo = (createdDateStr: string) => {
+    if (!createdDateStr) return { progress: 0, daysLeft: 5, status: 'normal' };
     const createdDate = new Date(createdDateStr);
     const deadlineDate = addBusinessDays(createdDate, 5);
     const daysLeft = countBusinessDaysLeft(deadlineDate);
@@ -127,7 +128,7 @@ const getDeadlineInfo = (createdDateStr: string) => {
 
 const isQualityUser = (user: UserData | null) => {
   const p = (user?.puesto || user?.role || "").toLowerCase();
-  return p.includes('calidad') || p.includes('quality') || p.includes('admin') || p.includes('gerente');
+  return p.includes('calidad') || p.includes('quality') || p.includes('admin') || p.includes('gerente') || p.includes('manager');
 };
 
 const formatFileSize = (bytes?: number) => {
@@ -220,6 +221,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 foundUser = { name: data.nombre || data.name, email: data.correo || data.email, puesto: data.puesto || data.role };
             }
         });
+        // Si no se encuentra en la DB, usar datos básicos de Auth para que no falle el guardado
+        if (!foundUser) {
+            foundUser = { name: user.displayName || "Usuario", email: user.email || "", role: "User" };
+        }
         setCurrentUserData(foundUser);
       } catch (e) { console.error(e); }
     };
@@ -244,7 +249,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
           if (!isQuality) { 
               const pathIncludesName = (data.filePath || "").toLowerCase().includes(myName);
-              if (!pathIncludesName) return; 
+              // Filtro relajado para asegurar que ves tus archivos
+              if (!pathIncludesName && data.uploadedBy !== currentUserData?.name) return; 
           }
 
           if (term) {
@@ -383,18 +389,28 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       try {
           for (const file of Array.from(fileList)) {
               const fullPath = `${[ROOT_PATH, ...path].join('/')}/${file.name}`;
+              const docId = fullPath.replace(/\//g, '_');
+              
+              // 1. Verificamos si ya existe para no borrar datos importantes
+              const existingDoc = await getDoc(doc(db, 'fileMetadata', docId));
+              const existingData = existingDoc.exists() ? existingDoc.data() : {};
+
               const snap = await uploadBytes(ref(storage, fullPath), file);
               const meta = await getMetadata(snap.ref);
-              await setDoc(doc(db, 'fileMetadata', fullPath.replace(/\//g, '_')), {
+              
+              await setDoc(doc(db, 'fileMetadata', docId), {
                   name: file.name,
                   filePath: fullPath,
                   size: meta.size,
                   contentType: meta.contentType,
                   updated: meta.updated,
-                  created: new Date().toISOString(),
-                  uploadedBy: currentUserData?.name,
-                  reviewed: false,
-                  completed: false
+                  created: existingData.created || new Date().toISOString(), // Mantener fecha creación
+                  uploadedBy: currentUserData?.name || "Desconocido",
+                  // IMPORTANTE: No resetear 'completed' si ya estaba true.
+                  completed: existingData.completed || false,
+                  completedByName: existingData.completedByName || null,
+                  reviewed: false, // Resetear 'reviewed' sí es correcto porque es un archivo nuevo
+                  reviewedByName: null
               }, { merge: true });
               count++;
           }
@@ -463,28 +479,43 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const updateFileStatus = async (file: DriveFile, field: string, value: any) => {
-    const userName = currentUserData?.name || "Usuario";
+    const userName = currentUserData?.name || user?.displayName || "Usuario Desconocido";
+    
+    // Lógica para asignar nombre: Si se activa, pone el nombre. Si se desactiva, pone null.
+    // Si ya tiene nombre y se activa (caso raro, pero posible si falla sync), mantiene el existente o actualiza.
     const newReviewedBy = field === 'reviewed' && value ? userName : (field === 'reviewed' && !value ? null : file.reviewedByName);
     const newCompletedBy = field === 'completed' && value ? userName : (field === 'completed' && !value ? null : file.completedByName);
 
     const updatedFile = { ...file, [field]: value, reviewedByName: newReviewedBy, completedByName: newCompletedBy };
+    
+    // Actualización Optimista UI
     setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
     if (selectedFile?.fullPath === file.fullPath) setSelectedFile(updatedFile as DriveFile);
 
     try {
         const id = file.fullPath.replace(/\//g, '_');
         const dataToUpdate: any = { [field]: value };
-        if (field === 'reviewed') dataToUpdate['reviewedByName'] = newReviewedBy;
-        if (field === 'completed') dataToUpdate['completedByName'] = newCompletedBy;
+        
+        // Forzamos la actualización del nombre en Firestore
+        if (field === 'reviewed') dataToUpdate['reviewedByName'] = value ? userName : null;
+        if (field === 'completed') dataToUpdate['completedByName'] = value ? userName : null;
+        
+        console.log(`Guardando estado en Firebase: ${field} = ${value} por ${userName}`); // DEBUG
+        
         await setDoc(doc(db, 'fileMetadata', id), dataToUpdate, { merge: true });
         
         if (field === 'reviewed' && value === true) showToast("Validación guardada", 'success');
         if (field === 'completed' && value === true) showToast("Marcado como terminado", 'success');
         
+        // Refrescar lista si desaparece del filtro actual
         if (activeFilter === 'pending_review' && field === 'reviewed' && value === true) {
-            setTimeout(() => { setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath)); setSelectedFile(null); }, 500); 
+            setTimeout(() => { setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath)); setSelectedFile(null); setDetailsOpen(false); }, 500); 
         }
-    } catch (e) { loadContent(); showToast("Error al actualizar estado", 'error'); } 
+    } catch (e) { 
+        console.error("Error al actualizar status:", e);
+        loadContent(); // Revertir cambios si falla
+        showToast("Error al guardar en base de datos", 'error'); 
+    } 
   };
 
   const handleDelete = async (file: DriveFile) => {
@@ -514,14 +545,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const renderContent = () => {
     if (activeFilter === 'completed' && !completedGroupView) {
         const groupNames = Object.keys(completedGroups);
-        if (groupNames.length === 0) return <EmptyState icon={FolderCheck} text="No hay servicios completados" />;
+        if (groupNames.length === 0) return <EmptyState icon={FileCheck} text="No hay servicios completados" />;
         return (
             <div className="mb-8">
-                <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><FolderCheck size={14}/> Servicios Finalizados</h2>
+                <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><FileCheck size={14}/> Servicios Finalizados</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {groupNames.map(folderName => (
                         <div key={folderName} onClick={() => setCompletedGroupView(folderName)} className="group p-4 border border-green-100 bg-green-50/50 rounded-2xl hover:border-green-400 cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 relative">
-                            <FolderCheck size={32} className="text-green-500 fill-green-100 group-hover:text-green-600 transition-colors" />
+                            <FileCheck size={32} className="text-green-500 fill-green-100 group-hover:text-green-600 transition-colors" />
                             <span className="text-sm font-bold text-green-800 truncate w-full text-center">{folderName}</span>
                             <span className="text-[10px] text-green-600 bg-green-100 px-2 py-0.5 rounded-full">{completedGroups[folderName].length} archivos</span>
                         </div>
@@ -656,7 +687,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 {activeFilter !== 'all' ? (
                     <div className="flex items-center gap-3">
                         <span className="font-bold text-gray-800 capitalize flex items-center gap-2 bg-white px-3 py-1 rounded-md border border-gray-200 shadow-sm whitespace-nowrap"><Filter size={14} className="text-blue-500"/> {activeFilter === 'pending_review' ? 'Pendientes' : (activeFilter === 'completed' ? 'Historial' : activeFilter.replace('_', ' '))}</span>
-                        {activeFilter === 'completed' && completedGroupView && (<><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setCompletedGroupView(null)} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium whitespace-nowrap">Todos</button><ChevronRight size={14} className="text-gray-400" /><span className="font-bold text-green-700 flex items-center gap-2 bg-green-50 px-2 py-1 rounded-md border border-green-100 whitespace-nowrap truncate"><FolderCheck size={14}/> {completedGroupView}</span></>)}
+                        {activeFilter === 'completed' && completedGroupView && (<><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setCompletedGroupView(null)} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium whitespace-nowrap">Todos</button><ChevronRight size={14} className="text-gray-400" /><span className="font-bold text-green-700 flex items-center gap-2 bg-green-50 px-2 py-1 rounded-md border border-green-100 whitespace-nowrap truncate"><FileCheck size={14}/> {completedGroupView}</span></>)}
                     </div>
                 ) : (
                     <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
@@ -782,4 +813,73 @@ const EmptyState = ({ icon: Icon, text }: any) => <div className="text-center py
 const SkeletonCard = () => <div className="bg-white border border-gray-100 rounded-2xl h-[260px] animate-pulse"><div className="h-32 bg-gray-100 rounded-t-2xl"></div><div className="p-4"><div className="h-4 bg-gray-100 rounded w-3/4 mb-3"></div><div className="h-3 bg-gray-50 rounded w-1/2 mb-6"></div><div className="h-2 bg-gray-100 rounded w-full"></div></div></div>;
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-red-500 rounded-full shadow-sm animate-pulse"></div>}</div></button>);
 const MenuOption = ({ icon, label, onClick, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label}</button>);
-const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete }: any) => (<div className="fixed md:relative inset-0 md:inset-auto w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl z-[60] overflow-y-auto animate-in slide-in-from-right duration-300 flex flex-col h-full"><div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50"><span className="font-bold text-gray-800 text-lg flex items-center gap-2"><Info size={20} className="text-blue-600"/> Detalles</span><button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={20} className="text-gray-500"/></button></div><div className="p-8 flex flex-col items-center border-b border-gray-100"><div className="w-28 h-28 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-blue-50 border border-blue-50 relative"><div className="absolute inset-0 bg-blue-500/5 rounded-3xl blur-xl"></div>{getFileIcon(file.name, 64)}</div><h3 className="font-bold text-center text-gray-800 break-all text-lg mb-1">{file.name}</h3><p className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded-md">{formatFileSize(file.size)}</p></div><div className="p-6 space-y-8 flex-1"><div><h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><CalendarClock size={14}/> Tiempos</h4><div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><DeadlineBar createdDate={file.created} /><p className="text-[10px] text-gray-400 mt-3 text-center">Calculado en base a 5 días hábiles</p></div></div><div><h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={14}/> Flujo de Trabajo</h4><div className="space-y-4"><div className={clsx("p-4 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-100")}><div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-gray-700">Metrólogo</span><button onClick={() => onToggleStatus(file, 'completed', !file.completed)} className={clsx("w-11 h-6 rounded-full relative transition-all shadow-inner", file.completed ? "bg-blue-600" : "bg-gray-300")}><div className={clsx("absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.completed ? "left-6" : "left-1")}></div></button></div><p className="text-xs flex items-center gap-1.5">{file.completedByName ? <><User size={12} className="text-blue-600"/> <span className="text-blue-700 font-medium">{file.completedByName}</span></> : <span className="text-gray-400 italic">Pendiente de finalizar</span>}</p></div><div className={clsx("p-4 rounded-xl border transition-all relative overflow-hidden", file.reviewed ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-100")}>{!isQualityUser && <div className="absolute inset-0 bg-gray-50/50 z-10 cursor-not-allowed" title="Solo Calidad puede firmar"></div>}<div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-gray-700">Calidad</span><button disabled={!isQualityUser} onClick={() => onToggleStatus(file, 'reviewed', !file.reviewed)} className={clsx("w-11 h-6 rounded-full relative transition-all shadow-inner", file.reviewed ? "bg-green-600" : "bg-gray-300")}><div className={clsx("absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.reviewed ? "left-6" : "left-1")}></div></button></div><p className="text-xs flex items-center gap-1.5">{file.reviewedByName ? <><CheckCircle2 size={12} className="text-green-600"/> <span className="text-green-700 font-medium">{file.reviewedByName}</span></> : <span className="text-gray-400 italic">Pendiente de validación</span>}</p></div></div></div><div><h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Metadatos</h4><div className="space-y-2 text-xs bg-gray-50 p-3 rounded-lg border border-gray-100"><div className="flex justify-between"><span className="text-gray-500">ID Original</span> <span className="text-gray-900 font-mono truncate max-w-[140px]" title={file.rawName}>{file.rawName}</span></div><div className="flex justify-between"><span className="text-gray-500">Creado</span> <span className="text-gray-900 font-medium">{new Date(file.created).toLocaleDateString()}</span></div></div></div></div><div className="p-4 bg-gray-50 border-t border-gray-200 grid grid-cols-2 gap-3"><button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-sm font-bold text-gray-700 shadow-sm transition-all"><Download size={16}/> Abrir</button>{isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-2.5 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 shadow-sm transition-all"><Trash2 size={16}/> Borrar</button>}</div></div>);
+
+const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete }: any) => (
+    <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl z-[60] overflow-y-auto animate-in slide-in-from-right duration-300 flex flex-col h-full">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+            <span className="font-bold text-gray-800 text-lg flex items-center gap-2"><Info size={20} className="text-blue-600"/> Detalles</span>
+            <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={20} className="text-gray-500"/></button>
+        </div>
+        <div className="p-8 flex flex-col items-center border-b border-gray-100">
+            <div className="w-28 h-28 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-blue-50 border border-blue-50 relative">
+                <div className="absolute inset-0 bg-blue-500/5 rounded-3xl blur-xl"></div>
+                {getFileIcon(file.name, 64)}
+            </div>
+            <h3 className="font-bold text-center text-gray-800 break-all text-lg mb-1">{file.name}</h3>
+            <p className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded-md">{formatFileSize(file.size)}</p>
+        </div>
+        <div className="p-6 space-y-8 flex-1">
+            <div>
+                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><CalendarClock size={14}/> Tiempos</h4>
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><DeadlineBar createdDate={file.created} /><p className="text-[10px] text-gray-400 mt-3 text-center">Calculado en base a 5 días hábiles</p></div>
+            </div>
+            <div>
+                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={14}/> Flujo de Trabajo</h4>
+                <div className="space-y-4">
+                    {/* METRÓLOGO */}
+                    <div className={clsx("p-4 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-100")}>
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-bold text-gray-700">Metrólogo</span>
+                            <button onClick={() => onToggleStatus(file, 'completed', !file.completed)} className={clsx("w-11 h-6 rounded-full relative transition-all shadow-inner", file.completed ? "bg-blue-600" : "bg-gray-300")}>
+                                <div className={clsx("absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.completed ? "left-6" : "left-1")}></div>
+                            </button>
+                        </div>
+                        <p className="text-xs flex items-center gap-1.5">
+                            {file.completedByName ? 
+                                <><User size={12} className="text-blue-600"/> <span className="text-blue-700 font-medium">{file.completedByName}</span></> : 
+                                file.completed ? <span className="text-orange-500 font-bold flex items-center gap-1"><ShieldAlert size={12}/> ¡Falta firma! (Clic para corregir)</span> : <span className="text-gray-400 italic">Pendiente de finalizar</span>
+                            }
+                        </p>
+                    </div>
+                    {/* CALIDAD */}
+                    <div className={clsx("p-4 rounded-xl border transition-all relative overflow-hidden", file.reviewed ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-100")}>
+                        {!isQualityUser && <div className="absolute inset-0 bg-gray-50/50 z-10 cursor-not-allowed" title="Solo Calidad puede firmar"></div>}
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-bold text-gray-700">Calidad</span>
+                            <button disabled={!isQualityUser} onClick={() => onToggleStatus(file, 'reviewed', !file.reviewed)} className={clsx("w-11 h-6 rounded-full relative transition-all shadow-inner", file.reviewed ? "bg-green-600" : "bg-gray-300")}>
+                                <div className={clsx("absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.reviewed ? "left-6" : "left-1")}></div>
+                            </button>
+                        </div>
+                        <p className="text-xs flex items-center gap-1.5">
+                            {file.reviewedByName ? 
+                                <><CheckCircle2 size={12} className="text-green-600"/> <span className="text-green-700 font-medium">{file.reviewedByName}</span></> : 
+                                file.reviewed ? <span className="text-orange-500 font-bold flex items-center gap-1"><ShieldAlert size={12}/> ¡Falta firma! (Clic para corregir)</span> : <span className="text-gray-400 italic">Pendiente de validación</span>
+                            }
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Metadatos</h4>
+                <div className="space-y-2 text-xs bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <div className="flex justify-between"><span className="text-gray-500">ID Original</span> <span className="text-gray-900 font-mono truncate max-w-[140px]" title={file.rawName}>{file.rawName}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Creado</span> <span className="text-gray-900 font-medium">{new Date(file.created).toLocaleDateString()}</span></div>
+                </div>
+            </div>
+        </div>
+        <div className="p-4 bg-gray-50 border-t border-gray-200 grid grid-cols-2 gap-3">
+            <button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-sm font-bold text-gray-700 shadow-sm transition-all"><Download size={16}/> Abrir</button>
+            {isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-2.5 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 shadow-sm transition-all"><Trash2 size={16}/> Borrar</button>}
+        </div>
+    </div>
+);

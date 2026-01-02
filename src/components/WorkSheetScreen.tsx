@@ -19,7 +19,6 @@ import {
   ArrowRightLeft,
   AlertTriangle,
   CheckCircle2,
-  Wifi,
   WifiOff,
   AlertOctagon
 } from "lucide-react";
@@ -27,7 +26,7 @@ import type { jsPDF } from "jspdf";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc, query, getDocs, where, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, query, getDocs, where } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
 import {
@@ -36,7 +35,6 @@ import {
   addMonths, 
   addYears, 
   parseISO,
-  // --- NUEVOS IMPORTS PARA SLA ---
   addBusinessDays,
   isAfter,
   differenceInBusinessDays
@@ -44,10 +42,9 @@ import {
 import { unit } from 'mathjs';
 
 // ====================================================================
-// 1. CONFIGURACIÓN Y UTILIDADES (Toast, Unidades, Tipos)
+// 1. CONFIGURACIÓN Y UTILIDADES
 // ====================================================================
 
-// Componente Toast (Notificación Flotante)
 const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' | 'warning'; onClose: () => void }> = ({ message, type, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 5000); 
@@ -66,7 +63,6 @@ const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' |
   );
 };
 
-// --- RANGOS DE METROLOGIA (Sin mostrar nombre en UI, solo lógica interna) ---
 const METROLOGY_LIMITS: Record<string, { tMin: number, tMax: number, hMin: number, hMax: number }> = {
   "Dimensional": { tMin: 18, tMax: 22, hMin: 35, hMax: 60 }, 
   "Electrica": { tMin: 18, tMax: 28, hMin: 20, hMax: 70 }, 
@@ -337,7 +333,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     );
 };
 
-// ... Funciones Auxiliares (Fechas, PDFs, Mapeos) ...
 const getLocalISODate = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -357,25 +352,8 @@ const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   return "";
 };
 
-// --- ORDEN ALFABÉTICO ---
 const magnitudesDisponibles = [
-  "Acustica", 
-  "Dimensional", 
-  "Electrica", 
-  "Flujo", 
-  "Frecuencia", 
-  "Fuerza", 
-  "Masa", 
-  "Optica", 
-  "Par Torsional", 
-  "Presión", 
-  "Quimica", 
-  "Reporte de Diagnostico", 
-  "Temperatura", 
-  "Tiempo", 
-  "Vacio", 
-  "Velocidad", 
-  "Vibracion"
+  "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion"
 ];
 
 const unidadesPorMagnitud: Record<string, any> = {
@@ -484,7 +462,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   return doc;
 };
 
-// ... Reducer y Estado Inicial ...
 const initialState: WorksheetState = {
   lugarCalibracion: "", frecuenciaCalibracion: "", fecha: getLocalISODate(), fechaRecepcion: "", certificado: "",
   nombre: "", cliente: "", id: "", equipo: "", marca: "", modelo: "", numeroSerie: "", magnitud: "", unidad: [],
@@ -529,15 +506,14 @@ export const WorkSheetScreen: React.FC = () => {
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
   
-  // -- NUEVO: Estado de Conexión y Metrología --
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [metrologyWarning, setMetrologyWarning] = useState<string | null>(null);
-
-  // Estado para UX y Validación
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
 
-  // Monitor de conexión
+  // 1. Estado local para manejar los valores múltiples de forma segura
+  const [electricalValues, setElectricalValues] = useState<Record<string, { patron: string, instrumento: string }>>({});
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -549,7 +525,61 @@ export const WorkSheetScreen: React.FC = () => {
     };
   }, []);
 
-  // Monitor de Normas de Metrología
+  // 2. Efecto para inicializar los valores si ya existen (modo edición)
+  useEffect(() => {
+    if (state.magnitud === "Electrica" && state.unidad.length > 0) {
+        const newValues: Record<string, { patron: string, instrumento: string }> = {};
+        
+        const extractValue = (fullText: string, unit: string) => {
+            if (!fullText) return "";
+            const safeUnit = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Busca texto después de "Unit:" hasta el siguiente "NextUnit:" o final
+            const regex = new RegExp(`${safeUnit}:\\s*([\\s\\S]*?)(?=(?:$|\\n[^\\n]+:))`, 'i');
+            const match = fullText.match(regex);
+            return match ? match[1].trim() : "";
+        };
+
+        state.unidad.forEach(u => {
+            newValues[u] = {
+                patron: extractValue(state.medicionPatron, u),
+                instrumento: extractValue(state.medicionInstrumento, u)
+            };
+        });
+        setElectricalValues(newValues);
+    }
+  }, [state.magnitud, state.unidad.length]); 
+
+  // 3. Efecto que "Escucha" cambios en los inputs y actualiza el State Global (para el PDF)
+  useEffect(() => {
+    if (state.magnitud !== "Electrica") return;
+
+    let textoPatron = "";
+    let textoInstrumento = "";
+
+    state.unidad.forEach(u => {
+        const vals = electricalValues[u] || { patron: "", instrumento: "" };
+        if (vals.patron) textoPatron += `${u}:\n${vals.patron}\n\n`;
+        if (vals.instrumento) textoInstrumento += `${u}:\n${vals.instrumento}\n\n`;
+    });
+
+    if (state.medicionPatron !== textoPatron.trim()) {
+        dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: textoPatron.trim() });
+    }
+    if (state.medicionInstrumento !== textoInstrumento.trim()) {
+        dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: textoInstrumento.trim() });
+    }
+  }, [electricalValues, state.magnitud, state.unidad]);
+
+  const handleLocalElectricChange = (unit: string, type: 'patron' | 'instrumento', value: string) => {
+    setElectricalValues(prev => ({
+        ...prev,
+        [unit]: {
+            ...prev[unit],
+            [type]: value
+        }
+    }));
+  };
+
   useEffect(() => {
       if(!state.magnitud || (!state.tempAmbiente && !state.humedadRelativa)) {
           setMetrologyWarning(null);
@@ -572,47 +602,7 @@ export const WorkSheetScreen: React.FC = () => {
       } else {
           setMetrologyWarning(null);
       }
-
   }, [state.tempAmbiente, state.humedadRelativa, state.magnitud]);
-
-  // Handler especial para Inputs Dinámicos de Eléctrica
-  const handleElectricalChange = (targetUnit: string, type: 'Patron' | 'Instrumento', value: string) => {
-    const currentText = type === 'Patron' ? state.medicionPatron : state.medicionInstrumento;
-    
-    const lines = currentText.split('\n');
-    const map: Record<string, string> = {};
-    lines.forEach(line => {
-        const parts = line.split(':');
-        if(parts.length >= 2) {
-            const k = parts[0].trim();
-            const v = parts.slice(1).join(':').trim();
-            if(k) map[k] = v;
-        }
-    });
-
-    map[targetUnit] = value;
-
-    const newText = state.unidad.map(u => {
-        const val = map[u] || "";
-        return `${u}: ${val}`;
-    }).join('\n');
-
-    dispatch({ type: 'SET_FIELD', field: type === 'Patron' ? 'medicionPatron' : 'medicionInstrumento', payload: newText });
-  };
-  
-  // Helper para leer valor actual en modo electrico
-  const getElectricalValue = (targetUnit: string, type: 'Patron' | 'Instrumento') => {
-      const text = type === 'Patron' ? state.medicionPatron : state.medicionInstrumento;
-      const lines = text.split('\n');
-      for(const line of lines) {
-          const parts = line.split(':');
-          if(parts.length >= 2 && parts[0].trim() === targetUnit) {
-              return parts.slice(1).join(':').trim();
-          }
-      }
-      return "";
-  };
-
 
   useEffect(() => {
     const backup = localStorage.getItem('backup_worksheet_data');
@@ -706,8 +696,8 @@ export const WorkSheetScreen: React.FC = () => {
     if(validationErrors.unidad && nuevasUnidades.length > 0) { setValidationErrors({...validationErrors, unidad: false}); }
   };
 
+  // --- HANDLE SAVE MEJORADO Y SINCRONIZADO ---
   const handleSave = useCallback(async () => {
-    // 1. Validar campos vacíos
     const errors: Record<string, boolean> = {};
     const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad"];
     let hasError = false;
@@ -727,21 +717,16 @@ export const WorkSheetScreen: React.FC = () => {
     }
     setValidationErrors({});
 
-    // 2. VALIDACIÓN BLINDADA DE FECHAS
     if (!state.permitirExcepcion) {
         const idToCheck = state.id?.trim();
         const clientToCheck = state.cliente;
-        
         setIsSaving(true); 
-
         try {
             const q = query(collection(db, "hojasDeTrabajo"), where("id", "==", idToCheck), where("cliente", "==", clientToCheck));
             const docs = await getDocs(q);
-            
             if (!docs.empty) {
                 let maxFecha: Date | null = null;
                 let frecuenciaAnterior: string | undefined = undefined;
-                
                 docs.forEach(doc => {
                   const data = doc.data(); 
                   const parts = data.fecha.split('-');
@@ -760,7 +745,7 @@ export const WorkSheetScreen: React.FC = () => {
                         setIsSaving(false);
                         setToast({ message: `⛔️ ERROR: Equipo calibrado recientemente (${format(maxFecha, "dd/MM/yyyy")}). No se puede guardar.`, type: 'error' });
                         dispatch({ type: 'SET_ID_BLOCKED', message: `⛔️ Bloqueado por sistema. Última: ${format(maxFecha, "dd/MM/yyyy")}` });
-                        return; // <--- AQUÍ DETENEMOS EL GUARDADO
+                        return; 
                     }
                 }
             }
@@ -789,11 +774,26 @@ export const WorkSheetScreen: React.FC = () => {
       await uploadBytes(pdfRef, blob);
       const pdfURL = await getDownloadURL(pdfRef);
 
-      const fullData = { ...state, pdfURL, timestamp: Date.now(), userId: currentUser?.uid || user?.uid || "unknown" };
+      // AQUI ESTA LA MAGIA DE LA SINCRONIZACION
+      const lugarNormalizado = state.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
+
+      const fullData = { 
+          ...state, 
+          // Campos Estandarizados para Friday
+          lugarCalibracion: lugarNormalizado, // Para agrupar
+          folio: state.certificado, // Para columna Folio
+          serie: state.numeroSerie, // Para columna Serie
+          status: "completed",
+          priority: "medium",
+          pdfURL, 
+          timestamp: Date.now(), 
+          createdAt: new Date().toISOString(),
+          userId: currentUser?.uid || user?.uid || "unknown" 
+      };
       
       await addDoc(collection(db, "hojasDeTrabajo"), fullData);
 
-      setToast({ message: "Hoja de trabajo guardada correctamente.", type: 'success' });
+      setToast({ message: "Hoja de trabajo guardada y enviada a Friday.", type: 'success' });
       localStorage.removeItem('backup_worksheet_data');
       
       setTimeout(() => goBack(), 1500);
@@ -828,26 +828,14 @@ export const WorkSheetScreen: React.FC = () => {
     }
   }, [showPreview, previewUrl, state]);
 
-  // ====================================================================
-  // LÓGICA DE TIEMPO DE COMPROMISO (SLA)
-  // ====================================================================
   const slaInfo = React.useMemo(() => {
-    // Solo aplica si es Laboratorio y tenemos ambas fechas
     if (state.lugarCalibracion !== "Laboratorio" || !state.fechaRecepcion || !state.fecha) {
       return null;
     }
-
     const recepcion = parseISO(state.fechaRecepcion);
     const calibracion = parseISO(state.fecha);
-
-    // Calculamos el límite (5 días hábiles)
-    // Nota: addBusinessDays salta sábados y domingos automáticamente
     const fechaLimite = addBusinessDays(recepcion, 5);
-    
-    // Verificamos si la fecha seleccionada es posterior al límite
     const esTardio = isAfter(calibracion, fechaLimite);
-    
-    // Días de diferencia (solo hábiles) para mostrar en el mensaje
     const diasHabiliesTomados = differenceInBusinessDays(calibracion, recepcion);
 
     return {
@@ -927,12 +915,10 @@ export const WorkSheetScreen: React.FC = () => {
                   </select>
                 </div>
                 
-                {/* --- CAMPO DE FECHA CON VALIDACION SLA INTEGRADA --- */}
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
                   <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                   
-                  {/* Validación visual de Tiempo Compromiso */}
                   {slaInfo && (
                     <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
                       slaInfo.esTardio 
@@ -981,7 +967,6 @@ export const WorkSheetScreen: React.FC = () => {
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
               </div>
 
-              {/* --- BLOQUE DE MAGNITUD Y UNIDAD --- */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
@@ -1070,36 +1055,57 @@ export const WorkSheetScreen: React.FC = () => {
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-orange-400" /><span>Repetibilidad</span></label><input type="text" value={state.repetibilidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                 </>
               ) : state.magnitud === "Electrica" && state.unidad.length > 0 ? (
-                // --- COLUMNAS DINÁMICAS PARA ELECTRICA ---
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                  <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2"><Calculator className="w-4 h-4 text-blue-500"/> Mediciones por Unidad Eléctrica</h3>
-                  <div className="grid grid-cols-12 gap-4 mb-2 px-2 text-xs font-bold text-gray-500 uppercase">
-                      <div className="col-span-2">Unidad</div>
-                      <div className="col-span-5">Medición Patrón</div>
-                      <div className="col-span-5">Medición Instrumento</div>
+                <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                          <Calculator className="w-4 h-4 text-blue-500"/> 
+                          Mediciones por Unidad Eléctrica
+                      </h3>
+                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Multilínea habilitada</span>
                   </div>
+              
+                  <div className="grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      <div className="col-span-2 flex items-center">Unidad</div>
+                      <div className="col-span-5 pl-1">Medición Patrón</div>
+                      <div className="col-span-5 pl-1">Medición Instrumento</div>
+                  </div>
+              
+                  <div className="space-y-4">
                   {state.unidad.map((u) => (
-                      <div key={u} className="grid grid-cols-12 gap-4 mb-3 items-center">
-                          <div className="col-span-2 text-sm font-bold text-blue-800 bg-blue-100 py-2 px-3 rounded-lg flex items-center justify-center">{u}</div>
+                      <div key={u} className="grid grid-cols-12 gap-6 items-start">
+                          <div className="col-span-2 pt-2">
+                              <div className="text-sm font-bold text-blue-800 bg-blue-100 py-3 px-2 rounded-lg flex items-center justify-center text-center break-words shadow-sm border border-blue-200">
+                                  {u}
+                              </div>
+                          </div>
+              
                           <div className="col-span-5">
-                              <input type="text" 
-                                placeholder="Valor Patrón"
-                                value={getElectricalValue(u, 'Patron')}
-                                onChange={(e) => handleElectricalChange(u, 'Patron', e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                              <textarea 
+                                placeholder="Ej: 10.00&#10;10.01&#10;10.02" 
+                                value={electricalValues[u]?.patron || ""}
+                                onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
+                                rows={4} 
+                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
                               />
                           </div>
+              
                           <div className="col-span-5">
-                              <input type="text" 
-                                placeholder="Valor Instrumento"
-                                value={getElectricalValue(u, 'Instrumento')}
-                                onChange={(e) => handleElectricalChange(u, 'Instrumento', e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                              <textarea 
+                                placeholder="Ej: 9.99&#10;10.00&#10;10.01"
+                                value={electricalValues[u]?.instrumento || ""}
+                                onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
+                                rows={4} 
+                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
                               />
                           </div>
                       </div>
                   ))}
-                  <div className="text-xs text-gray-400 mt-2 text-center italic">* Los valores se guardan automáticamente combinados para el reporte.</div>
+                  </div>
+                  
+                  <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500 flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3 text-orange-400" />
+                      <span>Puedes presionar <strong>Enter</strong> para agregar múltiples lecturas por cada unidad.</span>
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1114,7 +1120,6 @@ export const WorkSheetScreen: React.FC = () => {
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                 
-                {/* WARNING DE METROLOGIA (SIN NOMBRE DE NORMA) */}
                 {metrologyWarning && (
                   <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
                       <AlertOctagon className="w-5 h-5 shrink-0 mt-0.5 text-yellow-600"/>
