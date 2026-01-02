@@ -54,6 +54,7 @@ interface ToastMessage {
 type ViewMode = 'grid' | 'list';
 type FilterType = 'all' | 'starred' | 'recent' | 'pending_review' | 'completed';
 type SortType = 'dateDesc' | 'dateAsc' | 'nameAsc' | 'nameDesc';
+type DragItemType = 'file' | 'folder' | null;
 
 // --- UTILS ---
 const cleanFileName = (rawName: string) => {
@@ -177,22 +178,27 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [completedGroupView, setCompletedGroupView] = useState<string | null>(null);
 
-  // Selección & DragDrop
+  // Selección & DragDrop (Upload)
   const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: DriveFile | null } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: DriveFile | null, folder: DriveFolder | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dragActive, setDragActive] = useState(false); 
   const [toasts, setToasts] = useState<ToastMessage[]>([]); 
   
+  // DRAG AND DROP (Internal Move)
+  const [draggingItem, setDraggingItem] = useState<{ type: DragItemType, data: DriveFile | DriveFolder } | null>(null);
+  const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
+
   // Modals
   const [isUploading, setIsUploading] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mover
+  // Mover (Modal)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTargetFile, setMoveTargetFile] = useState<DriveFile | null>(null);
+  const [moveTargetFolder, setMoveTargetFolder] = useState<DriveFolder | null>(null);
   const [moveToPath, setMoveToPath] = useState<string[]>([]);
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
   const [isMoving, setIsMoving] = useState(false);
@@ -221,7 +227,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 foundUser = { name: data.nombre || data.name, email: data.correo || data.email, puesto: data.puesto || data.role };
             }
         });
-        // Si no se encuentra en la DB, usar datos básicos de Auth para que no falle el guardado
         if (!foundUser) {
             foundUser = { name: user.displayName || "Usuario", email: user.email || "", role: "User" };
         }
@@ -249,7 +254,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
           if (!isQuality) { 
               const pathIncludesName = (data.filePath || "").toLowerCase().includes(myName);
-              // Filtro relajado para asegurar que ves tus archivos
               if (!pathIncludesName && data.uploadedBy !== currentUserData?.name) return; 
           }
 
@@ -363,6 +367,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const handleDrag = (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      // Si estamos arrastrando un elemento interno (archivo/carpeta), no activamos el overlay de subida
+      if (draggingItem) return;
+
       if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
       else if (e.type === "dragleave") setDragActive(false);
   };
@@ -371,6 +378,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
+      
+      // Si hay un item interno arrastrándose, no hacemos la lógica de upload aquí
+      if (draggingItem) return;
+
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
           await processFiles(e.dataTransfer.files);
       }
@@ -391,7 +402,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               const fullPath = `${[ROOT_PATH, ...path].join('/')}/${file.name}`;
               const docId = fullPath.replace(/\//g, '_');
               
-              // 1. Verificamos si ya existe para no borrar datos importantes
               const existingDoc = await getDoc(doc(db, 'fileMetadata', docId));
               const existingData = existingDoc.exists() ? existingDoc.data() : {};
 
@@ -404,12 +414,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   size: meta.size,
                   contentType: meta.contentType,
                   updated: meta.updated,
-                  created: existingData.created || new Date().toISOString(), // Mantener fecha creación
+                  created: existingData.created || new Date().toISOString(),
                   uploadedBy: currentUserData?.name || "Desconocido",
-                  // IMPORTANTE: No resetear 'completed' si ya estaba true.
                   completed: existingData.completed || false,
                   completedByName: existingData.completedByName || null,
-                  reviewed: false, // Resetear 'reviewed' sí es correcto porque es un archivo nuevo
+                  reviewed: false, 
                   reviewedByName: null
               }, { merge: true });
               count++;
@@ -441,54 +450,188 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadMoveFolders();
   }, [moveDialogOpen, moveToPath]);
 
-  const handleMoveFile = async () => {
-    if (!moveTargetFile) return;
-    const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
-    const newFullPath = `${destinationPathString}/${moveTargetFile.name}`;
-    
-    if (newFullPath === moveTargetFile.fullPath) {
-      setMoveDialogOpen(false); return;
-    }
-    
-    setIsMoving(true);
-    try {
-        let fileUrl = moveTargetFile.url;
-        if (!fileUrl) fileUrl = await getDownloadURL(ref(storage, moveTargetFile.fullPath));
+  // --- LOGICA RECURSIVA Y DE MOVER ---
+  const moveFolderRecursive = async (sourcePrefix: string, destPrefix: string) => {
+      const sourceRef = ref(storage, sourcePrefix);
+      const res = await listAll(sourceRef);
+
+      for (const itemRef of res.items) {
+          const fileUrl = await getDownloadURL(itemRef);
+          const response = await fetch(fileUrl);
+          const blob = await response.blob();
+          
+          const newFilePath = `${destPrefix}/${itemRef.name}`;
+          await uploadBytes(ref(storage, newFilePath), blob);
+
+          if (itemRef.name !== '.keep') {
+              const oldMetaId = itemRef.fullPath.replace(/\//g, '_');
+              const newMetaId = newFilePath.replace(/\//g, '_');
+              const oldMetaDoc = await getDoc(doc(db, 'fileMetadata', oldMetaId));
+              let metaData = oldMetaDoc.exists() ? oldMetaDoc.data() : {};
+              
+              if (oldMetaDoc.exists()) await deleteDoc(doc(db, 'fileMetadata', oldMetaId));
+              
+              await setDoc(doc(db, 'fileMetadata', newMetaId), { 
+                  ...metaData, 
+                  filePath: newFilePath, 
+                  updated: new Date().toISOString() 
+              }, { merge: true });
+          }
+          await deleteObject(itemRef);
+      }
+
+      for (const folderRef of res.prefixes) {
+          const newSubDest = `${destPrefix}/${folderRef.name}`;
+          await moveFolderRecursive(folderRef.fullPath, newSubDest);
+      }
+  };
+
+  const executeMoveFolder = async (folderToMove: DriveFolder, destPath: string) => {
+      // Validaciones
+      const newFullPath = `${destPath}/${folderToMove.name}`;
+      if (newFullPath.startsWith(folderToMove.fullPath)) {
+          showToast("No puedes mover una carpeta dentro de sí misma", 'error');
+          return false;
+      }
+      if (newFullPath === folderToMove.fullPath) return false;
+
+      setIsMoving(true);
+      try {
+          await moveFolderRecursive(folderToMove.fullPath, newFullPath);
+          return true;
+      } catch (e) {
+          console.error("Error moving folder:", e);
+          showToast("Error al mover la carpeta", 'error');
+          return false;
+      } finally {
+          setIsMoving(false);
+      }
+  };
+
+  const executeMoveFile = async (fileToMove: DriveFile, destPath: string) => {
+      const newFullPath = `${destPath}/${fileToMove.name}`;
+      if (newFullPath === fileToMove.fullPath) return false;
+
+      setIsMoving(true);
+      try {
+        let fileUrl = fileToMove.url;
+        if (!fileUrl) fileUrl = await getDownloadURL(ref(storage, fileToMove.fullPath));
         const response = await fetch(fileUrl);
         const blob = await response.blob();
         await uploadBytes(ref(storage, newFullPath), blob);
 
-        const oldMetaId = moveTargetFile.fullPath.replace(/\//g, '_');
+        const oldMetaId = fileToMove.fullPath.replace(/\//g, '_');
         const newMetaId = newFullPath.replace(/\//g, '_');
         const oldMetaDoc = await getDoc(doc(db, 'fileMetadata', oldMetaId));
         let metaData = oldMetaDoc.exists() ? oldMetaDoc.data() : {};
         
         if (oldMetaDoc.exists()) await deleteDoc(doc(db, 'fileMetadata', oldMetaId));
-        await setDoc(doc(db, 'fileMetadata', newMetaId), { ...metaData, filePath: newFullPath, name: moveTargetFile.name, updated: new Date().toISOString() }, { merge: true });
-        await deleteObject(ref(storage, moveTargetFile.fullPath));
-        
-        showToast("Archivo movido correctamente", 'success');
-        setMoveDialogOpen(false);
-        setMoveTargetFile(null);
-        setMoveToPath([]);
-        loadContent();
-    } catch (e: any) { 
-        console.error("Error moving:", e); 
-        showToast("Error al mover el archivo", 'error');
-    } finally { setIsMoving(false); }
+        await setDoc(doc(db, 'fileMetadata', newMetaId), { ...metaData, filePath: newFullPath, name: fileToMove.name, updated: new Date().toISOString() }, { merge: true });
+        await deleteObject(ref(storage, fileToMove.fullPath));
+        return true;
+      } catch(e) {
+          console.error("Error moving file", e);
+          showToast("Error al mover el archivo", 'error');
+          return false;
+      } finally {
+          setIsMoving(false);
+      }
   };
+
+  // --- DRAG HANDLERS INTERNOS ---
+  const handleItemDragStart = (e: React.DragEvent, item: DriveFile | DriveFolder, type: DragItemType) => {
+      if (!isQualityUser(currentUserData)) {
+          e.preventDefault();
+          return;
+      }
+      setDraggingItem({ type, data: item });
+      // Truco para ocultar la imagen fantasma por defecto si quisieras personalizarla, 
+      // pero dejamos el default por ahora.
+      e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleFolderDragOver = (e: React.DragEvent, folderFullPath: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!draggingItem) return;
+      
+      // Evitar highlight si nos arrastramos sobre nosotros mismos (carpeta)
+      if (draggingItem.type === 'folder' && (draggingItem.data as DriveFolder).fullPath === folderFullPath) return;
+
+      setDropTargetFolder(folderFullPath);
+  };
+
+  const handleFolderDragLeave = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDropTargetFolder(null);
+  };
+
+  const handleFolderDrop = async (e: React.DragEvent, targetFolder: DriveFolder) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDropTargetFolder(null);
+      
+      if (!draggingItem) return;
+
+      let success = false;
+      const destPath = targetFolder.fullPath;
+
+      if (draggingItem.type === 'folder') {
+          const folderToMove = draggingItem.data as DriveFolder;
+          // Prevenir mover a sí mismo o a padre inmediato (opcional, pero buena UX)
+          if (folderToMove.fullPath === destPath) return; 
+          success = await executeMoveFolder(folderToMove, destPath);
+      } else if (draggingItem.type === 'file') {
+          const fileToMove = draggingItem.data as DriveFile;
+           // Prevenir mover si ya está ahí
+          if (fileToMove.fullPath.startsWith(destPath)) return;
+          success = await executeMoveFile(fileToMove, destPath);
+      }
+
+      setDraggingItem(null);
+      if (success) {
+          showToast("Elemento movido correctamente", 'success');
+          loadContent();
+      }
+  };
+
+  // --- HANDLER MODAL ---
+  const handleModalMove = async () => {
+    const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
+
+    if (moveTargetFolder) {
+        const success = await executeMoveFolder(moveTargetFolder, destinationPathString);
+        if (success) {
+            showToast("Carpeta movida correctamente", 'success');
+            setMoveDialogOpen(false);
+            setMoveTargetFolder(null);
+            setMoveToPath([]);
+            loadContent();
+        }
+        return;
+    }
+
+    if (moveTargetFile) {
+        const success = await executeMoveFile(moveTargetFile, destinationPathString);
+        if (success) {
+            showToast("Archivo movido correctamente", 'success');
+            setMoveDialogOpen(false);
+            setMoveTargetFile(null);
+            setMoveToPath([]);
+            loadContent();
+        }
+    }
+  };
+
 
   const updateFileStatus = async (file: DriveFile, field: string, value: any) => {
     const userName = currentUserData?.name || user?.displayName || "Usuario Desconocido";
-    
-    // Lógica para asignar nombre: Si se activa, pone el nombre. Si se desactiva, pone null.
-    // Si ya tiene nombre y se activa (caso raro, pero posible si falla sync), mantiene el existente o actualiza.
     const newReviewedBy = field === 'reviewed' && value ? userName : (field === 'reviewed' && !value ? null : file.reviewedByName);
     const newCompletedBy = field === 'completed' && value ? userName : (field === 'completed' && !value ? null : file.completedByName);
 
     const updatedFile = { ...file, [field]: value, reviewedByName: newReviewedBy, completedByName: newCompletedBy };
     
-    // Actualización Optimista UI
     setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
     if (selectedFile?.fullPath === file.fullPath) setSelectedFile(updatedFile as DriveFile);
 
@@ -496,24 +639,20 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const id = file.fullPath.replace(/\//g, '_');
         const dataToUpdate: any = { [field]: value };
         
-        // Forzamos la actualización del nombre en Firestore
         if (field === 'reviewed') dataToUpdate['reviewedByName'] = value ? userName : null;
         if (field === 'completed') dataToUpdate['completedByName'] = value ? userName : null;
-        
-        console.log(`Guardando estado en Firebase: ${field} = ${value} por ${userName}`); // DEBUG
         
         await setDoc(doc(db, 'fileMetadata', id), dataToUpdate, { merge: true });
         
         if (field === 'reviewed' && value === true) showToast("Validación guardada", 'success');
         if (field === 'completed' && value === true) showToast("Marcado como terminado", 'success');
         
-        // Refrescar lista si desaparece del filtro actual
         if (activeFilter === 'pending_review' && field === 'reviewed' && value === true) {
             setTimeout(() => { setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath)); setSelectedFile(null); setDetailsOpen(false); }, 500); 
         }
     } catch (e) { 
         console.error("Error al actualizar status:", e);
-        loadContent(); // Revertir cambios si falla
+        loadContent(); 
         showToast("Error al guardar en base de datos", 'error'); 
     } 
   };
@@ -538,8 +677,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const handleContextMenu = (e: React.MouseEvent, file: DriveFile) => {
       e.preventDefault();
-      setContextMenu({ x: e.clientX, y: e.clientY, file });
+      setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null });
       setSelectedFile(file);
+  };
+  
+  const handleFolderContextMenu = (e: React.MouseEvent, folder: DriveFolder) => {
+      e.preventDefault();
+      e.stopPropagation(); 
+      setContextMenu({ x: e.clientX, y: e.clientY, file: null, folder });
   };
 
   const renderContent = () => {
@@ -578,9 +723,22 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><Folder size={14}/> Carpetas</h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                         {folders.map((f) => (
-                            <div key={f.fullPath} onDoubleClick={() => { setPath([...path, f.name]); setSearchQuery(""); }} className="group p-4 border border-gray-200 bg-white rounded-2xl hover:border-blue-400 cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 select-none relative overflow-hidden">
+                            <div 
+                                key={f.fullPath} 
+                                draggable={isQualityUser(currentUserData)}
+                                onDragStart={(e) => handleItemDragStart(e, f, 'folder')}
+                                onDragOver={(e) => handleFolderDragOver(e, f.fullPath)}
+                                onDragLeave={handleFolderDragLeave}
+                                onDrop={(e) => handleFolderDrop(e, f)}
+                                onDoubleClick={() => { setPath([...path, f.name]); setSearchQuery(""); }} 
+                                onContextMenu={(e) => handleFolderContextMenu(e, f)}
+                                className={clsx(
+                                    "group p-4 border rounded-2xl cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 select-none relative overflow-hidden",
+                                    dropTargetFolder === f.fullPath ? "border-blue-500 bg-blue-50 scale-105 ring-2 ring-blue-300" : "border-gray-200 bg-white hover:border-blue-400"
+                                )}
+                            >
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-cyan-300 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                <Folder size={32} className="text-blue-200 fill-blue-50 group-hover:text-blue-500 group-hover:fill-blue-100 transition-colors" />
+                                <Folder size={32} className={clsx("transition-colors", dropTargetFolder === f.fullPath ? "text-blue-600 fill-blue-200" : "text-blue-200 fill-blue-50 group-hover:text-blue-500 group-hover:fill-blue-100")} />
                                 <span className="text-sm font-semibold text-gray-700 truncate w-full text-center">{f.name}</span>
                             </div>
                         ))}
@@ -597,7 +755,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 {view === 'grid' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 pb-20">
                         {displayFiles.map((file) => (
-                            <FileCard key={file.fullPath} file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => { setSelectedFile(file); setDetailsOpen(true); }} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
+                            <div key={file.fullPath} draggable={isQualityUser(currentUserData)} onDragStart={(e) => handleItemDragStart(e, file, 'file')}>
+                                <FileCard file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => { setSelectedFile(file); setDetailsOpen(true); }} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
+                            </div>
                         ))}
                     </div>
                 ) : (
@@ -610,7 +770,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                             <div className="col-span-2 md:col-span-1"></div>
                         </div>
                         {displayFiles.map((file) => (
-                            <FileListRow key={file.fullPath} file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => { setSelectedFile(file); setDetailsOpen(true); }} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
+                            <div key={file.fullPath} draggable={isQualityUser(currentUserData)} onDragStart={(e) => handleItemDragStart(e, file, 'file')}>
+                                <FileListRow file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => { setSelectedFile(file); setDetailsOpen(true); }} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
+                            </div>
                         ))}
                     </div>
                 )}
@@ -622,8 +784,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   return (
     <div className="flex h-full w-full bg-[#f8f9fa] text-gray-800 font-sans overflow-hidden relative" onClick={() => { setContextMenu(null); setFilterMenuOpen(false); }}>
       
-      {/* DRAG AND DROP OVERLAY */}
-      {dragActive && (
+      {/* DRAG AND DROP OVERLAY (UPLOAD EXTERNO) */}
+      {dragActive && !draggingItem && (
           <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-4 border-blue-500 border-dashed m-4 rounded-3xl flex items-center justify-center pointer-events-none">
               <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce">
                   <UploadCloud size={64} className="text-blue-500 mb-4" />
@@ -709,7 +871,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
       {detailsOpen && selectedFile && ( <DetailsPanel file={selectedFile} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onDownload={handleDownload} onDelete={handleDelete} /> )}
       
-      {/* --- MENU CONTEXTUAL "POWER USER" --- */}
+      {/* --- MENU CONTEXTUAL --- */}
       {contextMenu && (
         <div 
             className="fixed bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-64 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" 
@@ -717,46 +879,97 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             onClick={(e) => e.stopPropagation()}
         >
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
-                <p className="font-bold text-gray-800 truncate text-xs">{contextMenu.file?.name}</p>
+                <p className="font-bold text-gray-800 truncate text-xs">
+                    {contextMenu.file ? contextMenu.file.name : contextMenu.folder?.name}
+                </p>
             </div>
             
-            {/* OPCIONES ESTÁNDAR */}
-            <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
-            <MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
-            
-            <div className="my-1 border-t border-gray-100"></div>
-
-            {/* --- ACCIÓN RÁPIDA: METRÓLOGO (Marcar Realizado/Pendiente) --- */}
+            {/* OPCIONES PARA ARCHIVOS */}
             {contextMenu.file && (
-                <MenuOption 
-                    icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} 
-                    label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} 
-                    onClick={() => { updateFileStatus(contextMenu.file, 'completed', !contextMenu.file.completed); setContextMenu(null); }} 
-                />
-            )}
-
-            {/* --- ACCIÓN RÁPIDA: CALIDAD (Solo si es QualityUser) --- */}
-            {isQualityUser(currentUserData) && contextMenu.file && (
-                <MenuOption 
-                    icon={<CheckCircle2 size={16} className={contextMenu.file.reviewed ? "text-green-600" : "text-gray-400"} />} 
-                    label={contextMenu.file.reviewed ? "Invalidar Calidad" : "Validar Calidad"} 
-                    onClick={() => { updateFileStatus(contextMenu.file, 'reviewed', !contextMenu.file.reviewed); setContextMenu(null); }} 
-                />
-            )}
-
-            <div className="my-1 border-t border-gray-100"></div>
-
-            {/* ACCIONES DE ADMINISTRACIÓN */}
-            {isQualityUser(currentUserData) && (
                 <>
-                    <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveDialogOpen(true); setContextMenu(null); } }} />
-                    <MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} />
+                    <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+                    <MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+                    <div className="my-1 border-t border-gray-100"></div>
+                    <MenuOption 
+                        icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} 
+                        label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} 
+                        onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} 
+                    />
+                    {isQualityUser(currentUserData) && (
+                        <MenuOption 
+                            icon={<CheckCircle2 size={16} className={contextMenu.file.reviewed ? "text-green-600" : "text-gray-400"} />} 
+                            label={contextMenu.file.reviewed ? "Invalidar Calidad" : "Validar Calidad"} 
+                            onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} 
+                        />
+                    )}
+                    <div className="my-1 border-t border-gray-100"></div>
+                    {isQualityUser(currentUserData) && (
+                        <>
+                            <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                            <MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} />
+                        </>
+                    )}
                 </>
+            )}
+
+            {/* OPCIONES PARA CARPETAS */}
+            {contextMenu.folder && isQualityUser(currentUserData) && (
+                 <>
+                    <MenuOption 
+                        icon={<FolderOpen size={16} className="text-blue-500"/>} 
+                        label="Abrir" 
+                        onClick={() => { if(contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} 
+                    />
+                    <MenuOption 
+                        icon={<MoveRight size={16} className="text-blue-500"/>} 
+                        label="Mover a carpeta" 
+                        onClick={() => { if(contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} 
+                    />
+                 </>
             )}
         </div>
       )}
 
-      {moveDialogOpen && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}><div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95"><div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50"><h3 className="font-bold text-gray-800 flex items-center gap-2"><MoveRight className="text-blue-600" size={20} /> Mover "{moveTargetFile?.name}"</h3><button onClick={() => setMoveDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button></div><div className="p-3 bg-gray-100 border-b border-gray-200 flex items-center gap-2 text-sm"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border rounded hover:bg-gray-50 disabled:opacity-50"><ArrowUp size={16} /></button><div className="flex items-center gap-1 overflow-hidden text-gray-600"><Home size={14} /><span>/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-gray-800">{p} /</span>)}</div></div><div className="flex-1 overflow-y-auto p-2 min-h-[200px]">{moveFolderContent.length === 0 ? <div className="text-center py-10 text-gray-400 flex flex-col items-center"><FolderOpen size={32} className="mb-2 opacity-50" /><p>Carpeta vacía</p></div> : <div className="space-y-1">{moveFolderContent.map((folder, idx) => <button key={idx} onClick={() => setMoveToPath([...moveToPath, folder.name])} className="w-full flex items-center gap-3 p-3 hover:bg-blue-50 rounded-lg text-left transition-colors group"><Folder size={20} className="text-blue-400 group-hover:text-blue-600 fill-blue-50" /><span className="text-sm font-medium text-gray-700">{folder.name}</span><ChevronRight size={16} className="ml-auto text-gray-400" /></button>)}</div>}</div><div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white"><button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button><button onClick={handleMoveFile} disabled={!moveTargetFile || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-lg flex items-center gap-2 disabled:opacity-50">{isMoving ? <Loader2 size={16} className="animate-spin" /> : "Mover Aquí"}</button></div></div></div>}
+      {/* DIALOGO DE MOVER MANUAL (FALLBACK) */}
+      {moveDialogOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95">
+                  <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                      <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                          <MoveRight className="text-blue-600" size={20} /> Mover "{moveTargetFile?.name || moveTargetFolder?.name}"
+                      </h3>
+                      <button onClick={() => setMoveDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button>
+                  </div>
+                  <div className="p-3 bg-gray-100 border-b border-gray-200 flex items-center gap-2 text-sm">
+                      <button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border rounded hover:bg-gray-50 disabled:opacity-50"><ArrowUp size={16} /></button>
+                      <div className="flex items-center gap-1 overflow-hidden text-gray-600"><Home size={14} /><span>/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-gray-800">{p} /</span>)}</div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 min-h-[200px]">
+                      {moveFolderContent.length === 0 ? 
+                          <div className="text-center py-10 text-gray-400 flex flex-col items-center"><FolderOpen size={32} className="mb-2 opacity-50" /><p>Carpeta vacía</p></div> : 
+                          <div className="space-y-1">{moveFolderContent.map((folder, idx) => (
+                              <button 
+                                  key={idx} 
+                                  onClick={() => setMoveToPath([...moveToPath, folder.name])} 
+                                  disabled={moveTargetFolder?.name === folder.name} 
+                                  className={clsx("w-full flex items-center gap-3 p-3 hover:bg-blue-50 rounded-lg text-left transition-colors group", moveTargetFolder?.name === folder.name && "opacity-50 cursor-not-allowed")}
+                              >
+                                  <Folder size={20} className="text-blue-400 group-hover:text-blue-600 fill-blue-50" />
+                                  <span className="text-sm font-medium text-gray-700">{folder.name}</span>
+                                  <ChevronRight size={16} className="ml-auto text-gray-400" />
+                              </button>
+                          ))}</div>
+                      }
+                  </div>
+                  <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white">
+                      <button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button>
+                      <button onClick={handleModalMove} disabled={(!moveTargetFile && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-lg flex items-center gap-2 disabled:opacity-50">
+                          {isMoving ? <Loader2 size={16} className="animate-spin" /> : "Mover Aquí"}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {createFolderOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"><div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl ring-1 ring-gray-900/5"><h3 className="text-lg font-bold mb-4 text-gray-800">Nueva Carpeta</h3><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /><div className="flex justify-end gap-3"><button onClick={() => setCreateFolderOpen(false)} className="px-4 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancelar</button><button onClick={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">Crear</button></div></div></div>}
 
