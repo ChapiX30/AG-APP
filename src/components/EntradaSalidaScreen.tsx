@@ -10,7 +10,7 @@ import { saveAs } from 'file-saver';
 import { 
   ArrowLeft, Search, Printer, Loader2, Building2, 
   CheckCircle2, Circle, Plus, X, AlertTriangle, 
-  Hash, LayoutList, FileSignature, Tag, Info
+  Hash, LayoutList, FileSignature, Tag, Users, Save
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -26,7 +26,7 @@ interface ItemSalida {
   cliente: string;
   ordenCompra: string;
   fechaTermino: string;
-  tipoServicio: string; // Valor real detectado para depuración
+  tipoServicio: string;
   selected: boolean;
 }
 
@@ -39,18 +39,35 @@ export const EntradaSalidaScreen: React.FC = () => {
   const [search, setSearch] = useState('');
   const [customFolio, setCustomFolio] = useState<string>('');
   const [nextFolioDB, setNextFolioDB] = useState<number>(0); 
+  
+  // Estado para la lista maestra de clientes de la DB
+  const [dbClients, setDbClients] = useState<string[]>([]);
 
   // Modal Manual
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualForm, setManualForm] = useState({
-    descripcion: '', marca: '', modelo: '', serie: '', idInterno: '', certificado: 'N/A'
+    cliente: '', descripcion: '', marca: '', modelo: '', serie: '', idInterno: '', certificado: 'N/A'
   });
 
   // --- 1. CARGA INICIAL ---
   useEffect(() => {
     fetchItems();
     fetchNextFolio();
+    fetchClientsDB(); // <--- Cargamos los clientes de la colección
   }, []);
+
+  // Función para obtener clientes de la colección 'clientes'
+  const fetchClientsDB = async () => {
+    try {
+      // Asumiendo que el campo se llama 'nombre' como en tu imagen
+      const q = query(collection(db, 'clientes'), orderBy('nombre'));
+      const querySnapshot = await getDocs(q);
+      const names = querySnapshot.docs.map(doc => doc.data().nombre).filter(n => n);
+      setDbClients(names);
+    } catch (error) {
+      console.error("Error cargando clientes de DB:", error);
+    }
+  };
 
   const fetchItems = async () => {
     setLoading(true);
@@ -62,32 +79,17 @@ export const EntradaSalidaScreen: React.FC = () => {
       snap.forEach(d => {
         const data = d.data();
         
-        // --- LÓGICA DE FILTRO ROBUSTA ---
-        // 1. Buscamos el valor en todos los campos posibles donde pueda estar "Sitio"
         const rawTipo = 
-          data.tipoServicio || 
-          data.TipoServicio || 
-          data.servicio || 
-          data.tipo || 
-          data.lugar || 
-          data.ubicacion || 
-          data.laboratorio ||   
-          data.lugarCalibracion ||
-          'Laboratorio';
+          data.tipoServicio || data.TipoServicio || data.servicio || 
+          data.tipo || data.lugar || data.ubicacion || 
+          data.laboratorio || data.lugarCalibracion || 'Laboratorio';
 
-        // 2. Normalizamos: Quitamos acentos y pasamos a minúsculas para comparar
-        const tipoStr = String(rawTipo)
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, ""); // "Sítio" -> "sitio"
-
-        // 3. Palabras prohibidas (Si tiene esto, ES SITIO y se descarta)
+        const tipoStr = String(rawTipo).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); 
+        
         const esSitio = 
-          tipoStr.includes('sitio') || 
-          tipoStr.includes('planta') || 
-          tipoStr.includes('site') || 
-          tipoStr.includes('externo') ||
-          tipoStr.includes('fuera'); // Por si acaso
+          tipoStr.includes('sitio') || tipoStr.includes('planta') || 
+          tipoStr.includes('site') || tipoStr.includes('externo') ||
+          tipoStr.includes('fuera'); 
 
         const yaEntregado = data.entregado === true;
 
@@ -95,26 +97,23 @@ export const EntradaSalidaScreen: React.FC = () => {
           lista.push({
             id: d.id,
             isManual: false,
-            // Prioridad de nombres para que aparezca
             descripcion: data.equipo || data.nombre || data.instrumento || data.descripcion || 'Sin Nombre',
             marca: data.marca || 'S/M',
             modelo: data.modelo || 'S/M',
-            // Variantes de Serie
             serie: data.serie || data.Serie || data.noSerie || data.serial || 'S/N',
-            // Variantes de ID (Buscando específicamente ID con mayúsculas si existe)
             idInterno: data.ID || data.id || data.Id || data.idInterno || data.identificacion || 'S/ID',
             certificado: data.certificado || data.folioCertificado || 'Pendiente',
             cliente: (data.cliente || data.empresa || 'Sin Cliente').trim(),
             ordenCompra: data.ordenCompra || data.oc || '',
             fechaTermino: data.fecha,
-            tipoServicio: String(rawTipo), // Guardamos el valor original para mostrarlo
+            tipoServicio: String(rawTipo), 
             selected: false
           });
         }
       });
       setItems(lista);
     } catch (error) {
-      console.error("Error cargando:", error);
+      console.error("Error cargando items:", error);
     } finally {
       setLoading(false);
     }
@@ -135,7 +134,16 @@ export const EntradaSalidaScreen: React.FC = () => {
     }
   };
 
-  // --- 2. LÓGICA DE SELECCIÓN ---
+  // --- 2. LÓGICA DE SELECCIÓN Y CLIENTES ---
+  
+  // Combinamos los clientes activos en items con los de la base de datos
+  const availableClients = useMemo(() => {
+    const clientsFromItems = items.map(i => i.cliente);
+    // Unimos ambas listas y quitamos duplicados
+    const combined = [...dbClients, ...clientsFromItems];
+    return Array.from(new Set(combined)).sort();
+  }, [items, dbClients]);
+
   const itemsAgrupados = useMemo(() => {
     const filtrados = items.filter(i => 
       i.cliente.toLowerCase().includes(search.toLowerCase()) ||
@@ -187,18 +195,28 @@ export const EntradaSalidaScreen: React.FC = () => {
   // --- 3. ITEMS MANUALES ---
   const handleAddManual = () => {
     const seleccionados = items.filter(i => i.selected);
-    if (seleccionados.length === 0) {
-      alert("Selecciona primero un equipo de la lista para asignar el cliente.");
-      return;
-    }
+    const preSelectedClient = seleccionados.length > 0 ? seleccionados[0].cliente : '';
+    
+    setManualForm({ 
+      cliente: preSelectedClient, 
+      descripcion: '', marca: '', modelo: '', serie: '', idInterno: '', certificado: 'N/A' 
+    });
     setShowManualModal(true);
   };
 
-  const saveManualItem = () => {
-    if (!manualForm.descripcion) return alert("Falta descripción");
+  const saveManualItem = (keepOpen = false) => {
+    if (!manualForm.cliente) return alert("Selecciona o escribe un cliente.");
+    if (!manualForm.descripcion) return alert("Falta descripción.");
     
-    const baseClient = items.find(i => i.selected)?.cliente || 'Manual';
-    const baseOC = items.find(i => i.selected)?.ordenCompra || '';
+    // Validar mezcla
+    const seleccionados = items.filter(i => i.selected);
+    if (seleccionados.length > 0 && seleccionados[0].cliente !== manualForm.cliente) {
+        return alert(`⚠️ Error de mezcla:\n\nYa tienes seleccionados ítems de "${seleccionados[0].cliente}".\nNo puedes agregar un manual para "${manualForm.cliente}" al mismo tiempo.`);
+    }
+
+    // Buscamos si existe OC
+    const existingItem = items.find(i => i.cliente === manualForm.cliente);
+    const baseOC = existingItem ? existingItem.ordenCompra : '';
 
     const newItem: ItemSalida = {
       id: `manual_${Date.now()}`,
@@ -209,7 +227,7 @@ export const EntradaSalidaScreen: React.FC = () => {
       serie: manualForm.serie || '-',
       idInterno: manualForm.idInterno || '-', 
       certificado: manualForm.certificado, 
-      cliente: baseClient,
+      cliente: manualForm.cliente,
       ordenCompra: baseOC,
       fechaTermino: new Date().toISOString(),
       tipoServicio: 'MANUAL',
@@ -217,8 +235,12 @@ export const EntradaSalidaScreen: React.FC = () => {
     };
 
     setItems(prev => [newItem, ...prev]);
-    setShowManualModal(false);
-    setManualForm({ descripcion: '', marca: '', modelo: '', serie: '', idInterno: '', certificado: 'N/A' });
+    
+    if (keepOpen) {
+      setManualForm(prev => ({ ...prev, descripcion: '', marca: '', modelo: '', serie: '', idInterno: '', certificado: 'N/A' }));
+    } else {
+      setShowManualModal(false);
+    }
   };
 
   // --- 4. CONFIRMAR SALIDA ---
@@ -227,12 +249,36 @@ export const EntradaSalidaScreen: React.FC = () => {
     if (selected.length === 0) return alert("Nada seleccionado");
     if (!customFolio.trim()) return alert("Escribe un Folio válido.");
 
-    const confirmacion = window.confirm(`CONFIRMAR SALIDA\n\nFolio: ${customFolio}\nCliente: ${selected[0].cliente}\nItems: ${selected.length}\n\n¿Generar PDF y registrar?`);
+    const clienteActual = selected[0].cliente;
+    const totalPendientesCliente = items.filter(i => i.cliente === clienteActual).length;
+    const totalSeleccionados = selected.length;
+    let motivoSalidaParcial = "";
+
+    if (totalSeleccionados < totalPendientesCliente) {
+      const faltantes = totalPendientesCliente - totalSeleccionados;
+      while (motivoSalidaParcial.trim().length < 5) {
+        const input = window.prompt(
+          `⚠️ ALERTA DE SEGURIDAD - SALIDA PARCIAL ⚠️\n\n` +
+          `El cliente "${clienteActual}" tiene ${totalPendientesCliente} equipos listos, pero solo estás sacando ${totalSeleccionados}.\n` +
+          `Se quedan ${faltantes} equipos.\n\n` +
+          `POR FAVOR JUSTIFICA POR QUÉ NO SALEN TODOS (Min 5 caracteres):`
+        );
+        if (input === null) return;
+        motivoSalidaParcial = input;
+        if (motivoSalidaParcial.trim().length < 5) alert("❌ Razón muy corta.");
+      }
+    }
+
+    const confirmacion = window.confirm(
+      `CONFIRMAR SALIDA\n\nFolio: ${customFolio}\nCliente: ${clienteActual}\nItems: ${totalSeleccionados}\n` +
+      (motivoSalidaParcial ? `Nota: Salida Parcial.\n` : '') + 
+      `\n¿Generar PDF y registrar?`
+    );
     if (!confirmacion) return;
 
     setLoading(true);
     try {
-      await generatePDFDoc(selected, customFolio);
+      await generatePDFDoc(selected, customFolio, motivoSalidaParcial);
 
       const batch = writeBatch(db);
       selected.forEach(item => {
@@ -241,7 +287,8 @@ export const EntradaSalidaScreen: React.FC = () => {
           batch.update(ref, { 
             entregado: true,
             folioSalida: customFolio,
-            fechaSalida: new Date().toISOString()
+            fechaSalida: new Date().toISOString(),
+            observacionesSalida: motivoSalidaParcial || 'Salida Completa'
           });
         }
       });
@@ -257,7 +304,7 @@ export const EntradaSalidaScreen: React.FC = () => {
       }
 
       await batch.commit();
-      alert("✅ Salida registrada.");
+      alert("✅ Salida registrada exitosamente.");
       fetchItems(); 
       fetchNextFolio(); 
 
@@ -270,108 +317,113 @@ export const EntradaSalidaScreen: React.FC = () => {
   };
 
   // --- 5. PDF ENGINE ---
-  const generatePDFDoc = async (itemsToPrint: ItemSalida[], folio: string) => {
+  const generatePDFDoc = async (itemsToPrint: ItemSalida[], folio: string, observaciones: string) => {
     const primerCliente = itemsToPrint[0].cliente;
     const oc = itemsToPrint[0].ordenCompra;
-
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([612, 792]);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const { width, height } = page.getSize();
-    const margin = 30;
-
+    
     let logoImg = null;
     try {
       const logoBytes = await fetch('/lab_logo.png').then(res => res.arrayBuffer());
       logoImg = await pdfDoc.embedPng(logoBytes);
     } catch (e) {}
 
-    const drawBlock = (startY: number) => {
-      let y = startY;
+    const ITEMS_PER_PAGE = 15;
+    const totalPages = Math.ceil(itemsToPrint.length / ITEMS_PER_PAGE);
 
-      // Encabezado
-      if (logoImg) {
-        const d = logoImg.scale(0.15);
-        page.drawImage(logoImg, { x: margin, y: y - 40, width: d.width, height: d.height });
-      }
-      const emp = "EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.";
-      const wEmp = fontBold.widthOfTextAtSize(emp, 9);
-      page.drawText(emp, { x: (width - wEmp)/2, y: y - 8, size: 9, font: fontBold });
+    for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+      const page = pdfDoc.addPage([612, 792]);
+      const { width, height } = page.getSize();
+      const margin = 30;
+      const start = pageIndex * ITEMS_PER_PAGE;
+      const end = start + ITEMS_PER_PAGE;
+      const itemsDeEstaPagina = itemsToPrint.slice(start, end);
 
-      y -= 35;
-      const tit = "HOJA DE ENTRADA Y SALIDA DE EQUIPOS";
-      const wTit = fontBold.widthOfTextAtSize(tit, 10);
-      page.drawText(tit, { x: (width - wTit)/2, y: y, size: 10, font: fontBold, color: rgb(0,0,0.6) });
-      
-      // AJUSTE: Código AG bajado
-      page.drawText("AG-CAL-F28-00", { x: margin, y: y - 8, size: 7, font });
-
-      // Datos
-      y -= 20;
-      page.drawLine({ start: {x:margin, y:y+8}, end:{x:width-margin, y:y+8}, thickness:0.5, color: rgb(0.7,0.7,0.7) });
-      const today = new Date().toLocaleDateString('es-MX');
-      
-      page.drawText("CLIENTE:", { x: margin, y, size: 7, font: fontBold });
-      page.drawText(primerCliente, { x: margin + 45, y, size: 7, font });
-      page.drawLine({ start:{x:margin+45, y:y-2}, end:{x:width-margin-120, y:y-2}, thickness:0.5 });
-
-      page.drawText("FECHA:", { x: width-margin-110, y, size: 7, font: fontBold });
-      page.drawText(today, { x: width-margin-75, y, size: 7, font });
-      page.drawLine({ start:{x:width-margin-75, y:y-2}, end:{x:width-margin, y:y-2}, thickness:0.5 });
-
-      y -= 14;
-      page.drawText("OC:", { x: margin, y, size: 7, font: fontBold });
-      page.drawText(oc || 'N/A', { x: margin + 45, y, size: 7, font });
-      page.drawLine({ start:{x:margin+45, y:y-2}, end:{x:width-margin-120, y:y-2}, thickness:0.5 });
-
-      page.drawText("FOLIO:", { x: width-margin-110, y, size: 7, font: fontBold });
-      page.drawText(folio, { x: width-margin-75, y, size: 7, font: fontBold, color: rgb(0.8, 0, 0) });
-      page.drawLine({ start:{x:width-margin-75, y:y-2}, end:{x:width-margin, y:y-2}, thickness:0.5 });
-
-      // Tabla
-      y -= 18;
-      const tTop = y;
-      const rowH = 13.5;
-      const cols = { no: margin, desc: margin+30, marca: margin+190, mod: margin+270, ser: margin+350, id: margin+430, cert: margin+500 };
-
-      page.drawRectangle({ x: margin, y: y-8, width: width-(margin*2), height: 14, color: rgb(0.92,0.92,0.92), borderColor: rgb(0,0,0), borderWidth: 0.5 });
-      const dh = (t:string, x:number) => page.drawText(t, { x: x+2, y: y-5, size: 6, font: fontBold });
-      dh("NO.", cols.no); dh("DESCRIPCIÓN", cols.desc); dh("MARCA", cols.marca); dh("MODELO", cols.mod); dh("NO. SERIE", cols.ser); dh("ID", cols.id); dh("CERTIFICADO", cols.cert);
-
-      y -= 8;
-      for(let i=0; i<15; i++){
-        y -= rowH;
-        const it = itemsToPrint[i];
-        page.drawRectangle({ x: margin, y: y, width: width-(margin*2), height: rowH, borderColor: rgb(0,0,0), borderWidth: 0.5 });
-        [cols.desc, cols.marca, cols.mod, cols.ser, cols.id, cols.cert].forEach(vx => page.drawLine({ start:{x:vx, y:y}, end:{x:vx, y:y+rowH}, thickness:0.5, color: rgb(0,0,0) }));
-
-        const ty = y+4; const ts = 7;
-        page.drawText((i+1).toString().padStart(2,'0'), { x: cols.no+5, y: ty, size: ts, font });
-        if(it){
-          const tr = (s:string, l:number) => s.length>l ? s.substring(0,l) : s;
-          page.drawText(tr(it.descripcion,35), { x: cols.desc+2, y: ty, size: ts, font });
-          page.drawText(tr(it.marca,14), { x: cols.marca+2, y: ty, size: ts, font });
-          page.drawText(tr(it.modelo,14), { x: cols.mod+2, y: ty, size: ts, font });
-          page.drawText(tr(it.serie,14), { x: cols.ser+2, y: ty, size: ts, font });
-          page.drawText(tr(it.idInterno,12), { x: cols.id+2, y: ty, size: ts, font });
-          page.drawText(tr(it.certificado,15), { x: cols.cert+2, y: ty, size: ts, font });
+      const drawBlock = (startY: number) => {
+        let y = startY;
+        if (logoImg) {
+          const d = logoImg.scale(0.15);
+          page.drawImage(logoImg, { x: margin, y: y - 40, width: d.width, height: d.height });
         }
-      }
-      [cols.desc, cols.marca, cols.mod, cols.ser, cols.id, cols.cert].forEach(vx => page.drawLine({ start:{x:vx, y:tTop-8}, end:{x:vx, y:tTop+6}, thickness:0.5, color: rgb(0,0,0) }));
+        const emp = "EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.";
+        const wEmp = fontBold.widthOfTextAtSize(emp, 9);
+        page.drawText(emp, { x: (width - wEmp)/2, y: y - 8, size: 9, font: fontBold });
 
-      y -= 35;
-      page.drawText("ENTREGO:", { x: margin+60, y, size: 7, font: fontBold });
-      page.drawLine({ start:{x:margin+40, y:y-15}, end:{x:margin+200, y:y-15}, thickness:0.5 });
-      page.drawText("RECIBIO:", { x: width-margin-150, y, size: 7, font: fontBold });
-      page.drawLine({ start:{x:width-margin-200, y:y-15}, end:{x:width-margin-40, y:y-15}, thickness:0.5 });
-    };
+        y -= 35;
+        const tit = "HOJA DE ENTRADA Y SALIDA DE EQUIPOS";
+        const wTit = fontBold.widthOfTextAtSize(tit, 10);
+        page.drawText(tit, { x: (width - wTit)/2, y: y, size: 10, font: fontBold, color: rgb(0,0,0.6) });
+        
+        page.drawText("AG-CAL-F28-00", { x: margin, y: y - 8, size: 7, font });
+        page.drawText(`Pág. ${pageIndex + 1}/${totalPages}`, { x: width - margin - 50, y: y - 8, size: 7, font: fontBold });
 
-    drawBlock(height - 20);
-    const mid = height / 2;
-    page.drawLine({ start:{x:10, y:mid}, end:{x:width-10, y:mid}, thickness:1, color: rgb(0.6,0.6,0.6), dashArray:[4,4] });
-    drawBlock(mid - 20);
+        y -= 20;
+        page.drawLine({ start: {x:margin, y:y+8}, end:{x:width-margin, y:y+8}, thickness:0.5, color: rgb(0.7,0.7,0.7) });
+        const today = new Date().toLocaleDateString('es-MX');
+        
+        page.drawText("CLIENTE:", { x: margin, y, size: 7, font: fontBold });
+        page.drawText(primerCliente.substring(0, 55), { x: margin + 45, y, size: 7, font });
+        
+        page.drawText("FECHA:", { x: width-margin-110, y, size: 7, font: fontBold });
+        page.drawText(today, { x: width-margin-75, y, size: 7, font });
 
+        y -= 14;
+        page.drawText("OC:", { x: margin, y, size: 7, font: fontBold });
+        page.drawText(oc || 'N/A', { x: margin + 45, y, size: 7, font });
+
+        page.drawText("FOLIO:", { x: width-margin-110, y, size: 7, font: fontBold });
+        page.drawText(folio, { x: width-margin-75, y, size: 7, font: fontBold, color: rgb(0.8, 0, 0) });
+
+        if (observaciones) {
+            page.drawText(`Nota: ${observaciones.substring(0, 70)}`, { x: margin + 150, y, size: 6, font, color: rgb(1, 0, 0) });
+        }
+
+        y -= 18;
+        const tTop = y;
+        const rowH = 13.5;
+        const cols = { no: margin, desc: margin+30, marca: margin+190, mod: margin+270, ser: margin+350, id: margin+430, cert: margin+500 };
+
+        page.drawRectangle({ x: margin, y: y-8, width: width-(margin*2), height: 14, color: rgb(0.92,0.92,0.92), borderColor: rgb(0,0,0), borderWidth: 0.5 });
+        const dh = (t:string, x:number) => page.drawText(t, { x: x+2, y: y-5, size: 6, font: fontBold });
+        dh("NO.", cols.no); dh("DESCRIPCIÓN", cols.desc); dh("MARCA", cols.marca); dh("MODELO", cols.mod); dh("SERIE", cols.ser); dh("ID", cols.id); dh("CERTIFICADO", cols.cert);
+
+        y -= 8;
+        for(let i=0; i<ITEMS_PER_PAGE; i++){
+          y -= rowH;
+          const it = itemsDeEstaPagina[i];
+          page.drawRectangle({ x: margin, y: y, width: width-(margin*2), height: rowH, borderColor: rgb(0,0,0), borderWidth: 0.5 });
+          [cols.desc, cols.marca, cols.mod, cols.ser, cols.id, cols.cert].forEach(vx => page.drawLine({ start:{x:vx, y:y}, end:{x:vx, y:y+rowH}, thickness:0.5, color: rgb(0,0,0) }));
+
+          const ty = y+4; const ts = 7;
+          const consecutivo = (pageIndex * ITEMS_PER_PAGE) + i + 1;
+          page.drawText(consecutivo.toString().padStart(2,'0'), { x: cols.no+5, y: ty, size: ts, font });
+          
+          if(it){
+            const tr = (s:string, l:number) => s ? (s.length>l ? s.substring(0,l) : s) : '-';
+            page.drawText(tr(it.descripcion,35), { x: cols.desc+2, y: ty, size: ts, font });
+            page.drawText(tr(it.marca,14), { x: cols.marca+2, y: ty, size: ts, font });
+            page.drawText(tr(it.modelo,14), { x: cols.mod+2, y: ty, size: ts, font });
+            page.drawText(tr(it.serie,14), { x: cols.ser+2, y: ty, size: ts, font });
+            page.drawText(tr(it.idInterno,12), { x: cols.id+2, y: ty, size: ts, font });
+            page.drawText(tr(it.certificado,15), { x: cols.cert+2, y: ty, size: ts, font });
+          }
+        }
+        [cols.desc, cols.marca, cols.mod, cols.ser, cols.id, cols.cert].forEach(vx => page.drawLine({ start:{x:vx, y:tTop-8}, end:{x:vx, y:tTop+6}, thickness:0.5, color: rgb(0,0,0) }));
+
+        y -= 35;
+        page.drawText("ENTREGO:", { x: margin+60, y, size: 7, font: fontBold });
+        page.drawLine({ start:{x:margin+40, y:y-15}, end:{x:margin+200, y:y-15}, thickness:0.5 });
+        page.drawText("RECIBIO:", { x: width-margin-150, y, size: 7, font: fontBold });
+        page.drawLine({ start:{x:width-margin-200, y:y-15}, end:{x:width-margin-40, y:y-15}, thickness:0.5 });
+      };
+
+      drawBlock(height - 20);
+      const mid = height / 2;
+      page.drawLine({ start:{x:10, y:mid}, end:{x:width-10, y:mid}, thickness:1, color: rgb(0.6,0.6,0.6), dashArray:[4,4] });
+      drawBlock(mid - 20);
+    }
     const pdfBytes = await pdfDoc.save();
     saveAs(new Blob([pdfBytes], { type: 'application/pdf' }), `Salida_${folio}.pdf`);
   };
@@ -381,7 +433,6 @@ export const EntradaSalidaScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24 relative">
-      {/* HEADER */}
       <div className="bg-white border-b sticky top-0 z-20 px-4 py-3 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-slate-100 rounded-full text-slate-600">
@@ -476,31 +527,23 @@ export const EntradaSalidaScreen: React.FC = () => {
                           {item.selected ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                         </div>
 
-                        {/* --- LISTA VISUAL MEJORADA --- */}
                         <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-y-2 gap-x-4 items-center">
-                          
-                          {/* NOMBRE GRANDE */}
                           <div className="md:col-span-6">
                             <p className="text-lg font-extrabold text-slate-800 leading-tight">
                               {item.descripcion}
                             </p>
-                            
                             <div className="flex flex-wrap items-center gap-2 mt-1">
                                <span className="text-sm font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                  {item.marca} - {item.modelo}
                                </span>
-                               
-                               {/* ETIQUETA DE DEPURACIÓN DE TIPO */}
                                <span className="text-[9px] text-slate-400 border border-slate-200 px-1 rounded bg-slate-50">
                                  Tipo: {item.tipoServicio.substring(0, 8)}
                                </span>
-
                                {item.isManual && (
                                 <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200">MANUAL</span>
                                )}
                             </div>
                           </div>
-
                           <div className="md:col-span-3 flex flex-col gap-1.5">
                             <div className="flex items-center gap-2">
                                <Tag className="w-3 h-3 text-slate-400" />
@@ -511,7 +554,6 @@ export const EntradaSalidaScreen: React.FC = () => {
                                <span className="text-xs font-mono text-slate-600">ID: <strong>{item.idInterno}</strong></span>
                             </div>
                           </div>
-
                           <div className="md:col-span-1">
                              {item.ordenCompra && (
                                <div className="text-[10px] text-orange-600 font-bold bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 text-center truncate">
@@ -519,7 +561,6 @@ export const EntradaSalidaScreen: React.FC = () => {
                                </div>
                              )}
                           </div>
-
                           <div className="md:col-span-2 md:text-right">
                              <span className={`text-[10px] font-bold px-2 py-1 rounded-full border inline-block ${
                                 item.certificado === 'N/A' || item.certificado === 'Retorno' ? 'bg-slate-100 text-slate-600 border-slate-300' :
@@ -552,7 +593,6 @@ export const EntradaSalidaScreen: React.FC = () => {
                    <p className="text-sm font-bold text-slate-800">{seleccionadosCount} Equipos</p>
                 </div>
              </div>
-             
              {seleccionadosCount > 0 && (
                 <div className="hidden md:block">
                   <p className="text-xs text-slate-400">Cliente Destino:</p>
@@ -562,9 +602,9 @@ export const EntradaSalidaScreen: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto">
-             <button onClick={handleAddManual} disabled={seleccionadosCount === 0} className={`flex-1 md:flex-none px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border transition-colors ${seleccionadosCount > 0 ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'}`}>
+             <button onClick={handleAddManual} className="flex-1 md:flex-none px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border bg-white border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors">
                <Plus className="w-4 h-4" />
-               <span>Agregar Manual</span>
+               <span>Agregar Manual / Otros</span>
              </button>
 
              <button onClick={handleConfirmarSalida} disabled={seleccionadosCount === 0 || !customFolio} className={`flex-[2] md:flex-none px-6 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all ${seleccionadosCount > 0 && customFolio ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-200 active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
@@ -591,13 +631,34 @@ export const EntradaSalidaScreen: React.FC = () => {
                 <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold">Modo Manual</p>
-                  <p className="opacity-90 mt-1">Este ítem se agregará a la lista del cliente <strong>{clienteSeleccionado}</strong>. Úsalo para retornos, etiquetas, o equipos sin registro.</p>
+                  <p className="opacity-90 mt-1">Úsalo para agregar accesorios, manuales, cables, retornos no registrados o equipos que no aparecen en lista.</p>
+                </div>
+              </div>
+
+              {/* SELECCIÓN DE CLIENTE MEJORADA Y CONECTADA A DB */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                  <Users className="w-3 h-3" /> Cliente *
+                </label>
+                <div className="relative mt-1">
+                    <input 
+                      list="client-options"
+                      className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-800 font-medium placeholder-slate-400"
+                      placeholder="Escribe el nombre o selecciona..."
+                      value={manualForm.cliente}
+                      onChange={e => setManualForm({...manualForm, cliente: e.target.value})}
+                    />
+                    <datalist id="client-options">
+                      {availableClients.map(client => (
+                        <option key={client} value={client} />
+                      ))}
+                    </datalist>
                 </div>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Descripción *</label>
-                <input className="w-full border border-slate-300 rounded-lg p-2.5 text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej. Paquete de Etiquetas..." value={manualForm.descripcion} onChange={e => setManualForm({...manualForm, descripcion: e.target.value})} autoFocus />
+                <input className="w-full border border-slate-300 rounded-lg p-2.5 text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej. Cables, Manuales, Caja de accesorios..." value={manualForm.descripcion} onChange={e => setManualForm({...manualForm, descripcion: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -621,9 +682,19 @@ export const EntradaSalidaScreen: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-8 flex gap-3">
-              <button onClick={() => setShowManualModal(false)} className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-              <button onClick={saveManualItem} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95">Guardar Ítem</button>
+            <div className="mt-8 flex gap-3 flex-wrap">
+              <button onClick={() => setShowManualModal(false)} className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors border border-transparent hover:border-slate-200">
+                Cancelar
+              </button>
+              
+              <button onClick={() => saveManualItem(true)} className="flex-1 py-3 bg-blue-50 text-blue-700 font-bold rounded-xl hover:bg-blue-100 transition-all border border-blue-200 flex items-center justify-center gap-2">
+                <Save className="w-4 h-4" />
+                <span>Guardar y Otro</span>
+              </button>
+
+              <button onClick={() => saveManualItem(false)} className="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95">
+                Guardar y Cerrar
+              </button>
             </div>
           </div>
         </div>

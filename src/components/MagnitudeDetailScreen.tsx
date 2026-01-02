@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, Plus, Minus, Calendar, User, Hash, Zap, Code } from 'lucide-react'; 
+import { ArrowLeft, Plus, Minus, Calendar, User, Hash, Code } from 'lucide-react'; 
 import { generarConsecutivo } from '../utils/firebaseConsecutivos';
 import { 
   collection, 
@@ -16,12 +16,10 @@ import {
   getDoc,       
   updateDoc,    
   increment,
-  arrayUnion // <--- IMPORTANTE: Para guardar los huecos
+  arrayUnion 
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import masterCelestica from "../data/masterCelestica.json";
 import { getPrefijo } from '../utils/prefijos'; 
-import { m } from 'framer-motion';
 
 const magnitudImages: Record<string, string> = {
   Acustica: "/images/acustica.png",
@@ -78,10 +76,11 @@ export const MagnitudeDetailScreen: React.FC = () => {
     setLoading(true);
 
     // Escuchar cambios en la colección de consecutivos
+    // Traemos los últimos 2 sin importar el año (el filtro visual se hace abajo)
     const q = query(
       collection(db, "consecutivos"),
       where("magnitud", "==", selectedMagnitude),
-      orderBy("fecha", "desc"), // Asegúrate que tu BD usa 'fecha', si es nueva usa 'fechaCreacion'
+      orderBy("fecha", "desc"), 
       limit(2)
     );
     
@@ -102,9 +101,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const handleGenerarConsecutivo = async () => {
     setGenerando(true);
     try {
+      // Calculamos el año actual ("26")
       const anio = new Date().getFullYear().toString().slice(-2);
       setLoading(true);
-      // Nota: Asegúrate de haber actualizado firebaseConsecutivos.ts también para que lea los huecos
       const consecutivo = await generarConsecutivo(selectedMagnitude, anio, user.name);
       navigateTo('work-sheet', { consecutive: consecutivo, magnitud: selectedMagnitude });
     } catch (error) {
@@ -154,7 +153,6 @@ export const MagnitudeDetailScreen: React.FC = () => {
           const anioEnBaseDatos = dataContador.anio || anioDelBorrado;
 
           // CASO A: Es el ÚLTIMO generado (Ej. vamos en 186 y borras 186)
-          // -> Restamos 1 al contador para que el siguiente vuelva a ser 186.
           if (valorActualEnBaseDatos === numeroBorrado && anioEnBaseDatos === anioDelBorrado) {
              console.log(`Borrando el último (${numeroBorrado}). Restando contador.`);
              await updateDoc(contadorRef, {
@@ -162,19 +160,16 @@ export const MagnitudeDetailScreen: React.FC = () => {
              });
           } 
           // CASO B: Es uno de EN MEDIO (Ej. vamos en 186 y borras 184)
-          // -> Lo guardamos en 'huecos' para que se reutilice en el futuro.
           else if (anioEnBaseDatos === anioDelBorrado) {
              console.log(`Guardando el hueco ${numeroBorrado} para reciclar.`);
              await updateDoc(contadorRef, {
                 huecos: arrayUnion(numeroBorrado)
              });
           }
-        } else {
-            console.warn("No se encontró el contador maestro para:", prefijoContador);
         }
       }
 
-      // 2. Eliminar historial (El recibo)
+      // 2. Eliminar historial
       const q = query(
         collection(db, "consecutivos"),
         where("consecutivo", "==", consecutivoAEliminar.consecutivo),
@@ -185,7 +180,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
         await deleteDoc(doc(db, "consecutivos", docu.id));
       }
 
-      // 3. Eliminar worksheet (La hoja de trabajo)
+      // 3. Eliminar worksheet
       const q2 = query(
         collection(db, "worksheets"),
         where("consecutivo", "==", consecutivoAEliminar.consecutivo),
@@ -216,8 +211,23 @@ export const MagnitudeDetailScreen: React.FC = () => {
     return icons[name?.toLowerCase()] || '⚙️';
   };
 
-  const actual = consecutivos[0];
-  const anterior = consecutivos[1];
+  // --------------------------------------------------------
+  // FILTRO VISUAL: Ocultar datos del año pasado
+  // --------------------------------------------------------
+  const currentYearShort = new Date().getFullYear().toString().slice(-2); // "26"
+
+  const isCurrentYear = (record: any) => {
+    if (!record || !record.consecutivo) return false;
+    const parts = record.consecutivo.split('-'); 
+    const recordYear = parts[parts.length - 1]; // Toma la última parte ("25" o "26")
+    return recordYear === currentYearShort;
+  };
+
+  // Si el registro 0 no es de este año, mostramos null (pantalla vacía)
+  const actual = isCurrentYear(consecutivos[0]) ? consecutivos[0] : null;
+  // Si el registro 1 no es de este año, mostramos null
+  const anterior = isCurrentYear(consecutivos[1]) ? consecutivos[1] : null;
+  // --------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
