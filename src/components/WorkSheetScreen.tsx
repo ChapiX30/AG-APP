@@ -26,7 +26,7 @@ import type { jsPDF } from "jspdf";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db } from "../utils/firebase";
-import { collection, addDoc, query, getDocs, where } from "firebase/firestore";
+import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
 import {
@@ -40,6 +40,8 @@ import {
   differenceInBusinessDays
 } from "date-fns"; 
 import { unit } from 'mathjs';
+import debounce from 'lodash/debounce';
+import labLogo from '../assets/lab_logo.png';
 
 // ====================================================================
 // 1. CONFIGURACIÓN Y UTILIDADES
@@ -280,6 +282,8 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
+    const debouncedSetSearchTerm = useCallback(debounce((value: string) => setSearchTerm(value), 300), []);
+
     const filteredAndGroupedClientes = React.useMemo(() => {
         const term = searchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
         const grouped: Record<string, ClienteRecord[]> = {};
@@ -307,7 +311,7 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     return (
         <div className="relative" ref={wrapperRef}>
             <div className="relative">
-                <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }} onFocus={() => setIsOpen(true)} placeholder="Buscar o seleccionar cliente..."
+                <input type="text" value={searchTerm} onChange={(e) => { debouncedSetSearchTerm(e.target.value); setIsOpen(true); }} onFocus={() => setIsOpen(true)} placeholder="Buscar o seleccionar cliente..."
                     className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${isOpen ? 'rounded-b-none border-b-0' : ''} ${hasError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-gray-200'}`} />
                 <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             </div>
@@ -405,60 +409,143 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
 const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   // @ts-ignore
   const doc = new JsPDF({ orientation:"p", unit: "pt", format: "a4" });
-  const marginLeft = 50; const marginRight = 550; const lineHeight = 18; let y = 50;
-  
-  doc.setFont("helvetica", "normal"); doc.setTextColor(0, 0, 0); doc.setFontSize(16); doc.setFont(undefined, "bold");
-  doc.text("Equipos y Servicios Especializados AG", marginLeft, y); y += 20;
+  const marginLeft = 40; 
+  const marginRight = 560; 
+  const lineHeight = 20; 
+  let y = 60;
 
-  doc.setFontSize(11); doc.setFont(undefined, "normal");
-  doc.text(`Fecha: ${formData.fecha}`, marginRight - 100, y);
-  doc.setFont(undefined, "bold"); doc.text(`Nombre: ${formData.nombre}`, marginRight - 100, y + 15); y += 35;
+  // Logo a la izquierda
+  doc.addImage(labLogo, 'PNG', marginLeft, 20, 100, 50); // Ajusta el tamaño y posición según sea necesario
 
-  doc.setDrawColor(160); doc.setLineWidth(0.5); doc.line(marginLeft, y, marginRight, y); y += 20;
+  // Título centrado o a la derecha del logo
+  doc.setFont("helvetica", "bold"); 
+  doc.setFontSize(18); 
+  doc.setTextColor(0, 0, 139); // Azul oscuro para formalidad
+  doc.text("Equipos y Servicios Especializados AG", marginLeft + 120, y); // Ajustado a la derecha del logo
+  y += 30;
 
+  // Fecha y Nombre alineados a la derecha
+  doc.setFontSize(12); 
+  doc.setFont("helvetica", "normal"); 
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Fecha: ${formData.fecha || "-"}`, marginRight - 150, y);
+  y += lineHeight;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Nombre: ${formData.nombre || "-"}`, marginRight - 150, y);
+  y += 30;
+
+  // Línea separadora más gruesa y gris
+  doc.setDrawColor(128, 128, 128); // Gris
+  doc.setLineWidth(1.5);
+  doc.line(marginLeft, y, marginRight, y);
+  y += 30;
+
+  // Pares de información en dos columnas, con labels en negrita
   const infoPairs = [
-    ["Lugar de Calibración", formData.lugarCalibracion], ["N.Certificado", formData.certificado],
-    ["Fecha de Recepción", formData.fechaRecepcion], ["Cliente", formData.cliente],
-    ["Equipo", formData.equipo], ["ID", formData.id], ["Marca", formData.marca], ["Modelo", formData.modelo],
-    ["Número de Serie", formData.numeroSerie], ["Unidad", Array.isArray(formData.unidad) ? formData.unidad.join(', ') : formData.unidad],
-    ["Alcance", formData.alcance], ["Resolucion", formData.resolucion], ["Frecuencia de Calibración", formData.frecuenciaCalibracion],
-    ["Temp. Ambiente", `${formData.tempAmbiente} °C`], ["HR%", `${formData.humedadRelativa} %`],
+    ["Lugar de Calibración:", formData.lugarCalibracion || "-"],
+    ["N.Certificado:", formData.certificado || "-"],
+    ["Fecha de Recepción:", formData.fechaRecepcion || "-"],
+    ["Cliente:", formData.cliente || "-"],
+    ["Equipo:", formData.equipo || "-"],
+    ["ID:", formData.id || "-"],
+    ["Marca:", formData.marca || "-"],
+    ["Modelo:", formData.modelo || "-"],
+    ["Número de Serie:", formData.numeroSerie || "-"],
+    ["Unidad:", Array.isArray(formData.unidad) ? formData.unidad.join(', ') : formData.unidad || "-"],
+    ["Alcance:", formData.alcance || "-"],
+    ["Resolución:", formData.resolucion || "-"],
+    ["Frecuencia de Calibración:", formData.frecuenciaCalibracion || "-"],
+    ["Temp. Ambiente:", `${formData.tempAmbiente || "-"} °C`],
+    ["HR%:", `${formData.humedadRelativa || "-"} %`],
   ];
 
-  doc.setFontSize(11); const col2X = marginLeft + 150;
+  doc.setFontSize(11);
+  const col1Width = 180; // Ancho para labels
   infoPairs.forEach(([label, value]) => {
-    doc.setFont(undefined, "bold"); doc.text(`${label}:`, marginLeft, y);
-    doc.setFont(undefined, "normal"); doc.text(`${value || "-"}`, col2X, y); y += lineHeight;
+    doc.setFont("helvetica", "bold");
+    doc.text(label, marginLeft, y);
+    doc.setFont("helvetica", "normal");
+    const valueLines = doc.splitTextToSize(value, marginRight - marginLeft - col1Width - 10);
+    doc.text(valueLines, marginLeft + col1Width, y);
+    y += lineHeight * valueLines.length;
   });
   y += 20;
 
-  const tableTop = y; const tableWidth = 500; const colWidth = tableWidth / 2; const rowHeight = 24; const valueHeight = 60;
+  // Sección de Mediciones con tabla expandible
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("Mediciones", marginLeft, y);
+  y += lineHeight + 10;
+
   const isMasa = formData.magnitud === "Masa";
-  doc.setFillColor(230); doc.setDrawColor(180);
-  
+  doc.setDrawColor(200); doc.setFillColor(240, 240, 240); doc.setLineWidth(0.5);
+
   if (isMasa) {
-      doc.rect(marginLeft, tableTop, tableWidth, rowHeight, "FD");
-      doc.setFont(undefined, "bold"); doc.text("Mediciones de Masa:", marginLeft + 5, tableTop + 16);
-      y = tableTop + rowHeight + 10;
-      const masaPairs = [ ["Excentricidad:", formData.excentricidad], ["Linealidad:", formData.linealidad], ["Repetibilidad:", formData.repetibilidad] ];
-      masaPairs.forEach(([label, value]) => {
-          doc.setFont(undefined, "bold"); doc.text(label, marginLeft, y);
-          doc.setFont(undefined, "normal"); doc.text(value || "-", marginLeft + 150, y); y += lineHeight;
-      });
-      y += 30;
+    // Tabla para Masa
+    const masaHeaders = ["Parámetro", "Valor"];
+    const masaData = [
+      ["Excentricidad", formData.excentricidad || "-"],
+      ["Linealidad", formData.linealidad || "-"],
+      ["Repetibilidad", formData.repetibilidad || "-"]
+    ];
+
+    // Dibujar cabecera
+    doc.rect(marginLeft, y, 500, 20, 'FD');
+    doc.text(masaHeaders[0], marginLeft + 10, y + 15);
+    doc.text(masaHeaders[1], marginLeft + 250, y + 15);
+    y += 20;
+
+    // Filas
+    masaData.forEach(([param, val]) => {
+      const valLines = doc.splitTextToSize(val, 240);
+      const rowHeight = Math.max(20, valLines.length * lineHeight);
+      doc.rect(marginLeft, y, 250, rowHeight);
+      doc.rect(marginLeft + 250, y, 250, rowHeight);
+      doc.text(param, marginLeft + 10, y + 15);
+      doc.text(valLines, marginLeft + 260, y + 15);
+      y += rowHeight;
+    });
   } else {
-      doc.rect(marginLeft, tableTop, colWidth, rowHeight, "FD"); doc.rect(marginLeft + colWidth, tableTop, colWidth, rowHeight, "FD");
-      doc.setFont(undefined, "bold"); doc.text("Medición Patrón:", marginLeft + 5, tableTop + 16); doc.text("Medición Instrumento:", marginLeft + colWidth + 5, tableTop + 16);
-      const valTop = tableTop + rowHeight;
-      doc.setFont(undefined, "normal"); doc.rect(marginLeft, valTop, colWidth, valueHeight); doc.rect(marginLeft + colWidth, valTop, colWidth, valueHeight);
-      doc.text(doc.splitTextToSize(formData.medicionPatron || "-", colWidth - 10), marginLeft + 5, valTop + 15);
-      doc.text(doc.splitTextToSize(formData.medicionInstrumento || "-", colWidth - 10), marginLeft + colWidth + 5, valTop + 15);
-      y = valTop + valueHeight + 30;
+    // Tabla para otras magnitudes (Patrón e Instrumento)
+    const patronLines = (formData.medicionPatron || "").split('\n').filter(line => line.trim());
+    const instrumentoLines = (formData.medicionInstrumento || "").split('\n').filter(line => line.trim());
+    const maxLines = Math.max(patronLines.length, instrumentoLines.length, 1); // Mínimo 1 fila
+
+    // Cabecera
+    doc.rect(marginLeft, y, 500, 20, 'FD');
+    doc.text("Medición Patrón", marginLeft + 10, y + 15);
+    doc.text("Medición Instrumento", marginLeft + 260, y + 15);
+    y += 20;
+
+    // Filas expandibles
+    for (let i = 0; i < maxLines; i++) {
+      const patron = patronLines[i] || "-";
+      const instrumento = instrumentoLines[i] || "-";
+      const patronSplit = doc.splitTextToSize(patron, 240);
+      const instrumentoSplit = doc.splitTextToSize(instrumento, 240);
+      const rowHeight = Math.max(20, Math.max(patronSplit.length, instrumentoSplit.length) * lineHeight);
+
+      doc.rect(marginLeft, y, 250, rowHeight);
+      doc.rect(marginLeft + 250, y, 250, rowHeight);
+      doc.text(patronSplit, marginLeft + 10, y + 15);
+      doc.text(instrumentoSplit, marginLeft + 260, y + 15);
+      y += rowHeight;
+    }
   }
-  
-  doc.setFont(undefined, "bold"); doc.setFontSize(12); doc.text("Notas:", marginLeft, y); y += lineHeight;
-  doc.setFont(undefined, "normal"); doc.text(doc.splitTextToSize(formData.notas || "-", 500), marginLeft, y);
-  doc.setFontSize(10); doc.setFont(undefined, "italic"); doc.text("AG-CAL-F39-00", marginLeft, 790);
+  y += 30;
+
+  // Notas con expansión
+  doc.setFontSize(12); doc.setFont("helvetica", "bold");
+  doc.text("Notas:", marginLeft, y);
+  y += lineHeight;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+  const notasLines = doc.splitTextToSize(formData.notas || "-", 500);
+  doc.text(notasLines, marginLeft, y);
+  y += notasLines.length * lineHeight + 20;
+
+  // Pie de página
+  doc.setFontSize(9); doc.setFont("helvetica", "italic"); doc.setTextColor(100);
+  doc.text("AG-CAL-F39-00", marginLeft, 790);
   return doc;
 };
 
@@ -495,7 +582,7 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
 // 4. COMPONENTE PRINCIPAL
 // ====================================================================
 
-export const WorkSheetScreen: React.FC = () => {
+export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetId }) => {
   const { currentConsecutive, goBack, currentUser, currentMagnitude } = useNavigation();
   const { user } = useAuth();
   const [state, dispatch] = useReducer(worksheetReducer, initialState);
@@ -525,6 +612,20 @@ export const WorkSheetScreen: React.FC = () => {
     };
   }, []);
 
+  // Cargar datos si es modo edición
+  useEffect(() => {
+    if (worksheetId) {
+      const fetchWorksheet = async () => {
+        const docRef = doc(db, "hojasDeTrabajo", worksheetId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          dispatch({ type: 'RESTORE_BACKUP', payload: docSnap.data() as WorksheetState });
+        }
+      };
+      fetchWorksheet();
+    }
+  }, [worksheetId]);
+
   // 2. Efecto para inicializar los valores si ya existen (modo edición)
   useEffect(() => {
     if (state.magnitud === "Electrica" && state.unidad.length > 0) {
@@ -532,11 +633,22 @@ export const WorkSheetScreen: React.FC = () => {
         
         const extractValue = (fullText: string, unit: string) => {
             if (!fullText) return "";
-            const safeUnit = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Busca texto después de "Unit:" hasta el siguiente "NextUnit:" o final
-            const regex = new RegExp(`${safeUnit}:\\s*([\\s\\S]*?)(?=(?:$|\\n[^\\n]+:))`, 'i');
-            const match = fullText.match(regex);
-            return match ? match[1].trim() : "";
+            const lines = fullText.split('\n');
+            let inSection = false;
+            let extracted = '';
+            for (const line of lines) {
+              if (line.trim().startsWith(`${unit}:`)) {
+                inSection = true;
+                continue;
+              }
+              if (inSection) {
+                if (line.trim() === '' || /^[a-zA-Z0-9]+:/.test(line.trim())) { // Fin si vacía o nueva unidad
+                  break;
+                }
+                extracted += line + '\n';
+              }
+            }
+            return extracted.trim();
         };
 
         state.unidad.forEach(u => {
@@ -547,7 +659,7 @@ export const WorkSheetScreen: React.FC = () => {
         });
         setElectricalValues(newValues);
     }
-  }, [state.magnitud, state.unidad.length]); 
+  }, [state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]); 
 
   // 3. Efecto que "Escucha" cambios en los inputs y actualiza el State Global (para el PDF)
   useEffect(() => {
@@ -606,14 +718,14 @@ export const WorkSheetScreen: React.FC = () => {
 
   useEffect(() => {
     const backup = localStorage.getItem('backup_worksheet_data');
-    if (backup) {
+    if (backup && !worksheetId) { // No restaurar backup si es modo edición
       try {
         const parsedBackup = JSON.parse(backup) as WorksheetState;
         if (window.confirm("Se encontró una hoja de trabajo no guardada. ¿Desea restaurarla?")) { dispatch({ type: 'RESTORE_BACKUP', payload: parsedBackup }); }
         localStorage.removeItem('backup_worksheet_data'); 
       } catch (e) { console.error("Error al restaurar respaldo", e); localStorage.removeItem('backup_worksheet_data'); }
     }
-  }, []);
+  }, [worksheetId]);
 
   const validarIdEnPeriodo = useCallback(async () => {
     if (state.permitirExcepcion) { dispatch({ type: 'CLEAR_ID_BLOCK' }); return; }
@@ -696,6 +808,8 @@ export const WorkSheetScreen: React.FC = () => {
     if(validationErrors.unidad && nuevasUnidades.length > 0) { setValidationErrors({...validationErrors, unidad: false}); }
   };
 
+  const sanitize = (str: string) => str.replace(/<script.*?>.*?<\/script>/gi, '').trim();
+
   // --- HANDLE SAVE MEJORADO Y SINCRONIZADO ---
   const handleSave = useCallback(async () => {
     const errors: Record<string, boolean> = {};
@@ -709,6 +823,30 @@ export const WorkSheetScreen: React.FC = () => {
            hasError = true;
        }
     });
+
+    // Validaciones extendidas
+    if (state.fechaRecepcion && state.fecha && new Date(state.fechaRecepcion) > new Date(state.fecha)) {
+      errors.fecha = true;
+      errors.fechaRecepcion = true;
+      setToast({ message: "La fecha de recepción debe ser antes de la fecha de calibración.", type: 'error' });
+      hasError = true;
+    }
+    if (state.tempAmbiente) {
+      const temp = Number(state.tempAmbiente);
+      if (temp < -50 || temp > 100) {
+        errors.tempAmbiente = true;
+        setToast({ message: "Temperatura ambiente fuera de rango realista (-50°C a 100°C).", type: 'warning' });
+        hasError = true;
+      }
+    }
+    if (state.humedadRelativa) {
+      const hr = Number(state.humedadRelativa);
+      if (hr < 0 || hr > 100) {
+        errors.humedadRelativa = true;
+        setToast({ message: "Humedad relativa debe estar entre 0% y 100%.", type: 'error' });
+        hasError = true;
+      }
+    }
 
     if (hasError) {
         setValidationErrors(errors);
@@ -759,7 +897,7 @@ export const WorkSheetScreen: React.FC = () => {
       if (!navigator.onLine) throw new Error("offline");
 
       const q = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
-      if (!(await getDocs(q)).empty) {
+      if (!(await getDocs(q)).empty && !worksheetId) {
          setIsSaving(false);
          setToast({ message: "El número de certificado ya existe.", type: 'error' });
          return;
@@ -774,15 +912,23 @@ export const WorkSheetScreen: React.FC = () => {
       await uploadBytes(pdfRef, blob);
       const pdfURL = await getDownloadURL(pdfRef);
 
+      // Sanitize state
+      const sanitizedState: WorksheetState = { ...state };
+      for (const key in sanitizedState) {
+        if (typeof sanitizedState[key as keyof WorksheetState] === 'string') {
+          sanitizedState[key as keyof WorksheetState] = sanitize(sanitizedState[key as keyof WorksheetState] as string) as never;
+        }
+      }
+
       // AQUI ESTA LA MAGIA DE LA SINCRONIZACION
-      const lugarNormalizado = state.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
+      const lugarNormalizado = sanitizedState.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
 
       const fullData = { 
-          ...state, 
+          ...sanitizedState, 
           // Campos Estandarizados para Friday
           lugarCalibracion: lugarNormalizado, // Para agrupar
-          folio: state.certificado, // Para columna Folio
-          serie: state.numeroSerie, // Para columna Serie
+          folio: sanitizedState.certificado, // Para columna Folio
+          serie: sanitizedState.numeroSerie, // Para columna Serie
           status: "completed",
           priority: "medium",
           pdfURL, 
@@ -791,7 +937,11 @@ export const WorkSheetScreen: React.FC = () => {
           userId: currentUser?.uid || user?.uid || "unknown" 
       };
       
-      await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+      if (worksheetId) {
+        await updateDoc(doc(db, "hojasDeTrabajo", worksheetId), fullData);
+      } else {
+        await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+      }
 
       setToast({ message: "Hoja de trabajo guardada y enviada a Friday.", type: 'success' });
       localStorage.removeItem('backup_worksheet_data');
@@ -811,7 +961,7 @@ export const WorkSheetScreen: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [state, currentUser, user, goBack]);
+  }, [state, currentUser, user, goBack, worksheetId]);
 
   const handleTogglePreview = useCallback(async () => {
     const newShow = !showPreview;
@@ -860,7 +1010,7 @@ export const WorkSheetScreen: React.FC = () => {
               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><Tag className="w-6 h-6" /></div>
               <div>
                 <h1 className="text-xl font-bold flex items-center gap-2">
-                  Hoja de Trabajo 
+                  Hoja de Trabajo {worksheetId ? "(Edición)" : ""}
                   <div className={`w-3 h-3 rounded-full shadow-md ${isOnline ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`} title={isOnline ? "Online" : "Offline - Guardando Localmente"}></div>
                 </h1>
                 <p className="text-blue-100 text-sm flex items-center gap-2">
@@ -904,7 +1054,7 @@ export const WorkSheetScreen: React.FC = () => {
               {state.lugarCalibracion === "Laboratorio" && (
                 <div className="mt-4 animate-in fade-in slide-in-from-top-2">
                   <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
-                  <input type="date" className="w-full border rounded px-3 py-2 text-sm" value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
+                  <input type="date" className={`w-full border rounded px-3 py-2 text-sm ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : ''}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
                 </div>
               )}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -917,7 +1067,7 @@ export const WorkSheetScreen: React.FC = () => {
                 
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
-                  <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                  <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
                   
                   {slaInfo && (
                     <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
@@ -1117,8 +1267,8 @@ export const WorkSheetScreen: React.FC = () => {
               <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 border-gray-200" rows={2} /></div>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa')} /></div>
                 
                 {metrologyWarning && (
                   <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs } from "firebase/firestore";
+import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata, updateMetadata } from "firebase/storage";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, where } from "firebase/firestore"; 
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
@@ -11,9 +11,10 @@ import {
   Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, User,
   CalendarClock, ArrowLeft, MoveRight, ArrowUp, FolderOpen,
   ArrowDownWideNarrow, ArrowUpWideNarrow, ArrowDownAZ, ArrowUpAZ, Menu,
-  AlertCircle, LogOut, ShieldAlert
+  AlertCircle, LogOut, ShieldAlert, Edit
 } from "lucide-react";
 import clsx from "clsx";
+import labLogo from '../assets/lab_logo.png'; 
 
 // --- INTERFACES ---
 interface DriveFile {
@@ -203,6 +204,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
   const [isMoving, setIsMoving] = useState(false);
 
+  // Renombrar (Nuevo Modal)
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTargetFile, setRenameTargetFile] = useState<DriveFile | null>(null);
+  const [renameTargetFolder, setRenameTargetFolder] = useState<DriveFolder | null>(null);
+  const [newName, setNewName] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+
   const handleBack = () => { 
       if (onBack) onBack(); 
       else goBack(); 
@@ -367,9 +375,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const handleDrag = (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Si estamos arrastrando un elemento interno (archivo/carpeta), no activamos el overlay de subida
       if (draggingItem) return;
-
       if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
       else if (e.type === "dragleave") setDragActive(false);
   };
@@ -378,10 +384,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
-      
-      // Si hay un item interno arrastrándose, no hacemos la lógica de upload aquí
       if (draggingItem) return;
-
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
           await processFiles(e.dataTransfer.files);
       }
@@ -487,7 +490,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const executeMoveFolder = async (folderToMove: DriveFolder, destPath: string) => {
-      // Validaciones
       const newFullPath = `${destPath}/${folderToMove.name}`;
       if (newFullPath.startsWith(folderToMove.fullPath)) {
           showToast("No puedes mover una carpeta dentro de sí misma", 'error');
@@ -538,15 +540,86 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
   };
 
-  // --- DRAG HANDLERS INTERNOS ---
+  const renameFolderRecursive = async (sourcePrefix: string, newName: string) => {
+    const parts = sourcePrefix.split('/');
+    const parentPath = parts.slice(0, -1).join('/');
+    const newFullPath = `${parentPath}/${newName}`;
+    await moveFolderRecursive(sourcePrefix, newFullPath);
+  };
+
+  const executeRenameFolder = async (folderToRename: DriveFolder, newName: string) => {
+    if (!newName.trim() || newName === folderToRename.name) return false;
+    setIsRenaming(true);
+    try {
+      await renameFolderRecursive(folderToRename.fullPath, newName);
+      return true;
+    } catch (e) {
+      console.error("Error renaming folder:", e);
+      showToast("Error al renombrar la carpeta", 'error');
+      return false;
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const executeRenameFile = async (fileToRename: DriveFile, newName: string) => {
+    if (!newName.trim() || newName === fileToRename.name) return false;
+    const parts = fileToRename.fullPath.split('/');
+    const parentPath = parts.slice(0, -1).join('/');
+    const newFullPath = `${parentPath}/${newName}`;
+
+    setIsRenaming(true);
+    try {
+      let fileUrl = fileToRename.url;
+      if (!fileUrl) fileUrl = await getDownloadURL(ref(storage, fileToRename.fullPath));
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const newRef = ref(storage, newFullPath);
+      await uploadBytes(newRef, blob);
+
+      await updateMetadata(newRef, { customMetadata: { originalName: fileToRename.rawName } });
+
+      const oldMetaId = fileToRename.fullPath.replace(/\//g, '_');
+      const newMetaId = newFullPath.replace(/\//g, '_');
+      const oldMetaDoc = await getDoc(doc(db, 'fileMetadata', oldMetaId));
+      let metaData = oldMetaDoc.exists() ? oldMetaDoc.data() : {};
+      
+      if (oldMetaDoc.exists()) await deleteDoc(doc(db, 'fileMetadata', oldMetaId));
+      await setDoc(doc(db, 'fileMetadata', newMetaId), { ...metaData, filePath: newFullPath, name: newName, updated: new Date().toISOString() }, { merge: true });
+      await deleteObject(ref(storage, fileToRename.fullPath));
+      return true;
+    } catch(e) {
+      console.error("Error renaming file", e);
+      showToast("Error al renombrar el archivo", 'error');
+      return false;
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleRename = async () => {
+    let success = false;
+    if (renameTargetFolder) {
+      success = await executeRenameFolder(renameTargetFolder, newName);
+    } else if (renameTargetFile) {
+      success = await executeRenameFile(renameTargetFile, newName);
+    }
+    if (success) {
+      showToast("Renombrado correctamente", 'success');
+      setRenameDialogOpen(false);
+      setRenameTargetFile(null);
+      setRenameTargetFolder(null);
+      setNewName("");
+      loadContent();
+    }
+  };
+
   const handleItemDragStart = (e: React.DragEvent, item: DriveFile | DriveFolder, type: DragItemType) => {
       if (!isQualityUser(currentUserData)) {
           e.preventDefault();
           return;
       }
       setDraggingItem({ type, data: item });
-      // Truco para ocultar la imagen fantasma por defecto si quisieras personalizarla, 
-      // pero dejamos el default por ahora.
       e.dataTransfer.effectAllowed = "move";
   };
 
@@ -554,10 +627,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       e.preventDefault();
       e.stopPropagation();
       if (!draggingItem) return;
-      
-      // Evitar highlight si nos arrastramos sobre nosotros mismos (carpeta)
       if (draggingItem.type === 'folder' && (draggingItem.data as DriveFolder).fullPath === folderFullPath) return;
-
       setDropTargetFolder(folderFullPath);
   };
 
@@ -579,12 +649,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
       if (draggingItem.type === 'folder') {
           const folderToMove = draggingItem.data as DriveFolder;
-          // Prevenir mover a sí mismo o a padre inmediato (opcional, pero buena UX)
           if (folderToMove.fullPath === destPath) return; 
           success = await executeMoveFolder(folderToMove, destPath);
       } else if (draggingItem.type === 'file') {
           const fileToMove = draggingItem.data as DriveFile;
-           // Prevenir mover si ya está ahí
           if (fileToMove.fullPath.startsWith(destPath)) return;
           success = await executeMoveFile(fileToMove, destPath);
       }
@@ -596,7 +664,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
   };
 
-  // --- HANDLER MODAL ---
   const handleModalMove = async () => {
     const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
 
@@ -624,7 +691,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
-
+  // --- LÓGICA DE ACTUALIZACIÓN CON SINCRONIZACIÓN A FRIDAY ---
   const updateFileStatus = async (file: DriveFile, field: string, value: any) => {
     const userName = currentUserData?.name || user?.displayName || "Usuario Desconocido";
     const newReviewedBy = field === 'reviewed' && value ? userName : (field === 'reviewed' && !value ? null : file.reviewedByName);
@@ -632,10 +699,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     const updatedFile = { ...file, [field]: value, reviewedByName: newReviewedBy, completedByName: newCompletedBy };
     
+    // 1. Actualización Visual Inmediata
     setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
     if (selectedFile?.fullPath === file.fullPath) setSelectedFile(updatedFile as DriveFile);
 
     try {
+        // 2. Actualizar en Firebase Storage Metadata
         const id = file.fullPath.replace(/\//g, '_');
         const dataToUpdate: any = { [field]: value };
         
@@ -646,14 +715,60 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         
         if (field === 'reviewed' && value === true) showToast("Validación guardada", 'success');
         if (field === 'completed' && value === true) showToast("Marcado como terminado", 'success');
+
+        // --- 3. SINCRONIZACIÓN AUTOMÁTICA CON FRIDAY (FIXED) ---
+        if (value === true && (field === 'completed' || field === 'reviewed')) {
+             
+             // A. LIMPIEZA INTELIGENTE DEL NOMBRE (Para encontrar el ID)
+             // Quita extensión (.pdf), quita paréntesis de copias "(1)", y toma la primera palabra clave
+             // Ej: "EP-22179 (1).pdf" -> "EP-22179"
+             let cleanName = file.name.replace(/\.[^/.]+$/, ""); // Quita extensión
+             cleanName = cleanName.replace(/\s*\(\d+\)/, ""); // Quita (1), (2)...
+             const possibleId = cleanName.split(/[_ ]/)[0].trim(); // Toma lo que esté antes de un guion bajo o espacio
+             
+             console.log(`INTENTO DE SYNC: Archivo "${file.name}" -> Buscando ID "${possibleId}" en Friday...`);
+
+             // B. BÚSQUEDA DUAL (ID y Folio)
+             const qId = query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId));
+             let snap = await getDocs(qId);
+             
+             if (snap.empty) {
+                 // Si no encuentra por ID, busca por Folio
+                 const qFolio = query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId));
+                 snap = await getDocs(qFolio);
+             }
+
+             if (!snap.empty) {
+                 const docRef = snap.docs[0].ref;
+                 // C. ACTUALIZACIÓN DE ESTADOS
+                 // Asegurándonos de usar "Generado" y "Firmado" que coinciden con FridayScreen
+                 const updateData: any = { lastUpdated: new Date().toISOString() };
+                 
+                 if (field === 'completed') {
+                     updateData['status_certificado'] = "Generado"; // Coincide con FridayScreen
+                     updateData['cargado_drive'] = "Si";
+                 } 
+                 if (field === 'reviewed') {
+                     updateData['status_certificado'] = "Firmado"; // Coincide con FridayScreen
+                 }
+
+                 await updateDoc(docRef, updateData);
+                 console.log("✅ MATCH ENCONTRADO y actualizado en Friday.");
+                 showToast(`Sincronizado con equipo ${possibleId}`, 'success');
+             } else {
+                 console.warn(`❌ No se encontró el equipo "${possibleId}" en Friday.`);
+                 // Opcional: Avisar al usuario si es crítico
+                 // showToast(`No se encontró el ID ${possibleId} en el tablero`, 'error');
+             }
+        }
         
         if (activeFilter === 'pending_review' && field === 'reviewed' && value === true) {
             setTimeout(() => { setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath)); setSelectedFile(null); setDetailsOpen(false); }, 500); 
         }
     } catch (e) { 
-        console.error("Error al actualizar status:", e);
+        console.error("Error crítico al sincronizar:", e);
+        showToast("Error de conexión", 'error'); 
         loadContent(); 
-        showToast("Error al guardar en base de datos", 'error'); 
     } 
   };
 
@@ -801,7 +916,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       <div className={clsx("fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col pt-5 pb-4 transition-transform duration-300 transform md:relative md:translate-x-0", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
         <div className="px-6 mb-8 flex items-center justify-between">
              <button onClick={handleBack} className="p-2 -ml-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors md:hidden" title="Regresar"><ArrowLeft size={20} /></button>
-             <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2"><div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-200"><Cloud size={18} fill="currentColor" /></div>AG Drive</h1>
+             <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2"><img src={labLogo} alt="Lab Logo" className="w-8 h-8 rounded-lg shadow-lg shadow-blue-200" />AG Drive</h1>
         </div>
 
         {isQualityUser(currentUserData) && (
@@ -860,7 +975,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             </div>
             <div className="relative ml-2">
                 <button onClick={(e) => { e.stopPropagation(); setFilterMenuOpen(!filterMenuOpen); }} className={clsx("flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap", filterMenuOpen ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}><ArrowUpWideNarrow size={14} /><span className="hidden md:inline">Ordenar</span></button>
-                {filterMenuOpen && <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"><div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ordenar por</div><div className="p-1"><button onClick={() => setSortBy('dateDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowDownWideNarrow size={16} /> Más recientes</button><button onClick={() => setSortBy('dateAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowUpWideNarrow size={16} /> Más antiguos</button><div className="my-1 border-t border-gray-100"></div><button onClick={() => setSortBy('nameAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowDownAZ size={16} /> Nombre (A-Z)</button></div></div>}
+                {filterMenuOpen && <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-[100] overflow-hidden"><div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ordenar por</div><div className="p-1"><button onClick={() => setSortBy('dateDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowDownWideNarrow size={16} /> Más recientes</button><button onClick={() => setSortBy('dateAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowUpWideNarrow size={16} /> Más antiguos</button><div className="my-1 border-t border-gray-100"></div><button onClick={() => setSortBy('nameAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowDownAZ size={16} /> Nombre (A-Z)</button><button onClick={() => setSortBy('nameDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowUpAZ size={16} /> Nombre (Z-A)</button></div></div>}
             </div>
         </div>
 
@@ -905,6 +1020,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     <div className="my-1 border-t border-gray-100"></div>
                     {isQualityUser(currentUserData) && (
                         <>
+                            <MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
                             <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
                             <MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} />
                         </>
@@ -920,6 +1036,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                         label="Abrir" 
                         onClick={() => { if(contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} 
                     />
+                    <MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
                     <MenuOption 
                         icon={<MoveRight size={16} className="text-blue-500"/>} 
                         label="Mover a carpeta" 
@@ -969,6 +1086,36 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   </div>
               </div>
           </div>
+      )}
+
+      {/* DIALOGO DE RENOMBRAR (Nuevo) */}
+      {renameDialogOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        <Edit className="text-purple-600" size={20} /> Renombrar "{renameTargetFile?.name || renameTargetFolder?.name}"
+                    </h3>
+                    <button onClick={() => setRenameDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button>
+                </div>
+                <div className="p-6">
+                    <input 
+                        autoFocus 
+                        value={newName} 
+                        onChange={e => setNewName(e.target.value)} 
+                        className="w-full border border-gray-300 p-3 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-purple-500 transition-all" 
+                        placeholder="Nuevo nombre..." 
+                    />
+                    <p className="text-xs text-gray-500 mb-4">Asegúrate de que el nuevo nombre sea único en la carpeta.</p>
+                </div>
+                <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white">
+                    <button onClick={() => setRenameDialogOpen(false)} disabled={isRenaming} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button>
+                    <button onClick={handleRename} disabled={isRenaming || !newName.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium shadow-lg flex items-center gap-2 disabled:opacity-50">
+                        {isRenaming ? <Loader2 size={16} className="animate-spin" /> : "Renombrar"}
+                    </button>
+                </div>
+            </div>
+        </div>
       )}
 
       {createFolderOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"><div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl ring-1 ring-gray-900/5"><h3 className="text-lg font-bold mb-4 text-gray-800">Nueva Carpeta</h3><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /><div className="flex justify-end gap-3"><button onClick={() => setCreateFolderOpen(false)} className="px-4 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancelar</button><button onClick={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">Crear</button></div></div></div>}

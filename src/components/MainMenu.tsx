@@ -15,6 +15,9 @@ import {
   collection, onSnapshot, doc, setDoc, query, where, getDocs, orderBy, limit
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+// --- IMPORT NUEVO PARA CORREGIR LA FOTO ---
+import { getAuth, updateProfile } from 'firebase/auth'; 
+// -----------------------------------------
 import { addYears, addMonths, differenceInDays, parseISO, isValid, format, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -194,7 +197,6 @@ const QualityRadarWidget = ({ navigateTo }: { navigateTo: any }) => {
     const checkVencimientos = async () => {
       try {
         // OPTIMIZACIÓN: Limitamos a los últimos 300 registros para evitar leer toda la BD.
-        // Lo ideal sería tener un campo "fechaVencimiento" indexado en Firebase.
         const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc"), limit(300)); 
         const snap = await getDocs(q);
         
@@ -313,7 +315,7 @@ const ClockWidget = () => {
     );
 };
 
-// 4. Modal de Perfil
+// 4. Modal de Perfil (CORREGIDO PARA ACTUALIZAR FOTO)
 const ProfileModal = ({ currentUser, onClose }: { currentUser: UserData, onClose: () => void }) => {
     const { uid, name, email, phone, role, photoUrl: initialPhotoUrl } = currentUser;
     const [localName, setLocalName] = useState(name || '');
@@ -330,27 +332,39 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: UserData, onClose
       setSaving(true);
       try {
         let newPhotoUrl = localPhotoUrl;
+        
+        // 1. Subir imagen a Storage
         if (localPhotoFile) {
-          // NOTA: Para producción real, aquí deberías comprimir la imagen antes de subirla
-          // usando una librería como 'browser-image-compression' para ahorrar datos y storage.
           const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
           await uploadBytes(storageReference, localPhotoFile);
           newPhotoUrl = await getDownloadURL(storageReference);
         }
+
+        // 2. Guardar datos en Base de Datos (Firestore)
         await setDoc(doc(db, "usuarios", uid), {
           name: localName, 
           email: localEmail, 
           phone: localPhone, 
-          position: localPosition, 
+          position: localPosition, // Mantenemos la estructura original de tu BD
           photoUrl: newPhotoUrl,
         }, { merge: true });
         
-        onClose(); 
-        setLocalPhotoFile(null);
+        // 3. ACTUALIZAR AUTENTICACIÓN (Esto es lo que faltaba)
+        const auth = getAuth();
+        if (auth.currentUser) {
+            await updateProfile(auth.currentUser, {
+                displayName: localName,
+                photoURL: newPhotoUrl
+            });
+        }
+        
+        // 4. Forzar recarga para ver cambios
+        alert("Perfil actualizado correctamente. La página se recargará para mostrar tu nueva foto.");
+        window.location.reload();
+
       } catch (error) {
         console.error("Error al guardar perfil:", error);
         alert("Hubo un error al guardar los cambios.");
-      } finally {
         setSaving(false);
       }
     };
@@ -358,7 +372,7 @@ const ProfileModal = ({ currentUser, onClose }: { currentUser: UserData, onClose
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
-        // Validación básica de tamaño (ej. max 5MB)
+        // Validación básica de tamaño
         if (file.size > 5 * 1024 * 1024) {
             alert("La imagen es muy pesada. Intenta con una menor a 5MB.");
             return;
