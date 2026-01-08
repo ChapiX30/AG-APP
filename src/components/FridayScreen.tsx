@@ -5,7 +5,8 @@ import {
   Menu, Building2, ArrowLeft,
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
-  MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil
+  MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil,
+  Eye, RotateCcw
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
@@ -17,7 +18,7 @@ import { useAuth } from "../hooks/useAuth";
 // --- TIPOS ---
 type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client" | "sla";
 
-// --- DICCIONARIO PARA AUTO-DEPARTAMENTO (INTELIGENCIA ARTIFICIAL SIMPLE) ---
+// --- DICCIONARIO PARA AUTO-DEPARTAMENTO ---
 const DEPARTMENT_KEYWORDS: Record<string, string[]> = {
     "Eléctrica": ["power", "source", "supply", "multimeter", "multímetro", "oscilloscope", "osciloscopio", "lcr", "electric", "tension", "voltage", "amper", "clamp", "resistencia", "decada"],
     "Dimensional": ["caliper", "micrometer", "micrómetro", "vernier", "cinta", "regla", "indicador", "bloque", "patron", "pin", "gauge", "height", "depth"],
@@ -69,9 +70,9 @@ interface WorksheetData {
   id: string;    
   createdAt: string; 
   lugarCalibracion: string; 
-  assignedTo?: string; // Mantenemos compatibilidad interna
-  nombre?: string;     // CAMPO REAL DE FIREBASE PARA EL RESPONSABLE
-  fecha?: string;      // CAMPO REAL DE FIREBASE PARA FECHA
+  assignedTo?: string; 
+  nombre?: string;     
+  fecha?: string;      
   [key: string]: any; 
 }
 
@@ -91,7 +92,6 @@ interface DragItem {
 
 // --- CONFIGURACIÓN DE COLORES Y ESTADOS ---
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
-  // Estados de Equipo y Certificado
   "Desconocido": { label: "Desconocido", bg: "#c4c4c4" },
   "En Revisión": { label: "En Revisión", bg: "#fdab3d" },
   "Calibrado": { label: "Calibrado", bg: "#00c875" },
@@ -99,15 +99,12 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Pendiente de Certificado": { label: "Pendiente Cert.", bg: "#0086c0" },
   "Generado": { label: "Generado", bg: "#a25ddc" },
   "Firmado": { label: "Firmado", bg: "#00c875" },
-  // Ubicación
   "Servicio en Sitio": { label: "Servicio en Sitio", bg: "#a25ddc" },
   "Laboratorio": { label: "Laboratorio", bg: "#579bfc" },
   "Recepción": { label: "Recepción", bg: "#fdab3d" },
   "Entregado": { label: "Entregado", bg: "#00c875" },
-  // Booleanos
   "No": { label: "No", bg: "#e2445c" },
   "Si": { label: "Si", bg: "#00c875" },
-  // DEPARTAMENTOS
   "Mecánica": { label: "Mecánica", bg: "#1565c0" },
   "Dimensional": { label: "Dimensional", bg: "#00897b" },
   "Eléctrica": { label: "Eléctrica", bg: "#ff8f00" }
@@ -118,17 +115,16 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'folio', label: 'Folio', width: 80, type: "text", sticky: true, permissions: ['admin', 'ventas'] }, 
   { key: 'cliente', label: 'Cliente', width: 200, type: "client", permissions: ['admin', 'ventas', 'logistica'] },
   { key: 'equipo', label: 'Equipo', width: 180, type: "text", permissions: ['admin', 'metrologo'] },
-  { key: 'id', label: 'ID Interno', width: 100, type: "text", permissions: ['admin', 'metrologo'] },
+  // COLUMNA ID (Posición 4)
+  { key: 'id', label: 'ID', width: 100, type: "text", permissions: ['admin', 'metrologo'] },
   { key: 'marca', label: 'Marca', width: 120, type: "text" },
   { key: 'modelo', label: 'Modelo', width: 120, type: "text" },
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
-  // CORRECCIÓN: Key es 'nombre' según tu screenshot de Firebase
   { key: 'nombre', label: 'Responsable', width: 120, type: "person", permissions: ['admin', 'logistica'] }, 
   { key: 'createdAt', label: 'Cronograma (SLA)', width: 150, type: "sla" },
   { key: 'status_equipo', label: '1-Estatus del Equipo', width: 160, type: "dropdown", options: ["Desconocido", "En Revisión", "Calibrado", "Rechazado"] },
-  // CORRECCIÓN: Key es 'fecha' según tu screenshot de Firebase
   { key: 'fecha', label: '2-Fecha de Calib.', width: 130, type: "date" },
-  { key: 'n_certificado', label: '3-N. Certificado', width: 140, type: "text" },
+  { key: 'certificado', label: '3-N. Certificado', width: 140, type: "text" },
   { key: 'status_certificado', label: '4-Estatus Certificado', width: 170, type: "dropdown", options: ["Pendiente de Certificado", "Generado", "Firmado"] },
   { key: 'cargado_drive', label: '5-Cargado en Drive', width: 140, type: "dropdown", options: ["No", "Si"] },
   { key: 'ubicacion_real', label: '6-Ubicación Real', width: 160, type: "dropdown", options: ["Servicio en Sitio", "Laboratorio", "Recepción", "Entregado"] },
@@ -147,8 +143,7 @@ const addBusinessDays = (startDate: Date, daysToAdd: number) => {
     return currentDate;
 };
 
-// --- CELDAS (TODAS TERMINAN CON PUNTO Y COMA) ---
-
+// --- CELDAS ---
 const SLACell = React.memo(({ createdAt }: { createdAt: string }) => {
     if (!createdAt) return <div className="w-full h-full flex items-center justify-center text-gray-300">-</div>;
     const start = new Date(createdAt);
@@ -369,7 +364,7 @@ const CommentsPanel = ({ row, onClose }: { row: WorksheetData, onClose: () => vo
     );
 };
 
-// --- BOARD ROW (CORREGIDO DRAG & DROP Y DETECCIÓN AUTOMÁTICA) ---
+// --- BOARD ROW ---
 const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, userRole, onOpenComments, index, groupId }: any) => {
     
     // Función para manejar cambios y detectar departamento automáticamente
@@ -470,6 +465,28 @@ const PermissionMenu = ({ x, y, column, onClose, onTogglePermission }: any) => {
     );
 };
 
+// --- NUEVO COMPONENTE: BARRA DE COLUMNAS OCULTAS ---
+const HiddenColumnsBar = ({ hiddenColumns, onUnhide }: { hiddenColumns: Column[], onUnhide: (key: string) => void }) => {
+    if (hiddenColumns.length === 0) return null;
+    return (
+        <div className="bg-[#fff9e6] border-b border-[#ffeebb] px-6 py-2 flex items-center gap-3 animate-in slide-in-from-top-2">
+            <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wide flex items-center gap-1"><EyeOff size={12}/> Columnas Ocultas:</span>
+            <div className="flex gap-2 flex-wrap">
+                {hiddenColumns.map(col => (
+                    <button 
+                        key={col.key} 
+                        onClick={() => onUnhide(col.key)}
+                        className="flex items-center gap-1 bg-white border border-orange-200 text-orange-800 px-2 py-0.5 rounded-full text-[10px] hover:bg-orange-50 transition-colors shadow-sm"
+                        title="Clic para mostrar"
+                    >
+                        {col.label} <X size={10} className="text-orange-400"/>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const FridayScreen: React.FC = () => {
     const { navigateTo } = useNavigation();
     const { user } = useAuth();
@@ -516,7 +533,7 @@ const FridayScreen: React.FC = () => {
         fetchUser();
     }, [user]);
 
-    // --- CARGA DE COLUMNAS SIN DUPLICADOS ---
+    // --- CARGA DE COLUMNAS ---
     useEffect(() => {
         setIsLoadingData(true);
         const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
@@ -559,13 +576,12 @@ const FridayScreen: React.FC = () => {
             let newRows: WorksheetData[] = [];
             snapshot.forEach(doc => { 
                 const data = doc.data();
-                // MAPEAMOS LOS DATOS CORRECTAMENTE:
                 newRows.push({ 
                     ...data, 
                     docId: doc.id, 
                     id: data.id || "", 
-                    nombre: data.nombre || data.assignedTo, // Prioridad a 'nombre'
-                    fecha: data.fecha || data.fecha_calib    // Prioridad a 'fecha'
+                    nombre: data.nombre || data.assignedTo, 
+                    fecha: data.fecha || data.fecha_calib    
                 } as WorksheetData); 
             });
             setRows(newRows);
@@ -585,6 +601,21 @@ const FridayScreen: React.FC = () => {
         setColumns(newCols);
         setActiveColumnMenu(null);
         await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+    };
+
+    // --- FUNCIÓN PARA MOSTRAR COLUMNA OCULTA ---
+    const handleUnhide = async (key: string) => {
+        const newCols = columns.map(c => c.key === key ? { ...c, hidden: false } : c);
+        setColumns(newCols);
+        await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+    };
+
+    // --- RESETEAR CONFIGURACIÓN COMPLETA (EMERGENCIA) ---
+    const handleResetLayout = async () => {
+        if(confirm("¿Estás seguro? Esto restablecerá todas las columnas a su estado original (incluyendo ID).")) {
+             setColumns(DEFAULT_COLUMNS);
+             await setDoc(doc(db, "tableros", "principal"), { columns: DEFAULT_COLUMNS });
+        }
     };
 
     const handleRename = async (key: string) => {
@@ -614,18 +645,17 @@ const FridayScreen: React.FC = () => {
         await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
     };
 
-    // --- CREACIÓN DE FILA ---
     const handleAddRow = useCallback(async (groupId: string) => {
         const docRef = doc(collection(db, "hojasDeTrabajo"));
         const newRowData = {
             id: "", 
-            folio: "", // Inicia vacío
+            folio: "", 
             cliente: "", 
             equipo: "", 
             lugarCalibracion: groupId, 
             status_equipo: 'Desconocido', 
-            nombre: currentUserName, // Asignamos nombre real
-            assignedTo: currentUserName, // Fallback
+            nombre: currentUserName, 
+            assignedTo: currentUserName, 
             createdAt: new Date().toISOString(), 
             status_certificado: 'Pendiente de Certificado'
         };
@@ -649,7 +679,6 @@ const FridayScreen: React.FC = () => {
         setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     }, []);
 
-    // --- LÓGICA DE ARRASTRE ---
     const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
         if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; }
         dragItemRef.current = item;
@@ -705,6 +734,7 @@ const FridayScreen: React.FC = () => {
     }, [rows, groupsConfig, search, sortConfig]);
 
     let headerStickyOffset = 40; 
+    const hiddenColumns = columns.filter(c => c.hidden);
 
     return (
         <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
@@ -724,11 +754,18 @@ const FridayScreen: React.FC = () => {
                             <h1 className="text-2xl font-bold leading-tight flex items-center gap-2 text-gray-800">Tablero Principal <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{currentYear}</span></h1>
                         </div>
                     </div>
-                    <div className="flex gap-3"><div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow bg-gray-50 w-64" value={search} onChange={e => setSearch(e.target.value)} /></div></div>
+                    <div className="flex gap-3">
+                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow bg-gray-50 w-64" value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        {/* BOTÓN DE RESETEAR VISTA */}
+                        <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-full transition-colors" title="Restablecer columnas por defecto"><RotateCcw size={18}/></button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-auto bg-white" id="main-board-scroll">
                     <div className="inline-block min-w-full pb-32">
+                        {/* BARRA DE COLUMNAS OCULTAS */}
+                        <HiddenColumnsBar hiddenColumns={hiddenColumns} onUnhide={handleUnhide} />
+
                         <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm h-[36px]">
                             <div className="w-1.5 bg-white sticky left-0 z-30"></div>
                             <div className="w-[40px] border-r border-[#d0d4e4] bg-white sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300" /></div>

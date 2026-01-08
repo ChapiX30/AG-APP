@@ -14,10 +14,18 @@ interface UserGreeting {
   photoUrl?: string | null;
 }
 
+// Regex simple para validar formato de email antes de gastar lecturas
+const isValidEmail = (email: string) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
 const fetchUserProfile = async (email: string): Promise<UserGreeting | null> => {
-  if (!email || !email.includes('@') || email.length < 5) return null;
+  // Validación extra de seguridad
+  if (!email || !isValidEmail(email)) return null;
+
   try {
     const db = getFirestore();
+    // Normalizamos el email a minúsculas para evitar duplicados por mayúsculas
     const userQuery = query(collection(db, 'usuarios'), where('email', '==', email.toLowerCase()), limit(1));
     const snapshot = await getDocs(userQuery);
     if (!snapshot.empty) {
@@ -69,6 +77,10 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
   const lastGreetedUser = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debouncedFetchRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // MEJORA: Caché local para evitar lecturas repetidas a Firebase en la misma sesión
+  const userCache = useRef<Record<string, UserGreeting | null>>({});
+
   const isFormReady = email.length > 0 && password.length > 0;
 
   // --- EFECTO TILT 3D ---
@@ -86,14 +98,36 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
     y.set((e.clientY - rect.top) / rect.height - 0.5);
   };
 
-  // --- LÓGICA DE FETCH REFACTORIZADA (Sin audio) ---
+  // --- LÓGICA DE FETCH MEJORADA ---
   const runFetchLogic = async (emailToFetch: string) => {
-    if (fetchingUser || lastGreetedUser.current === emailToFetch.toLowerCase()) return;
+    const emailKey = emailToFetch.toLowerCase();
+
+    // 1. Si el email no es válido por regex, ni molestamos a Firebase
+    if (!isValidEmail(emailKey)) {
+      setUser(null);
+      return;
+    }
+
+    // 2. Revisamos si ya tenemos este usuario en caché
+    if (userCache.current[emailKey] !== undefined) {
+      const cachedUser = userCache.current[emailKey];
+      setUser(cachedUser);
+      if (cachedUser) lastGreetedUser.current = emailKey;
+      return;
+    }
+
+    // 3. Si no está en caché y no estamos buscando ya...
+    if (fetchingUser || lastGreetedUser.current === emailKey) return;
+    
     setFetchingUser(true);
-    const foundUser = await fetchUserProfile(emailToFetch);
+    const foundUser = await fetchUserProfile(emailKey);
+    
+    // 4. Guardamos en caché y actualizamos estado
+    userCache.current[emailKey] = foundUser;
     setUser(foundUser);
+    
     if (foundUser?.name) {
-      lastGreetedUser.current = email.toLowerCase();
+      lastGreetedUser.current = emailKey;
     }
     setFetchingUser(false);
   };
@@ -111,9 +145,10 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
       clearTimeout(debouncedFetchRef.current);
     }
 
+    // Reducimos el debounce ligeramente para sentirse más "snappy"
     debouncedFetchRef.current = setTimeout(() => {
       runFetchLogic(email);
-    }, 500);
+    }, 600);
 
     return () => {
       if (debouncedFetchRef.current) {
@@ -144,7 +179,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
 
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !email.includes('@')) {
+    if (!email || !isValidEmail(email)) {
       setResetStatus({ success: false, msg: 'Por favor ingresa un correo válido.' });
       return;
     }
@@ -161,12 +196,21 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
   // --- RENDER ---
   return (
     <div 
-      className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 ${darkMode ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950' : 'bg-gradient-to-br from-slate-100 via-white to-slate-100'}`}
+      className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 relative ${darkMode ? 'bg-slate-950' : 'bg-slate-50'}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { x.set(0); y.set(0); }}
       ref={containerRef}
     >
-      {/* Background FX */}
+      {/* MEJORA: Fondo Técnico (Grid Pattern) */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-[0.03]"
+        style={{
+          backgroundImage: `linear-gradient(${darkMode ? '#fff' : '#000'} 1px, transparent 1px), linear-gradient(90deg, ${darkMode ? '#fff' : '#000'} 1px, transparent 1px)`,
+          backgroundSize: '40px 40px'
+        }}
+      />
+      
+      {/* Background FX (Blobs originales mantenidos para estética) */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div 
           className={`absolute w-96 h-96 ${darkMode ? 'bg-blue-500/10' : 'bg-blue-500/20'} rounded-full blur-3xl`}
@@ -180,7 +224,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
         />
       </div>
 
-      {/* Theme Toggle Only */}
+      {/* Theme Toggle */}
       <div className="absolute top-6 right-6 flex gap-3 z-50">
         <motion.button
           whileHover={{ scale: 1.05 }}
@@ -271,6 +315,8 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
             <motion.input
               whileFocus={{ scale: 1.01 }}
               type="email"
+              name="email" // MEJORA: Atributo para gestores
+              autoComplete="username" // MEJORA: Autocompletado
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setFocusedField('email')}
@@ -295,10 +341,13 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
             <motion.input
               whileFocus={{ scale: 1.01 }}
               type={showPass ? "text" : "password"}
+              name="password" // MEJORA
+              autoComplete="current-password" // MEJORA
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onFocus={() => {
                 setFocusedField('password');
+                // Si el usuario salta al password sin salir del email, intenta buscar
                 if (email && !user && !fetchingUser) {
                   if (debouncedFetchRef.current) {
                     clearTimeout(debouncedFetchRef.current);
@@ -357,8 +406,11 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
             )}
           </AnimatePresence>
 
-          {/* Submit Button */}
+          {/* Submit Button with Shake Effect */}
           <motion.button
+            // MEJORA: Animación de "vibración" (shake) si hay error
+            animate={error ? { x: [0, -10, 10, -10, 10, 0] } : {}}
+            transition={{ duration: 0.4 }}
             whileHover={isFormReady && !isLoading ? { scale: 1.02, boxShadow: darkMode ? "0 0 30px rgba(59, 130, 246, 0.3)" : "0 0 20px rgba(59, 130, 246, 0.4)" } : {}}
             whileTap={isFormReady && !isLoading ? { scale: 0.98 } : {}}
             type="submit"
@@ -436,6 +488,7 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
                   <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`} size={18} />
                   <input
                     type="email"
+                    name="email_reset"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Tu correo electrónico"

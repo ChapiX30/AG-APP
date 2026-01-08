@@ -1,10 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, User, LogIn, LogOut, Loader2, XCircle, CheckCircle, Package, RefreshCw, Camera } from 'lucide-react';
+import { 
+  ArrowLeft, User, LogIn, LogOut, Loader2, XCircle, CheckCircle, 
+  Package, RefreshCw, Camera, Search, QrCode, Keyboard, AlertTriangle 
+} from 'lucide-react';
 import { useNavigation } from '../hooks/useNavigation';
 import { db } from '../utils/firebase';
-import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import { format } from 'date-fns';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Interfaces ---
 export interface HistorialEntry {
@@ -24,13 +28,7 @@ export interface RegistroPatron {
   serie: string;
   marca: string;
   modelo: string;
-  frecuencia: string;
-  tipoServicio: string;
-  fecha: string;
-  prioridad: 'Alta' | 'Media' | 'Baja';
-  ubicacion: string;
-  responsable: string;
-  estadoProceso: 'operativo' | 'programado' | 'en_proceso' | 'completado' | 'fuera_servicio' | 'en_servicio' | 'en_mantenimiento' | 'en_prestamo';
+  estadoProceso: 'operativo' | 'en_servicio' | 'en_prestamo' | 'en_mantenimiento' | string;
   usuarioEnUso?: string; 
   fechaPrestamo?: string;
   historial: HistorialEntry[];
@@ -45,14 +43,22 @@ export const ControlPrestamosScreen: React.FC = () => {
   const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
   const [usuarioSeleccionado, setUsuarioSeleccionado] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  
+  // Estados de Operación
   const [isProcessing, setIsProcessing] = useState(false); 
   const [itemsEnPosesion, setItemsEnPosesion] = useState<RegistroPatron[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
+  
+  // Scanner
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanMode, setScanMode] = useState<'entrada' | 'salida'>('salida');
-  
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
+
+  // Manual Input
+  const [manualInput, setManualInput] = useState('');
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [searchResult, setSearchResult] = useState<RegistroPatron | null>(null);
 
   // Cargar Usuarios
   useEffect(() => {
@@ -70,7 +76,7 @@ export const ControlPrestamosScreen: React.FC = () => {
     fetchMetrologos();
   }, []);
 
-  // Cargar Items
+  // Cargar Items del Usuario
   const fetchItemsUsuario = useCallback(async (usuario: string) => {
     if (!usuario) { setItemsEnPosesion([]); return; }
     setLoadingItems(true);
@@ -80,7 +86,8 @@ export const ControlPrestamosScreen: React.FC = () => {
         const items: RegistroPatron[] = [];
         querySnapshot.forEach((doc) => {
             const data = doc.data() as RegistroPatron;
-            if (data.estadoProceso === 'en_servicio' || data.estadoProceso === 'en_prestamo') {
+            // Filtramos solo los que están activos en préstamo
+            if (['en_servicio', 'en_prestamo', 'en_uso'].includes(data.estadoProceso)) {
                 items.push({ id: doc.id, ...data });
             }
         });
@@ -90,230 +97,349 @@ export const ControlPrestamosScreen: React.FC = () => {
 
   useEffect(() => { fetchItemsUsuario(usuarioSeleccionado); }, [usuarioSeleccionado, fetchItemsUsuario]);
 
-  // Scanner Logic
-  const handleOpenScanner = (mode: 'entrada' | 'salida') => {
-    if (!usuarioSeleccionado && mode === 'salida') {
-        alert('Por favor, selecciona un usuario primero.');
-        return;
-    }
-    setScanMode(mode);
-    setIsScannerOpen(true);
+  // Lógica Unificada de Transacción (Entrada/Salida)
+  const procesarTransaccion = async (noControl: string, tipo: 'entrada' | 'salida') => {
+      if (!usuarioSeleccionado) { alert("Selecciona un usuario primero"); return; }
+      
+      setIsProcessing(true);
+      setShowManualModal(false);
+      setSearchResult(null);
+      setManualInput('');
+
+      try {
+          // Buscar el equipo por No. Control
+          const q = query(collection(db, COLLECTION_NAME), where("noControl", "==", noControl));
+          const querySnapshot = await getDocs(q);
+
+          if (querySnapshot.empty) {
+              alert(`❌ Equipo "${noControl}" no encontrado.`);
+              setIsProcessing(false);
+              return;
+          }
+
+          const patronDoc = querySnapshot.docs[0];
+          const patronData = patronDoc.data() as RegistroPatron;
+          const patronId = patronDoc.id;
+          const fechaActual = format(new Date(), 'yyyy-MM-dd HH:mm');
+
+          if (tipo === 'salida') {
+              // Validaciones Salida
+              if (['en_servicio', 'en_prestamo', 'en_uso'].includes(patronData.estadoProceso)) {
+                  alert(`⚠️ El equipo ya está prestado a: ${patronData.usuarioEnUso}`);
+                  setIsProcessing(false); return;
+              }
+              if (patronData.estadoProceso === 'en_mantenimiento' || patronData.estadoProceso === 'baja') {
+                  alert(`⚠️ El equipo no está disponible (Estado: ${patronData.estadoProceso})`);
+                  setIsProcessing(false); return;
+              }
+
+              const nuevaEntrada: HistorialEntry = {
+                  id: crypto.randomUUID(), fecha: fechaActual, accion: 'Préstamo',
+                  usuario: usuarioSeleccionado, tipoEvento: 'prestamo', 
+                  observaciones: `Entrega a ${usuarioSeleccionado}`
+              };
+
+              await setDoc(doc(db, COLLECTION_NAME, patronId), {
+                  estadoProceso: 'en_prestamo',
+                  usuarioEnUso: usuarioSeleccionado,
+                  ubicacion: `Planta - ${usuarioSeleccionado}`,
+                  fechaPrestamo: fechaActual,
+                  historial: [nuevaEntrada, ...(patronData.historial || [])]
+              }, { merge: true });
+
+          } else {
+              // Validaciones Entrada
+              if (patronData.usuarioEnUso !== usuarioSeleccionado && patronData.usuarioEnUso) {
+                   const confirmar = window.confirm(`⚠️ Este equipo figura prestado a ${patronData.usuarioEnUso}, ¿Confirmar devolución por ${usuarioSeleccionado}?`);
+                   if(!confirmar) { setIsProcessing(false); return; }
+              }
+
+              const nuevaEntrada: HistorialEntry = {
+                  id: crypto.randomUUID(), fecha: fechaActual, accion: 'Devolución',
+                  usuario: usuarioSeleccionado, tipoEvento: 'prestamo', 
+                  observaciones: `Devuelto por ${usuarioSeleccionado}`
+              };
+
+              await setDoc(doc(db, COLLECTION_NAME, patronId), {
+                  estadoProceso: 'operativo',
+                  usuarioEnUso: '',
+                  ubicacion: 'Laboratorio',
+                  fechaPrestamo: '',
+                  historial: [nuevaEntrada, ...(patronData.historial || [])]
+              }, { merge: true });
+          }
+
+          // Refrescar lista
+          await fetchItemsUsuario(usuarioSeleccionado);
+          
+      } catch (e) {
+          console.error(e);
+          alert("Error al procesar movimiento");
+      } finally {
+          setIsProcessing(false);
+          stopScan();
+      }
   };
-  
-  const stopScan = useCallback(() => {
-    if (scannerControlsRef.current) {
-      scannerControlsRef.current.stop();
-      scannerControlsRef.current = null;
-    }
-    setIsScannerOpen(false);
-  }, []);
-  
-  const handleScanResult = useCallback(async (noControl: string) => {
-    if (!noControl) return;
-    stopScan();
-    setIsProcessing(true); 
 
-    try {
-      const q = query(collection(db, COLLECTION_NAME), where("noControl", "==", noControl));
-      const querySnapshot = await getDocs(q);
+  // Buscador Manual (Para Préstamos sin QR)
+  const buscarEquipoManual = async () => {
+      if(!manualInput) return;
+      setIsProcessing(true);
+      try {
+          const q = query(collection(db, COLLECTION_NAME), where("noControl", "==", manualInput));
+          const snap = await getDocs(q);
+          if(!snap.empty) {
+              setSearchResult({ id: snap.docs[0].id, ...snap.docs[0].data() } as RegistroPatron);
+          } else {
+              setSearchResult(null);
+              alert("Equipo no encontrado");
+          }
+      } catch(e) { console.error(e); }
+      finally { setIsProcessing(false); }
+  };
 
-      if (querySnapshot.empty) {
-        alert(`❌ Error: Patrón "${noControl}" no encontrado.`);
-        setIsProcessing(false);
-        return;
-      }
+  // Scanner Handlers
+  const handleScanResult = useCallback((code: string) => {
+      procesarTransaccion(code, scanMode);
+  }, [scanMode, usuarioSeleccionado]); // Dependencias corregidas
 
-      const patronDoc = querySnapshot.docs[0];
-      const patronData = patronDoc.data() as RegistroPatron;
-      const patronId = patronDoc.id;
-      const docRef = doc(db, COLLECTION_NAME, patronId);
-      const fechaActual = format(new Date(), 'yyyy-MM-dd');
+  const startScanner = (mode: 'entrada' | 'salida') => {
+      if (!usuarioSeleccionado) { alert("Selecciona un usuario primero"); return; }
+      setScanMode(mode);
+      setIsScannerOpen(true);
+  };
 
-      if (scanMode === 'salida') {
-        if (patronData.estadoProceso === 'en_servicio' || patronData.estadoProceso === 'en_prestamo') {
-          alert(`⚠️ El patrón ya está EN USO por ${patronData.usuarioEnUso}.`);
-          setIsProcessing(false); return;
-        }
-        
-        const nuevaEntrada: HistorialEntry = {
-          id: crypto.randomUUID(), fecha: fechaActual, accion: 'Salida (Escáner)',
-          usuario: usuarioSeleccionado, tipoEvento: 'prestamo', observaciones: `Equipo retirado.`
-        };
-
-        const updatedData = {
-          estadoProceso: 'en_servicio', usuarioEnUso: usuarioSeleccionado,
-          ubicacion: `En Uso - ${usuarioSeleccionado}`, fechaPrestamo: fechaActual,
-          historial: [nuevaEntrada, ...patronData.historial]
-        };
-
-        // @ts-ignore
-        await setDoc(docRef, updatedData, { merge: true });
-        setItemsEnPosesion(prev => [...prev, { ...patronData, ...updatedData, id: patronId } as RegistroPatron]);
-        alert(`✅ Salida Registrada: ${patronData.descripcion}`);
-
-      } else {
-        const nuevaEntrada: HistorialEntry = {
-          id: crypto.randomUUID(), fecha: fechaActual, accion: 'Entrada (Devolución)',
-          usuario: usuarioSeleccionado || 'Sistema', tipoEvento: 'prestamo',
-          observaciones: `Devuelto. (Previo: ${patronData.usuarioEnUso || 'N/A'})`
-        };
-        
-        await setDoc(docRef, {
-          estadoProceso: 'operativo', usuarioEnUso: '', ubicacion: 'Laboratorio', fechaPrestamo: '', 
-          historial: [nuevaEntrada, ...patronData.historial]
-        }, { merge: true });
-
-        setItemsEnPosesion(prev => prev.filter(item => item.noControl !== noControl));
-        alert(`✅ Entrada Registrada: ${patronData.descripcion}`);
-      }
-    } catch (error) {
-      console.error(error); alert("❌ Error de Conexión.");
-    } finally { setIsProcessing(false); }
-  }, [scanMode, usuarioSeleccionado, stopScan]);
+  const stopScan = () => {
+      scannerControlsRef.current?.stop();
+      setIsScannerOpen(false);
+  };
 
   useEffect(() => {
     if (isScannerOpen && videoRef.current) {
       const reader = new BrowserMultiFormatReader();
       reader.decodeFromVideoDevice(undefined, videoRef.current, (result, err, controls) => {
-          if (result) { handleScanResult(result.getText()); controls.stop(); }
+          if (result) { handleScanResult(result.getText()); }
           scannerControlsRef.current = controls;
-      }).catch(() => { alert("Error cámara"); stopScan(); });
+      }).catch(() => stopScan());
     }
     return () => { scannerControlsRef.current?.stop(); };
-  }, [isScannerOpen, handleScanResult, stopScan]);
+  }, [isScannerOpen, handleScanResult]);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans">
       
-      {/* Modal Scanner */}
-      {isScannerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm" onClick={stopScan}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md text-center shadow-2xl relative" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-gray-900 mb-4">
-              {scanMode === 'salida' ? 'Escaneando Salida 📤' : 'Escaneando Devolución 📥'}
-            </h3>
-            <div className="rounded-xl overflow-hidden border-2 border-slate-200 bg-black aspect-video mb-6 relative">
-               <video ref={videoRef} className="w-full h-full object-cover" />
-               <div className="absolute inset-0 border-2 border-white/50 m-8 rounded-lg pointer-events-none animate-pulse"></div>
-            </div>
-            <button 
-              className="w-full py-3 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
-              onClick={stopScan}
-            >
-              <XCircle size={20} /> Cancelar Escaneo
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
+      {/* --- HEADER --- */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 py-4 shadow-sm flex items-center justify-between">
         <div className="flex items-center gap-4">
-            <button onClick={() => navigateTo('/')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors">
+            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors">
                 <ArrowLeft size={20} />
             </button>
             <div>
-                <h1 className="text-xl font-bold text-gray-800">Control de Préstamos</h1>
-                <p className="text-xs text-gray-500">Entradas y salidas de patrones</p>
+                <h1 className="text-xl font-bold text-gray-900">Módulo de Préstamos</h1>
+                <p className="text-xs text-gray-500">Gestión de entradas y salidas</p>
             </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
         
-        {/* Card Principal */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 relative overflow-hidden">
+        {/* --- SELECCIÓN DE USUARIO --- */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative overflow-hidden">
           {isProcessing && (
             <div className="absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
-              <Loader2 size={48} className="animate-spin text-blue-600 mb-4" />
-              <p className="font-semibold text-gray-700">Procesando movimiento...</p>
+              <Loader2 size={40} className="animate-spin text-blue-600 mb-2" />
+              <p className="font-semibold text-gray-700 text-sm">Actualizando inventario...</p>
             </div>
           )}
 
-          <div className="mb-6">
-            <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                <User size={18} className="text-blue-600" /> Usuario Responsable
+          <div className="mb-2">
+            <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                <User size={16} className="text-blue-600" /> Responsable del Movimiento
             </label>
             <div className="relative">
                 <select
-                    className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all font-medium text-gray-700"
+                    className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all font-medium text-gray-800"
                     value={usuarioSeleccionado}
                     onChange={(e) => setUsuarioSeleccionado(e.target.value)}
                     disabled={isLoadingUsers || isProcessing}
                 >
-                    <option value="">{isLoadingUsers ? 'Cargando...' : '-- Seleccionar Usuario --'}</option>
+                    <option value="">{isLoadingUsers ? 'Cargando lista...' : '-- Seleccionar Técnico / Metrólogo --'}</option>
                     {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button
-              onClick={() => handleOpenScanner('salida')}
-              disabled={!usuarioSeleccionado || isProcessing}
-              className={`flex flex-col items-center justify-center p-6 rounded-xl border-2 transition-all ${!usuarioSeleccionado ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed' : 'border-blue-100 bg-blue-50/50 text-blue-700 hover:border-blue-300 hover:shadow-md'}`}
-            >
-              <LogOut size={32} className="mb-2" />
-              <span className="font-bold">Salida (Check-out)</span>
-              <span className="text-xs opacity-70">Escanear para llevar</span>
-            </button>
-
-            <button
-              onClick={() => handleOpenScanner('entrada')}
-              disabled={isProcessing}
-              className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-emerald-100 bg-emerald-50/50 text-emerald-700 hover:border-emerald-300 hover:shadow-md transition-all"
-            >
-              <LogIn size={32} className="mb-2" />
-              <span className="font-bold">Entrada (Check-in)</span>
-              <span className="text-xs opacity-70">Escanear para devolver</span>
-            </button>
-          </div>
         </div>
 
-        {/* Lista de Equipos */}
+        {/* --- PANEL DE ACCIONES (SOLO SI HAY USUARIO) --- */}
+        <AnimatePresence>
         {usuarioSeleccionado && (
-             <div className="animate-in slide-in-from-bottom-4 duration-500">
-                <div className="flex justify-between items-center mb-4 px-2">
-                    <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                        <Package size={18} /> Inventario en Posesión
+            <motion.div 
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            >
+                {/* BOTÓN PRESTAMO MANUAL */}
+                <button 
+                    onClick={() => setShowManualModal(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-xl shadow-lg shadow-blue-200 flex items-center justify-between group transition-all"
+                >
+                    <div className="text-left">
+                        <p className="font-bold text-lg">Nuevo Préstamo</p>
+                        <p className="text-blue-100 text-sm">Buscar por código manual</p>
+                    </div>
+                    <div className="bg-white/20 p-2 rounded-lg group-hover:bg-white/30 transition-colors">
+                        <Keyboard size={24} />
+                    </div>
+                </button>
+
+                {/* BOTÓN SCANNER (OPCIONAL) */}
+                <button 
+                    onClick={() => startScanner('salida')}
+                    className="bg-white border border-gray-200 text-gray-700 p-4 rounded-xl hover:bg-gray-50 flex items-center justify-between group transition-all"
+                >
+                    <div className="text-left">
+                        <p className="font-bold text-gray-900">Usar Escáner QR</p>
+                        <p className="text-gray-400 text-sm">Si el equipo tiene etiqueta</p>
+                    </div>
+                    <QrCode size={24} className="text-gray-400 group-hover:text-gray-600" />
+                </button>
+            </motion.div>
+        )}
+        </AnimatePresence>
+
+        {/* --- LISTA DE EQUIPOS EN POSESIÓN (DEVOLUCIÓN RÁPIDA) --- */}
+        {usuarioSeleccionado && (
+             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        <Package size={18} className="text-amber-500" /> 
+                        Equipos en Posesión ({itemsEnPosesion.length})
                     </h3>
-                    <button onClick={() => fetchItemsUsuario(usuarioSeleccionado)} className="p-2 hover:bg-white rounded-full transition-colors text-gray-500">
+                    <button onClick={() => fetchItemsUsuario(usuarioSeleccionado)} className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-blue-600">
                         <RefreshCw size={16} className={loadingItems ? 'animate-spin' : ''} />
                     </button>
                 </div>
                 
                 {loadingItems ? (
-                    <div className="text-center py-8 text-gray-400">Cargando inventario...</div>
+                    <div className="p-8 text-center text-gray-400">Consultando base de datos...</div>
                 ) : itemsEnPosesion.length === 0 ? (
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-8 text-center">
-                        <CheckCircle size={48} className="mx-auto text-emerald-400 mb-3" />
-                        <p className="text-emerald-800 font-medium">¡Todo limpio!</p>
-                        <p className="text-emerald-600 text-sm">{usuarioSeleccionado} no tiene equipos pendientes.</p>
+                    <div className="p-10 text-center flex flex-col items-center">
+                        <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
+                             <CheckCircle size={32} className="text-emerald-500" />
+                        </div>
+                        <p className="text-gray-900 font-medium">Sin préstamos activos</p>
+                        <p className="text-gray-500 text-sm mt-1">{usuarioSeleccionado} no debe ningún equipo.</p>
                     </div>
                 ) : (
-                    <div className="space-y-3">
+                    <div className="divide-y divide-gray-100">
                         {itemsEnPosesion.map(item => (
-                            <div key={item.id} className="bg-white p-4 rounded-xl border border-l-4 border-l-amber-400 border-gray-100 shadow-sm flex justify-between items-center group hover:shadow-md transition-all">
+                            <div key={item.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50 transition-colors">
                                 <div>
-                                    <div className="text-xs font-bold text-amber-600 mb-1">{item.noControl}</div>
-                                    <div className="font-semibold text-gray-800">{item.descripcion}</div>
-                                    <div className="text-xs text-gray-500 mt-1">{item.marca} • {item.modelo}</div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-mono font-bold">{item.noControl}</span>
+                                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">Prestado</span>
+                                    </div>
+                                    <p className="font-bold text-gray-800">{item.descripcion}</p>
+                                    <p className="text-xs text-gray-500">{item.marca} {item.modelo} • {item.fechaPrestamo}</p>
                                 </div>
-                                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">
-                                    En Uso
-                                </span>
+                                
+                                <button 
+                                    onClick={() => {
+                                        if(window.confirm(`¿Confirmar devolución de ${item.descripcion}?`)) {
+                                            procesarTransaccion(item.noControl, 'entrada');
+                                        }
+                                    }}
+                                    className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 font-medium transition-colors sm:w-auto w-full"
+                                >
+                                    <LogIn size={18} /> Devolver
+                                </button>
                             </div>
                         ))}
-                        <p className="text-center text-xs text-gray-400 mt-4">
-                            Escanea "Entrada" para liberar estos equipos.
-                        </p>
                     </div>
                 )}
-             </div>
+             </motion.div>
         )}
-
       </div>
+
+      {/* --- MODAL BÚSQUEDA MANUAL --- */}
+      {showManualModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+                <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-800">Préstamo Manual</h3>
+                    <button onClick={() => setShowManualModal(false)}><XCircle className="text-gray-400 hover:text-gray-600"/></button>
+                </div>
+                
+                <div className="p-6">
+                    <p className="text-sm text-gray-500 mb-4">Ingresa el No. de Control del equipo si no cuentas con el código QR.</p>
+                    <div className="flex gap-2 mb-6">
+                        <input 
+                            type="text" 
+                            placeholder="Ej. CAL-001" 
+                            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 uppercase focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={manualInput}
+                            onChange={(e) => setManualInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => e.key === 'Enter' && buscarEquipoManual()}
+                        />
+                        <button 
+                            onClick={buscarEquipoManual}
+                            disabled={isProcessing || !manualInput}
+                            className="bg-gray-900 text-white px-4 rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                        >
+                            <Search size={20} />
+                        </button>
+                    </div>
+
+                    {/* RESULTADO DE BÚSQUEDA */}
+                    {searchResult && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 animate-in fade-in zoom-in duration-300">
+                            <div className="flex justify-between items-start mb-3">
+                                <div>
+                                    <p className="font-bold text-blue-900">{searchResult.descripcion}</p>
+                                    <p className="text-xs text-blue-700">{searchResult.marca} • {searchResult.modelo}</p>
+                                    <p className="text-xs font-mono bg-white/50 inline-block px-1 rounded mt-1">{searchResult.noControl}</p>
+                                </div>
+                                {searchResult.estadoProceso === 'operativo' ? (
+                                    <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full font-bold">Disponible</span>
+                                ) : (
+                                    <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full font-bold">No Disponible</span>
+                                )}
+                            </div>
+
+                            {searchResult.estadoProceso === 'operativo' ? (
+                                <button 
+                                    onClick={() => procesarTransaccion(searchResult.noControl, 'salida')}
+                                    className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow-sm"
+                                >
+                                    Confirmar Préstamo
+                                </button>
+                            ) : (
+                                <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-100 flex gap-2 items-center">
+                                    <AlertTriangle size={14} />
+                                    Equipo actualmente en estado: {searchResult.estadoProceso}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+        </div>
+      )}
+
+      {/* --- MODAL SCANNER --- */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={stopScan}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md text-center relative" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-4">{scanMode === 'salida' ? 'Escanear para Préstamo' : 'Escanear Devolución'}</h3>
+            <div className="rounded-xl overflow-hidden bg-black aspect-video mb-4 relative">
+               <video ref={videoRef} className="w-full h-full object-cover" />
+               <div className="absolute inset-0 border-2 border-white/50 m-8 rounded-lg pointer-events-none animate-pulse"></div>
+            </div>
+            <button onClick={stopScan} className="w-full py-3 bg-gray-100 rounded-xl font-bold">Cancelar</button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
