@@ -6,7 +6,7 @@ import {
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
   MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil,
-  Eye, RotateCcw
+  Eye, RotateCcw, Zap, CalendarDays
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
@@ -18,11 +18,27 @@ import { useAuth } from "../hooks/useAuth";
 // --- TIPOS ---
 type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client" | "sla";
 
-// --- DICCIONARIO PARA AUTO-DEPARTAMENTO ---
+// --- CEREBRO DE AUTO-DEPARTAMENTO (DICCIONARIO) ---
 const DEPARTMENT_KEYWORDS: Record<string, string[]> = {
-    "Eléctrica": ["power", "source", "supply", "multimeter", "multímetro", "oscilloscope", "osciloscopio", "lcr", "electric", "tension", "voltage", "amper", "clamp", "resistencia", "decada"],
-    "Dimensional": ["caliper", "micrometer", "micrómetro", "vernier", "cinta", "regla", "indicador", "bloque", "patron", "pin", "gauge", "height", "depth"],
-    "Mecánica": ["torque", "manometro", "manómetro", "pressure", "presion", "balanza", "bascula", "force", "fuerza", "durometro", "thermometer", "termometro", "temperature", "temp"]
+    "Eléctrica": [
+        "multimetro", "fuente", "poder", "carga", "electrica", "electronica", "resistencia", "decada", "capacitancia", "inductancia", 
+        "osciloscopio", "pinza", "amperimetro", "voltimetro", "vatimetro", "aislamiento", "tierra", "analizador", "espectro", "señal",
+        "multimeter", "source", "supply", "power", "load", "electronic", "resistance", "decade", "capacitance", "inductance", "lcr",
+        "oscilloscope", "scope", "clamp", "ammeter", "voltmeter", "wattmeter", "insulation", "ground", "analyzer", "spectrum", "signal",
+        "hypot", "hi-pot", "usb", "dmm"
+    ],
+    "Dimensional": [
+        "vernier", "calibrador", "pie de rey", "micrometro", "regla", "cinta", "flexometro", "medidor", "altura", "profundidad", 
+        "comparador", "optico", "vision", "perno", "indicador", "caratula", "bloque", "patron", "anillo", "tapon", "rosca", "lupa", "microscopio",
+        "caliper", "micrometer", "ruler", "tape", "measure", "height", "depth", "comparator", "optical", "vision", "pin", "plug", 
+        "indicator", "dial", "gauge block", "gage block", "block", "master", "ring", "thread", "scope", "magnifier", "projector"
+    ],
+    "Mecánica": [
+        "dinamometro", "torquimetro", "torque", "manometro", "presion", "vacio", "balanza", "bascula", "peso", "masa", "fuerza", 
+        "celda", "flujometro", "flujo", "controlador", "hot", "dispenser", "báscula", "smar track", "transductor de presión", "temperatura", "termómetro", "termopar", "durometro", "dureza", "tacometro",
+        "dynamometer", "force", "conductivity", "timer", "Cronometro", "gauge", "gage", "wrench", "driver", "manometer", "pressure", "vacuum", "balance", "scale", 
+        "weight", "mass", "load cell", "cell", "flow", "controller", "temperature", "thermometer", "regulator", "thermocouple", "hardness", "durometer", "tachometer"
+    ]
 };
 
 const detectDepartment = (equipmentName: string): string => {
@@ -32,6 +48,23 @@ const detectDepartment = (equipmentName: string): string => {
         if (keywords.some(k => lower.includes(k))) return dept;
     }
     return "";
+};
+
+// --- HELPER PARA INICIALES (CORREGIDO: NOMBRE Y APELLIDO) ---
+const getInitials = (name: string) => {
+    if (!name) return "?";
+    // Divide por espacios para separar nombre y apellido
+    const parts = name.trim().split(/\s+/);
+    
+    if (parts.length >= 2) {
+        // Primera letra del primer nombre + Primera letra del segundo
+        // Ejemplo: Abraham Ginez -> A + G = AG
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+    } else if (parts.length === 1) {
+        // Si solo hay un nombre, toma las dos primeras letras
+        return parts[0].substring(0, 2).toUpperCase();
+    }
+    return "?";
 };
 
 // --- CONFIGURACIÓN DE ROLES ---
@@ -73,6 +106,9 @@ interface WorksheetData {
   assignedTo?: string; 
   nombre?: string;     
   fecha?: string;      
+  cargado_drive?: string; 
+  entregado?: boolean; 
+  folioSalida?: string; 
   [key: string]: any; 
 }
 
@@ -105,6 +141,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Entregado": { label: "Entregado", bg: "#00c875" },
   "No": { label: "No", bg: "#e2445c" },
   "Si": { label: "Si", bg: "#00c875" },
+  "Realizado": { label: "Realizado", bg: "#00c875" }, 
   "Mecánica": { label: "Mecánica", bg: "#1565c0" },
   "Dimensional": { label: "Dimensional", bg: "#00897b" },
   "Eléctrica": { label: "Eléctrica", bg: "#ff8f00" }
@@ -115,8 +152,7 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'folio', label: 'Folio', width: 80, type: "text", sticky: true, permissions: ['admin', 'ventas'] }, 
   { key: 'cliente', label: 'Cliente', width: 200, type: "client", permissions: ['admin', 'ventas', 'logistica'] },
   { key: 'equipo', label: 'Equipo', width: 180, type: "text", permissions: ['admin', 'metrologo'] },
-  // COLUMNA ID (Posición 4)
-  { key: 'id', label: 'ID', width: 100, type: "text", permissions: ['admin', 'metrologo'] },
+  { key: 'id', label: 'ID Interno', width: 100, type: "text", permissions: ['admin', 'metrologo'] }, 
   { key: 'marca', label: 'Marca', width: 120, type: "text" },
   { key: 'modelo', label: 'Modelo', width: 120, type: "text" },
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
@@ -124,9 +160,9 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'createdAt', label: 'Cronograma (SLA)', width: 150, type: "sla" },
   { key: 'status_equipo', label: '1-Estatus del Equipo', width: 160, type: "dropdown", options: ["Desconocido", "En Revisión", "Calibrado", "Rechazado"] },
   { key: 'fecha', label: '2-Fecha de Calib.', width: 130, type: "date" },
-  { key: 'certificado', label: '3-N. Certificado', width: 140, type: "text" },
+  { key: 'n_certificado', label: '3-N. Certificado', width: 140, type: "text" },
   { key: 'status_certificado', label: '4-Estatus Certificado', width: 170, type: "dropdown", options: ["Pendiente de Certificado", "Generado", "Firmado"] },
-  { key: 'cargado_drive', label: '5-Cargado en Drive', width: 140, type: "dropdown", options: ["No", "Si"] },
+  { key: 'cargado_drive', label: '5-Cargado en Drive', width: 140, type: "dropdown", options: ["No", "Si", "Realizado"] },
   { key: 'ubicacion_real', label: '6-Ubicación Real', width: 160, type: "dropdown", options: ["Servicio en Sitio", "Laboratorio", "Recepción", "Entregado"] },
   { key: 'departamento', label: 'Departamento', width: 140, type: "dropdown", options: ["Mecánica", "Dimensional", "Eléctrica"], permissions: ['logistica', 'admin'] },
 ];
@@ -248,7 +284,8 @@ const DateCell = React.memo(({ value, onChange, disabled }: any) => {
 const PersonCell = React.memo(({ value, metrologos, onChange, disabled }: any) => {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const initial = (value && typeof value === 'string') ? value.charAt(0).toUpperCase() : "?";
+    // INICIALES CORRECTAS (Nombre + Apellido)
+    const initials = getInitials(value && typeof value === 'string' ? value : "");
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -258,18 +295,18 @@ const PersonCell = React.memo(({ value, metrologos, onChange, disabled }: any) =
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [isOpen]);
 
-    if (disabled) return <div className="w-full h-full flex items-center justify-center opacity-60 cursor-not-allowed">{value ? <div className="w-6 h-6 rounded-full bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm">{initial}</div> : <div className="text-gray-300 text-xs">-</div>}</div>;
+    if (disabled) return <div className="w-full h-full flex items-center justify-center opacity-60 cursor-not-allowed">{value ? <div className="w-6 h-6 rounded-full bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm">{initials}</div> : <div className="text-gray-300 text-xs">-</div>}</div>;
 
     return (
         <div className="w-full h-full flex items-center justify-center relative" ref={containerRef}>
             <div className="cursor-pointer hover:opacity-80 transition-opacity flex items-center gap-2" onClick={() => setIsOpen(true)}>
-                {value ? <div className="w-6 h-6 rounded-full bg-[#0073ea] text-white flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm" title={value}>{initial}</div> : <UserCircle className="w-6 h-6 text-gray-300" />}
+                {value ? <div className="w-6 h-6 rounded-full bg-[#0073ea] text-white flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm" title={value}>{initials}</div> : <UserCircle className="w-6 h-6 text-gray-300" />}
             </div>
             {isOpen && (
                 <div className="absolute top-8 left-1/2 -translate-x-1/2 w-[220px] bg-white shadow-2xl rounded-lg border border-gray-100 z-[100] p-2 max-h-60 overflow-y-auto">
                     {metrologos.map((m: any) => (
                         <div key={m.id} className="flex items-center gap-2 p-2 hover:bg-blue-50 rounded cursor-pointer" onClick={() => { onChange(m.name || "Sin Nombre"); setIsOpen(false); }}>
-                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold">{(m.name || "S").charAt(0)}</div><span className="text-xs font-medium text-gray-700">{m.name || "Sin Nombre"}</span>
+                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold">{getInitials(m.name || "SN")}</div><span className="text-xs font-medium text-gray-700">{m.name || "Sin Nombre"}</span>
                         </div>
                     ))}
                     {value && <button onClick={() => { onChange(""); setIsOpen(false); }} className="w-full text-center text-red-500 text-xs py-2 hover:bg-red-50 border-t mt-1">Desasignar</button>}
@@ -380,7 +417,6 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
 
     let currentStickyLeft = 40; 
     const checkPermission = (col: Column) => (!col.permissions || col.permissions.length === 0 || col.permissions.includes(userRole));
-    // Usamos 'nombre' si existe, sino 'assignedTo' para el color
     const responsibleName = row.nombre || row.assignedTo;
     const rowBackgroundColor = useMemo(() => { if (!responsibleName) return isSelected ? "#f0f9ff" : "white"; return stringToColor(responsibleName); }, [responsibleName, isSelected]);
 
@@ -406,14 +442,24 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                 const style: React.CSSProperties = { width: col.width };
                 if (col.sticky) { style.position = 'sticky'; style.left = currentStickyLeft + 1.5; style.zIndex = 15; style.backgroundColor = rowBackgroundColor; currentStickyLeft += col.width; }
                 const canEdit = checkPermission(col);
+                
+                // --- LÓGICA DE VISUALIZACIÓN DEL FOLIO (CORRECCIÓN LABORATORIO) ---
+                let cellValue = row[col.key];
+                if (col.key === 'folio') {
+                    // Si es laboratorio, forzamos que se muestre el folio de salida (o vacío si no hay)
+                    if (row.lugarCalibracion === 'laboratorio') {
+                        cellValue = row.folioSalida || "";
+                    }
+                }
+
                 return (
                     <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative flex items-center", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
                         {col.key === 'createdAt' ? <SLACell createdAt={row.createdAt} /> :
-                         col.type === 'dropdown' ? <DropdownCell value={row[col.key]} options={col.options!} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         col.type === 'date' ? <DateCell value={row[col.key]} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         col.type === 'person' ? <PersonCell value={row[col.key]} metrologos={metrologos} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         col.type === 'client' ? <ClientCell value={row[col.key]} clientes={clientes} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         <TextCell value={row[col.key]} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} />}
+                         col.type === 'dropdown' ? <DropdownCell value={cellValue} options={col.options!} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                         col.type === 'date' ? <DateCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                         col.type === 'person' ? <PersonCell value={cellValue} metrologos={metrologos} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                         col.type === 'client' ? <ClientCell value={cellValue} clientes={clientes} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                         <TextCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} />}
                     </div>
                 );
             })}
@@ -465,7 +511,7 @@ const PermissionMenu = ({ x, y, column, onClose, onTogglePermission }: any) => {
     );
 };
 
-// --- NUEVO COMPONENTE: BARRA DE COLUMNAS OCULTAS ---
+// --- BARRA DE COLUMNAS OCULTAS ---
 const HiddenColumnsBar = ({ hiddenColumns, onUnhide }: { hiddenColumns: Column[], onUnhide: (key: string) => void }) => {
     if (hiddenColumns.length === 0) return null;
     return (
@@ -533,6 +579,99 @@ const FridayScreen: React.FC = () => {
         fetchUser();
     }, [user]);
 
+    // --- AUTOMATIZACIÓN E INTELIGENCIA DEL SISTEMA ---
+    useEffect(() => {
+        if (isLoadingData || rows.length === 0) return;
+
+        const runSystemIntelligence = async () => {
+            const batch = writeBatch(db);
+            let updateCount = 0;
+            const currentHour = new Date().getHours();
+            const isNightMode = currentHour >= 19; // A partir de las 7 PM
+
+            rows.forEach(row => {
+                let needsUpdate = false;
+                const updates: any = {};
+
+                // 1. AUTO-DEPARTAMENTO (Siempre activo)
+                if (!row.departamento || row.departamento === "") {
+                    const detected = detectDepartment(row.equipo || "");
+                    if (detected) {
+                        updates.departamento = detected;
+                        needsUpdate = true;
+                    }
+                }
+
+                // 2. SINCRONIZACIÓN DRIVE -> CERTIFICADO (Siempre activo y agresivo)
+                // SE LEE DIRECTAMENTE DEL VALOR EN BASE DE DATOS (ESCRITO POR DRIVESCREEN)
+                const driveStatus = (row.cargado_drive || "").toLowerCase();
+                const isDriveDone = driveStatus === 'si' || driveStatus === 'realizado';
+                const currentCertStatus = row.status_certificado || "Pendiente de Certificado";
+                
+                // Si DriveScreen escribió "Si" o "Realizado" en la DB, y aquí sigue "Pendiente"
+                if (isDriveDone && (currentCertStatus === 'Pendiente de Certificado' || currentCertStatus === '')) {
+                    console.log(`⚡ Auto-Update: Detectado archivo 'Realizado' en DB para folio ${row.folio}. Generando certificado...`);
+                    updates.status_certificado = 'Generado';
+                    needsUpdate = true;
+                }
+
+                // 3. REGLAS ESPECÍFICAS DE GRUPO (SITIO vs LABORATORIO)
+                const isSitio = row.lugarCalibracion === 'sitio';
+                const isLab = row.lugarCalibracion === 'laboratorio';
+
+                // --- SERVICIO EN SITIO: FORZAR VALORES ---
+                if (isSitio) {
+                    if (row.status_equipo !== 'Calibrado') {
+                        updates.status_equipo = 'Calibrado';
+                        needsUpdate = true;
+                    }
+                    if (row.ubicacion_real !== 'Servicio en Sitio') {
+                        updates.ubicacion_real = 'Servicio en Sitio';
+                        needsUpdate = true;
+                    }
+                }
+
+                // --- EQUIPOS EN LABORATORIO: FLUJO AUTOMÁTICO ---
+                if (isLab) {
+                    // Si ya se entregó en EntradaSalidaScreen (entregado = true) -> Poner "Entregado"
+                    if (row.entregado === true && row.ubicacion_real !== 'Entregado') {
+                        updates.ubicacion_real = 'Entregado';
+                        needsUpdate = true;
+                    }
+                    // Si no está entregado y no tiene ubicación -> Poner "Laboratorio"
+                    else if (!row.entregado && (!row.ubicacion_real || row.ubicacion_real === "")) {
+                        updates.ubicacion_real = 'Laboratorio';
+                        needsUpdate = true;
+                    }
+                }
+
+                // 4. MANTENIMIENTO NOCTURNO (> 7 PM)
+                if (isNightMode) {
+                    if (!row.status_equipo) { updates.status_equipo = "Desconocido"; needsUpdate = true; }
+                    if (!row.cargado_drive) { updates.cargado_drive = "No"; needsUpdate = true; }
+                }
+
+                // APLICAR ACTUALIZACIÓN
+                if (needsUpdate) {
+                    const rowRef = doc(db, "hojasDeTrabajo", row.docId);
+                    updates.lastUpdated = new Date().toISOString(); 
+                    batch.update(rowRef, updates);
+                    updateCount++;
+                }
+            });
+
+            if (updateCount > 0) {
+                console.log(`🤖 Sistema Inteligente: Actualizando ${updateCount} registros...`);
+                await batch.commit();
+            }
+        };
+
+        // Ejecutar inteligencia cada 1 segundo para ser "instantáneo"
+        const timer = setTimeout(runSystemIntelligence, 1000);
+        return () => clearTimeout(timer);
+
+    }, [rows, isLoadingData]); // Dependencia crítica: rows
+
     // --- CARGA DE COLUMNAS ---
     useEffect(() => {
         setIsLoadingData(true);
@@ -563,13 +702,17 @@ const FridayScreen: React.FC = () => {
         const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo")), (snap) => setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
+        // --- FILTRO POR AÑO CORREGIDO ---
         let q;
-        if (currentYear === 2026) {
+        if (currentYear === 2025) {
+             const start = "2025-01-01T00:00:00";
+             const end = "2025-12-31T23:59:59";
+             q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
+        } else {
+             // 2026 o actual
              const start = "2026-01-01T00:00:00";
              const end = "2026-12-31T23:59:59";
              q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
-        } else {
-            q = query(collection(db, "hojasDeTrabajo")); 
         }
 
         const unsubRows = onSnapshot(q, (snapshot) => {
@@ -581,7 +724,12 @@ const FridayScreen: React.FC = () => {
                     docId: doc.id, 
                     id: data.id || "", 
                     nombre: data.nombre || data.assignedTo, 
-                    fecha: data.fecha || data.fecha_calib    
+                    fecha: data.fecha || data.fecha_calib,
+                    cargado_drive: data.cargado_drive || "No",
+                    // Asegurar valor visual por defecto si viene vacío de DB
+                    status_certificado: data.status_certificado || "Pendiente de Certificado",
+                    entregado: data.entregado === true,
+                    folioSalida: data.folioSalida 
                 } as WorksheetData); 
             });
             setRows(newRows);
@@ -589,7 +737,7 @@ const FridayScreen: React.FC = () => {
         });
 
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
-    }, [currentYear]);
+    }, [currentYear]); 
 
     const handleSort = (key: string, direction: 'asc' | 'desc') => {
         setSortConfig({ key, direction });
@@ -603,23 +751,21 @@ const FridayScreen: React.FC = () => {
         await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
     };
 
-    // --- FUNCIÓN PARA MOSTRAR COLUMNA OCULTA ---
     const handleUnhide = async (key: string) => {
         const newCols = columns.map(c => c.key === key ? { ...c, hidden: false } : c);
         setColumns(newCols);
         await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
     };
 
-    // --- RESETEAR CONFIGURACIÓN COMPLETA (EMERGENCIA) ---
     const handleResetLayout = async () => {
-        if(confirm("¿Estás seguro? Esto restablecerá todas las columnas a su estado original (incluyendo ID).")) {
+        if(confirm("¿Restablecer vista original? (Aparecerá ID y todo por defecto)")) {
              setColumns(DEFAULT_COLUMNS);
              await setDoc(doc(db, "tableros", "principal"), { columns: DEFAULT_COLUMNS });
         }
     };
 
     const handleRename = async (key: string) => {
-        const newName = prompt("Nuevo nombre para la columna:");
+        const newName = prompt("Nuevo nombre:");
         if (newName) {
             const newCols = columns.map(c => c.key === key ? { ...c, label: newName } : c);
             setColumns(newCols);
@@ -647,17 +793,24 @@ const FridayScreen: React.FC = () => {
 
     const handleAddRow = useCallback(async (groupId: string) => {
         const docRef = doc(collection(db, "hojasDeTrabajo"));
+        
+        let initialStatus = 'Desconocido';
+        let initialLocation = '';
+
+        if (groupId === 'sitio') {
+            initialStatus = 'Calibrado';
+            initialLocation = 'Servicio en Sitio';
+        } else if (groupId === 'laboratorio') {
+            initialLocation = 'Laboratorio';
+        }
+
         const newRowData = {
-            id: "", 
-            folio: "", 
-            cliente: "", 
-            equipo: "", 
+            id: "", folio: "", cliente: "", equipo: "", 
             lugarCalibracion: groupId, 
-            status_equipo: 'Desconocido', 
-            nombre: currentUserName, 
-            assignedTo: currentUserName, 
-            createdAt: new Date().toISOString(), 
-            status_certificado: 'Pendiente de Certificado'
+            status_equipo: initialStatus, 
+            ubicacion_real: initialLocation,
+            nombre: currentUserName, assignedTo: currentUserName, 
+            createdAt: new Date().toISOString(), status_certificado: 'Pendiente de Certificado'
         };
         await setDoc(docRef, newRowData);
     }, [currentUserName]);
@@ -710,11 +863,22 @@ const FridayScreen: React.FC = () => {
         }
     }, [columns]); 
 
+    // --- BUSCADOR ULTRA ROBUSTO ---
     const groupedRows = useMemo(() => {
         let filtered = rows.filter(r => {
             if (!search) return true;
             const s = search.toLowerCase();
-            return (r.cliente || "").toLowerCase().includes(s) || (r.folio || "").toLowerCase().includes(s) || (r.equipo || "").toLowerCase().includes(s);
+            return (
+                (r.cliente || "").toLowerCase().includes(s) || 
+                (r.folio || "").toLowerCase().includes(s) || 
+                (r.equipo || "").toLowerCase().includes(s) ||
+                (r.id || "").toLowerCase().includes(s) ||
+                (r.marca || "").toLowerCase().includes(s) ||
+                (r.modelo || "").toLowerCase().includes(s) ||
+                (r.serie || "").toLowerCase().includes(s) ||
+                (r.nombre || "").toLowerCase().includes(s) ||
+                (r.assignedTo || "").toLowerCase().includes(s)
+            );
         });
 
         if (sortConfig.key) {
@@ -751,13 +915,19 @@ const FridayScreen: React.FC = () => {
                             <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors" title="Regresar al Menú"><ArrowLeft className="w-6 h-6"/></button>
                         </div>
                         <div className="flex flex-col">
-                            <h1 className="text-2xl font-bold leading-tight flex items-center gap-2 text-gray-800">Tablero Principal <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">{currentYear}</span></h1>
+                            <h1 className="text-2xl font-bold leading-tight flex items-center gap-2 text-gray-800">
+                                Tablero Principal 
+                                {/* SELECTOR DE AÑO */}
+                                <div className="inline-flex bg-gray-100 rounded-lg p-1 ml-3 border border-gray-200">
+                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-0.5 rounded-md text-xs font-bold transition-all", currentYear === 2025 ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}>2025</button>
+                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-3 py-0.5 rounded-md text-xs font-bold transition-all", currentYear === 2026 ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}>2026</button>
+                                </div>
+                            </h1>
                         </div>
                     </div>
                     <div className="flex gap-3">
-                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow bg-gray-50 w-64" value={search} onChange={e => setSearch(e.target.value)} /></div>
-                        {/* BOTÓN DE RESETEAR VISTA */}
-                        <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-full transition-colors" title="Restablecer columnas por defecto"><RotateCcw size={18}/></button>
+                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar todo..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow bg-gray-50 w-64" value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-full transition-colors" title="Restablecer vista original"><RotateCcw size={18}/></button>
                     </div>
                 </div>
 

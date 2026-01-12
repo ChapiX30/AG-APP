@@ -40,7 +40,6 @@ import {
   differenceInBusinessDays
 } from "date-fns"; 
 import { unit } from 'mathjs';
-import debounce from 'lodash/debounce';
 import labLogo from '../assets/lab_logo.png';
 
 // ====================================================================
@@ -269,7 +268,10 @@ type WorksheetAction =
   | { type: 'SET_EXCEPCION'; payload: boolean }
   | { type: 'RESTORE_BACKUP'; payload: WorksheetState };
 
-// ... Componente de Búsqueda de Cliente ...
+// ====================================================================
+// COMPONENTE SEARCH SELECT OPTIMIZADO (SIN LAG)
+// ====================================================================
+
 interface ClienteSearchSelectProps {
     clientes: ClienteRecord[];
     onSelect: (cliente: string) => void;
@@ -278,23 +280,34 @@ interface ClienteSearchSelectProps {
 }
 
 const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onSelect, currentValue, hasError }) => {
-    const [searchTerm, setSearchTerm] = useState(currentValue);
+    // 1. Estado local para lo que escribes (inmediato)
+    const [localSearch, setLocalSearch] = useState(currentValue);
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    const debouncedSetSearchTerm = useCallback(debounce((value: string) => setSearchTerm(value), 300), []);
+    // 2. Sincronizar estado si viene de props
+    useEffect(() => {
+        setLocalSearch(currentValue);
+    }, [currentValue]);
 
+    // 3. Filtrado rápido y memorizado (sin debounce en UI)
     const filteredAndGroupedClientes = React.useMemo(() => {
-        const term = searchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const term = (localSearch || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        // Optimización: si no hay búsqueda ni está abierto, no filtrar nada
+        if (!term && !isOpen) return {};
+
         const grouped: Record<string, ClienteRecord[]> = {};
-        const filtered = clientes.filter(cliente => cliente.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(term)).sort((a, b) => a.nombre.localeCompare(b.nombre));
+        const filtered = clientes
+            .filter(cliente => cliente.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(term))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
         filtered.forEach(cliente => {
             const firstLetter = cliente.nombre.charAt(0).toUpperCase();
             if (!grouped[firstLetter]) grouped[firstLetter] = [];
             grouped[firstLetter].push(cliente);
         });
         return grouped;
-    }, [clientes, searchTerm]);
+    }, [clientes, localSearch, isOpen]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -304,15 +317,32 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
         return () => { document.removeEventListener("mousedown", handleClickOutside); };
     }, []);
 
-    useEffect(() => { setSearchTerm(currentValue); }, [currentValue]);
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        setLocalSearch(val); // Actualización visual instantánea
+        onSelect(val);       // Actualización de datos
+        setIsOpen(true);
+    };
+
+    const handleSelectCliente = (nombre: string) => {
+        setLocalSearch(nombre);
+        onSelect(nombre);
+        setIsOpen(false);
+    };
 
     const sortedLetters = Object.keys(filteredAndGroupedClientes).sort();
 
     return (
         <div className="relative" ref={wrapperRef}>
             <div className="relative">
-                <input type="text" value={searchTerm} onChange={(e) => { debouncedSetSearchTerm(e.target.value); setIsOpen(true); }} onFocus={() => setIsOpen(true)} placeholder="Buscar o seleccionar cliente..."
-                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${isOpen ? 'rounded-b-none border-b-0' : ''} ${hasError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-gray-200'}`} />
+                <input 
+                    type="text" 
+                    value={localSearch} 
+                    onChange={handleChange} 
+                    onFocus={() => setIsOpen(true)} 
+                    placeholder="Buscar o seleccionar cliente..."
+                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${isOpen ? 'rounded-b-none border-b-0' : ''} ${hasError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-gray-200'}`} 
+                />
                 <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             </div>
             {isOpen && (
@@ -323,19 +353,25 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                                 <div className="sticky top-0 bg-gray-100 px-3 py-2 text-sm font-bold text-blue-700 border-b border-gray-200 shadow-sm">{letter}</div>
                                 <ul>
                                     {filteredAndGroupedClientes[letter].map(cliente => (
-                                        <li key={cliente.id} className="px-4 py-3 cursor-pointer hover:bg-blue-50 text-gray-800 text-sm truncate transition-colors duration-150" onClick={() => { setSearchTerm(cliente.nombre); onSelect(cliente.nombre); setIsOpen(false); }}>
+                                        <li key={cliente.id} 
+                                            className="px-4 py-3 cursor-pointer hover:bg-blue-50 text-gray-800 text-sm truncate transition-colors duration-150" 
+                                            onClick={() => handleSelectCliente(cliente.nombre)}>
                                             {cliente.nombre}
                                         </li>
                                     ))}
                                 </ul>
                             </div>
                         ))
-                    ) : (<div className="p-4 text-gray-500 text-sm">No se encontraron clientes.</div>)}
+                    ) : (
+                        <div className="p-4 text-gray-500 text-sm">No se encontraron clientes.</div>
+                    )}
                 </div>
             )}
         </div>
     );
 };
+
+// ====================================================================
 
 const getLocalISODate = () => {
     const now = new Date();
@@ -727,19 +763,30 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
   }, [worksheetId]);
 
+  // ====================================================================
+  // VALIDACION CORREGIDA PARA PERMITIR EXCEPCIONES
+  // ====================================================================
+
   const validarIdEnPeriodo = useCallback(async () => {
-    if (state.permitirExcepcion) { dispatch({ type: 'CLEAR_ID_BLOCK' }); return; }
+    // IMPORTANTE: Ya no limpiamos el bloqueo si hay excepción.
+    // El checkbox de excepción anula el bloqueo de guardar, pero el estado visual debe permanecer.
     dispatch({ type: 'CLEAR_ID_BLOCK' });
-    const id = state.id?.trim(); const cliente = state.cliente;
+    
+    const id = state.id?.trim(); 
+    const cliente = state.cliente;
     if (!id || !cliente) return;
 
     const q = query(collection(db, "hojasDeTrabajo"), where("id", "==", id), where("cliente", "==", cliente));
     const docs = await getDocs(q);
     if (docs.empty) return;
 
-    let maxFecha: Date | null = null; let frecuenciaAnterior: string | undefined = undefined; let maxFechaString: string | undefined = undefined;
+    let maxFecha: Date | null = null; 
+    let frecuenciaAnterior: string | undefined = undefined; 
+    let maxFechaString: string | undefined = undefined;
+    
     docs.forEach(doc => {
-      const data = doc.data(); const parts = data.fecha.split('-');
+      const data = doc.data(); 
+      const parts = data.fecha.split('-');
       const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
       if (!isNaN(dateObj.getTime())) {
         if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) { maxFecha = dateObj; frecuenciaAnterior = data.frecuenciaCalibracion; maxFechaString = data.fecha; }
@@ -751,9 +798,11 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     if (!nextAllowed) return;
 
     if (isBefore(new Date(), nextAllowed)) {
+      // Siempre establecemos el bloqueo si la fecha no es válida.
+      // La lógica del checkbox permitirá guardar a pesar de esto.
       dispatch({ type: 'SET_ID_BLOCKED', message: `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")} (Frecuencia: ${frecuenciaAnterior}). Próxima calibración permitida: ${format(nextAllowed, "dd/MM/yyyy")}.` });
     }
-  }, [state.id, state.cliente, state.permitirExcepcion]);
+  }, [state.id, state.cliente]); // Quitamos state.permitirExcepcion de dependencias para evitar loops
 
   useEffect(() => { validarIdEnPeriodo(); }, [validarIdEnPeriodo]);
 
@@ -855,6 +904,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
     setValidationErrors({});
 
+    // VALIDACION DE FECHAS (Ahora respetando la excepción)
     if (!state.permitirExcepcion) {
         const idToCheck = state.id?.trim();
         const clientToCheck = state.cliente;
@@ -881,8 +931,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     const nextAllowed = calcularSiguienteFecha(format(maxFecha, "yyyy-MM-dd"), frecuenciaAnterior);
                     if (nextAllowed && isBefore(new Date(), nextAllowed)) {
                         setIsSaving(false);
-                        setToast({ message: `⛔️ ERROR: Equipo calibrado recientemente (${format(maxFecha, "dd/MM/yyyy")}). No se puede guardar.`, type: 'error' });
-                        dispatch({ type: 'SET_ID_BLOCKED', message: `⛔️ Bloqueado por sistema. Última: ${format(maxFecha, "dd/MM/yyyy")}` });
+                        setToast({ message: `⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.`, type: 'error' });
+                        // No necesitamos setear el bloqueo aquí porque validarIdEnPeriodo ya lo hace visualmente
                         return; 
                     }
                 }
@@ -1101,13 +1151,46 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
+                
+                {/* SECCION ID MEJORADA */}
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
-                  <input type="text" value={state.id} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} onBlur={handleIdBlur} className={`w-full p-4 border-2 rounded-lg transition-all ${state.idBlocked && !state.permitirExcepcion ? "border-red-500 bg-red-50 text-red-700" : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")}`} placeholder="ID" />
-                  {state.idBlocked && !state.permitirExcepcion && <p className="mt-2 text-sm font-medium text-red-600 animate-pulse">{state.idErrorMessage}</p>}
-                  <div className="mt-3"><label className="flex items-center gap-2"><input type="checkbox" checked={state.permitirExcepcion} onChange={(e) => dispatch({ type: 'SET_EXCEPCION', payload: e.target.checked })} className="rounded text-blue-600" disabled={!state.idBlocked} /><span className={`text-sm ${state.idBlocked ? 'text-red-700 font-bold' : 'text-gray-500'}`}>Permitir excepción</span></label></div>
+                  <input 
+                    type="text" 
+                    value={state.id} 
+                    onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
+                    onBlur={handleIdBlur} 
+                    className={`w-full p-4 border-2 rounded-lg transition-all ${
+                        state.idBlocked 
+                            ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
+                            : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
+                    }`} 
+                    placeholder="ID" 
+                  />
+                  
+                  {state.idBlocked && (
+                      <p className={`mt-2 text-sm font-medium animate-pulse ${state.permitirExcepcion ? "text-orange-600" : "text-red-600"}`}>
+                          {state.permitirExcepcion ? "⚠️ Advertencia: Guardando bajo excepción." : state.idErrorMessage}
+                      </p>
+                  )}
+                  
+                  <div className="mt-3">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input 
+                            type="checkbox" 
+                            checked={state.permitirExcepcion} 
+                            onChange={(e) => dispatch({ type: 'SET_EXCEPCION', payload: e.target.checked })} 
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" 
+                            disabled={!state.idBlocked} 
+                           />
+                          <span className={`text-sm ${state.idBlocked ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
+                            Permitir excepción de fecha
+                          </span>
+                      </label>
+                  </div>
                 </div>
               </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label><input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} readOnly={state.fieldsLocked} className={inputClass('equipo')} /></div>
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label><input type="text" value={state.marca} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value }); if(validationErrors.marca) setValidationErrors({...validationErrors, marca: false}); }} readOnly={state.fieldsLocked} className={inputClass('marca')} /></div>
@@ -1292,7 +1375,18 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         <div className="bg-gray-50 px-8 py-6 border-t border-gray-200 mt-8 rounded-lg">
           <div className="flex justify-end space-x-4">
             <button onClick={() => goBack()} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2" disabled={isSaving}><X className="w-4 h-4" /><span>Cancelar</span></button>
-            <button onClick={handleSave} disabled={isSaving || (state.idBlocked && !state.permitirExcepcion)} className={`px-6 py-3 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center space-x-2 shadow-lg ${isSaving || (state.idBlocked && !state.permitirExcepcion) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-700'}`}>{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}<span>{isSaving ? "Guardando..." : "Guardar"}</span></button>
+            <button 
+              onClick={handleSave} 
+              // Deshabilitar SOLO si está guardando O (está bloqueado Y NO se permite la excepción)
+              disabled={isSaving || (state.idBlocked && !state.permitirExcepcion)} 
+              className={`px-6 py-3 text-white font-medium rounded-lg transition-all flex items-center space-x-2 shadow-lg 
+              ${(isSaving || (state.idBlocked && !state.permitirExcepcion)) 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800'}`}
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>{isSaving ? "Guardando..." : "Guardar"}</span>
+            </button>
           </div>
         </div>
       </div>
