@@ -61,11 +61,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <Menu size={20} />
         </button>
 
-        {/* Aquí se renderiza FridayScreen o FridayServiciosScreen */}
-        <main className="flex-1 overflow-auto w-full h-full relative">
-          {children}
+        <main className="w-full h-full overflow-auto relative">
+           {children}
         </main>
+        
       </div>
+
     </div>
   );
 };

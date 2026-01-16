@@ -19,6 +19,7 @@
     "@capacitor/core": "^7.4.3",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@google/generative-ai": "^0.24.1",
     "@headlessui/react": "^2.2.6",
     "@hello-pangea/dnd": "^18.0.1",
     "@mui/icons-material": "^7.3.2",

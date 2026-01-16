@@ -205,15 +205,79 @@ export const VencimientosScreen: React.FC = () => {
 
   const enviarReporteCalidad = () => {
     if (equiposA60Dias.length === 0) {
-        alert("No hay equipos en el rango de 60 días para reportar hoy.");
-        return;
+      alert("No hay equipos en el rango de 60 días para reportar hoy.");
+      return;
     }
-    const destinatario = "calidad@ese-ag.mx";
-    const asunto = `⚠️ ALERTA: ${equiposA60Dias.length} Equipos próximos a vencer (60 días)`;
-    let cuerpo = `Hola Calidad,\n\nEl sistema ha detectado equipos por vencer. Favor gestionar.\n\n`;
-    equiposA60Dias.forEach(e => {
-        cuerpo += `🔹 ${e.equipoId} - ${e.descripcion} (${e.cliente}) -> Vence: ${format(e.fechaVencimiento, 'dd/MM/yyyy')}\n`;
+
+    // Agrupamos los equipos por cliente
+    const gruposPorCliente: Record<string, EquipoVencimiento[]> = {};
+    equiposA60Dias.forEach((e) => {
+      if (!gruposPorCliente[e.cliente]) {
+        gruposPorCliente[e.cliente] = [];
+      }
+      gruposPorCliente[e.cliente].push(e);
     });
+
+    const destinatario = "calidad@ese-ag.mx";
+    const asunto = `Alerta de Vencimientos: ${equiposA60Dias.length} Equipos Próximos a Vencer (50-65 Días)`;
+
+    // Cuerpo en texto plano con formato mejorado para simular diseño
+    let cuerpo = `
+--------------------------------------------------------------------------------
+                          REPORTE DE VENCIMIENTOS
+--------------------------------------------------------------------------------
+
+Estimado Equipo de Calidad,
+
+Este es un reporte automático generado por el Sistema de Monitoreo de Vencimientos.
+
+Resumen:
+- Equipos en rango crítico: 50-65 días para vencimiento.
+- Total de equipos afectados: ${equiposA60Dias.length}.
+- Acción requerida: Programar recolecciones o calibraciones inmediatamente.
+
+Detalles por Cliente:
+`;
+
+    // Iteramos por cliente y construimos la lista
+    Object.entries(gruposPorCliente).forEach(([cliente, equiposCliente]) => {
+      // Verificamos si todos los equipos tienen la misma fecha de vencimiento
+      const fechasUnicas = new Set(equiposCliente.map(e => format(e.fechaVencimiento, 'dd/MM/yyyy')));
+      const fechaComun = fechasUnicas.size === 1 ? Array.from(fechasUnicas)[0] : null;
+
+      cuerpo += `
+====================================
+Cliente: ${cliente}
+====================================
+`;
+
+      if (fechaComun) {
+        cuerpo += `Vencimiento común: ${fechaComun}\n`;
+      }
+      cuerpo += `Número de equipos: ${equiposCliente.length}\n\nLista de equipos:\n`;
+
+      equiposCliente.forEach((e) => {
+        const fechaEquipo = fechaComun ? '' : ` (Vence: ${format(e.fechaVencimiento, 'dd/MM/yyyy')})`;
+        cuerpo += `  - ${e.equipoId} | ${e.descripcion}${fechaEquipo}\n`;
+      });
+
+      cuerpo += `\n`;
+    });
+
+    cuerpo += `
+--------------------------------------------------------------------------------
+Total general: ${equiposA60Dias.length} equipos.
+
+Para más detalles, consulte el monitor de vencimientos en la aplicación.
+
+Atentamente,
+Sistema de Monitoreo de Vencimientos
+ESE-AG México
+Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
+
+--------------------------------------------------------------------------------
+`;
+
     window.location.href = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
   };
 
