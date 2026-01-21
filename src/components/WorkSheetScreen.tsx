@@ -20,7 +20,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   WifiOff,
-  AlertOctagon
+  AlertOctagon,
+  Printer,
+  Share2,
+  Download
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -29,6 +32,7 @@ import { storage, db } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
+import html2canvas from 'html2canvas'; // <--- ASEGÚRATE DE INSTALAR ESTO: npm install html2canvas
 import {
   isBefore, 
   format, 
@@ -37,8 +41,10 @@ import {
   parseISO,
   addBusinessDays,
   isAfter,
-  differenceInBusinessDays
+  differenceInBusinessDays,
+  isValid
 } from "date-fns"; 
+import { es } from 'date-fns/locale'; // Para fechas en español si es necesario
 import { unit } from 'mathjs';
 import labLogo from '../assets/lab_logo.png';
 
@@ -135,8 +141,142 @@ const UNIT_CATEGORIES: Categories = {
 };
 
 // ====================================================================
-// 2. COMPONENTE MODAL DE CONVERTIDOR
+// 2. COMPONENTES AUXILIARES (MODAL, ETIQUETA)
 // ====================================================================
+
+// --- COMPONENTE DE BOTÓN ETIQUETA ---
+interface LabelData {
+  id: string;
+  fechaCal: string;
+  fechaSug: string;
+  calibro: string;
+  certificado: string;
+}
+
+const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data, logo }) => {
+  const labelRef = useRef<HTMLDivElement>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handlePrintAction = async () => {
+    if (!labelRef.current) return;
+    setIsGenerating(true);
+
+    try {
+      // 1. Generar la imagen de alta calidad
+      const canvas = await html2canvas(labelRef.current, {
+        scale: 4, // Escala alta para nitidez
+        backgroundColor: '#ffffff',
+        useCORS: true
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const fileName = `ETIQUETA_${data.id.replace(/\s+/g, '-')}.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+
+        // 2. DETECTAR SI ES MOVIL (Tiene API de compartir)
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: 'Imprimir Etiqueta PX400',
+              text: 'Enviar a Epson iLabel'
+            });
+          } catch (error) {
+            console.log("El usuario canceló compartir o no soportado:", error);
+            setIsGenerating(false);
+          }
+        } 
+        // 3. SI ES PC -> DESCARGAR
+        else {
+          const link = document.createElement('a');
+          link.download = fileName;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          alert("Imagen descargada. Abrela e imprímela con tu software Epson.");
+        }
+        setIsGenerating(false);
+      }, 'image/png');
+
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Error generando la etiqueta");
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <>
+      <button 
+        onClick={handlePrintAction}
+        disabled={isGenerating}
+        className="flex items-center gap-2 bg-emerald-600/20 text-emerald-100 border border-emerald-500/30 px-3 py-2 rounded-lg hover:bg-emerald-600/40 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+        title="Imprimir Etiqueta para PX400"
+      >
+        {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
+        <span className="font-bold text-sm hidden md:inline">
+           {isGenerating ? "Generando..." : "Etiqueta"}
+        </span>
+      </button>
+
+      {/* --- LIENZO OCULTO (PLANTILLA EXACTA) --- */}
+      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
+        <div 
+          ref={labelRef} 
+          style={{
+            width: '500px',   
+            height: '210px',  
+            backgroundColor: 'white',
+            display: 'flex',
+            flexDirection: 'column',
+            fontFamily: 'Arial, sans-serif',
+            border: '1px solid #ddd'
+          }}
+        >
+          {/* HEADER NEGRO */}
+          <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '6px 0' }}>
+            <h1 style={{ margin: 0, fontSize: '32px', letterSpacing: '8px', fontWeight: '900', textTransform: 'uppercase' }}>
+              CALIBRADO
+            </h1>
+          </div>
+
+          {/* CONTENIDO PRINCIPAL */}
+          <div style={{ display: 'flex', flex: 1, padding: '10px 15px' }}>
+            
+            {/* IZQUIERDA: LOGO */}
+            <div style={{ width: '35%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+               <img src={logo} alt="Logo" style={{ maxWidth: '100%', maxHeight: '90px', objectFit: 'contain' }} />
+            </div>
+
+            {/* DERECHA: DATOS */}
+            <div style={{ width: '65%', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: '24px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
+                ID: <span style={{ fontFamily: 'monospace' }}>{data.id}</span>
+              </div>
+              <div style={{ fontSize: '22px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
+                F.CAL: {data.fechaCal}
+              </div>
+              <div style={{ fontSize: '22px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
+                F.SUG: {data.fechaSug}
+              </div>
+              <div style={{ fontSize: '24px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
+                CALIBRÓ: {data.calibro}
+              </div>
+            </div>
+          </div>
+
+          {/* FOOTER */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 15px 8px 15px', alignItems: 'flex-end' }}>
+             <span style={{ fontSize: '18px', fontStyle: 'italic', color: '#444' }}>AG-CAL-F14-00</span>
+             <span style={{ fontSize: '26px', fontWeight: '900', color: 'black' }}>
+               CERT: {data.certificado}
+             </span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
 
 const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [category, setCategory] = useState<string>("Par Torsional (Torque)");
@@ -768,8 +908,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   // ====================================================================
 
   const validarIdEnPeriodo = useCallback(async () => {
-    // IMPORTANTE: Ya no limpiamos el bloqueo si hay excepción.
-    // El checkbox de excepción anula el bloqueo de guardar, pero el estado visual debe permanecer.
     dispatch({ type: 'CLEAR_ID_BLOCK' });
     
     const id = state.id?.trim(); 
@@ -798,11 +936,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     if (!nextAllowed) return;
 
     if (isBefore(new Date(), nextAllowed)) {
-      // Siempre establecemos el bloqueo si la fecha no es válida.
-      // La lógica del checkbox permitirá guardar a pesar de esto.
       dispatch({ type: 'SET_ID_BLOCKED', message: `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")} (Frecuencia: ${frecuenciaAnterior}). Próxima calibración permitida: ${format(nextAllowed, "dd/MM/yyyy")}.` });
     }
-  }, [state.id, state.cliente]); // Quitamos state.permitirExcepcion de dependencias para evitar loops
+  }, [state.id, state.cliente]);
 
   useEffect(() => { validarIdEnPeriodo(); }, [validarIdEnPeriodo]);
 
@@ -859,7 +995,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const sanitize = (str: string) => str.replace(/<script.*?>.*?<\/script>/gi, '').trim();
 
-  // --- HANDLE SAVE MEJORADO Y SINCRONIZADO ---
+  // --- HANDLE SAVE ---
   const handleSave = useCallback(async () => {
     const errors: Record<string, boolean> = {};
     const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad"];
@@ -873,7 +1009,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
        }
     });
 
-    // Validaciones extendidas
     if (state.fechaRecepcion && state.fecha && new Date(state.fechaRecepcion) > new Date(state.fecha)) {
       errors.fecha = true;
       errors.fechaRecepcion = true;
@@ -904,7 +1039,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
     setValidationErrors({});
 
-    // VALIDACION DE FECHAS (Ahora respetando la excepción)
     if (!state.permitirExcepcion) {
         const idToCheck = state.id?.trim();
         const clientToCheck = state.cliente;
@@ -932,7 +1066,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     if (nextAllowed && isBefore(new Date(), nextAllowed)) {
                         setIsSaving(false);
                         setToast({ message: `⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.`, type: 'error' });
-                        // No necesitamos setear el bloqueo aquí porque validarIdEnPeriodo ya lo hace visualmente
                         return; 
                     }
                 }
@@ -962,7 +1095,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       await uploadBytes(pdfRef, blob);
       const pdfURL = await getDownloadURL(pdfRef);
 
-      // Sanitize state
       const sanitizedState: WorksheetState = { ...state };
       for (const key in sanitizedState) {
         if (typeof sanitizedState[key as keyof WorksheetState] === 'string') {
@@ -970,15 +1102,13 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         }
       }
 
-      // AQUI ESTA LA MAGIA DE LA SINCRONIZACION
       const lugarNormalizado = sanitizedState.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
 
       const fullData = { 
           ...sanitizedState, 
-          // Campos Estandarizados para Friday
-          lugarCalibracion: lugarNormalizado, // Para agrupar
-          folio: sanitizedState.certificado, // Para columna Folio
-          serie: sanitizedState.numeroSerie, // Para columna Serie
+          lugarCalibracion: lugarNormalizado, 
+          folio: sanitizedState.certificado, 
+          serie: sanitizedState.numeroSerie, 
           status: "completed",
           priority: "medium",
           pdfURL, 
@@ -1047,6 +1177,26 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200"}`;
 
+  // --- PREPARACIÓN DATOS ETIQUETA ---
+  const labelData: LabelData = React.useMemo(() => {
+    const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
+    const fCalObj = state.fecha ? parseISO(state.fecha) : new Date();
+    
+    // Fallback: Si no hay cálculo válido de siguiente fecha, suma 1 año por defecto
+    const fSugObj = nextDate ? nextDate : addYears(fCalObj, 1);
+
+    return {
+        id: state.id || "PENDIENTE",
+        certificado: state.certificado || "---",
+        // Format: YYYY-MMM-DD en Mayúsculas (Ej: 2025-JUN-20)
+        fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd").toUpperCase() : "---",
+        fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd").toUpperCase() : "---",
+        calibro: state.nombre 
+          ? state.nombre.split(' ').map(n => n[0]).join('.').toUpperCase() 
+          : "A.A"
+    };
+  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 relative">
       
@@ -1071,11 +1221,15 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            
+            {/* --- BOTÓN NUEVO DE ETIQUETA --- */}
+            <LabelPrinterButton data={labelData} logo={labLogo} />
+
             <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
-              <Calculator className="w-4 h-4" /><span className="text-sm font-medium">Convertidor</span>
+              <Calculator className="w-4 h-4" /><span className="text-sm font-medium hidden md:inline">Convertidor</span>
             </button>
             <button onClick={handleTogglePreview} className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2">
-              <Edit3 className="w-4 h-4" /><span>{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
+              <Edit3 className="w-4 h-4" /><span className="hidden md:inline">{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
             </button>
           </div>
         </div>
@@ -1377,7 +1531,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             <button onClick={() => goBack()} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2" disabled={isSaving}><X className="w-4 h-4" /><span>Cancelar</span></button>
             <button 
               onClick={handleSave} 
-              // Deshabilitar SOLO si está guardando O (está bloqueado Y NO se permite la excepción)
               disabled={isSaving || (state.idBlocked && !state.permitirExcepcion)} 
               className={`px-6 py-3 text-white font-medium rounded-lg transition-all flex items-center space-x-2 shadow-lg 
               ${(isSaving || (state.idBlocked && !state.permitirExcepcion)) 
