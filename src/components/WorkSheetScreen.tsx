@@ -1,9 +1,28 @@
 import React, { useEffect, useRef, useState, useCallback, useReducer } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
-  ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
-  Loader2, NotebookPen, Edit3, Search, Calculator, ArrowRightLeft, AlertTriangle,
-  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2
+  ArrowLeft,
+  Save,
+  X,
+  Calendar,
+  MapPin,
+  Mail,
+  Building2,
+  Wrench,
+  Tag,
+  Hash,
+  Loader2,
+  NotebookPen,
+  Edit3,
+  Search,
+  Calculator,
+  ArrowRightLeft,
+  AlertTriangle,
+  CheckCircle2,
+  WifiOff,
+  AlertOctagon,
+  Printer,
+  Settings2
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -13,204 +32,22 @@ import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } fro
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
 import html2canvas from 'html2canvas'; 
-import { isBefore, format, addMonths, addYears, parseISO, addBusinessDays, isAfter, differenceInBusinessDays, isValid } from "date-fns"; 
+import {
+  isBefore, 
+  format, 
+  addMonths, 
+  addYears, 
+  parseISO,
+  addBusinessDays,
+  isAfter,
+  differenceInBusinessDays,
+  isValid
+} from "date-fns"; 
 import { unit } from 'mathjs';
 import labLogo from '../assets/lab_logo.png';
 
 // ====================================================================
-// 1. COMPONENTE DE ETIQUETA MEJORADO (24mm y 12mm)
-// ====================================================================
-
-interface LabelData {
-  id: string;
-  fechaCal: string;
-  fechaSug: string;
-  calibro: string;
-  certificado: string;
-}
-
-const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data, logo }) => {
-  const labelRef = useRef<HTMLDivElement>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
-  const [showOptions, setShowOptions] = useState(false);
-
-  const handlePrintAction = async () => {
-    if (!labelRef.current) return;
-    setIsGenerating(true);
-
-    try {
-      // Esperar un momento para asegurar que el renderizado del tamaño correcto esté listo
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const canvas = await html2canvas(labelRef.current, {
-        scale: 6, // Mayor calidad para textos pequeños
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        logging: false
-      });
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const fileName = `ETIQUETA_${tapeSize}_${data.id.replace(/[^a-zA-Z0-9]/g, '-')}.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
-
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: 'Imprimir Etiqueta',
-              text: `Etiqueta ${tapeSize} para Epson`
-            });
-          } catch (error) {
-            console.log("Compartir cancelado");
-          }
-        } else {
-          // Fallback PC
-          const link = document.createElement('a');
-          link.download = fileName;
-          link.href = canvas.toDataURL('image/png');
-          link.click();
-          alert("Imagen descargada. Insértala en Epson Label Editor como imagen.");
-        }
-        setIsGenerating(false);
-        setShowOptions(false);
-      }, 'image/png');
-
-    } catch (error) {
-      console.error("Error:", error);
-      alert("Error generando etiqueta");
-      setIsGenerating(false);
-    }
-  };
-
-  return (
-    <div className="relative">
-      {/* Botón Principal */}
-      <div className="flex bg-emerald-600/10 border border-emerald-500/30 rounded-lg overflow-hidden">
-        <button 
-            onClick={() => handlePrintAction()}
-            disabled={isGenerating}
-            className="flex items-center gap-2 px-3 py-2 text-emerald-100 hover:bg-emerald-600/20 active:bg-emerald-600/30 transition-all disabled:opacity-50"
-            title="Generar Etiqueta"
-        >
-            {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
-            <span className="font-bold text-sm hidden sm:inline">Etiqueta {tapeSize}</span>
-        </button>
-        <button 
-            onClick={() => setShowOptions(!showOptions)}
-            className="px-2 border-l border-emerald-500/30 hover:bg-emerald-600/20 text-emerald-100 transition-colors"
-        >
-            <Settings2 className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Menú de Opciones */}
-      {showOptions && (
-        <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48 animate-in fade-in slide-in-from-top-2">
-            <p className="text-xs font-bold text-gray-500 mb-2 px-2">TAMAÑO CINTA</p>
-            <div className="space-y-1">
-                <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${tapeSize === "24mm" ? "bg-emerald-50 text-emerald-700 font-bold" : "text-gray-700 hover:bg-gray-50"}`}>
-                    <span>24mm (Estándar)</span>
-                    {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}
-                </button>
-                <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${tapeSize === "12mm" ? "bg-emerald-50 text-emerald-700 font-bold" : "text-gray-700 hover:bg-gray-50"}`}>
-                    <span>12mm (Delgada)</span>
-                    {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}
-                </button>
-            </div>
-        </div>
-      )}
-
-      {/* --- LIENZOS DE ETIQUETA (OCULTOS) --- */}
-      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
-        
-        {/* DISEÑO 24mm: Vertical, Logo Grande, Completo */}
-        {tapeSize === "24mm" && (
-            <div ref={labelRef} style={{
-                width: '550px',   
-                height: '240px', // Proporción cinta ancha
-                backgroundColor: 'white',
-                display: 'flex',
-                flexDirection: 'column',
-                fontFamily: 'Arial, Helvetica, sans-serif',
-                border: '1px solid #ccc'
-            }}>
-                {/* Header Negro */}
-                <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '5px 0' }}>
-                    <h1 style={{ margin: 0, fontSize: '36px', letterSpacing: '10px', fontWeight: '900' }}>CALIBRADO</h1>
-                </div>
-
-                <div style={{ display: 'flex', flex: 1, padding: '10px' }}>
-                    {/* LOGO GIGANTE */}
-                    <div style={{ width: '45%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '10px', borderRight: '2px solid #eee' }}>
-                        <img src={logo} alt="Logo" style={{ width: '100%', objectFit: 'contain' }} />
-                    </div>
-
-                    {/* DATOS */}
-                    <div style={{ width: '55%', paddingLeft: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
-                        <div style={{ fontSize: '26px', color: '#000', fontWeight: 'bold' }}>
-                            ID: <span style={{ fontFamily: 'monospace', fontSize: '28px' }}>{data.id}</span>
-                        </div>
-                        <div style={{ fontSize: '22px', color: '#000', fontWeight: '600' }}>
-                            F.CAL: {data.fechaCal}
-                        </div>
-                        <div style={{ fontSize: '22px', color: '#000', fontWeight: '600' }}>
-                            F.SUG: {data.fechaSug}
-                        </div>
-                         <div style={{ fontSize: '22px', color: '#000', fontWeight: '600' }}>
-                            TEC: {data.calibro}
-                        </div>
-                    </div>
-                </div>
-
-                {/* FOOTER: CERTIFICADO y DOC */}
-                <div style={{ backgroundColor: '#f0f0f0', padding: '5px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '2px solid black' }}>
-                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#555' }}>AG-CAL-F14-00</span>
-                    <span style={{ fontSize: '26px', fontWeight: '900', color: 'black' }}>CERT: {data.certificado}</span>
-                </div>
-            </div>
-        )}
-
-        {/* DISEÑO 12mm: Horizontal, Compacto, Sin Header Negro */}
-        {tapeSize === "12mm" && (
-             <div ref={labelRef} style={{
-                width: '600px',   
-                height: '120px', // Proporción cinta delgada
-                backgroundColor: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                fontFamily: 'Arial, sans-serif',
-                padding: '5px',
-                border: '1px solid #ccc'
-            }}>
-                {/* Logo Izquierda */}
-                <div style={{ width: '25%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '2px solid black', paddingRight: '10px' }}>
-                     <img src={logo} alt="Logo" style={{ maxHeight: '90%', maxWidth: '100%', objectFit: 'contain' }} />
-                </div>
-
-                {/* Datos Centro */}
-                <div style={{ width: '40%', paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: '900', color: 'black' }}>ID: {data.id}</div>
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#333' }}>Prox: {data.fechaSug}</div>
-                </div>
-
-                {/* Certificado Derecha */}
-                <div style={{ width: '35%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#555' }}>CERTIFICADO:</div>
-                    <div style={{ fontSize: '22px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
-                    <div style={{ fontSize: '14px', fontStyle: 'italic', marginTop: '5px' }}>CALIBRADO</div>
-                </div>
-            </div>
-        )}
-
-      </div>
-    </div>
-  );
-};
-
-// ====================================================================
-// 2. CONFIGURACIÓN Y UTILIDADES (Resto del código igual)
+// 1. CONFIGURACIÓN Y UTILIDADES
 // ====================================================================
 
 const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' | 'warning'; onClose: () => void }> = ({ message, type, onClose }) => {
@@ -299,6 +136,173 @@ const UNIT_CATEGORIES: Categories = {
     { label: "Pie cúbico (ft³)", value: "ft3" },
     { label: "Pulgada cúbica (in³)", value: "in3" }
   ]
+};
+
+// ====================================================================
+// 2. COMPONENTE DE ETIQUETA (VERSION FINAL MAGIC FIT 180DPI)
+// ====================================================================
+
+interface LabelData {
+  id: string;
+  fechaCal: string;
+  fechaSug: string;
+  calibro: string;
+  certificado: string;
+}
+
+const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data, logo }) => {
+  const labelRef = useRef<HTMLDivElement>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
+  const [showOptions, setShowOptions] = useState(false);
+
+  const handlePrintAction = async () => {
+    if (!labelRef.current) return;
+    setIsGenerating(true);
+
+    try {
+      // Pequeña pausa para asegurar renderizado
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // ESCALA 2 = 180 DPI Nativos x 2 (Para que la app reduzca al 50% con máxima calidad)
+      const canvas = await html2canvas(labelRef.current, {
+        scale: 2, 
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const cleanId = data.id.replace(/[^a-zA-Z0-9]/g, '-');
+        const fileName = `ETIQUETA_${tapeSize}_${cleanId}.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: 'Etiqueta Epson',
+              text: 'Guardar imagen en Galería e insertar en Epson Label Editor'
+            });
+          } catch (error) {
+            console.log("Compartir cancelado");
+          }
+        } else {
+          // Fallback PC
+          const link = document.createElement('a');
+          link.download = fileName;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          alert("Imagen descargada. Insértala en la App Epson.");
+        }
+        setIsGenerating(false);
+        setShowOptions(false);
+      }, 'image/png');
+
+    } catch (error) {
+      console.error("Error", error);
+      alert("Error al generar etiqueta");
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex bg-slate-900 text-white rounded-lg overflow-hidden shadow-lg border border-slate-700">
+        <button 
+            onClick={() => handlePrintAction()}
+            disabled={isGenerating}
+            className="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 transition-all disabled:opacity-50"
+        >
+            {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
+            <span className="font-bold text-sm">Etiqueta {tapeSize}</span>
+        </button>
+        <button 
+            onClick={() => setShowOptions(!showOptions)}
+            className="px-2 bg-slate-800 border-l border-slate-700 hover:bg-slate-700 transition-colors"
+        >
+            <Settings2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {showOptions && (
+        <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48 animate-in fade-in slide-in-from-top-2">
+            <div className="space-y-1">
+                <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}>
+                    <span>24mm (Cinta 1")</span>
+                    {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}
+                </button>
+                <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}>
+                    <span>12mm (Cinta 1/2")</span>
+                    {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}
+                </button>
+            </div>
+        </div>
+      )}
+
+      {/* --- LIENZOS OCULTOS (MAGIC FIT PIXEL PERFECT 180 DPI) --- */}
+      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
+        
+        {/* DISEÑO 24mm (Altura 180px nativa) */}
+        {tapeSize === "24mm" && (
+            <div ref={labelRef} style={{
+                width: '600px',   
+                height: '180px', // ALTURA CRÍTICA: Coincide con el cabezal de 24mm (1 pulgada aprox)
+                backgroundColor: 'white',
+                display: 'flex',
+                fontFamily: 'Arial, sans-serif',
+                overflow: 'hidden',
+                border: '1px solid #ccc' // Borde técnico
+            }}>
+                {/* 1. LOGO GRANDE (30%) */}
+                <div style={{ width: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px' }}>
+                    <img src={logo} alt="Logo" style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain' }} />
+                </div>
+
+                {/* 2. DATOS PRINCIPALES (45%) */}
+                <div style={{ flex: 1, padding: '5px 10px', display: 'flex', flexDirection: 'column', justifyContent: 'center', borderLeft: '2px solid black' }}>
+                    <div style={{ fontSize: '30px', fontWeight: '900', color: 'black', lineHeight: '1' }}>ID: {data.id}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '6px' }}>TEC: {data.calibro.substring(0,12)}</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', marginTop: '2px' }}>F.CAL: {data.fechaCal}</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: 'black', marginTop: '2px' }}>PROX: {data.fechaSug}</div>
+                </div>
+
+                {/* 3. CERTIFICADO (25%) */}
+                <div style={{ width: '130px', backgroundColor: 'black', color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: '5px' }}>
+                    <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>CERTIFICADO</span>
+                    <span style={{ fontSize: '18px', fontWeight: 'bold', wordBreak: 'break-all', lineHeight: '1.1' }}>{data.certificado}</span>
+                </div>
+            </div>
+        )}
+
+        {/* DISEÑO 12mm (Altura 90px nativa) */}
+        {tapeSize === "12mm" && (
+             <div ref={labelRef} style={{
+                width: '450px',   
+                height: '90px',  // ALTURA CRÍTICA: Coincide con cinta de 12mm
+                backgroundColor: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                fontFamily: 'Arial, sans-serif',
+                border: '1px solid #ccc'
+            }}>
+                <div style={{ width: '80px', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                     <img src={logo} alt="Logo" style={{ maxHeight: '80px', maxWidth: '100%', objectFit: 'contain' }} />
+                </div>
+                <div style={{ flex: 1, paddingLeft: '5px', display: 'flex', flexDirection: 'column', justifyContent: 'center', borderLeft: '1px solid black' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>ID: {data.id}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>VENCE: {data.fechaSug}</div>
+                </div>
+                <div style={{ paddingRight: '5px', textAlign: 'right', minWidth: '100px' }}>
+                    <div style={{ fontSize: '10px' }}>CERT:</div>
+                    <div style={{ fontSize: '14px', fontWeight: '900' }}>{data.certificado}</div>
+                </div>
+            </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 // ====================================================================
@@ -1201,7 +1205,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           </div>
           <div className="flex items-center space-x-3">
             
-            {/* BOTÓN ETIQUETA MEJORADO */}
+            {/* BOTÓN DE ETIQUETA MEJORADO (MAGIC FIT) */}
             <LabelPrinterButton data={labelData} logo={labLogo} />
 
             <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
