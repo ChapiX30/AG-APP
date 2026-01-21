@@ -1,28 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback, useReducer } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
-  ArrowLeft,
-  Save,
-  X,
-  Calendar,
-  MapPin,
-  Mail,
-  Building2,
-  Wrench,
-  Tag,
-  Hash,
-  Loader2,
-  NotebookPen,
-  Edit3,
-  Search,
-  Calculator,
-  ArrowRightLeft,
-  AlertTriangle,
-  CheckCircle2,
-  WifiOff,
-  AlertOctagon,
-  Printer,
-  Settings2
+  ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
+  Loader2, NotebookPen, Edit3, Search, Calculator, ArrowRightLeft, AlertTriangle,
+  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -32,114 +13,13 @@ import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } fro
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
 import html2canvas from 'html2canvas'; 
-import {
-  isBefore, 
-  format, 
-  addMonths, 
-  addYears, 
-  parseISO,
-  addBusinessDays,
-  isAfter,
-  differenceInBusinessDays,
-  isValid
-} from "date-fns"; 
+import { isBefore, format, addMonths, addYears, parseISO, addBusinessDays, isAfter, differenceInBusinessDays, isValid } from "date-fns"; 
+import { es } from 'date-fns/locale'; // IDIOMA ESPAÑOL PARA FECHAS
 import { unit } from 'mathjs';
-import labLogo from '../assets/lab_logo.png';
+import logoAg from '../assets/Logo_AG.png'; 
 
 // ====================================================================
-// 1. CONFIGURACIÓN Y UTILIDADES
-// ====================================================================
-
-const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' | 'warning'; onClose: () => void }> = ({ message, type, onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 5000); 
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  const bg = type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-orange-500';
-  const icon = type === 'success' ? <CheckCircle2 className="w-5 h-5"/> : <AlertTriangle className="w-5 h-5"/>;
-
-  return (
-    <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-6 py-4 rounded-lg shadow-2xl text-white ${bg} animate-in slide-in-from-bottom-5 duration-300`}>
-      {icon}
-      <span className="font-medium">{message}</span>
-      <button onClick={onClose} className="ml-4 hover:bg-white/20 p-1 rounded"><X className="w-4 h-4"/></button>
-    </div>
-  );
-};
-
-const METROLOGY_LIMITS: Record<string, { tMin: number, tMax: number, hMin: number, hMax: number }> = {
-  "Dimensional": { tMin: 18, tMax: 22, hMin: 35, hMax: 60 }, 
-  "Electrica": { tMin: 18, tMax: 28, hMin: 20, hMax: 70 }, 
-  "Masa": { tMin: 18, tMax: 27, hMin: 40, hMax: 60 }, 
-  "Presión": { tMin: 15, tMax: 30, hMin: 20, hMax: 80 }, 
-  "Temperatura": { tMin: 15, tMax: 30, hMin: 20, hMax: 80 },
-  "Par Torsional": { tMin: 18, tMax: 28, hMin: 20, hMax: 75 }, 
-  "Fuerza": { tMin: 18, tMax: 28, hMin: 30, hMax: 70 },
-  "default": { tMin: 15, tMax: 30, hMin: 20, hMax: 80 }
-};
-
-const getMetrologyLimits = (magnitud: string) => {
-  return METROLOGY_LIMITS[magnitud] || METROLOGY_LIMITS["default"];
-};
-
-type UnitDef = { label: string; value: string };
-type Categories = Record<string, UnitDef[]>;
-
-const UNIT_CATEGORIES: Categories = {
-  "Par Torsional (Torque)": [
-    { label: "Libra-fuerza pulgada (in·lbf)", value: "lbf inch" },
-    { label: "Pie-libra fuerza (ft·lbf)", value: "lbf ft" },
-    { label: "Newton metro (N·m)", value: "N m" },
-    { label: "Kilogramo-fuerza metro (kgf·m)", value: "kgf m" },
-    { label: "Kilogramo-fuerza cm (kgf·cm)", value: "kgf cm" },
-    { label: "Onza-fuerza pulgada (ozf·in)", value: "ozf inch" }
-  ],
-  "Presión": [
-    { label: "PSI (Libra/pulgada²)", value: "psi" },
-    { label: "Bar", value: "bar" },
-    { label: "Pascal (Pa)", value: "Pa" },
-    { label: "Kilopascal (kPa)", value: "kPa" },
-    { label: "Megapascal (MPa)", value: "MPa" },
-    { label: "Atmósfera (atm)", value: "atm" },
-    { label: "Milímetro de mercurio (mmHg)", value: "mmHg" },
-    { label: "Pulgada de agua (inH2O)", value: "inH2O" }
-  ],
-  "Masa": [
-    { label: "Kilogramo (kg)", value: "kg" },
-    { label: "Gramo (g)", value: "g" },
-    { label: "Miligramo (mg)", value: "mg" },
-    { label: "Libra (lb)", value: "lb" },
-    { label: "Onza (oz)", value: "oz" },
-    { label: "Tonelada métrica (t)", value: "tonne" }
-  ],
-  "Longitud": [
-    { label: "Metro (m)", value: "m" },
-    { label: "Centímetro (cm)", value: "cm" },
-    { label: "Milímetro (mm)", value: "mm" },
-    { label: "Pulgada (in)", value: "inch" },
-    { label: "Pie (ft)", value: "ft" },
-    { label: "Yarda (yd)", value: "yd" },
-    { label: "Milla (mi)", value: "mi" }
-  ],
-  "Temperatura": [
-    { label: "Celsius (°C)", value: "degC" },
-    { label: "Fahrenheit (°F)", value: "degF" },
-    { label: "Kelvin (K)", value: "K" },
-    { label: "Rankine (°R)", value: "degR" }
-  ],
-  "Volumen": [
-    { label: "Litro (L)", value: "L" },
-    { label: "Mililitro (mL)", value: "ml" },
-    { label: "Metro cúbico (m³)", value: "m3" },
-    { label: "Galón US (gal)", value: "gal" },
-    { label: "Pie cúbico (ft³)", value: "ft3" },
-    { label: "Pulgada cúbica (in³)", value: "in3" }
-  ]
-};
-
-// ====================================================================
-// 2. COMPONENTE DE ETIQUETA (VERSION FINAL MAGIC FIT 180DPI)
+// 1. COMPONENTE DE ETIQUETA (24mm y 12mm CORREGIDOS)
 // ====================================================================
 
 interface LabelData {
@@ -161,10 +41,8 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     setIsGenerating(true);
 
     try {
-      // Pequeña pausa para asegurar renderizado
       await new Promise(resolve => setTimeout(resolve, 150));
 
-      // ESCALA 2 = 180 DPI Nativos x 2 (Para que la app reduzca al 50% con máxima calidad)
       const canvas = await html2canvas(labelRef.current, {
         scale: 2, 
         backgroundColor: '#ffffff',
@@ -189,7 +67,6 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
             console.log("Compartir cancelado");
           }
         } else {
-          // Fallback PC
           const link = document.createElement('a');
           link.download = fileName;
           link.href = canvas.toDataURL('image/png');
@@ -241,62 +118,93 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         </div>
       )}
 
-      {/* --- LIENZOS OCULTOS (MAGIC FIT PIXEL PERFECT 180 DPI) --- */}
+      {/* --- LIENZOS OCULTOS --- */}
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
         
-        {/* DISEÑO 24mm (Altura 180px nativa) */}
+        {/* DISEÑO 24mm CORREGIDO: Ancho extendido para que quepan 2 fechas y certificado */}
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{
-                width: '600px',   
-                height: '180px', // ALTURA CRÍTICA: Coincide con el cabezal de 24mm (1 pulgada aprox)
+                width: '500px',   // ANCHO EXTENDIDO para evitar amontonamiento
+                height: '180px',  // ALTURA 24mm (180px @ 180dpi)
                 backgroundColor: 'white',
                 display: 'flex',
+                flexDirection: 'column', 
                 fontFamily: 'Arial, sans-serif',
                 overflow: 'hidden',
-                border: '1px solid #ccc' // Borde técnico
+                border: '1px solid #ccc',
+                padding: '4px' // Margen interno seguro
             }}>
-                {/* 1. LOGO GRANDE (30%) */}
-                <div style={{ width: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px' }}>
-                    <img src={logo} alt="Logo" style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain' }} />
+                {/* 1. LOGO CENTRADO ARRIBA */}
+                <div style={{ height: '50px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '2px solid black', paddingBottom: '4px', marginBottom: '2px' }}>
+                    <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '90%', objectFit: 'contain' }} />
                 </div>
 
-                {/* 2. DATOS PRINCIPALES (45%) */}
-                <div style={{ flex: 1, padding: '5px 10px', display: 'flex', flexDirection: 'column', justifyContent: 'center', borderLeft: '2px solid black' }}>
-                    <div style={{ fontSize: '30px', fontWeight: '900', color: 'black', lineHeight: '1' }}>ID: {data.id}</div>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '6px' }}>TEC: {data.calibro.substring(0,12)}</div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', marginTop: '2px' }}>F.CAL: {data.fechaCal}</div>
-                    <div style={{ fontSize: '18px', fontWeight: '800', color: 'black', marginTop: '2px' }}>PROX: {data.fechaSug}</div>
-                </div>
+                {/* 2. DATOS */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly' }}>
+                    
+                    {/* ID GIGANTE */}
+                    <div style={{ fontSize: '32px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1' }}>
+                        {data.id}
+                    </div>
 
-                {/* 3. CERTIFICADO (25%) */}
-                <div style={{ width: '130px', backgroundColor: 'black', color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: '5px' }}>
-                    <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>CERTIFICADO</span>
-                    <span style={{ fontSize: '18px', fontWeight: 'bold', wordBreak: 'break-all', lineHeight: '1.1' }}>{data.certificado}</span>
+                    {/* FECHAS (Dos columnas claras) */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 10px', alignItems: 'center' }}>
+                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#000' }}>
+                            <span style={{ fontSize: '11px', color: '#555', marginRight: '4px' }}>CAL:</span>
+                            {data.fechaCal}
+                        </div>
+                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#d00' }}>
+                            <span style={{ fontSize: '11px', color: '#d00', marginRight: '4px' }}>VEN:</span>
+                            {data.fechaSug}
+                        </div>
+                    </div>
+
+                    {/* CERTIFICADO Y TÉCNICO */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 10px', alignItems: 'center' }}>
+                         <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 'normal', marginRight: '4px', color: '#555' }}>CERT:</span>
+                            {data.certificado}
+                         </div>
+                         <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                            TEC: {data.calibro.substring(0,5)}
+                         </div>
+                    </div>
                 </div>
             </div>
         )}
 
-        {/* DISEÑO 12mm (Altura 90px nativa) */}
+        {/* DISEÑO 12mm (Compacto con Fechas) */}
         {tapeSize === "12mm" && (
              <div ref={labelRef} style={{
-                width: '450px',   
-                height: '90px',  // ALTURA CRÍTICA: Coincide con cinta de 12mm
+                width: '600px',   
+                height: '90px',   
                 backgroundColor: 'white',
                 display: 'flex',
                 alignItems: 'center',
                 fontFamily: 'Arial, sans-serif',
-                border: '1px solid #ccc'
+                border: '1px solid #ccc',
+                padding: '2px'
             }}>
-                <div style={{ width: '80px', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                     <img src={logo} alt="Logo" style={{ maxHeight: '80px', maxWidth: '100%', objectFit: 'contain' }} />
+                <div style={{ width: '90px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '5px', borderRight: '2px solid black' }}>
+                     <img src={logo} alt="Logo" style={{ maxHeight: '85%', maxWidth: '100%', objectFit: 'contain' }} />
                 </div>
-                <div style={{ flex: 1, paddingLeft: '5px', display: 'flex', flexDirection: 'column', justifyContent: 'center', borderLeft: '1px solid black' }}>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>ID: {data.id}</div>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>VENCE: {data.fechaSug}</div>
+
+                <div style={{ flex: 1, paddingLeft: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '26px', fontWeight: '900', color: 'black', lineHeight: '1' }}>{data.id}</div>
+                    
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '3px' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333' }}>
+                            <span style={{ fontSize: '10px', color: '#666' }}>CAL:</span> {data.fechaCal}
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#d00' }}>
+                            <span style={{ fontSize: '10px', color: '#d00' }}>VEN:</span> {data.fechaSug}
+                        </div>
+                    </div>
                 </div>
-                <div style={{ paddingRight: '5px', textAlign: 'right', minWidth: '100px' }}>
-                    <div style={{ fontSize: '10px' }}>CERT:</div>
-                    <div style={{ fontSize: '14px', fontWeight: '900' }}>{data.certificado}</div>
+
+                <div style={{ paddingLeft: '8px', paddingRight: '5px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', borderLeft: '1px solid #ccc' }}>
+                    <div style={{ fontSize: '10px', color: '#666', fontWeight: 'bold' }}>CERTIFICADO</div>
+                    <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
                 </div>
             </div>
         )}
@@ -615,7 +523,7 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   const lineHeight = 20; 
   let y = 60;
 
-  doc.addImage(labLogo, 'PNG', marginLeft, 20, 100, 50); 
+  doc.addImage(logoAg, 'PNG', marginLeft, 20, 100, 50); 
 
   doc.setFont("helvetica", "bold"); 
   doc.setFontSize(18); 
@@ -1172,8 +1080,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return {
         id: state.id || "PENDIENTE",
         certificado: state.certificado || "PENDIENTE",
-        fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd").toUpperCase() : "---",
-        fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd").toUpperCase() : "---",
+        // FECHAS EN ESPAÑOL Y LIMPIAS (Sin puntos)
+        fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
+        fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
         calibro: state.nombre 
           ? state.nombre.split(' ').map(n => n[0]).join('.').toUpperCase() 
           : "A.A"
@@ -1205,8 +1114,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           </div>
           <div className="flex items-center space-x-3">
             
-            {/* BOTÓN DE ETIQUETA MEJORADO (MAGIC FIT) */}
-            <LabelPrinterButton data={labelData} logo={labLogo} />
+            {/* BOTÓN ETIQUETA MEJORADO */}
+            <LabelPrinterButton data={labelData} logo={logoAg} />
 
             <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
               <Calculator className="w-4 h-4" /><span className="text-sm font-medium hidden md:inline">Convertidor</span>
