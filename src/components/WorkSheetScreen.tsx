@@ -1,29 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback, useReducer } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
-  ArrowLeft,
-  Save,
-  X,
-  Calendar,
-  MapPin,
-  Mail,
-  Building2,
-  Wrench,
-  Tag,
-  Hash,
-  Loader2,
-  NotebookPen,
-  Edit3,
-  Search,
-  Calculator,
-  ArrowRightLeft,
-  AlertTriangle,
-  CheckCircle2,
-  WifiOff,
-  AlertOctagon,
-  Printer,
-  Share2,
-  Download
+  ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
+  Loader2, NotebookPen, Edit3, Search, Calculator, ArrowRightLeft, AlertTriangle,
+  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -32,24 +12,205 @@ import { storage, db } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
-import html2canvas from 'html2canvas'; // <--- ASEGÚRATE DE INSTALAR ESTO: npm install html2canvas
-import {
-  isBefore, 
-  format, 
-  addMonths, 
-  addYears, 
-  parseISO,
-  addBusinessDays,
-  isAfter,
-  differenceInBusinessDays,
-  isValid
-} from "date-fns"; 
-import { es } from 'date-fns/locale'; // Para fechas en español si es necesario
+import html2canvas from 'html2canvas'; 
+import { isBefore, format, addMonths, addYears, parseISO, addBusinessDays, isAfter, differenceInBusinessDays, isValid } from "date-fns"; 
 import { unit } from 'mathjs';
 import labLogo from '../assets/lab_logo.png';
 
 // ====================================================================
-// 1. CONFIGURACIÓN Y UTILIDADES
+// 1. COMPONENTE DE ETIQUETA MEJORADO (24mm y 12mm)
+// ====================================================================
+
+interface LabelData {
+  id: string;
+  fechaCal: string;
+  fechaSug: string;
+  calibro: string;
+  certificado: string;
+}
+
+const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data, logo }) => {
+  const labelRef = useRef<HTMLDivElement>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
+  const [showOptions, setShowOptions] = useState(false);
+
+  const handlePrintAction = async () => {
+    if (!labelRef.current) return;
+    setIsGenerating(true);
+
+    try {
+      // Esperar un momento para asegurar que el renderizado del tamaño correcto esté listo
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(labelRef.current, {
+        scale: 6, // Mayor calidad para textos pequeños
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const fileName = `ETIQUETA_${tapeSize}_${data.id.replace(/[^a-zA-Z0-9]/g, '-')}.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: 'Imprimir Etiqueta',
+              text: `Etiqueta ${tapeSize} para Epson`
+            });
+          } catch (error) {
+            console.log("Compartir cancelado");
+          }
+        } else {
+          // Fallback PC
+          const link = document.createElement('a');
+          link.download = fileName;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          alert("Imagen descargada. Insértala en Epson Label Editor como imagen.");
+        }
+        setIsGenerating(false);
+        setShowOptions(false);
+      }, 'image/png');
+
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Error generando etiqueta");
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      {/* Botón Principal */}
+      <div className="flex bg-emerald-600/10 border border-emerald-500/30 rounded-lg overflow-hidden">
+        <button 
+            onClick={() => handlePrintAction()}
+            disabled={isGenerating}
+            className="flex items-center gap-2 px-3 py-2 text-emerald-100 hover:bg-emerald-600/20 active:bg-emerald-600/30 transition-all disabled:opacity-50"
+            title="Generar Etiqueta"
+        >
+            {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
+            <span className="font-bold text-sm hidden sm:inline">Etiqueta {tapeSize}</span>
+        </button>
+        <button 
+            onClick={() => setShowOptions(!showOptions)}
+            className="px-2 border-l border-emerald-500/30 hover:bg-emerald-600/20 text-emerald-100 transition-colors"
+        >
+            <Settings2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Menú de Opciones */}
+      {showOptions && (
+        <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48 animate-in fade-in slide-in-from-top-2">
+            <p className="text-xs font-bold text-gray-500 mb-2 px-2">TAMAÑO CINTA</p>
+            <div className="space-y-1">
+                <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${tapeSize === "24mm" ? "bg-emerald-50 text-emerald-700 font-bold" : "text-gray-700 hover:bg-gray-50"}`}>
+                    <span>24mm (Estándar)</span>
+                    {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}
+                </button>
+                <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${tapeSize === "12mm" ? "bg-emerald-50 text-emerald-700 font-bold" : "text-gray-700 hover:bg-gray-50"}`}>
+                    <span>12mm (Delgada)</span>
+                    {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}
+                </button>
+            </div>
+        </div>
+      )}
+
+      {/* --- LIENZOS DE ETIQUETA (OCULTOS) --- */}
+      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
+        
+        {/* DISEÑO 24mm: Vertical, Logo Grande, Completo */}
+        {tapeSize === "24mm" && (
+            <div ref={labelRef} style={{
+                width: '550px',   
+                height: '240px', // Proporción cinta ancha
+                backgroundColor: 'white',
+                display: 'flex',
+                flexDirection: 'column',
+                fontFamily: 'Arial, Helvetica, sans-serif',
+                border: '1px solid #ccc'
+            }}>
+                {/* Header Negro */}
+                <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '5px 0' }}>
+                    <h1 style={{ margin: 0, fontSize: '36px', letterSpacing: '10px', fontWeight: '900' }}>CALIBRADO</h1>
+                </div>
+
+                <div style={{ display: 'flex', flex: 1, padding: '10px' }}>
+                    {/* LOGO GIGANTE */}
+                    <div style={{ width: '45%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '10px', borderRight: '2px solid #eee' }}>
+                        <img src={logo} alt="Logo" style={{ width: '100%', objectFit: 'contain' }} />
+                    </div>
+
+                    {/* DATOS */}
+                    <div style={{ width: '55%', paddingLeft: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px' }}>
+                        <div style={{ fontSize: '26px', color: '#000', fontWeight: 'bold' }}>
+                            ID: <span style={{ fontFamily: 'monospace', fontSize: '28px' }}>{data.id}</span>
+                        </div>
+                        <div style={{ fontSize: '22px', color: '#000', fontWeight: '600' }}>
+                            F.CAL: {data.fechaCal}
+                        </div>
+                        <div style={{ fontSize: '22px', color: '#000', fontWeight: '600' }}>
+                            F.SUG: {data.fechaSug}
+                        </div>
+                         <div style={{ fontSize: '22px', color: '#000', fontWeight: '600' }}>
+                            TEC: {data.calibro}
+                        </div>
+                    </div>
+                </div>
+
+                {/* FOOTER: CERTIFICADO y DOC */}
+                <div style={{ backgroundColor: '#f0f0f0', padding: '5px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '2px solid black' }}>
+                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#555' }}>AG-CAL-F14-00</span>
+                    <span style={{ fontSize: '26px', fontWeight: '900', color: 'black' }}>CERT: {data.certificado}</span>
+                </div>
+            </div>
+        )}
+
+        {/* DISEÑO 12mm: Horizontal, Compacto, Sin Header Negro */}
+        {tapeSize === "12mm" && (
+             <div ref={labelRef} style={{
+                width: '600px',   
+                height: '120px', // Proporción cinta delgada
+                backgroundColor: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                fontFamily: 'Arial, sans-serif',
+                padding: '5px',
+                border: '1px solid #ccc'
+            }}>
+                {/* Logo Izquierda */}
+                <div style={{ width: '25%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '2px solid black', paddingRight: '10px' }}>
+                     <img src={logo} alt="Logo" style={{ maxHeight: '90%', maxWidth: '100%', objectFit: 'contain' }} />
+                </div>
+
+                {/* Datos Centro */}
+                <div style={{ width: '40%', paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: '900', color: 'black' }}>ID: {data.id}</div>
+                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#333' }}>Prox: {data.fechaSug}</div>
+                </div>
+
+                {/* Certificado Derecha */}
+                <div style={{ width: '35%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#555' }}>CERTIFICADO:</div>
+                    <div style={{ fontSize: '22px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
+                    <div style={{ fontSize: '14px', fontStyle: 'italic', marginTop: '5px' }}>CALIBRADO</div>
+                </div>
+            </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
+// ====================================================================
+// 2. CONFIGURACIÓN Y UTILIDADES (Resto del código igual)
 // ====================================================================
 
 const ToastNotification: React.FC<{ message: string; type: 'success' | 'error' | 'warning'; onClose: () => void }> = ({ message, type, onClose }) => {
@@ -141,142 +302,8 @@ const UNIT_CATEGORIES: Categories = {
 };
 
 // ====================================================================
-// 2. COMPONENTES AUXILIARES (MODAL, ETIQUETA)
+// MODAL CONVERTIDOR
 // ====================================================================
-
-// --- COMPONENTE DE BOTÓN ETIQUETA ---
-interface LabelData {
-  id: string;
-  fechaCal: string;
-  fechaSug: string;
-  calibro: string;
-  certificado: string;
-}
-
-const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data, logo }) => {
-  const labelRef = useRef<HTMLDivElement>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const handlePrintAction = async () => {
-    if (!labelRef.current) return;
-    setIsGenerating(true);
-
-    try {
-      // 1. Generar la imagen de alta calidad
-      const canvas = await html2canvas(labelRef.current, {
-        scale: 4, // Escala alta para nitidez
-        backgroundColor: '#ffffff',
-        useCORS: true
-      });
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const fileName = `ETIQUETA_${data.id.replace(/\s+/g, '-')}.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
-
-        // 2. DETECTAR SI ES MOVIL (Tiene API de compartir)
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: 'Imprimir Etiqueta PX400',
-              text: 'Enviar a Epson iLabel'
-            });
-          } catch (error) {
-            console.log("El usuario canceló compartir o no soportado:", error);
-            setIsGenerating(false);
-          }
-        } 
-        // 3. SI ES PC -> DESCARGAR
-        else {
-          const link = document.createElement('a');
-          link.download = fileName;
-          link.href = canvas.toDataURL('image/png');
-          link.click();
-          alert("Imagen descargada. Abrela e imprímela con tu software Epson.");
-        }
-        setIsGenerating(false);
-      }, 'image/png');
-
-    } catch (error) {
-      console.error("Error:", error);
-      alert("Error generando la etiqueta");
-      setIsGenerating(false);
-    }
-  };
-
-  return (
-    <>
-      <button 
-        onClick={handlePrintAction}
-        disabled={isGenerating}
-        className="flex items-center gap-2 bg-emerald-600/20 text-emerald-100 border border-emerald-500/30 px-3 py-2 rounded-lg hover:bg-emerald-600/40 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-        title="Imprimir Etiqueta para PX400"
-      >
-        {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
-        <span className="font-bold text-sm hidden md:inline">
-           {isGenerating ? "Generando..." : "Etiqueta"}
-        </span>
-      </button>
-
-      {/* --- LIENZO OCULTO (PLANTILLA EXACTA) --- */}
-      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
-        <div 
-          ref={labelRef} 
-          style={{
-            width: '500px',   
-            height: '210px',  
-            backgroundColor: 'white',
-            display: 'flex',
-            flexDirection: 'column',
-            fontFamily: 'Arial, sans-serif',
-            border: '1px solid #ddd'
-          }}
-        >
-          {/* HEADER NEGRO */}
-          <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '6px 0' }}>
-            <h1 style={{ margin: 0, fontSize: '32px', letterSpacing: '8px', fontWeight: '900', textTransform: 'uppercase' }}>
-              CALIBRADO
-            </h1>
-          </div>
-
-          {/* CONTENIDO PRINCIPAL */}
-          <div style={{ display: 'flex', flex: 1, padding: '10px 15px' }}>
-            
-            {/* IZQUIERDA: LOGO */}
-            <div style={{ width: '35%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-               <img src={logo} alt="Logo" style={{ maxWidth: '100%', maxHeight: '90px', objectFit: 'contain' }} />
-            </div>
-
-            {/* DERECHA: DATOS */}
-            <div style={{ width: '65%', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ fontSize: '24px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
-                ID: <span style={{ fontFamily: 'monospace' }}>{data.id}</span>
-              </div>
-              <div style={{ fontSize: '22px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
-                F.CAL: {data.fechaCal}
-              </div>
-              <div style={{ fontSize: '22px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
-                F.SUG: {data.fechaSug}
-              </div>
-              <div style={{ fontSize: '24px', color: 'black', fontWeight: 'bold', lineHeight: '1.2' }}>
-                CALIBRÓ: {data.calibro}
-              </div>
-            </div>
-          </div>
-
-          {/* FOOTER */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 15px 8px 15px', alignItems: 'flex-end' }}>
-             <span style={{ fontSize: '18px', fontStyle: 'italic', color: '#444' }}>AG-CAL-F14-00</span>
-             <span style={{ fontSize: '26px', fontWeight: '900', color: 'black' }}>
-               CERT: {data.certificado}
-             </span>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
 
 const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [category, setCategory] = useState<string>("Par Torsional (Torque)");
@@ -409,7 +436,7 @@ type WorksheetAction =
   | { type: 'RESTORE_BACKUP'; payload: WorksheetState };
 
 // ====================================================================
-// COMPONENTE SEARCH SELECT OPTIMIZADO (SIN LAG)
+// COMPONENTE SEARCH SELECT
 // ====================================================================
 
 interface ClienteSearchSelectProps {
@@ -420,20 +447,14 @@ interface ClienteSearchSelectProps {
 }
 
 const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onSelect, currentValue, hasError }) => {
-    // 1. Estado local para lo que escribes (inmediato)
     const [localSearch, setLocalSearch] = useState(currentValue);
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // 2. Sincronizar estado si viene de props
-    useEffect(() => {
-        setLocalSearch(currentValue);
-    }, [currentValue]);
+    useEffect(() => { setLocalSearch(currentValue); }, [currentValue]);
 
-    // 3. Filtrado rápido y memorizado (sin debounce en UI)
     const filteredAndGroupedClientes = React.useMemo(() => {
         const term = (localSearch || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        // Optimización: si no hay búsqueda ni está abierto, no filtrar nada
         if (!term && !isOpen) return {};
 
         const grouped: Record<string, ClienteRecord[]> = {};
@@ -459,8 +480,8 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
-        setLocalSearch(val); // Actualización visual instantánea
-        onSelect(val);       // Actualización de datos
+        setLocalSearch(val);
+        onSelect(val);
         setIsOpen(true);
     };
 
@@ -590,17 +611,14 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   const lineHeight = 20; 
   let y = 60;
 
-  // Logo a la izquierda
-  doc.addImage(labLogo, 'PNG', marginLeft, 20, 100, 50); // Ajusta el tamaño y posición según sea necesario
+  doc.addImage(labLogo, 'PNG', marginLeft, 20, 100, 50); 
 
-  // Título centrado o a la derecha del logo
   doc.setFont("helvetica", "bold"); 
   doc.setFontSize(18); 
-  doc.setTextColor(0, 0, 139); // Azul oscuro para formalidad
-  doc.text("Equipos y Servicios Especializados AG", marginLeft + 120, y); // Ajustado a la derecha del logo
+  doc.setTextColor(0, 0, 139); 
+  doc.text("Equipos y Servicios Especializados AG", marginLeft + 120, y); 
   y += 30;
 
-  // Fecha y Nombre alineados a la derecha
   doc.setFontSize(12); 
   doc.setFont("helvetica", "normal"); 
   doc.setTextColor(0, 0, 0);
@@ -610,13 +628,11 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   doc.text(`Nombre: ${formData.nombre || "-"}`, marginRight - 150, y);
   y += 30;
 
-  // Línea separadora más gruesa y gris
-  doc.setDrawColor(128, 128, 128); // Gris
+  doc.setDrawColor(128, 128, 128); 
   doc.setLineWidth(1.5);
   doc.line(marginLeft, y, marginRight, y);
   y += 30;
 
-  // Pares de información en dos columnas, con labels en negrita
   const infoPairs = [
     ["Lugar de Calibración:", formData.lugarCalibracion || "-"],
     ["N.Certificado:", formData.certificado || "-"],
@@ -636,7 +652,7 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   ];
 
   doc.setFontSize(11);
-  const col1Width = 180; // Ancho para labels
+  const col1Width = 180; 
   infoPairs.forEach(([label, value]) => {
     doc.setFont("helvetica", "bold");
     doc.text(label, marginLeft, y);
@@ -647,7 +663,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   });
   y += 20;
 
-  // Sección de Mediciones con tabla expandible
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.text("Mediciones", marginLeft, y);
@@ -657,7 +672,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   doc.setDrawColor(200); doc.setFillColor(240, 240, 240); doc.setLineWidth(0.5);
 
   if (isMasa) {
-    // Tabla para Masa
     const masaHeaders = ["Parámetro", "Valor"];
     const masaData = [
       ["Excentricidad", formData.excentricidad || "-"],
@@ -665,13 +679,11 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       ["Repetibilidad", formData.repetibilidad || "-"]
     ];
 
-    // Dibujar cabecera
     doc.rect(marginLeft, y, 500, 20, 'FD');
     doc.text(masaHeaders[0], marginLeft + 10, y + 15);
     doc.text(masaHeaders[1], marginLeft + 250, y + 15);
     y += 20;
 
-    // Filas
     masaData.forEach(([param, val]) => {
       const valLines = doc.splitTextToSize(val, 240);
       const rowHeight = Math.max(20, valLines.length * lineHeight);
@@ -682,18 +694,15 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       y += rowHeight;
     });
   } else {
-    // Tabla para otras magnitudes (Patrón e Instrumento)
     const patronLines = (formData.medicionPatron || "").split('\n').filter(line => line.trim());
     const instrumentoLines = (formData.medicionInstrumento || "").split('\n').filter(line => line.trim());
-    const maxLines = Math.max(patronLines.length, instrumentoLines.length, 1); // Mínimo 1 fila
+    const maxLines = Math.max(patronLines.length, instrumentoLines.length, 1); 
 
-    // Cabecera
     doc.rect(marginLeft, y, 500, 20, 'FD');
     doc.text("Medición Patrón", marginLeft + 10, y + 15);
     doc.text("Medición Instrumento", marginLeft + 260, y + 15);
     y += 20;
 
-    // Filas expandibles
     for (let i = 0; i < maxLines; i++) {
       const patron = patronLines[i] || "-";
       const instrumento = instrumentoLines[i] || "-";
@@ -710,7 +719,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   }
   y += 30;
 
-  // Notas con expansión
   doc.setFontSize(12); doc.setFont("helvetica", "bold");
   doc.text("Notas:", marginLeft, y);
   y += lineHeight;
@@ -719,7 +727,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   doc.text(notasLines, marginLeft, y);
   y += notasLines.length * lineHeight + 20;
 
-  // Pie de página
   doc.setFontSize(9); doc.setFont("helvetica", "italic"); doc.setTextColor(100);
   doc.text("AG-CAL-F39-00", marginLeft, 790);
   return doc;
@@ -755,7 +762,7 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
 }
 
 // ====================================================================
-// 4. COMPONENTE PRINCIPAL
+// 4. COMPONENTE PRINCIPAL (WORKSHEET)
 // ====================================================================
 
 export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetId }) => {
@@ -774,7 +781,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
 
-  // 1. Estado local para manejar los valores múltiples de forma segura
   const [electricalValues, setElectricalValues] = useState<Record<string, { patron: string, instrumento: string }>>({});
 
   useEffect(() => {
@@ -788,7 +794,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     };
   }, []);
 
-  // Cargar datos si es modo edición
   useEffect(() => {
     if (worksheetId) {
       const fetchWorksheet = async () => {
@@ -802,11 +807,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
   }, [worksheetId]);
 
-  // 2. Efecto para inicializar los valores si ya existen (modo edición)
   useEffect(() => {
     if (state.magnitud === "Electrica" && state.unidad.length > 0) {
         const newValues: Record<string, { patron: string, instrumento: string }> = {};
-        
         const extractValue = (fullText: string, unit: string) => {
             if (!fullText) return "";
             const lines = fullText.split('\n');
@@ -818,15 +821,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 continue;
               }
               if (inSection) {
-                if (line.trim() === '' || /^[a-zA-Z0-9]+:/.test(line.trim())) { // Fin si vacía o nueva unidad
-                  break;
-                }
+                if (line.trim() === '' || /^[a-zA-Z0-9]+:/.test(line.trim())) break;
                 extracted += line + '\n';
               }
             }
             return extracted.trim();
         };
-
         state.unidad.forEach(u => {
             newValues[u] = {
                 patron: extractValue(state.medicionPatron, u),
@@ -837,19 +837,15 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
   }, [state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]); 
 
-  // 3. Efecto que "Escucha" cambios en los inputs y actualiza el State Global (para el PDF)
   useEffect(() => {
     if (state.magnitud !== "Electrica") return;
-
     let textoPatron = "";
     let textoInstrumento = "";
-
     state.unidad.forEach(u => {
         const vals = electricalValues[u] || { patron: "", instrumento: "" };
         if (vals.patron) textoPatron += `${u}:\n${vals.patron}\n\n`;
         if (vals.instrumento) textoInstrumento += `${u}:\n${vals.instrumento}\n\n`;
     });
-
     if (state.medicionPatron !== textoPatron.trim()) {
         dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: textoPatron.trim() });
     }
@@ -861,10 +857,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const handleLocalElectricChange = (unit: string, type: 'patron' | 'instrumento', value: string) => {
     setElectricalValues(prev => ({
         ...prev,
-        [unit]: {
-            ...prev[unit],
-            [type]: value
-        }
+        [unit]: { ...prev[unit], [type]: value }
     }));
   };
 
@@ -884,17 +877,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       if (state.humedadRelativa && (hr < limits.hMin || hr > limits.hMax)) {
           warning += `HR% fuera de rango (${limits.hMin}-${limits.hMax}%). `;
       }
-
-      if (warning) {
-          setMetrologyWarning(warning.trim());
-      } else {
-          setMetrologyWarning(null);
-      }
+      if (warning) { setMetrologyWarning(warning.trim()); } else { setMetrologyWarning(null); }
   }, [state.tempAmbiente, state.humedadRelativa, state.magnitud]);
 
   useEffect(() => {
     const backup = localStorage.getItem('backup_worksheet_data');
-    if (backup && !worksheetId) { // No restaurar backup si es modo edición
+    if (backup && !worksheetId) { 
       try {
         const parsedBackup = JSON.parse(backup) as WorksheetState;
         if (window.confirm("Se encontró una hoja de trabajo no guardada. ¿Desea restaurarla?")) { dispatch({ type: 'RESTORE_BACKUP', payload: parsedBackup }); }
@@ -903,13 +891,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
   }, [worksheetId]);
 
-  // ====================================================================
-  // VALIDACION CORREGIDA PARA PERMITIR EXCEPCIONES
-  // ====================================================================
-
   const validarIdEnPeriodo = useCallback(async () => {
     dispatch({ type: 'CLEAR_ID_BLOCK' });
-    
     const id = state.id?.trim(); 
     const cliente = state.cliente;
     if (!id || !cliente) return;
@@ -1177,18 +1160,14 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200"}`;
 
-  // --- PREPARACIÓN DATOS ETIQUETA ---
   const labelData: LabelData = React.useMemo(() => {
     const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
     const fCalObj = state.fecha ? parseISO(state.fecha) : new Date();
-    
-    // Fallback: Si no hay cálculo válido de siguiente fecha, suma 1 año por defecto
     const fSugObj = nextDate ? nextDate : addYears(fCalObj, 1);
 
     return {
         id: state.id || "PENDIENTE",
-        certificado: state.certificado || "---",
-        // Format: YYYY-MMM-DD en Mayúsculas (Ej: 2025-JUN-20)
+        certificado: state.certificado || "PENDIENTE",
         fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd").toUpperCase() : "---",
         fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd").toUpperCase() : "---",
         calibro: state.nombre 
@@ -1222,7 +1201,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           </div>
           <div className="flex items-center space-x-3">
             
-            {/* --- BOTÓN NUEVO DE ETIQUETA --- */}
+            {/* BOTÓN ETIQUETA MEJORADO */}
             <LabelPrinterButton data={labelData} logo={labLogo} />
 
             <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
@@ -1306,7 +1285,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
                 
-                {/* SECCION ID MEJORADA */}
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
                   <input 
