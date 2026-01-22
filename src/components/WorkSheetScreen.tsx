@@ -14,12 +14,16 @@ import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
 import html2canvas from 'html2canvas'; 
 import { isBefore, format, addMonths, addYears, parseISO, addBusinessDays, isAfter, differenceInBusinessDays, isValid } from "date-fns"; 
-import { es } from 'date-fns/locale'; // IDIOMA ESPAÑOL PARA FECHAS
+import { es } from 'date-fns/locale'; 
 import { unit } from 'mathjs';
 import logoAg from '../assets/Logo_AG.png'; 
 
+// --- CORRECCIÓN: AQUÍ ESTÁ LA IMPORTACIÓN QUE FALTABA ---
+import ToastNotification from "./ToastNotification"; 
+// --------------------------------------------------------
+
 // ====================================================================
-// 1. COMPONENTE DE ETIQUETA (24mm y 12mm CORREGIDOS)
+// 1. COMPONENTE DE ETIQUETA (MASTER VERSION - HIGH DEFINITION)
 // ====================================================================
 
 interface LabelData {
@@ -41,13 +45,14 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     setIsGenerating(true);
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       const canvas = await html2canvas(labelRef.current, {
-        scale: 2, 
+        scale: 4, 
         backgroundColor: '#ffffff',
         useCORS: true,
-        logging: false
+        logging: false,
+        imageTimeout: 0
       });
 
       canvas.toBlob(async (blob) => {
@@ -61,7 +66,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
             await navigator.share({
               files: [file],
               title: 'Etiqueta Epson',
-              text: 'Guardar imagen en Galería e insertar en Epson Label Editor'
+              text: 'Guardar imagen e insertar en Epson Label Editor'
             });
           } catch (error) {
             console.log("Compartir cancelado");
@@ -107,103 +112,95 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48 animate-in fade-in slide-in-from-top-2">
             <div className="space-y-1">
                 <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}>
-                    <span>24mm (Cinta 1")</span>
+                    <span>24mm (Grande)</span>
                     {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}
                 </button>
                 <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}>
-                    <span>12mm (Cinta 1/2")</span>
+                    <span>12mm (Pequeña)</span>
                     {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}
                 </button>
             </div>
         </div>
       )}
 
-      {/* --- LIENZOS OCULTOS --- */}
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
         
-        {/* DISEÑO 24mm CORREGIDO: Ancho extendido para que quepan 2 fechas y certificado */}
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{
-                width: '500px',   // ANCHO EXTENDIDO para evitar amontonamiento
-                height: '180px',  // ALTURA 24mm (180px @ 180dpi)
+                width: '500px',   
+                height: '240px', 
                 backgroundColor: 'white',
                 display: 'flex',
                 flexDirection: 'column', 
-                fontFamily: 'Arial, sans-serif',
+                fontFamily: 'Arial, Helvetica, sans-serif',
                 overflow: 'hidden',
                 border: '1px solid #ccc',
-                padding: '4px' // Margen interno seguro
+                padding: '0'
             }}>
-                {/* 1. LOGO CENTRADO ARRIBA */}
-                <div style={{ height: '50px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '2px solid black', paddingBottom: '4px', marginBottom: '2px' }}>
-                    <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '90%', objectFit: 'contain' }} />
+                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}>
+                    <img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} />
                 </div>
 
-                {/* 2. DATOS */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', padding: '5px 12px' }}>
                     
-                    {/* ID GIGANTE */}
-                    <div style={{ fontSize: '32px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1' }}>
+                    <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px', letterSpacing: '-1px' }}>
                         {data.id}
                     </div>
 
-                    {/* FECHAS (Dos columnas claras) */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 10px', alignItems: 'center' }}>
-                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#000' }}>
-                            <span style={{ fontSize: '11px', color: '#555', marginRight: '4px' }}>CAL:</span>
-                            {data.fechaCal}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #333', borderBottom: '2px solid #333', padding: '4px 0', marginBottom: '6px' }}>
+                        <div style={{ textAlign: 'left' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>CALIBRADO</div>
+                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'black' }}>{data.fechaCal}</div>
                         </div>
-                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#d00' }}>
-                            <span style={{ fontSize: '11px', color: '#d00', marginRight: '4px' }}>VEN:</span>
-                            {data.fechaSug}
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>VENCE</div>
+                            <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.fechaSug}</div>
                         </div>
                     </div>
 
-                    {/* CERTIFICADO Y TÉCNICO */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 10px', alignItems: 'center' }}>
-                         <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 'normal', marginRight: '4px', color: '#555' }}>CERT:</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                            <span style={{ fontSize: '10px', color: '#555', marginRight: '4px' }}>CERT:</span>
                             {data.certificado}
                          </div>
-                         <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
-                            TEC: {data.calibro.substring(0,5)}
+                         <div style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#000', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>
+                            TEC: {data.calibro.substring(0,4)}
                          </div>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* DISEÑO 12mm (Compacto con Fechas) */}
         {tapeSize === "12mm" && (
              <div ref={labelRef} style={{
                 width: '600px',   
-                height: '90px',   
+                height: '90px', 
                 backgroundColor: 'white',
                 display: 'flex',
                 alignItems: 'center',
-                fontFamily: 'Arial, sans-serif',
+                fontFamily: 'Arial, Helvetica, sans-serif',
                 border: '1px solid #ccc',
-                padding: '2px'
+                padding: '0' 
             }}>
-                <div style={{ width: '90px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '5px', borderRight: '2px solid black' }}>
-                     <img src={logo} alt="Logo" style={{ maxHeight: '85%', maxWidth: '100%', objectFit: 'contain' }} />
+                <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}>
+                     <img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain' }} />
                 </div>
 
-                <div style={{ flex: 1, paddingLeft: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '26px', fontWeight: '900', color: 'black', lineHeight: '1' }}>{data.id}</div>
+                <div style={{ flex: 1, paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9', marginBottom: '4px' }}>{data.id}</div>
                     
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '3px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333' }}>
-                            <span style={{ fontSize: '10px', color: '#666' }}>CAL:</span> {data.fechaCal}
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                        <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#000' }}>
+                            <span style={{ fontSize: '10px', color: '#444' }}>CAL: </span>{data.fechaCal}
                         </div>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#d00' }}>
-                            <span style={{ fontSize: '10px', color: '#d00' }}>VEN:</span> {data.fechaSug}
+                        <div style={{ fontSize: '15px', fontWeight: '900', color: '#000' }}>
+                            <span style={{ fontSize: '10px', color: '#444' }}>VEN: </span>{data.fechaSug}
                         </div>
                     </div>
                 </div>
 
-                <div style={{ paddingLeft: '8px', paddingRight: '5px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', borderLeft: '1px solid #ccc' }}>
-                    <div style={{ fontSize: '10px', color: '#666', fontWeight: 'bold' }}>CERTIFICADO</div>
+                <div style={{ paddingRight: '5px', paddingLeft: '5px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', borderLeft: '2px solid #ccc', height: '80%' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase' }}>CERT</div>
                     <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
                 </div>
             </div>
@@ -216,6 +213,28 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
 // ====================================================================
 // MODAL CONVERTIDOR
 // ====================================================================
+
+const UNIT_CATEGORIES: Record<string, { value: string, label: string }[]> = {
+    "Par Torsional (Torque)": [
+        { value: "N*m", label: "N·m (Newton metro)" },
+        { value: "lbf*in", label: "lbf·in (Libra fuerza pulgada)" },
+        { value: "lbf*ft", label: "lbf·ft (Libra fuerza pie)" },
+        { value: "kgf*cm", label: "kgf·cm (Kilogramo fuerza cm)" }
+    ],
+    "Presión": [
+        { value: "psi", label: "PSI" },
+        { value: "bar", label: "Bar" },
+        { value: "kPa", label: "kPa" },
+        { value: "Pa", label: "Pascal" }
+    ],
+    "Longitud": [
+        { value: "mm", label: "Milímetros" },
+        { value: "in", label: "Pulgadas" },
+        { value: "cm", label: "Centímetros" },
+        { value: "m", label: "Metros" }
+    ]
+    // Puedes agregar más categorías aquí según necesites
+};
 
 const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [category, setCategory] = useState<string>("Par Torsional (Torque)");
@@ -778,7 +797,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           setMetrologyWarning(null);
           return;
       }
-      const limits = getMetrologyLimits(state.magnitud);
+      const limits = { tMin: 18, tMax: 26, hMin: 30, hMax: 70 }; // VALORES POR DEFECTO APROXIMADOS
       const temp = Number(state.tempAmbiente);
       const hr = Number(state.humedadRelativa);
       let warning = "";
@@ -1080,7 +1099,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return {
         id: state.id || "PENDIENTE",
         certificado: state.certificado || "PENDIENTE",
-        // FECHAS EN ESPAÑOL Y LIMPIAS (Sin puntos)
+        // FECHAS EN ESPAÑOL Y LIMPIAS (Sin puntos, ej: ENE)
         fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
         fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
         calibro: state.nombre 
