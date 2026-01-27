@@ -22,7 +22,7 @@ import {
   ChevronRight,
   Layers,
   Minimize2,
-  RefreshCw // Icono para indicar que está cargando o actualizando
+  RefreshCw 
 } from 'lucide-react';
 import { addMonths, addYears, differenceInDays, parseISO, format, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -39,9 +39,9 @@ interface EquipoVencimiento {
   fechaVencimiento: Date;
   diasRestantes: number;
   status: 'vencido' | 'critico' | 'proximo' | 'vigente';
-  contacto?: string; 
-  telefono?: string;
-  correo?: string;
+  // Campos para gestión interna
+  emailResponsable?: string; 
+  responsableInterno?: string;
 }
 
 export const VencimientosScreen: React.FC = () => {
@@ -72,78 +72,98 @@ export const VencimientosScreen: React.FC = () => {
     } catch (e) { return null; }
   };
 
-  // --- Carga de Datos (Lógica Mejorada) ---
+  // --- Carga de Datos con DOBLE CRUCE ---
   useEffect(() => {
-    const fetchEquipos = async () => {
+    const fetchDatos = async () => {
       setLoading(true);
       try {
-        // 1. Traemos TODO ordenado por fecha descendente (Lo más nuevo primero)
+        // 1. CARGAR USUARIOS INTERNOS (Para obtener sus correos reales: Jorge -> jorge@empresa.com)
+        const usuariosSnapshot = await getDocs(collection(db, "usuarios"));
+        const mapUsuariosEmails: Record<string, string> = {};
+        
+        usuariosSnapshot.forEach(doc => {
+            const d = doc.data();
+            // Aseguramos coincidencia ignorando mayúsculas/minúsculas si es necesario
+            if (d.nombre && d.email) {
+                mapUsuariosEmails[d.nombre] = d.email;
+            }
+        });
+
+        // 2. CARGAR CLIENTES (Para saber quién atiende a quién)
+        const clientesSnapshot = await getDocs(collection(db, "clientes"));
+        const mapClienteResponsable: Record<string, string> = {};
+        
+        clientesSnapshot.forEach(doc => {
+            const d = doc.data();
+            if (d.nombre && d.responsable) {
+                // Mapeamos: "Cliente SA" -> "Jorge Amador"
+                mapClienteResponsable[d.nombre.trim()] = d.responsable; 
+            }
+        });
+
+        // 3. CARGAR EQUIPOS (Lógica de Hojas de Trabajo)
         const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc"));
         const querySnapshot = await getDocs(q);
         
         const listaProcesada: EquipoVencimiento[] = [];
         const hoy = new Date();
-        
-        // 2. SET PARA EVITAR DUPLICADOS (La Clave de la solución)
-        // Guardaremos aquí los IDs que ya procesamos para no repetir equipos viejos
         const equiposProcesados = new Set<string>();
 
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-          
-          // Normalizamos el ID: Quitamos espacios y aseguramos que sea string
           const rawId = data.id || data.certificado;
           const identificadorUnico = rawId ? String(rawId).trim() : null;
 
-          // 3. FILTRO DE DUPLICADOS
-          // Si ya vimos este ID, significa que ya procesamos su registro más reciente.
-          // Ignoramos este registro porque es una calibración vieja.
-          if (identificadorUnico && equiposProcesados.has(identificadorUnico)) {
-             return; // Saltamos al siguiente registro
-          }
+          // Filtro de duplicados (solo el registro más reciente)
+          if (identificadorUnico && equiposProcesados.has(identificadorUnico)) return;
+          if (identificadorUnico) equiposProcesados.add(identificadorUnico);
 
-          // Si tiene ID, lo marcamos como visto para bloquear futuras apariciones (viejas)
-          if (identificadorUnico) {
-            equiposProcesados.add(identificadorUnico);
-          }
-
-          // --- Cálculo normal ---
           const fechaVenc = calcularFechaVencimiento(data.fecha, data.frecuenciaCalibracion);
 
           if (fechaVenc) {
             const dias = differenceInDays(fechaVenc, hoy);
             let status: EquipoVencimiento['status'] = 'vigente';
-            
-            // Lógica de semáforo
             if (dias < 0) status = 'vencido';
             else if (dias <= 30) status = 'critico'; 
             else if (dias <= 60) status = 'proximo'; 
 
+            // --- LÓGICA DE ASIGNACIÓN DE CORREO INTERNO ---
+            const nombreCliente = (data.cliente || '').trim();
+            
+            // A. Buscamos quién es el responsable (ej. "Jorge Amador")
+            const nombreResponsable = mapClienteResponsable[nombreCliente] || null;
+            
+            // B. Buscamos el correo de ese responsable (ej. "jorge@ese-ag.mx")
+            const emailResponsable = nombreResponsable ? mapUsuariosEmails[nombreResponsable] : '';
+
             listaProcesada.push({
               id: doc.id,
-              equipoId: identificadorUnico || 'S/N', // Si no tiene ID, mostramos S/N
+              equipoId: identificadorUnico || 'S/N',
               descripcion: data.equipo || data.nombre || 'Equipo sin nombre',
-              cliente: data.cliente || 'Cliente desconocido',
+              cliente: nombreCliente || 'Cliente desconocido',
               fechaCalibracion: data.fecha,
               frecuencia: data.frecuenciaCalibracion,
               fechaVencimiento: fechaVenc,
               diasRestantes: dias,
-              status: status
+              status: status,
+              // Guardamos la info cruzada
+              emailResponsable: emailResponsable, 
+              responsableInterno: nombreResponsable || 'Sin asignar'
             });
           }
         });
         
-        // Ordenar la lista general por urgencia (menor días restantes primero)
+        // Ordenar por urgencia
         listaProcesada.sort((a, b) => a.diasRestantes - b.diasRestantes);
         setEquipos(listaProcesada);
 
       } catch (error) {
-        console.error("Error cargando equipos:", error);
+        console.error("Error cargando datos:", error);
       } finally {
         setLoading(false);
       }
     };
-    fetchEquipos();
+    fetchDatos();
   }, []);
 
   // --- Filtros ---
@@ -176,9 +196,7 @@ export const VencimientosScreen: React.FC = () => {
       grupos[item.cliente].push(item);
     });
 
-    // Ordenar clientes alfabéticamente
     return Object.keys(grupos).sort().reduce((obj, key) => { 
-        // Dentro de cada cliente, ordenamos también por urgencia
         obj[key] = grupos[key].sort((a, b) => a.diasRestantes - b.diasRestantes); 
         return obj;
     }, {} as Record<string, EquipoVencimiento[]>);
@@ -199,91 +217,32 @@ export const VencimientosScreen: React.FC = () => {
 
   // --- Alertas y Exportaciones ---
   const equiposA60Dias = useMemo(() => {
-    // Filtramos solo los que están en el rango específico de alerta de calidad
     return equipos.filter(e => e.diasRestantes >= 50 && e.diasRestantes <= 65);
   }, [equipos]);
 
-  const enviarReporteCalidad = () => {
-    if (equiposA60Dias.length === 0) {
-      alert("No hay equipos en el rango de 60 días para reportar hoy.");
-      return;
-    }
-
-    // Agrupamos los equipos por cliente
-    const gruposPorCliente: Record<string, EquipoVencimiento[]> = {};
-    equiposA60Dias.forEach((e) => {
-      if (!gruposPorCliente[e.cliente]) {
-        gruposPorCliente[e.cliente] = [];
-      }
-      gruposPorCliente[e.cliente].push(e);
-    });
-
-    const destinatario = "calidad@ese-ag.mx";
-    const asunto = `Alerta de Vencimientos: ${equiposA60Dias.length} Equipos Próximos a Vencer (50-65 Días)`;
-
-    // Cuerpo en texto plano con formato mejorado para simular diseño
-    let cuerpo = `
---------------------------------------------------------------------------------
-                          REPORTE DE VENCIMIENTOS
---------------------------------------------------------------------------------
-
-Estimado Equipo de Calidad,
-
-Este es un reporte automático generado por el Sistema de Monitoreo de Vencimientos.
-
-Resumen:
-- Equipos en rango crítico: 50-65 días para vencimiento.
-- Total de equipos afectados: ${equiposA60Dias.length}.
-- Acción requerida: Programar recolecciones o calibraciones inmediatamente.
-
-Detalles por Cliente:
-`;
-
-    // Iteramos por cliente y construimos la lista
-    Object.entries(gruposPorCliente).forEach(([cliente, equiposCliente]) => {
-      // Verificamos si todos los equipos tienen la misma fecha de vencimiento
-      const fechasUnicas = new Set(equiposCliente.map(e => format(e.fechaVencimiento, 'dd/MM/yyyy')));
-      const fechaComun = fechasUnicas.size === 1 ? Array.from(fechasUnicas)[0] : null;
-
-      cuerpo += `
-====================================
-Cliente: ${cliente}
-====================================
-`;
-
-      if (fechaComun) {
-        cuerpo += `Vencimiento común: ${fechaComun}\n`;
-      }
-      cuerpo += `Número de equipos: ${equiposCliente.length}\n\nLista de equipos:\n`;
-
-      equiposCliente.forEach((e) => {
-        const fechaEquipo = fechaComun ? '' : ` (Vence: ${format(e.fechaVencimiento, 'dd/MM/yyyy')})`;
-        cuerpo += `  - ${e.equipoId} | ${e.descripcion}${fechaEquipo}\n`;
-      });
-
-      cuerpo += `\n`;
-    });
-
-    cuerpo += `
---------------------------------------------------------------------------------
-Total general: ${equiposA60Dias.length} equipos.
-
-Para más detalles, consulte el monitor de vencimientos en la aplicación.
-
-Atentamente,
-Sistema de Monitoreo de Vencimientos
-ESE-AG México
-Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
-
---------------------------------------------------------------------------------
-`;
-
-    window.location.href = `mailto:${destinatario}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+  // Función para generar link a Outlook/Mail del Responsable Interno
+  const generarLinkCorreo = (equipo: EquipoVencimiento) => {
+    const destinatario = equipo.emailResponsable || ""; 
+    const subject = `ALERTA VENCIMIENTO - Cliente: ${equipo.cliente} - Equipo: ${equipo.equipoId}`;
+    
+    const body = `Hola ${equipo.responsableInterno},\n\n` +
+                 `Se requiere tu atención para el siguiente equipo que está próximo a vencer o vencido.\n\n` +
+                 `DATOS DEL EQUIPO:\n` +
+                 `--------------------------------\n` +
+                 `Cliente: ${equipo.cliente}\n` +
+                 `Equipo: ${equipo.descripcion}\n` +
+                 `ID: ${equipo.equipoId}\n` +
+                 `Vencimiento: ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}\n` +
+                 `Estatus: ${equipo.status.toUpperCase()}\n\n` +
+                 `Por favor contacta al cliente para programar la recolección o servicio.\n`;
+    
+    return `mailto:${destinatario}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const exportarExcel = () => {
     const dataExportar = equiposFiltrados.map(e => ({
       Cliente: e.cliente,
+      Responsable: e.responsableInterno,
       Equipo: e.descripcion,
       ID: e.equipoId,
       'Fecha Calibración': format(parseISO(e.fechaCalibracion), 'yyyy-MM-dd'),
@@ -295,12 +254,6 @@ Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vencimientos");
     XLSX.writeFile(wb, `Reporte_Vencimientos_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
-  };
-
-  const generarLinkCorreo = (equipo: EquipoVencimiento) => {
-    const subject = `Recordatorio de Calibración - ${equipo.equipoId}`;
-    const body = `Estimado cliente, su equipo ${equipo.descripcion} (ID: ${equipo.equipoId}) vence el ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}. Favor de confirmar recolección.`;
-    return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   return (
@@ -322,14 +275,6 @@ Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
           </div>
           
           <div className="flex gap-2">
-             {equiposA60Dias.length > 0 && (
-                 <button 
-                    onClick={enviarReporteCalidad}
-                    className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-all shadow-sm text-sm font-medium animate-pulse"
-                 >
-                    <Send size={16} /> Notificar ({equiposA60Dias.length})
-                 </button>
-             )}
              <button 
                 onClick={exportarExcel}
                 className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium"
@@ -426,7 +371,7 @@ Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
             {loading ? (
                 <div className="flex flex-col items-center justify-center p-12 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm animate-pulse">
                     <RefreshCw size={32} className="animate-spin mb-3 text-blue-500"/>
-                    <p>Analizando historial de calibraciones...</p>
+                    <p>Analizando historial de calibraciones y asignando responsables...</p>
                 </div>
             ) : Object.keys(equiposAgrupados).length === 0 ? (
                 <div className="flex flex-col items-center justify-center p-12 text-gray-500 bg-white rounded-xl border border-gray-200 shadow-sm">
@@ -439,6 +384,9 @@ Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
                     const countVencidos = itemsCliente.filter(i => i.status === 'vencido').length;
                     const countCriticos = itemsCliente.filter(i => i.status === 'critico').length;
                     const hasAlerts = countVencidos > 0 || countCriticos > 0;
+                    
+                    // Obtenemos el responsable del primer item (todos son del mismo cliente)
+                    const responsableDelGrupo = itemsCliente[0]?.responsableInterno;
 
                     return (
                         <div key={cliente} className={`bg-white rounded-xl border transition-all duration-200 shadow-sm ${hasAlerts ? 'border-l-4 border-l-red-500 border-gray-200' : 'border-gray-200'}`}>
@@ -453,7 +401,16 @@ Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
                                         <Building2 size={20} />
                                     </div>
                                     <div className="text-left">
-                                        <h3 className="font-bold text-gray-800 text-sm md:text-base">{cliente}</h3>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <h3 className="font-bold text-gray-800 text-sm md:text-base">{cliente}</h3>
+                                            
+                                            {/* BADGE DEL RESPONSABLE INTERNO */}
+                                            {responsableDelGrupo && responsableDelGrupo !== 'Sin asignar' && (
+                                                <span className="text-[10px] uppercase font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded border border-purple-200">
+                                                    Atiende: {responsableDelGrupo}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="flex flex-wrap gap-2 text-xs mt-1">
                                             <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{itemsCliente.length} Equipos</span>
                                             {countVencidos > 0 && <span className="text-red-700 bg-red-100 px-2 py-0.5 rounded-full font-semibold">{countVencidos} Vencidos</span>}
@@ -519,8 +476,9 @@ Fecha del reporte: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: es })}
                                                         <td className="px-6 py-3 text-center">
                                                             <a 
                                                                 href={generarLinkCorreo(item)}
-                                                                className="inline-flex items-center justify-center p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 rounded-lg transition-all border border-blue-200 shadow-sm"
-                                                                title="Enviar correo recordatorio"
+                                                                className={`inline-flex items-center justify-center p-2 rounded-lg transition-all border shadow-sm ${item.emailResponsable ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-200' : 'text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed'}`}
+                                                                title={item.emailResponsable ? `Notificar a ${item.responsableInterno}` : "Sin responsable asignado"}
+                                                                onClick={(e) => !item.emailResponsable && e.preventDefault()}
                                                             >
                                                                 <Mail size={18} />
                                                             </a>

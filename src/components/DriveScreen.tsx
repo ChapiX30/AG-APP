@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata, updateMetadata } from "firebase/storage";
 import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, where } from "firebase/firestore"; 
 import { storage, db, auth } from "../utils/firebase";
@@ -11,7 +11,8 @@ import {
   Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, User,
   CalendarClock, ArrowLeft, MoveRight, ArrowUp, FolderOpen,
   ArrowDownWideNarrow, ArrowUpWideNarrow, ArrowDownAZ, ArrowUpAZ, Menu,
-  AlertCircle, LogOut, ShieldAlert, Edit
+  AlertCircle, LogOut, ShieldAlert, Edit, CornerDownRight, Maximize2,
+  RefreshCw // Icono para indicar sincronización
 } from "lucide-react";
 import clsx from "clsx";
 import labLogo from '../assets/lab_logo.png'; 
@@ -32,6 +33,7 @@ interface DriveFile {
   completedByName?: string;
   starred?: boolean;
   uploadedBy?: string;
+  parentFolder?: string;
 }
 
 interface DriveFolder {
@@ -57,7 +59,22 @@ type FilterType = 'all' | 'starred' | 'recent' | 'pending_review' | 'completed';
 type SortType = 'dateDesc' | 'dateAsc' | 'nameAsc' | 'nameDesc';
 type DragItemType = 'file' | 'folder' | null;
 
+// --- CUSTOM HOOKS ---
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 // --- UTILS ---
+const normalizeText = (text: string) => {
+    // Normaliza: Quita acentos, pasa a minúsculas y ELIMINA ESPACIOS EXTRA al inicio/final
+    return text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
+};
+
 const cleanFileName = (rawName: string) => {
     if (!rawName) return "Sin Nombre";
     let name = rawName.replace(/^worksheets_/, '');
@@ -69,6 +86,16 @@ const cleanFileName = (rawName: string) => {
         if (firstPart.includes(' ')) return name.substring(firstUnderscore + 1);
     }
     return name;
+};
+
+const getParentFolderName = (fullPath: string) => {
+    const parts = fullPath.split('/');
+    if (parts.length >= 2) {
+        const parent = parts[parts.length - 2];
+        if (parent === 'worksheets') return "Raíz";
+        return parent;
+    }
+    return "Raíz";
 };
 
 const addBusinessDays = (startDate: Date, daysToAdd: number) => {
@@ -117,8 +144,7 @@ const getDeadlineInfo = (createdDateStr: string) => {
     const totalTime = deadlineDate.getTime() - createdDate.getTime();
     const elapsedTime = now.getTime() - createdDate.getTime();
     let progress = (elapsedTime / totalTime) * 100;
-    if (progress < 0) progress = 0;
-    if (progress > 100) progress = 100;
+    progress = Math.min(Math.max(progress, 0), 100);
 
     let status: 'normal' | 'warning' | 'urgent' | 'overdue' = 'normal';
     if (daysLeft <= 2) status = 'warning';
@@ -130,7 +156,7 @@ const getDeadlineInfo = (createdDateStr: string) => {
 
 const isQualityUser = (user: UserData | null) => {
   const p = (user?.puesto || user?.role || "").toLowerCase();
-  return p.includes('calidad') || p.includes('quality') || p.includes('admin') || p.includes('gerente') || p.includes('manager');
+  return ['calidad', 'quality', 'admin', 'gerente', 'manager'].some(role => p.includes(role));
 };
 
 const formatFileSize = (bytes?: number) => {
@@ -144,17 +170,12 @@ const formatFileSize = (bytes?: number) => {
 const getFileIcon = (fileName?: string, size: number = 24) => {
   if (!fileName || typeof fileName !== 'string') return <File size={size} className="text-gray-400" />;
   const ext = fileName.split('.').pop()?.toLowerCase();
-  if (['pdf'].includes(ext || '')) return <FileText size={size} className="text-red-500" strokeWidth={1.5} />;
-  if (['jpg', 'jpeg', 'png', 'svg'].includes(ext || '')) return <ImageIcon size={size} className="text-purple-600" strokeWidth={1.5} />;
-  if (['xls', 'xlsx', 'csv'].includes(ext || '')) return <FileText size={size} className="text-green-600" strokeWidth={1.5} />;
-  if (['doc', 'docx'].includes(ext || '')) return <FileText size={size} className="text-blue-600" strokeWidth={1.5} />;
-  return <File size={size} className="text-gray-400" strokeWidth={1.5} />;
-};
-
-const getFolderNameFromPath = (fullPath: string) => {
-    const parts = fullPath.split('/');
-    if (parts.length >= 2) return parts[parts.length - 2];
-    return "Raíz";
+  const iconProps = { size, strokeWidth: 1.5 };
+  if (['pdf'].includes(ext || '')) return <FileText {...iconProps} className="text-red-500" />;
+  if (['jpg', 'jpeg', 'png', 'svg', 'webp'].includes(ext || '')) return <ImageIcon {...iconProps} className="text-purple-600" />;
+  if (['xls', 'xlsx', 'csv'].includes(ext || '')) return <FileText {...iconProps} className="text-green-600" />;
+  if (['doc', 'docx'].includes(ext || '')) return <FileText {...iconProps} className="text-blue-600" />;
+  return <File {...iconProps} className="text-gray-400" />;
 };
 
 const ROOT_PATH = "worksheets";
@@ -163,13 +184,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [user] = useAuthState(auth);
   const { goBack } = useNavigation();
 
-  // Estados Principales
+  // Estados Datos
   const [folders, setFolders] = useState<DriveFolder[]>([]);
   const [files, setFiles] = useState<DriveFile[]>([]); 
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false); // Nuevo estado para feedback visual
   const [currentUserData, setCurrentUserData] = useState<UserData | null>(null);
   
-  // UI States
+  // UI & Nav
   const [path, setPath] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>('grid'); 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
@@ -179,14 +201,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [completedGroupView, setCompletedGroupView] = useState<string | null>(null);
 
-  // Selección & DragDrop (Upload)
-  const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
+  // Selección Múltiple y Preview
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
+
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: DriveFile | null, folder: DriveFolder | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 400); 
+
   const [dragActive, setDragActive] = useState(false); 
   const [toasts, setToasts] = useState<ToastMessage[]>([]); 
-  
-  // DRAG AND DROP (Internal Move)
   const [draggingItem, setDraggingItem] = useState<{ type: DragItemType, data: DriveFile | DriveFolder } | null>(null);
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
 
@@ -196,7 +220,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [newFolderName, setNewFolderName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mover (Modal)
+  // Estados de Mover
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTargetFile, setMoveTargetFile] = useState<DriveFile | null>(null);
   const [moveTargetFolder, setMoveTargetFolder] = useState<DriveFolder | null>(null);
@@ -204,22 +228,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
   const [isMoving, setIsMoving] = useState(false);
 
-  // Renombrar (Nuevo Modal)
+  // Estados de Renombrar
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetFile, setRenameTargetFile] = useState<DriveFile | null>(null);
   const [renameTargetFolder, setRenameTargetFolder] = useState<DriveFolder | null>(null);
   const [newName, setNewName] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
 
-  const handleBack = () => { 
-      if (onBack) onBack(); 
-      else goBack(); 
-  };
+  const handleBack = () => { onBack ? onBack() : goBack(); };
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
       const id = Date.now();
       setToasts(prev => [...prev, { id, text, type }]);
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   };
 
   useEffect(() => {
@@ -235,53 +256,53 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 foundUser = { name: data.nombre || data.name, email: data.correo || data.email, puesto: data.puesto || data.role };
             }
         });
-        if (!foundUser) {
-            foundUser = { name: user.displayName || "Usuario", email: user.email || "", role: "User" };
-        }
-        setCurrentUserData(foundUser);
+        setCurrentUserData(foundUser || { name: user.displayName || "Usuario", email: user.email || "", role: "User" });
       } catch (e) { console.error(e); }
     };
     loadUser();
   }, [user]);
 
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     setLoading(true);
     setContextMenu(null);
+    setSelectedIds(new Set());
+    
     try {
-      if (activeFilter !== 'all' || searchQuery) {
+      // LOGICA HÍBRIDA MEJORADA:
+      // 1. Si estás en Raíz + Buscando -> Búsqueda Global (DB)
+      // 2. Si estás en Carpeta -> Búsqueda Local (Storage) + AUTO-REPARACIÓN DE DB
+      const isGlobalSearch = path.length === 0 && debouncedSearch !== "";
+      
+      if (isGlobalSearch) {
+        // --- MODO BÚSQUEDA GLOBAL ---
         const querySnapshot = await getDocs(collection(db, 'fileMetadata'));
         const results: DriveFile[] = [];
         const isQuality = isQualityUser(currentUserData);
-        const myName = (currentUserData?.name || "").toLowerCase();
-        const term = searchQuery.toLowerCase();
+        const myName = normalizeText(currentUserData?.name || "");
+        const term = normalizeText(debouncedSearch);
 
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id; 
           const cleanNameStr = cleanFileName(rawName);
+          let fullPath = data.filePath || `worksheets/${data.name || docSnap.id}`;
+          const normalizedPath = normalizeText(fullPath);
 
           if (!isQuality) { 
-              const pathIncludesName = (data.filePath || "").toLowerCase().includes(myName);
-              if (!pathIncludesName && data.uploadedBy !== currentUserData?.name) return; 
+              const pathIncludesName = normalizedPath.includes(myName);
+              const isUploader = normalizeText(data.uploadedBy || "") === myName;
+              if (!pathIncludesName && !isUploader) return; 
           }
 
-          if (term) {
-              const matchesName = cleanNameStr.toLowerCase().includes(term);
-              const matchesRaw = rawName.toLowerCase().includes(term);
-              if (!matchesName && !matchesRaw) return;
-          }
-
-          let matchesTab = true;
-          if (activeFilter === 'starred') matchesTab = data.starred === true;
-          if (activeFilter === 'pending_review') matchesTab = (data.completed === true) && (data.reviewed !== true);
-          if (activeFilter === 'completed') matchesTab = data.reviewed === true;
-
-          if (matchesTab) {
+          const matchesName = normalizeText(cleanNameStr).includes(term);
+          const matchesRaw = normalizeText(rawName).includes(term);
+          
+          if (matchesName || matchesRaw) {
               results.push({
                   name: cleanNameStr,
                   rawName: rawName,
                   url: "",
-                  fullPath: data.filePath || docSnap.id.replace(/_/g, '/'),
+                  fullPath: fullPath,
                   updated: data.updated || new Date().toISOString(),
                   created: data.created || data.updated || new Date().toISOString(),
                   size: data.size || 0,
@@ -291,59 +312,119 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   completed: data.completed,
                   completedByName: data.completedByName,
                   starred: data.starred,
-                  uploadedBy: data.uploadedBy
+                  uploadedBy: data.uploadedBy,
+                  parentFolder: getParentFolderName(fullPath)
               });
           }
         });
         setFiles(results);
         setFolders([]); 
       } else {
+        // --- MODO NAVEGACIÓN Y BÚSQUEDA CONTEXTUAL ---
         const pathStr = [ROOT_PATH, ...path].join('/');
         const res = await listAll(ref(storage, pathStr));
         
         let loadedFolders = res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath }));
-        if (currentUserData && !isQualityUser(currentUserData)) {
-            if (path.length === 0) {
-                const myName = (currentUserData.name || "").toLowerCase();
-                loadedFolders = loadedFolders.filter(f => f.name.toLowerCase().includes(myName));
+        if (currentUserData) {
+            const myName = normalizeText(currentUserData.name || "");
+            if (!isQualityUser(currentUserData) && path.length === 0) {
+                loadedFolders = loadedFolders.filter(f => normalizeText(f.name).includes(myName));
+            }
+            if (debouncedSearch) {
+                const term = normalizeText(debouncedSearch);
+                loadedFolders = loadedFolders.filter(f => normalizeText(f.name).includes(term));
             }
         }
         setFolders(loadedFolders);
         
+        // AUTO-REPARACIÓN Y LISTADO
         const filePromises = res.items.map(async (item) => {
             if (item.name === '.keep') return null;
+            
+            // Usamos item.name del Storage como la verdad absoluta para el nombre
+            const rawName = item.name;
+            const cleanName = cleanFileName(rawName);
+            
+            // FILTRO DE BÚSQUEDA LOCAL
+            if (debouncedSearch) {
+                const term = normalizeText(debouncedSearch);
+                const matchName = normalizeText(cleanName).includes(term);
+                const matchRaw = normalizeText(rawName).includes(term);
+                if (!matchName && !matchRaw) return null;
+            }
+
             const metaId = item.fullPath.replace(/\//g, '_');
             let meta: any = {};
+            let needsRepair = false;
+
             try {
                 const metaSnap = await getDoc(doc(db, 'fileMetadata', metaId));
-                if (metaSnap.exists()) meta = metaSnap.data();
+                if (metaSnap.exists()) {
+                    meta = metaSnap.data();
+                    // Si el nombre en DB no coincide con el real (Storage), marcamos para reparar
+                    if (meta.name !== item.name) needsRepair = true;
+                } else {
+                    // Si no existe metadata, creamos una básica
+                    needsRepair = true;
+                }
             } catch (e) { }
 
             let storageMeta = { size: 0, updated: new Date().toISOString(), timeCreated: new Date().toISOString(), contentType: 'unknown' };
             try { storageMeta = await getMetadata(item) as any; } catch (e) { }
-            
-            const rawName = meta.name || item.name;
-            const finalName = cleanFileName(rawName);
+
+            // Lógica de auto-reparación silenciosa
+            if (needsRepair && !isSyncing) {
+                setIsSyncing(true);
+                const newMeta = {
+                    name: item.name, // Aseguramos que el nombre sea el real del archivo
+                    filePath: item.fullPath,
+                    size: storageMeta.size,
+                    contentType: storageMeta.contentType,
+                    updated: storageMeta.updated,
+                    created: meta.created || storageMeta.timeCreated,
+                    uploadedBy: meta.uploadedBy || "Sistema (Auto-Sync)",
+                    // Preservar estados si existían parcialmente
+                    completed: meta.completed || false,
+                    reviewed: meta.reviewed || false,
+                    starred: meta.starred || false
+                };
+                // Ejecutamos update en fondo sin await para no bloquear UI
+                setDoc(doc(db, 'fileMetadata', metaId), newMeta, { merge: true })
+                    .then(() => setIsSyncing(false))
+                    .catch(() => setIsSyncing(false));
+                
+                // Usamos los datos nuevos inmediatamente para visualización
+                meta = newMeta;
+            }
+
+            // Filtros de pestaña (Solo si no estamos buscando)
+            if (!debouncedSearch) {
+                if (activeFilter === 'starred' && meta.starred !== true) return null;
+                if (activeFilter === 'pending_review' && !((meta.completed === true) && (meta.reviewed !== true))) return null;
+                if (activeFilter === 'completed' && meta.reviewed !== true) return null;
+            }
 
             return {
-                name: finalName,
-                rawName: rawName, 
+                name: cleanName,
+                rawName: rawName, // Importante: Usar nombre real de Storage
                 fullPath: item.fullPath,
                 url: '', 
                 size: storageMeta.size,
                 updated: storageMeta.updated,
                 created: meta.created || storageMeta.timeCreated,
                 contentType: storageMeta.contentType,
+                parentFolder: path.length > 0 ? path[path.length - 1] : "Raíz",
                 ...meta
             } as DriveFile;
         });
-        const loadedFiles = (await Promise.all(filePromises)).filter(f => f !== null) as DriveFile[];
+        
+        const loadedFiles = (await Promise.all(filePromises)).filter(Boolean) as DriveFile[];
         setFiles(loadedFiles);
       }
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
+  }, [path, activeFilter, currentUserData, debouncedSearch]);
 
-  useEffect(() => { if (currentUserData) loadContent(); }, [path, activeFilter, currentUserData, searchQuery]);
+  useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
   const processedFiles = useMemo(() => {
     let result = [...files];
@@ -365,95 +446,62 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (activeFilter !== 'completed') return {};
     const groups: Record<string, DriveFile[]> = {};
     processedFiles.forEach(file => {
-        const folderName = getFolderNameFromPath(file.fullPath);
+        const folderName = file.parentFolder || getParentFolderName(file.fullPath);
         if (!groups[folderName]) groups[folderName] = [];
         groups[folderName].push(file);
     });
     return groups;
   }, [processedFiles, activeFilter]);
 
-  const handleDrag = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (draggingItem) return;
-      if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
-      else if (e.type === "dragleave") setDragActive(false);
+  // --- SELECCION MÚLTIPLE ---
+  const handleSelect = (file: DriveFile, multi: boolean) => {
+    const newSelected = new Set(multi ? selectedIds : []);
+    if (newSelected.has(file.fullPath)) {
+        newSelected.delete(file.fullPath);
+    } else {
+        newSelected.add(file.fullPath);
+    }
+    setSelectedIds(newSelected);
+    if (newSelected.size === 1) {
+        if (!multi) setDetailsOpen(true); 
+    } else {
+        setDetailsOpen(false); 
+    }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragActive(false);
-      if (draggingItem) return;
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          await processFiles(e.dataTransfer.files);
-      }
-  };
-
-  const processFiles = async (fileList: FileList) => {
-      const isQuality = isQualityUser(currentUserData);
-      const isInMyFolder = path.length > 0;
-      if (!isQuality && !isInMyFolder) { 
-          showToast("Entra a tu carpeta personal primero", 'error'); 
-          return; 
-      }
-
-      setIsUploading(true);
-      let count = 0;
+  const handlePreview = async (file: DriveFile) => {
       try {
-          for (const file of Array.from(fileList)) {
-              const fullPath = `${[ROOT_PATH, ...path].join('/')}/${file.name}`;
-              const docId = fullPath.replace(/\//g, '_');
-              
-              const existingDoc = await getDoc(doc(db, 'fileMetadata', docId));
-              const existingData = existingDoc.exists() ? existingDoc.data() : {};
-
-              const snap = await uploadBytes(ref(storage, fullPath), file);
-              const meta = await getMetadata(snap.ref);
-              
-              await setDoc(doc(db, 'fileMetadata', docId), {
-                  name: file.name,
-                  filePath: fullPath,
-                  size: meta.size,
-                  contentType: meta.contentType,
-                  updated: meta.updated,
-                  created: existingData.created || new Date().toISOString(),
-                  uploadedBy: currentUserData?.name || "Desconocido",
-                  completed: existingData.completed || false,
-                  completedByName: existingData.completedByName || null,
-                  reviewed: false, 
-                  reviewedByName: null
-              }, { merge: true });
-              count++;
-          }
-          showToast(`Se subieron ${count} archivos correctamente`, 'success');
-          loadContent();
-      } catch(err) { 
-          console.error(err);
-          showToast("Error al subir archivos", 'error'); 
-      } finally {
-          setIsUploading(false);
+        let url = file.url;
+        if (!url) {
+             url = await getDownloadURL(ref(storage, file.fullPath));
+        }
+        setPreviewFile({ ...file, url });
+      } catch (e) {
+          showToast("No se pudo cargar la vista previa", 'error');
       }
   };
 
-  const handleUploadInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files.length > 0) processFiles(e.target.files);
+  const handleBatchDelete = async () => {
+      if (selectedIds.size === 0) return;
+      if (!confirm(`¿Estás seguro de eliminar ${selectedIds.size} archivos?`)) return;
+
+      let deletedCount = 0;
+      for (const id of Array.from(selectedIds)) {
+          const file = files.find(f => f.fullPath === id);
+          if (file) {
+              try {
+                  await deleteObject(ref(storage, file.fullPath));
+                  await deleteDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')));
+                  deletedCount++;
+              } catch (e) { console.error(e); }
+          }
+      }
+      showToast(`Se eliminaron ${deletedCount} archivos`, 'success');
+      setSelectedIds(new Set());
+      loadContent();
   };
 
-  useEffect(() => {
-    const loadMoveFolders = async () => {
-        if (!moveDialogOpen) return;
-        const pathString = [ROOT_PATH, ...moveToPath].join('/');
-        try {
-            const res = await listAll(ref(storage, pathString));
-            const folders = res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath }));
-            setMoveFolderContent(folders);
-        } catch(e) { console.error(e); }
-    };
-    loadMoveFolders();
-  }, [moveDialogOpen, moveToPath]);
-
-  // --- LOGICA RECURSIVA Y DE MOVER ---
+  // --- LOGICA DE MOVER RECURSIVA ---
   const moveFolderRecursive = async (sourcePrefix: string, destPrefix: string) => {
       const sourceRef = ref(storage, sourcePrefix);
       const res = await listAll(sourceRef);
@@ -540,130 +588,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
   };
 
-  const renameFolderRecursive = async (sourcePrefix: string, newName: string) => {
-    const parts = sourcePrefix.split('/');
-    const parentPath = parts.slice(0, -1).join('/');
-    const newFullPath = `${parentPath}/${newName}`;
-    await moveFolderRecursive(sourcePrefix, newFullPath);
-  };
-
-  const executeRenameFolder = async (folderToRename: DriveFolder, newName: string) => {
-    if (!newName.trim() || newName === folderToRename.name) return false;
-    setIsRenaming(true);
-    try {
-      await renameFolderRecursive(folderToRename.fullPath, newName);
-      return true;
-    } catch (e) {
-      console.error("Error renaming folder:", e);
-      showToast("Error al renombrar la carpeta", 'error');
-      return false;
-    } finally {
-      setIsRenaming(false);
-    }
-  };
-
-  const executeRenameFile = async (fileToRename: DriveFile, newName: string) => {
-    if (!newName.trim() || newName === fileToRename.name) return false;
-    const parts = fileToRename.fullPath.split('/');
-    const parentPath = parts.slice(0, -1).join('/');
-    const newFullPath = `${parentPath}/${newName}`;
-
-    setIsRenaming(true);
-    try {
-      let fileUrl = fileToRename.url;
-      if (!fileUrl) fileUrl = await getDownloadURL(ref(storage, fileToRename.fullPath));
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const newRef = ref(storage, newFullPath);
-      await uploadBytes(newRef, blob);
-
-      await updateMetadata(newRef, { customMetadata: { originalName: fileToRename.rawName } });
-
-      const oldMetaId = fileToRename.fullPath.replace(/\//g, '_');
-      const newMetaId = newFullPath.replace(/\//g, '_');
-      const oldMetaDoc = await getDoc(doc(db, 'fileMetadata', oldMetaId));
-      let metaData = oldMetaDoc.exists() ? oldMetaDoc.data() : {};
-      
-      if (oldMetaDoc.exists()) await deleteDoc(doc(db, 'fileMetadata', oldMetaId));
-      await setDoc(doc(db, 'fileMetadata', newMetaId), { ...metaData, filePath: newFullPath, name: newName, updated: new Date().toISOString() }, { merge: true });
-      await deleteObject(ref(storage, fileToRename.fullPath));
-      return true;
-    } catch(e) {
-      console.error("Error renaming file", e);
-      showToast("Error al renombrar el archivo", 'error');
-      return false;
-    } finally {
-      setIsRenaming(false);
-    }
-  };
-
-  const handleRename = async () => {
-    let success = false;
-    if (renameTargetFolder) {
-      success = await executeRenameFolder(renameTargetFolder, newName);
-    } else if (renameTargetFile) {
-      success = await executeRenameFile(renameTargetFile, newName);
-    }
-    if (success) {
-      showToast("Renombrado correctamente", 'success');
-      setRenameDialogOpen(false);
-      setRenameTargetFile(null);
-      setRenameTargetFolder(null);
-      setNewName("");
-      loadContent();
-    }
-  };
-
-  const handleItemDragStart = (e: React.DragEvent, item: DriveFile | DriveFolder, type: DragItemType) => {
-      if (!isQualityUser(currentUserData)) {
-          e.preventDefault();
-          return;
-      }
-      setDraggingItem({ type, data: item });
-      e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleFolderDragOver = (e: React.DragEvent, folderFullPath: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!draggingItem) return;
-      if (draggingItem.type === 'folder' && (draggingItem.data as DriveFolder).fullPath === folderFullPath) return;
-      setDropTargetFolder(folderFullPath);
-  };
-
-  const handleFolderDragLeave = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDropTargetFolder(null);
-  };
-
-  const handleFolderDrop = async (e: React.DragEvent, targetFolder: DriveFolder) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDropTargetFolder(null);
-      
-      if (!draggingItem) return;
-
-      let success = false;
-      const destPath = targetFolder.fullPath;
-
-      if (draggingItem.type === 'folder') {
-          const folderToMove = draggingItem.data as DriveFolder;
-          if (folderToMove.fullPath === destPath) return; 
-          success = await executeMoveFolder(folderToMove, destPath);
-      } else if (draggingItem.type === 'file') {
-          const fileToMove = draggingItem.data as DriveFile;
-          if (fileToMove.fullPath.startsWith(destPath)) return;
-          success = await executeMoveFile(fileToMove, destPath);
-      }
-
-      setDraggingItem(null);
-      if (success) {
-          showToast("Elemento movido correctamente", 'success');
-          loadContent();
-      }
-  };
-
   const handleModalMove = async () => {
     const destinationPathString = [ROOT_PATH, ...moveToPath].join('/');
 
@@ -691,7 +615,59 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
-  // --- LÓGICA DE ACTUALIZACIÓN CON SINCRONIZACIÓN A FRIDAY ---
+  useEffect(() => {
+    const loadMoveFolders = async () => {
+        if (!moveDialogOpen) return;
+        const pathString = [ROOT_PATH, ...moveToPath].join('/');
+        try {
+            const res = await listAll(ref(storage, pathString));
+            const folders = res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath }));
+            setMoveFolderContent(folders);
+        } catch(e) { console.error(e); }
+    };
+    loadMoveFolders();
+  }, [moveDialogOpen, moveToPath]);
+
+  // --- HANDLERS (Drag, Drop, Upload) ---
+  const handleDrag = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (draggingItem) return; if (e.type === "dragenter" || e.type === "dragover") setDragActive(true); else if (e.type === "dragleave") setDragActive(false); };
+  const handleDrop = async (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); if (draggingItem) return; if (e.dataTransfer.files && e.dataTransfer.files.length > 0) { await processFiles(e.dataTransfer.files); } };
+
+  const processFiles = async (fileList: FileList) => {
+      const isQuality = isQualityUser(currentUserData);
+      const isInMyFolder = path.length > 0;
+      if (!isQuality && !isInMyFolder) { showToast("Entra a tu carpeta personal primero", 'error'); return; }
+      setIsUploading(true);
+      let count = 0;
+      try {
+          for (const file of Array.from(fileList)) {
+              const fullPath = `${[ROOT_PATH, ...path].join('/')}/${file.name}`;
+              const docId = fullPath.replace(/\//g, '_');
+              const existingDoc = await getDoc(doc(db, 'fileMetadata', docId));
+              const existingData = existingDoc.exists() ? existingDoc.data() : {};
+              const snap = await uploadBytes(ref(storage, fullPath), file);
+              const meta = await getMetadata(snap.ref);
+              await setDoc(doc(db, 'fileMetadata', docId), {
+                  name: file.name,
+                  filePath: fullPath,
+                  size: meta.size,
+                  contentType: meta.contentType,
+                  updated: meta.updated,
+                  created: existingData.created || new Date().toISOString(),
+                  uploadedBy: currentUserData?.name || "Desconocido",
+                  completed: existingData.completed || false,
+                  completedByName: existingData.completedByName || null,
+                  reviewed: false, 
+                  reviewedByName: null
+              }, { merge: true });
+              count++;
+          }
+          showToast(`Se subieron ${count} archivos correctamente`, 'success');
+          loadContent();
+      } catch(err) { console.error(err); showToast("Error al subir archivos", 'error'); } finally { setIsUploading(false); }
+  };
+
+  const handleUploadInput = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) processFiles(e.target.files); };
+
   const updateFileStatus = async (file: DriveFile, field: string, value: any) => {
     const userName = currentUserData?.name || user?.displayName || "Usuario Desconocido";
     const newReviewedBy = field === 'reviewed' && value ? userName : (field === 'reviewed' && !value ? null : file.reviewedByName);
@@ -699,15 +675,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     const updatedFile = { ...file, [field]: value, reviewedByName: newReviewedBy, completedByName: newCompletedBy };
     
-    // 1. Actualización Visual Inmediata
     setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
-    if (selectedFile?.fullPath === file.fullPath) setSelectedFile(updatedFile as DriveFile);
+    if (previewFile?.fullPath === file.fullPath) setPreviewFile(updatedFile as DriveFile);
 
     try {
-        // 2. Actualizar en Firebase Storage Metadata
         const id = file.fullPath.replace(/\//g, '_');
         const dataToUpdate: any = { [field]: value };
-        
         if (field === 'reviewed') dataToUpdate['reviewedByName'] = value ? userName : null;
         if (field === 'completed') dataToUpdate['completedByName'] = value ? userName : null;
         
@@ -716,90 +689,70 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         if (field === 'reviewed' && value === true) showToast("Validación guardada", 'success');
         if (field === 'completed' && value === true) showToast("Marcado como terminado", 'success');
 
-        // --- 3. SINCRONIZACIÓN AUTOMÁTICA CON FRIDAY (FIXED) ---
         if (value === true && (field === 'completed' || field === 'reviewed')) {
+             let cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "");
+             const possibleId = cleanName.split(/[_ ]/)[0].trim();
              
-             // A. LIMPIEZA INTELIGENTE DEL NOMBRE (Para encontrar el ID)
-             // Quita extensión (.pdf), quita paréntesis de copias "(1)", y toma la primera palabra clave
-             // Ej: "EP-22179 (1).pdf" -> "EP-22179"
-             let cleanName = file.name.replace(/\.[^/.]+$/, ""); // Quita extensión
-             cleanName = cleanName.replace(/\s*\(\d+\)/, ""); // Quita (1), (2)...
-             const possibleId = cleanName.split(/[_ ]/)[0].trim(); // Toma lo que esté antes de un guion bajo o espacio
-             
-             console.log(`INTENTO DE SYNC: Archivo "${file.name}" -> Buscando ID "${possibleId}" en Friday...`);
-
-             // B. BÚSQUEDA DUAL (ID y Folio)
              const qId = query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId));
              let snap = await getDocs(qId);
-             
              if (snap.empty) {
-                 // Si no encuentra por ID, busca por Folio
                  const qFolio = query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId));
                  snap = await getDocs(qFolio);
              }
-
              if (!snap.empty) {
                  const docRef = snap.docs[0].ref;
-                 // C. ACTUALIZACIÓN DE ESTADOS
-                 // Asegurándonos de usar "Generado" y "Firmado" que coinciden con FridayScreen
                  const updateData: any = { lastUpdated: new Date().toISOString() };
-                 
                  if (field === 'completed') {
-                     updateData['status_certificado'] = "Generado"; // Coincide con FridayScreen
+                     updateData['status_certificado'] = "Generado";
                      updateData['cargado_drive'] = "Si";
                  } 
-                 if (field === 'reviewed') {
-                     updateData['status_certificado'] = "Firmado"; // Coincide con FridayScreen
-                 }
-
+                 if (field === 'reviewed') updateData['status_certificado'] = "Firmado";
                  await updateDoc(docRef, updateData);
-                 console.log("✅ MATCH ENCONTRADO y actualizado en Friday.");
                  showToast(`Sincronizado con equipo ${possibleId}`, 'success');
-             } else {
-                 console.warn(`❌ No se encontró el equipo "${possibleId}" en Friday.`);
-                 // Opcional: Avisar al usuario si es crítico
-                 // showToast(`No se encontró el ID ${possibleId} en el tablero`, 'error');
              }
         }
-        
-        if (activeFilter === 'pending_review' && field === 'reviewed' && value === true) {
-            setTimeout(() => { setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath)); setSelectedFile(null); setDetailsOpen(false); }, 500); 
-        }
-    } catch (e) { 
-        console.error("Error crítico al sincronizar:", e);
-        showToast("Error de conexión", 'error'); 
-        loadContent(); 
-    } 
+    } catch (e) { console.error(e); showToast("Error de conexión", 'error'); loadContent(); } 
   };
 
-  const handleDelete = async (file: DriveFile) => {
-    if (!confirm(`¿Eliminar ${file.name}?`)) return;
-    try {
-        await deleteObject(ref(storage, file.fullPath));
-        await deleteDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')));
-        setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath));
-        setSelectedFile(null);
-        showToast("Archivo eliminado", 'success');
-    } catch(e) { showToast("Error al eliminar", 'error'); }
-  };
-
-  const handleDownload = async (file: DriveFile) => {
-     try {
-       const url = await getDownloadURL(ref(storage, file.fullPath));
-       window.open(url, '_blank');
-     } catch (e) { showToast("No se pudo descargar", 'error'); }
-  };
-
-  const handleContextMenu = (e: React.MouseEvent, file: DriveFile) => {
-      e.preventDefault();
-      setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null });
-      setSelectedFile(file);
-  };
+  const handleDelete = async (file: DriveFile) => { if (!confirm(`¿Eliminar ${file.name}?`)) return; try { await deleteObject(ref(storage, file.fullPath)); await deleteDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_'))); setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath)); setSelectedIds(new Set()); showToast("Archivo eliminado", 'success'); } catch(e) { showToast("Error al eliminar", 'error'); } };
+  const handleDownload = async (file: DriveFile) => { try { const url = await getDownloadURL(ref(storage, file.fullPath)); window.open(url, '_blank'); } catch (e) { showToast("No se pudo descargar", 'error'); } };
   
   const handleFolderContextMenu = (e: React.MouseEvent, folder: DriveFolder) => {
-      e.preventDefault();
-      e.stopPropagation(); 
-      setContextMenu({ x: e.clientX, y: e.clientY, file: null, folder });
+    e.preventDefault(); e.stopPropagation(); 
+    setContextMenu({ x: e.clientX, y: e.clientY, file: null, folder });
+  };
+  const handleItemDragStart = (e: React.DragEvent, item: DriveFile | DriveFolder, type: DragItemType) => {
+    if (!isQualityUser(currentUserData)) { e.preventDefault(); return; }
+    setDraggingItem({ type, data: item });
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleFolderDragOver = (e: React.DragEvent, folderFullPath: string) => { e.preventDefault(); e.stopPropagation(); if (!draggingItem) return; if (draggingItem.type === 'folder' && (draggingItem.data as DriveFolder).fullPath === folderFullPath) return; setDropTargetFolder(folderFullPath); };
+  
+  // DRAG AND DROP MOVER (CORREGIDO)
+  const handleFolderDrop = async (e: React.DragEvent, targetFolder: DriveFolder) => {
+      e.preventDefault(); e.stopPropagation();
+      setDropTargetFolder(null);
+      
+      if (!draggingItem) return;
+
+      let success = false;
+      const destPath = targetFolder.fullPath;
+
+      if (draggingItem.type === 'folder') {
+          const folderToMove = draggingItem.data as DriveFolder;
+          if (folderToMove.fullPath === destPath) return; 
+          success = await executeMoveFolder(folderToMove, destPath);
+      } else if (draggingItem.type === 'file') {
+          const fileToMove = draggingItem.data as DriveFile;
+          if (fileToMove.fullPath.startsWith(destPath)) return;
+          success = await executeMoveFile(fileToMove, destPath);
+      }
+
+      setDraggingItem(null);
+      if (success) {
+          showToast("Elemento movido correctamente", 'success');
+          loadContent();
+      }
   };
 
   const renderContent = () => {
@@ -807,14 +760,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const groupNames = Object.keys(completedGroups);
         if (groupNames.length === 0) return <EmptyState icon={FileCheck} text="No hay servicios completados" />;
         return (
-            <div className="mb-8">
+            <div className="mb-8 animate-in fade-in duration-500">
                 <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><FileCheck size={14}/> Servicios Finalizados</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {groupNames.map(folderName => (
-                        <div key={folderName} onClick={() => setCompletedGroupView(folderName)} className="group p-4 border border-green-100 bg-green-50/50 rounded-2xl hover:border-green-400 cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 relative">
-                            <FileCheck size={32} className="text-green-500 fill-green-100 group-hover:text-green-600 transition-colors" />
-                            <span className="text-sm font-bold text-green-800 truncate w-full text-center">{folderName}</span>
-                            <span className="text-[10px] text-green-600 bg-green-100 px-2 py-0.5 rounded-full">{completedGroups[folderName].length} archivos</span>
+                        <div key={folderName} onClick={() => setCompletedGroupView(folderName)} className="group p-5 border border-green-100 bg-white hover:bg-green-50/50 rounded-2xl hover:border-green-300 cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 relative">
+                            <div className="p-3 bg-green-100/50 rounded-full group-hover:bg-green-200/50 transition-colors">
+                                <FileCheck size={28} className="text-green-600" />
+                            </div>
+                            <span className="text-sm font-bold text-gray-800 truncate w-full text-center">{folderName}</span>
+                            <span className="text-[10px] text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">{completedGroups[folderName].length} archivos</span>
                         </div>
                     ))}
                 </div>
@@ -824,15 +779,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     let displayFiles = processedFiles;
     if (activeFilter === 'completed' && completedGroupView) displayFiles = completedGroups[completedGroupView] || [];
-    const showFolders = activeFilter === 'all' && !searchQuery && folders.length > 0;
+    
+    const showFolders = activeFilter === 'all' && !debouncedSearch && folders.length > 0;
 
     if (displayFiles.length === 0 && !showFolders) {
-        if(searchQuery) return <EmptyState icon={Search} text={`No se encontraron resultados para "${searchQuery}"`} />;
-        return <EmptyState icon={Folder} text="Carpeta vacía (Arrastra archivos aquí)" />;
+        if(debouncedSearch) return <EmptyState icon={Search} text={`No se encontraron resultados para "${debouncedSearch}"`} />;
+        return <EmptyState icon={Folder} text="Esta carpeta está vacía" />;
     }
 
     return (
-        <>
+        <div className="animate-in slide-in-from-bottom-2 duration-300">
             {showFolders && (
                 <div className="mb-8">
                     <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><Folder size={14}/> Carpetas</h2>
@@ -843,211 +799,181 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                                 draggable={isQualityUser(currentUserData)}
                                 onDragStart={(e) => handleItemDragStart(e, f, 'folder')}
                                 onDragOver={(e) => handleFolderDragOver(e, f.fullPath)}
-                                onDragLeave={handleFolderDragLeave}
                                 onDrop={(e) => handleFolderDrop(e, f)}
                                 onDoubleClick={() => { setPath([...path, f.name]); setSearchQuery(""); }} 
                                 onContextMenu={(e) => handleFolderContextMenu(e, f)}
                                 className={clsx(
-                                    "group p-4 border rounded-2xl cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 select-none relative overflow-hidden",
-                                    dropTargetFolder === f.fullPath ? "border-blue-500 bg-blue-50 scale-105 ring-2 ring-blue-300" : "border-gray-200 bg-white hover:border-blue-400"
+                                    "group p-4 border rounded-2xl cursor-pointer transition-all flex flex-col items-center gap-3 shadow-sm hover:shadow-lg hover:-translate-y-1 select-none relative overflow-hidden bg-white",
+                                    dropTargetFolder === f.fullPath ? "border-blue-500 bg-blue-50 scale-105 ring-2 ring-blue-300" : "border-gray-200 hover:border-blue-400"
                                 )}
                             >
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-cyan-300 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                <Folder size={32} className={clsx("transition-colors", dropTargetFolder === f.fullPath ? "text-blue-600 fill-blue-200" : "text-blue-200 fill-blue-50 group-hover:text-blue-500 group-hover:fill-blue-100")} />
-                                <span className="text-sm font-semibold text-gray-700 truncate w-full text-center">{f.name}</span>
+                                <Folder size={40} className="text-blue-100 fill-blue-50 group-hover:text-blue-500 group-hover:fill-blue-100 transition-all duration-300" />
+                                <span className="text-sm font-semibold text-gray-700 truncate w-full text-center group-hover:text-blue-700">{f.name}</span>
                             </div>
                         ))}
                     </div>
                 </div>
             )}
-            <div>
-                {displayFiles.length > 0 && (
-                    <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2 justify-between">
-                        <div className="flex items-center gap-2"><File size={14}/> {searchQuery ? 'Resultados' : 'Archivos'} ({displayFiles.length})</div>
+            
+            {displayFiles.length > 0 && (
+                <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                        <File size={14}/> {debouncedSearch ? 'Resultados de Búsqueda' : 'Archivos'} <span className="bg-gray-100 text-gray-600 px-1.5 rounded-md">{displayFiles.length}</span>
                     </h2>
-                )}
-                
-                {view === 'grid' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 pb-20">
-                        {displayFiles.map((file) => (
-                            <div key={file.fullPath} draggable={isQualityUser(currentUserData)} onDragStart={(e) => handleItemDragStart(e, file, 'file')}>
-                                <FileCard file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => { setSelectedFile(file); setDetailsOpen(true); }} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm mb-20">
-                        <div className="grid grid-cols-12 gap-4 px-4 md:px-6 py-3 bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                            <div className="col-span-10 md:col-span-4">Nombre</div>
-                            <div className="hidden md:block col-span-3">Progreso</div>
-                            <div className="hidden md:block col-span-2">Estado</div>
-                            <div className="hidden md:block col-span-2 text-right">Tamaño</div>
-                            <div className="col-span-2 md:col-span-1"></div>
+                    {selectedIds.size > 0 && (
+                        <div className="flex items-center gap-2 animate-in slide-in-from-right fade-in">
+                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">{selectedIds.size} seleccionados</span>
+                            {isQualityUser(currentUserData) && (
+                                <button onClick={handleBatchDelete} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-red-100 shadow-sm" title="Eliminar seleccionados">
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
                         </div>
-                        {displayFiles.map((file) => (
-                            <div key={file.fullPath} draggable={isQualityUser(currentUserData)} onDragStart={(e) => handleItemDragStart(e, file, 'file')}>
-                                <FileListRow file={file} selected={selectedFile?.fullPath === file.fullPath} onSelect={() => { setSelectedFile(file); setDetailsOpen(true); }} onContextMenu={handleContextMenu} onDoubleClick={() => handleDownload(file)} />
-                            </div>
-                        ))}
+                    )}
+                </div>
+            )}
+            
+            {view === 'grid' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 pb-20">
+                    {displayFiles.map((file) => (
+                        <FileCard 
+                            key={file.fullPath} 
+                            file={file} 
+                            selected={selectedIds.has(file.fullPath)} 
+                            searchActive={!!debouncedSearch} 
+                            onSelect={(multi: boolean) => handleSelect(file, multi)} 
+                            onContextMenu={(e: any) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if(!selectedIds.has(file.fullPath)) handleSelect(file, false); }}
+                            onDoubleClick={() => handlePreview(file)} 
+                        />
+                    ))}
+                </div>
+            ) : (
+                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm mb-20">
+                    <div className="grid grid-cols-12 gap-4 px-4 md:px-6 py-3 bg-gray-50/80 border-b border-gray-200 text-[11px] font-bold text-gray-400 uppercase tracking-wider backdrop-blur-sm sticky top-0">
+                        <div className="col-span-10 md:col-span-4">Nombre</div>
+                        <div className="hidden md:block col-span-3">Progreso</div>
+                        <div className="hidden md:block col-span-2">Estado</div>
+                        <div className="hidden md:block col-span-2 text-right">Tamaño</div>
+                        <div className="col-span-2 md:col-span-1"></div>
                     </div>
-                )}
-            </div>
-        </>
+                    {displayFiles.map((file) => (
+                        <FileListRow 
+                            key={file.fullPath} 
+                            file={file} 
+                            selected={selectedIds.has(file.fullPath)} 
+                            searchActive={!!debouncedSearch}
+                            onSelect={(multi: boolean) => handleSelect(file, multi)} 
+                            onContextMenu={(e: any) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if(!selectedIds.has(file.fullPath)) handleSelect(file, false); }}
+                            onDoubleClick={() => handlePreview(file)} 
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
     );
   };
 
   return (
     <div className="flex h-full w-full bg-[#f8f9fa] text-gray-800 font-sans overflow-hidden relative" onClick={() => { setContextMenu(null); setFilterMenuOpen(false); }}>
-      
-      {/* DRAG AND DROP OVERLAY (UPLOAD EXTERNO) */}
-      {dragActive && !draggingItem && (
-          <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-4 border-blue-500 border-dashed m-4 rounded-3xl flex items-center justify-center pointer-events-none">
-              <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce">
-                  <UploadCloud size={64} className="text-blue-500 mb-4" />
-                  <h2 className="text-2xl font-bold text-blue-600">Suelta los archivos aquí</h2>
-              </div>
-          </div>
-      )}
-      
+      {dragActive && !draggingItem && <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-4 border-blue-500 border-dashed m-4 rounded-3xl flex items-center justify-center pointer-events-none"><div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce"><UploadCloud size={64} className="text-blue-500 mb-4" /><h2 className="text-2xl font-bold text-blue-600">Suelta los archivos aquí</h2></div></div>}
       <div className="absolute inset-0 z-0" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}></div>
-
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)}></div>}
 
-      <div className={clsx("fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col pt-5 pb-4 transition-transform duration-300 transform md:relative md:translate-x-0", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
+      <div className={clsx("fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col pt-5 pb-4 transition-transform duration-300 md:relative md:translate-x-0 shadow-2xl md:shadow-none", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
         <div className="px-6 mb-8 flex items-center justify-between">
-             <button onClick={handleBack} className="p-2 -ml-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors md:hidden" title="Regresar"><ArrowLeft size={20} /></button>
-             <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2"><img src={labLogo} alt="Lab Logo" className="w-8 h-8 rounded-lg shadow-lg shadow-blue-200" />AG Drive</h1>
+             <button onClick={handleBack} className="p-2 -ml-2 text-gray-500 hover:text-gray-800 md:hidden"><ArrowLeft size={20} /></button>
+             <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2 tracking-tight">
+                <img src={labLogo} alt="Lab Logo" className="w-10 h-10 rounded-lg shadow-md bg-white object-contain p-1 border border-gray-100" />
+                AG Drive
+             </h1>
         </div>
-
-        {isQualityUser(currentUserData) && (
-            <div className="px-4 mb-6"><button onClick={() => setCreateFolderOpen(true)} className="w-full py-3 px-4 bg-white border border-gray-200 shadow-sm rounded-xl flex items-center gap-3 hover:shadow-md transition-all text-gray-700 font-medium group"><FolderPlus size={20} className="text-blue-500"/>Nueva Carpeta</button></div>
-        )}
-
-        <nav className="flex-1 px-3 space-y-1 relative z-50">
+        <div className="px-4 mb-6">
+            {isQualityUser(currentUserData) && (<button onClick={() => setCreateFolderOpen(true)} className="w-full py-3 px-4 bg-blue-600 text-white shadow-lg shadow-blue-200 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-700 transition-all font-medium active:scale-95"><FolderPlus size={20}/> <span>Nueva Carpeta</span></button>)}
+        </div>
+        <nav className="flex-1 px-3 space-y-1">
             <SidebarItem icon={<Home size={18}/>} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
-            <SidebarItem icon={<Star size={18}/>} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
-            <SidebarItem icon={<Clock size={18}/>} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
-            {isQualityUser(currentUserData) && (<><div className="pt-6 pb-3 px-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Calidad</div><SidebarItem icon={<Settings size={18}/>} label="Por Revisar" active={activeFilter === 'pending_review'} onClick={() => { setActiveFilter('pending_review'); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} badge /><SidebarItem icon={<FileCheck size={18}/>} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} /></>)}
+            <SidebarItem icon={<Star size={18}/>} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setSidebarOpen(false); }} />
+            <SidebarItem icon={<Clock size={18}/>} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setSidebarOpen(false); }} />
+            {isQualityUser(currentUserData) && (<div className="mt-8"><div className="px-4 mb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gestión</div><SidebarItem icon={<Settings size={18}/>} label="Por Revisar" active={activeFilter === 'pending_review'} onClick={() => { setActiveFilter('pending_review'); setSidebarOpen(false); }} badge /><SidebarItem icon={<FileCheck size={18}/>} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setSidebarOpen(false); }} /></div>)}
         </nav>
-
-        <div className="p-4 border-t border-gray-200 mt-auto">
-            <button onClick={handleBack} className="flex items-center gap-3 w-full px-3 py-2.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-xl transition-all font-medium group">
-                <LogOut size={18} className="group-hover:text-red-500 transition-colors"/>
-                <span>Salir al Menú</span>
-            </button>
-        </div>
+        <div className="p-4 border-t border-gray-100"><button onClick={handleBack} className="flex items-center gap-3 w-full px-3 py-2 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all font-medium text-sm"><LogOut size={18}/> <span>Salir al Menú</span></button></div>
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0 relative z-10">
-        <header className="h-16 border-b border-gray-200 flex items-center justify-between px-4 md:px-6 bg-white sticky top-0 z-20 gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={20} /></button>
-            <div className="flex-1 max-w-2xl relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input type="text" placeholder="Buscar..." className="w-full bg-gray-100 hover:bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-100 border-transparent focus:border-blue-500 rounded-xl py-2.5 pl-10 pr-4 transition-all outline-none text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            </div>
-            <div className="flex items-center gap-2 md:gap-3 ml-2">
-                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 md:px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95">
-                    {isUploading ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}<span className="hidden md:inline">Subir</span>
-                </button>
-                <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
-                <div className="hidden md:flex h-8 w-px bg-gray-200 mx-1"></div>
-                <div className="hidden md:flex bg-gray-100 p-1 rounded-lg border border-gray-200">
-                    <button onClick={() => setView('list')} className={clsx("p-2 rounded-md transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}><List size={18} /></button>
-                    <button onClick={() => setView('grid')} className={clsx("p-2 rounded-md transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}><LayoutGrid size={18} /></button>
+      <div className="flex-1 flex flex-col min-w-0 relative z-10 bg-[#f8f9fa]">
+        <header className="h-16 border-b border-gray-200/80 flex items-center justify-between px-4 md:px-8 bg-white/80 backdrop-blur-md sticky top-0 z-30 transition-all">
+            <div className="flex items-center gap-4 flex-1 max-w-3xl">
+                <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={20} /></button>
+                <div className="relative flex-1 group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+                    <input type="text" placeholder="Buscar archivos, carpetas, folios..." className="w-full bg-gray-100/50 hover:bg-gray-100 focus:bg-white focus:ring-2 focus:ring-blue-500/20 border border-transparent focus:border-blue-500 rounded-xl py-2.5 pl-10 pr-4 transition-all outline-none text-sm font-medium" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 </div>
-                <button onClick={() => setDetailsOpen(!detailsOpen)} className={clsx("p-2.5 rounded-xl transition-colors border hidden md:block", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}><Info size={18} /></button>
+            </div>
+            <div className="flex items-center gap-2 md:gap-3 ml-4">
+                {isSyncing && <div className="text-xs text-blue-500 flex items-center gap-1 animate-pulse"><RefreshCw size={12} className="animate-spin"/> Sync...</div>}
+                <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95 shadow-sm">{isUploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />} <span>Subir</span></button>
+                <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
+                <div className="bg-gray-100 p-1 rounded-xl flex items-center"><button onClick={() => setView('list')} className={clsx("p-2 rounded-lg transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 hover:text-gray-600")}><List size={18} /></button><button onClick={() => setView('grid')} className={clsx("p-2 rounded-lg transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 hover:text-gray-600")}><LayoutGrid size={18} /></button></div>
+                <button onClick={() => setDetailsOpen(!detailsOpen)} className={clsx("p-2.5 rounded-xl transition-all border", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-gray-200 text-gray-400 hover:text-gray-700")}><Info size={18} /></button>
             </div>
         </header>
 
-        <div className="px-4 md:px-6 py-4 flex items-center text-sm text-gray-600 bg-white/50 backdrop-blur-sm sticky top-16 z-10 border-b border-gray-200 min-h-[60px] justify-between overflow-x-auto">
-            <div className="flex items-center flex-1 min-w-0">
+        <div className="px-4 md:px-8 py-3 flex items-center justify-between text-sm bg-white border-b border-gray-200/50 sticky top-16 z-20">
+            <div className="flex items-center overflow-hidden">
                 {activeFilter !== 'all' ? (
-                    <div className="flex items-center gap-3">
-                        <span className="font-bold text-gray-800 capitalize flex items-center gap-2 bg-white px-3 py-1 rounded-md border border-gray-200 shadow-sm whitespace-nowrap"><Filter size={14} className="text-blue-500"/> {activeFilter === 'pending_review' ? 'Pendientes' : (activeFilter === 'completed' ? 'Historial' : activeFilter.replace('_', ' '))}</span>
-                        {activeFilter === 'completed' && completedGroupView && (<><ChevronRight size={14} className="text-gray-400" /><button onClick={() => setCompletedGroupView(null)} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium whitespace-nowrap">Todos</button><ChevronRight size={14} className="text-gray-400" /><span className="font-bold text-green-700 flex items-center gap-2 bg-green-50 px-2 py-1 rounded-md border border-green-100 whitespace-nowrap truncate"><FileCheck size={14}/> {completedGroupView}</span></>)}
-                    </div>
+                     <span className="font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 text-xs uppercase tracking-wide flex items-center gap-2"><Filter size={12}/> {activeFilter === 'pending_review' ? 'Pendientes' : (activeFilter === 'completed' ? 'Historial' : activeFilter)}{completedGroupView && <><ChevronRight size={12} className="text-gray-400"/> {completedGroupView}</>}</span>
                 ) : (
-                    <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-                        {searchQuery ? <span className="font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 flex items-center gap-2 whitespace-nowrap"><Search size={14}/> Resultados: "{searchQuery}"</span> : 
-                        <><button onClick={() => setPath([])} className="hover:bg-gray-200 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 font-medium transition-colors">Unidad</button>{path.map((folder, i) => (<React.Fragment key={folder}><ChevronRight size={14} className="text-gray-400 flex-shrink-0" /><button onClick={() => setPath(path.slice(0, i + 1))} className="hover:bg-gray-200 px-2 py-1 rounded-md font-semibold text-gray-800 transition-colors whitespace-nowrap">{folder}</button></React.Fragment>))}</>}
-                    </div>
+                    debouncedSearch ? <span className="font-bold text-gray-800 flex items-center gap-2"><Search size={14} className="text-blue-500"/> Resultados para "{debouncedSearch}"</span> :
+                    <nav className="flex items-center text-gray-500"><button onClick={() => setPath([])} className={clsx("hover:bg-gray-100 px-2 py-1 rounded-md transition-colors flex items-center gap-1", path.length === 0 ? "text-gray-800 font-bold bg-gray-100" : "")}><Home size={14} className="mb-0.5"/> Unidad</button>{path.map((folder, i) => (<React.Fragment key={folder}><ChevronRight size={14} className="text-gray-300 mx-1" /><button onClick={() => setPath(path.slice(0, i + 1))} className={clsx("hover:bg-gray-100 px-2 py-1 rounded-md transition-colors truncate max-w-[150px]", i === path.length - 1 ? "text-gray-800 font-bold bg-gray-50" : "")}>{folder}</button></React.Fragment>))}</nav>
                 )}
             </div>
-            <div className="relative ml-2">
-                <button onClick={(e) => { e.stopPropagation(); setFilterMenuOpen(!filterMenuOpen); }} className={clsx("flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap", filterMenuOpen ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50")}><ArrowUpWideNarrow size={14} /><span className="hidden md:inline">Ordenar</span></button>
-                {filterMenuOpen && <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-[100] overflow-hidden"><div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ordenar por</div><div className="p-1"><button onClick={() => setSortBy('dateDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowDownWideNarrow size={16} /> Más recientes</button><button onClick={() => setSortBy('dateAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowUpWideNarrow size={16} /> Más antiguos</button><div className="my-1 border-t border-gray-100"></div><button onClick={() => setSortBy('nameAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameAsc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowDownAZ size={16} /> Nombre (A-Z)</button><button onClick={() => setSortBy('nameDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'nameDesc' ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-gray-100")}><ArrowUpAZ size={16} /> Nombre (Z-A)</button></div></div>}
-            </div>
+            <div className="relative"><button onClick={() => setFilterMenuOpen(!filterMenuOpen)} className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors px-2 py-1 rounded-lg hover:bg-gray-100"><ArrowUpWideNarrow size={14} /> <span>ORDENAR</span></button>{filterMenuOpen && <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95"><div className="p-1 space-y-0.5"><button onClick={() => setSortBy('dateDesc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateDesc' ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50")}>Más recientes</button><button onClick={() => setSortBy('dateAsc')} className={clsx("w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg", sortBy === 'dateAsc' ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50")}>Más antiguos</button></div></div>}</div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6" onContextMenu={(e) => e.preventDefault()}>
-            {loading ? <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">{Array.from({length: 10}).map((_, i) => <SkeletonCard key={i} />)}</div> : renderContent()}
-        </div>
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">{loading ? <LoadingSkeleton /> : renderContent()}</div>
       </div>
-
-      {detailsOpen && selectedFile && ( <DetailsPanel file={selectedFile} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onDownload={handleDownload} onDelete={handleDelete} /> )}
+        
+      {detailsOpen && selectedIds.size === 1 && (() => {
+          const fileId = Array.from(selectedIds)[0];
+          const file = files.find(f => f.fullPath === fileId);
+          return file ? <DetailsPanel file={file} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onDownload={() => handlePreview(file)} onDelete={handleDelete} /> : null;
+      })()}
       
-      {/* --- MENU CONTEXTUAL --- */}
+      {/* --- PREVIEW MODAL --- */}
+      {previewFile && (
+          <FilePreviewModal 
+            file={previewFile} 
+            onClose={() => setPreviewFile(null)} 
+            onDownload={() => handleDownload(previewFile)}
+          />
+      )}
+
+      {/* --- CONTEXT MENU --- */}
       {contextMenu && (
-        <div 
-            className="fixed bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-64 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" 
-            style={{ top: contextMenu.y, left: contextMenu.x }} 
-            onClick={(e) => e.stopPropagation()}
-        >
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
-                <p className="font-bold text-gray-800 truncate text-xs">
-                    {contextMenu.file ? contextMenu.file.name : contextMenu.folder?.name}
-                </p>
-            </div>
-            
-            {/* OPCIONES PARA ARCHIVOS */}
+        <div className="fixed bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-64 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 rounded-t-xl"><p className="font-bold text-gray-800 truncate text-xs">{contextMenu.file ? contextMenu.file.name : contextMenu.folder?.name}</p></div>
             {contextMenu.file && (
                 <>
-                    <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+                    <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
                     <MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
                     <div className="my-1 border-t border-gray-100"></div>
-                    <MenuOption 
-                        icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} 
-                        label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} 
-                        onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} 
-                    />
-                    {isQualityUser(currentUserData) && (
-                        <MenuOption 
-                            icon={<CheckCircle2 size={16} className={contextMenu.file.reviewed ? "text-green-600" : "text-gray-400"} />} 
-                            label={contextMenu.file.reviewed ? "Invalidar Calidad" : "Validar Calidad"} 
-                            onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} 
-                        />
-                    )}
+                    <MenuOption icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} />
+                    {isQualityUser(currentUserData) && (<MenuOption icon={<CheckCircle2 size={16} className={contextMenu.file.reviewed ? "text-green-600" : "text-gray-400"} />} label={contextMenu.file.reviewed ? "Invalidar Calidad" : "Validar Calidad"} onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} />)}
                     <div className="my-1 border-t border-gray-100"></div>
-                    {isQualityUser(currentUserData) && (
-                        <>
-                            <MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                            <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
-                            <MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} />
-                        </>
-                    )}
+                    {isQualityUser(currentUserData) && (<><MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /></>)}
                 </>
             )}
-
-            {/* OPCIONES PARA CARPETAS */}
-            {contextMenu.folder && isQualityUser(currentUserData) && (
+             {contextMenu.folder && isQualityUser(currentUserData) && (
                  <>
-                    <MenuOption 
-                        icon={<FolderOpen size={16} className="text-blue-500"/>} 
-                        label="Abrir" 
-                        onClick={() => { if(contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} 
-                    />
+                    <MenuOption icon={<FolderOpen size={16} className="text-blue-500"/>} label="Abrir" onClick={() => { if(contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} />
                     <MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                    <MenuOption 
-                        icon={<MoveRight size={16} className="text-blue-500"/>} 
-                        label="Mover a carpeta" 
-                        onClick={() => { if(contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} 
-                    />
+                    <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
                  </>
             )}
         </div>
       )}
 
-      {/* DIALOGO DE MOVER MANUAL (FALLBACK) */}
+      {/* --- MOVE MODAL --- */}
       {moveDialogOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
               <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95">
@@ -1088,158 +1014,176 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
       )}
 
-      {/* DIALOGO DE RENOMBRAR (Nuevo) */}
+      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 pointer-events-none">
+          {toasts.map(toast => (<div key={toast.id} className={clsx("pointer-events-auto px-4 py-3 rounded-xl shadow-xl shadow-gray-200/50 flex items-center gap-3 animate-in slide-in-from-right-10 fade-in duration-300 border text-sm font-medium", toast.type === 'success' ? 'bg-white border-green-200 text-green-700' : toast.type === 'error' ? 'bg-white border-red-200 text-red-700' : 'bg-gray-800 text-white')}>{toast.type === 'success' ? <CheckCircle2 size={18} className="text-green-500"/> : toast.type === 'error' ? <AlertCircle size={18} className="text-red-500"/> : <Info size={18}/>}{toast.text}</div>))}
+      </div>
+      
+      {createFolderOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"><div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl ring-1 ring-gray-900/5"><h3 className="text-lg font-bold mb-4 text-gray-800">Nueva Carpeta</h3><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /><div className="flex justify-end gap-3"><button onClick={() => setCreateFolderOpen(false)} className="px-4 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancelar</button><button onClick={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">Crear</button></div></div></div>}
+      
       {renameDialogOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
             <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <Edit className="text-purple-600" size={20} /> Renombrar "{renameTargetFile?.name || renameTargetFolder?.name}"
-                    </h3>
-                    <button onClick={() => setRenameDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button>
-                </div>
-                <div className="p-6">
-                    <input 
-                        autoFocus 
-                        value={newName} 
-                        onChange={e => setNewName(e.target.value)} 
-                        className="w-full border border-gray-300 p-3 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-purple-500 transition-all" 
-                        placeholder="Nuevo nombre..." 
-                    />
-                    <p className="text-xs text-gray-500 mb-4">Asegúrate de que el nuevo nombre sea único en la carpeta.</p>
-                </div>
-                <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white">
-                    <button onClick={() => setRenameDialogOpen(false)} disabled={isRenaming} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button>
-                    <button onClick={handleRename} disabled={isRenaming || !newName.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium shadow-lg flex items-center gap-2 disabled:opacity-50">
-                        {isRenaming ? <Loader2 size={16} className="animate-spin" /> : "Renombrar"}
-                    </button>
-                </div>
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50"><h3 className="font-bold text-gray-800 flex items-center gap-2"><Edit className="text-purple-600" size={20} /> Renombrar</h3><button onClick={() => setRenameDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button></div>
+                <div className="p-6"><input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500" placeholder="Nuevo nombre..." /></div>
+                <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white"><button onClick={() => setRenameDialogOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button><button onClick={() => setRenameDialogOpen(false)} className="px-5 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium">Renombrar</button></div>
             </div>
         </div>
       )}
-
-      {createFolderOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"><div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl ring-1 ring-gray-900/5"><h3 className="text-lg font-bold mb-4 text-gray-800">Nueva Carpeta</h3><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /><div className="flex justify-end gap-3"><button onClick={() => setCreateFolderOpen(false)} className="px-4 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancelar</button><button onClick={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">Crear</button></div></div></div>}
-
-      {/* TOAST NOTIFICATIONS CONTAINER */}
-      <div className="fixed bottom-4 right-4 z-[70] flex flex-col gap-2">
-          {toasts.map(toast => (
-              <div key={toast.id} className={clsx("px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-right text-sm font-medium text-white", toast.type === 'success' ? 'bg-emerald-500' : toast.type === 'error' ? 'bg-red-500' : 'bg-blue-600')}>
-                  {toast.type === 'success' ? <CheckCircle2 size={18}/> : toast.type === 'error' ? <AlertCircle size={18}/> : <Info size={18}/>}
-                  {toast.text}
-              </div>
-          ))}
-      </div>
     </div>
   );
 }
 
 // --- SUBCOMPONENTES ---
+
+const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive }: any) => {
+    const isReadyForReview = file.completed && !file.reviewed;
+    const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
+
+    return (
+        <div 
+            onClick={(e) => onSelect(e.ctrlKey || e.metaKey)} 
+            onContextMenu={onContextMenu} 
+            onDoubleClick={onDoubleClick} 
+            className={clsx(
+                "group relative bg-white border rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 flex flex-col h-[270px] select-none", 
+                selected ? "ring-2 ring-blue-500 border-transparent shadow-xl translate-y-[-4px]" : "border-gray-200/80 hover:border-blue-300 hover:shadow-lg hover:translate-y-[-2px]", 
+                isReadyForReview ? "ring-1 ring-blue-400 border-blue-200 shadow-blue-100" : ""
+            )}
+        >
+            <div className="h-32 bg-gray-50 flex items-center justify-center border-b border-gray-100 group-hover:bg-white transition-colors relative">
+                {selected && <div className="absolute top-2 left-2 z-20"><div className="bg-blue-500 text-white rounded-full p-1"><CheckCircle2 size={16} /></div></div>}
+                <div className="transform transition-transform group-hover:scale-110 duration-500 drop-shadow-sm">{getFileIcon(file.name, 60)}</div>
+                <div className="absolute top-3 right-3 flex flex-col gap-1">
+                    {file.reviewed && <div className="bg-green-500 text-white p-1 rounded-full shadow-md z-10" title="Validado"><CheckCircle2 size={12}/></div>}
+                    {isReadyForReview && <div className="bg-blue-500 text-white p-1 rounded-full shadow-md z-10 animate-pulse" title="Listo para Revisión"><Eye size={12}/></div>}
+                </div>
+            </div>
+            <div className="p-4 flex flex-col flex-1 justify-between">
+                <div>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                        <p className="text-sm font-bold text-gray-800 line-clamp-2 leading-tight" title={file.name}>{file.name}</p>
+                    </div>
+                    {showFolder && (
+                        <div className="flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-2 py-1 rounded-md mb-2 w-fit max-w-full">
+                            <CornerDownRight size={10} className="flex-shrink-0" />
+                            <span className="truncate font-medium">{file.parentFolder}</span>
+                        </div>
+                    )}
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                         <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">{formatFileSize(file.size)}</span>
+                    </div>
+                </div>
+                <DeadlineBar createdDate={file.created} />
+            </div>
+        </div>
+    );
+});
+
+const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive }: any) => {
+    const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
+    return (
+        <div 
+            onClick={(e) => onSelect(e.ctrlKey || e.metaKey)} 
+            onContextMenu={onContextMenu} 
+            onDoubleClick={onDoubleClick} 
+            className={clsx("grid grid-cols-12 gap-4 px-4 md:px-6 py-4 border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer items-center transition-all group select-none", selected ? "bg-blue-50 border-l-4 border-l-blue-500 pl-3 md:pl-[20px]" : "")}
+        >
+            <div className="col-span-10 md:col-span-4 flex items-center gap-3 overflow-hidden">
+                {selected ? <CheckCircle2 size={24} className="text-blue-500"/> : getFileIcon(file.name, 24)}
+                <div className="flex flex-col min-w-0">
+                    <span className={clsx("truncate font-semibold text-sm", selected ? "text-blue-700" : "text-gray-700")}>{file.name}</span>
+                    {showFolder && <span className="text-[10px] text-gray-400 flex items-center gap-1"><FolderOpen size={10}/> {file.parentFolder}</span>}
+                </div>
+            </div>
+            <div className="hidden md:block col-span-3 pr-8"><DeadlineBar createdDate={file.created} /></div>
+            <div className="hidden md:block col-span-2">
+                 {file.reviewed ? <StatusBadge type="success" text="Validado" icon={CheckCircle2}/> : file.completed ? <StatusBadge type="warning" text="Por Revisar" icon={Eye}/> : <StatusBadge type="neutral" text="En Proceso" icon={Clock}/>}
+            </div>
+            <div className="hidden md:block col-span-2 text-right text-gray-400 text-xs font-mono">{formatFileSize(file.size)}</div>
+            <div className="col-span-2 md:col-span-1 flex justify-end"><button className="p-2 text-gray-300 hover:text-blue-600 rounded-full hover:bg-blue-100 transition-all opacity-0 group-hover:opacity-100"><Download size={16}/></button></div>
+        </div>
+    );
+});
+
+// NUEVO: Componente Modal de Previsualización
+const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile, onClose: () => void, onDownload: () => void }) => {
+    const isImage = ['jpg', 'jpeg', 'png', 'svg', 'webp', 'gif'].includes(file.name.split('.').pop()?.toLowerCase() || '');
+    const isPdf = file.name.endsWith('.pdf');
+
+    return (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="bg-white rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="h-14 border-b border-gray-200 flex items-center justify-between px-6 bg-gray-50">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        {getFileIcon(file.name, 20)}
+                        <h3 className="font-bold text-gray-800 truncate">{file.name}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={onDownload} className="p-2 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors" title="Descargar"><Download size={20}/></button>
+                        <button onClick={onClose} className="p-2 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-lg transition-colors"><X size={20}/></button>
+                    </div>
+                </div>
+                <div className="flex-1 bg-gray-100 flex items-center justify-center overflow-hidden relative">
+                    {!file.url ? (
+                        <div className="flex flex-col items-center gap-3"><Loader2 size={40} className="animate-spin text-blue-500" /><p className="text-gray-500 font-medium">Cargando vista previa...</p></div>
+                    ) : isImage ? (
+                        <img src={file.url} alt="Preview" className="max-w-full max-h-full object-contain shadow-lg" />
+                    ) : isPdf ? (
+                        <iframe src={file.url} className="w-full h-full" title="PDF Preview"></iframe>
+                    ) : (
+                        <div className="text-center">
+                            <FileText size={64} className="mx-auto text-gray-300 mb-4" />
+                            <p className="text-gray-500 mb-4">Este archivo no se puede previsualizar aquí.</p>
+                            <button onClick={onDownload} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Descargar para ver</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const StatusBadge = ({ type, text, icon: Icon }: any) => {
+    const styles = { success: "bg-green-100 text-green-700 border-green-200", warning: "bg-blue-100 text-blue-700 border-blue-200 animate-pulse", neutral: "bg-gray-100 text-gray-500 border-gray-200" };
+    return <span className={clsx("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border", styles[type as keyof typeof styles])}><Icon size={12}/> {text}</span>
+};
+
 const DeadlineBar = ({ createdDate }: { createdDate: string }) => {
     const { progress, daysLeft, status } = getDeadlineInfo(createdDate);
-    let colorClass = "bg-green-500"; let textClass = "text-green-700 bg-green-50 border-green-200"; let label = `${daysLeft} días restantes`;
-    if (status === 'warning') { colorClass = "bg-yellow-500"; textClass = "text-yellow-700 bg-yellow-50 border-yellow-200"; }
-    if (status === 'urgent') { colorClass = "bg-orange-500"; textClass = "text-orange-700 bg-orange-50 border-orange-200"; label = "Vence pronto"; }
-    if (status === 'overdue') { colorClass = "bg-red-500"; textClass = "text-red-700 bg-red-50 border-red-200"; label = `Vencido (${Math.abs(daysLeft)} días)`; }
-    return (<div className="w-full mt-auto pt-2"><div className="flex justify-between items-center mb-1.5"><span className={clsx("text-[10px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide", textClass)}>{label}</span><span className="text-[10px] text-gray-400 font-mono">{Math.round(progress)}%</span></div><div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden"><div className={clsx("h-full rounded-full transition-all duration-700 ease-out", colorClass)} style={{ width: `${progress}%` }}></div></div></div>);
-};
-
-const FileCard = ({ file, selected, onSelect, onContextMenu, onDoubleClick }: any) => {
-    const isReadyForReview = file.completed && !file.reviewed;
+    const colors = { normal: "bg-emerald-500", warning: "bg-amber-500", urgent: "bg-orange-500", overdue: "bg-rose-500" };
     return (
-        <div onClick={onSelect} onContextMenu={(e) => onContextMenu(e, file)} onDoubleClick={onDoubleClick} className={clsx("group relative bg-white border rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 flex flex-col h-[260px]", selected ? "ring-2 ring-blue-500 border-transparent shadow-xl translate-y-[-4px]" : "border-gray-200 hover:border-blue-300 hover:shadow-lg hover:translate-y-[-2px]", isReadyForReview ? "ring-1 ring-blue-400 border-blue-200 shadow-blue-100" : "")}>
-            <div className="h-32 bg-gray-50/50 flex items-center justify-center border-b border-gray-100 group-hover:bg-white transition-colors relative">
-                <div className="transform transition-transform group-hover:scale-110 duration-300">{getFileIcon(file.name, 56)}</div>
-                {file.reviewed ? <div className="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-md z-10" title="Validado"><CheckCircle2 size={14}/></div> : isReadyForReview ? <div className="absolute top-3 right-3 bg-blue-500 text-white p-1 rounded-full shadow-md z-10 animate-pulse" title="Listo para Revisión"><Eye size={14}/></div> : null}
-            </div>
-            <div className="p-4 flex flex-col flex-1 justify-between"><div><p className="text-sm font-bold text-gray-800 truncate mb-1" title={file.name}>{file.name}</p><div className="flex items-center gap-1 text-[10px] text-gray-400"><span className="bg-gray-100 px-1.5 py-0.5 rounded">{formatFileSize(file.size)}</span></div></div><DeadlineBar createdDate={file.created} /></div>
+        <div className="w-full mt-auto">
+            <div className="flex justify-between items-center mb-1"><span className={clsx("text-[9px] font-bold uppercase tracking-wider", status === 'overdue' ? "text-rose-600" : "text-gray-400")}>{status === 'overdue' ? `Vencido ${Math.abs(daysLeft)}d` : `${daysLeft} días rest.`}</span><span className="text-[9px] text-gray-300 font-mono">{Math.round(progress)}%</span></div>
+            <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden"><div className={clsx("h-full rounded-full transition-all duration-1000 ease-out", colors[status])} style={{ width: `${progress}%` }}></div></div>
         </div>
     );
 };
 
-const FileListRow = ({ file, selected, onSelect, onContextMenu, onDoubleClick }: any) => {
-    const isReadyForReview = file.completed && !file.reviewed;
-    return (
-        <div onClick={onSelect} onContextMenu={(e) => onContextMenu(e, file)} onDoubleClick={onDoubleClick} className={clsx("grid grid-cols-12 gap-4 px-4 md:px-6 py-4 border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer items-center transition-all group", selected ? "bg-blue-50 border-l-4 border-l-blue-500 pl-3 md:pl-[20px]" : "")}>
-            <div className="col-span-10 md:col-span-4 flex items-center gap-3 overflow-hidden">{getFileIcon(file.name, 28)}<span className={clsx("truncate font-semibold text-sm", selected ? "text-blue-700" : "text-gray-700")}>{file.name}</span></div>
-            <div className="hidden md:block col-span-3 pr-8"><DeadlineBar createdDate={file.created} /></div>
-            <div className="hidden md:block col-span-2">{file.reviewed ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200"><CheckCircle2 size={12}/> Validado</span> : isReadyForReview ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200 animate-pulse"><Eye size={12}/> Por Revisar</span> : <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200"><Clock size={12}/> En Proceso</span>}</div>
-            <div className="hidden md:block col-span-2 text-right text-gray-500 text-xs font-mono">{formatFileSize(file.size)}</div>
-            <div className="col-span-2 md:col-span-1 flex justify-end"><button className="p-1 text-gray-400 hover:text-blue-600 rounded-full hover:bg-blue-100 transition-colors md:opacity-0 md:group-hover:opacity-100"><Download size={16}/></button></div>
-        </div>
-    );
-};
-
-const EmptyState = ({ icon: Icon, text }: any) => <div className="text-center py-20 text-gray-400 flex flex-col items-center"><Icon className="w-16 h-16 mb-4 text-gray-200" /><p className="text-lg font-medium text-gray-500">{text}</p></div>;
-const SkeletonCard = () => <div className="bg-white border border-gray-100 rounded-2xl h-[260px] animate-pulse"><div className="h-32 bg-gray-100 rounded-t-2xl"></div><div className="p-4"><div className="h-4 bg-gray-100 rounded w-3/4 mb-3"></div><div className="h-3 bg-gray-50 rounded w-1/2 mb-6"></div><div className="h-2 bg-gray-100 rounded w-full"></div></div></div>;
-const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-red-500 rounded-full shadow-sm animate-pulse"></div>}</div></button>);
+const EmptyState = ({ icon: Icon, text }: any) => <div className="h-full flex flex-col items-center justify-center text-gray-300 py-20 animate-in fade-in zoom-in-95"><div className="bg-gray-50 p-6 rounded-full mb-4"><Icon className="w-12 h-12 text-gray-200" strokeWidth={1.5} /></div><p className="text-base font-medium text-gray-400">{text}</p></div>;
+const LoadingSkeleton = () => <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">{Array.from({length: 8}).map((_, i) => <div key={i} className="bg-white border border-gray-100 rounded-2xl h-[260px] animate-pulse"><div className="h-32 bg-gray-100/50 rounded-t-2xl"></div><div className="p-4 space-y-3"><div className="h-4 bg-gray-100 rounded w-3/4"></div><div className="h-3 bg-gray-50 rounded w-1/2"></div><div className="mt-6 h-2 bg-gray-100 rounded w-full"></div></div></div>)}</div>;
+const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>}</div></button>);
 const MenuOption = ({ icon, label, onClick, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label}</button>);
 
 const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete }: any) => (
     <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl z-[60] overflow-y-auto animate-in slide-in-from-right duration-300 flex flex-col h-full">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <span className="font-bold text-gray-800 text-lg flex items-center gap-2"><Info size={20} className="text-blue-600"/> Detalles</span>
-            <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={20} className="text-gray-500"/></button>
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+            <span className="font-bold text-gray-800 text-lg flex items-center gap-2">Detalles</span>
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full transition-colors"><X size={20} className="text-gray-400"/></button>
         </div>
-        <div className="p-8 flex flex-col items-center border-b border-gray-100">
-            <div className="w-28 h-28 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-blue-50 border border-blue-50 relative">
-                <div className="absolute inset-0 bg-blue-500/5 rounded-3xl blur-xl"></div>
-                {getFileIcon(file.name, 64)}
-            </div>
-            <h3 className="font-bold text-center text-gray-800 break-all text-lg mb-1">{file.name}</h3>
-            <p className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded-md">{formatFileSize(file.size)}</p>
+        <div className="p-8 flex flex-col items-center border-b border-gray-100/50">
+            <div className="w-24 h-24 bg-gray-50 rounded-[2rem] flex items-center justify-center mb-6 shadow-sm border border-gray-100">{getFileIcon(file.name, 56)}</div>
+            <h3 className="font-bold text-center text-gray-800 break-words w-full text-lg mb-2 leading-tight">{file.name}</h3>
+            <div className="flex flex-wrap gap-2 justify-center"><span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-md">{formatFileSize(file.size)}</span></div>
         </div>
         <div className="p-6 space-y-8 flex-1">
             <div>
-                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><CalendarClock size={14}/> Tiempos</h4>
-                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm"><DeadlineBar createdDate={file.created} /><p className="text-[10px] text-gray-400 mt-3 text-center">Calculado en base a 5 días hábiles</p></div>
-            </div>
-            <div>
-                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={14}/> Flujo de Trabajo</h4>
-                <div className="space-y-4">
-                    {/* METRÓLOGO */}
-                    <div className={clsx("p-4 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-100")}>
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-bold text-gray-700">Metrólogo</span>
-                            <button onClick={() => onToggleStatus(file, 'completed', !file.completed)} className={clsx("w-11 h-6 rounded-full relative transition-all shadow-inner", file.completed ? "bg-blue-600" : "bg-gray-300")}>
-                                <div className={clsx("absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.completed ? "left-6" : "left-1")}></div>
-                            </button>
-                        </div>
-                        <p className="text-xs flex items-center gap-1.5">
-                            {file.completedByName ? 
-                                <><User size={12} className="text-blue-600"/> <span className="text-blue-700 font-medium">{file.completedByName}</span></> : 
-                                file.completed ? <span className="text-orange-500 font-bold flex items-center gap-1"><ShieldAlert size={12}/> ¡Falta firma! (Clic para corregir)</span> : <span className="text-gray-400 italic">Pendiente de finalizar</span>
-                            }
-                        </p>
-                    </div>
-                    {/* CALIDAD */}
-                    <div className={clsx("p-4 rounded-xl border transition-all relative overflow-hidden", file.reviewed ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-100")}>
-                        {!isQualityUser && <div className="absolute inset-0 bg-gray-50/50 z-10 cursor-not-allowed" title="Solo Calidad puede firmar"></div>}
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-bold text-gray-700">Calidad</span>
-                            <button disabled={!isQualityUser} onClick={() => onToggleStatus(file, 'reviewed', !file.reviewed)} className={clsx("w-11 h-6 rounded-full relative transition-all shadow-inner", file.reviewed ? "bg-green-600" : "bg-gray-300")}>
-                                <div className={clsx("absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.reviewed ? "left-6" : "left-1")}></div>
-                            </button>
-                        </div>
-                        <p className="text-xs flex items-center gap-1.5">
-                            {file.reviewedByName ? 
-                                <><CheckCircle2 size={12} className="text-green-600"/> <span className="text-green-700 font-medium">{file.reviewedByName}</span></> : 
-                                file.reviewed ? <span className="text-orange-500 font-bold flex items-center gap-1"><ShieldAlert size={12}/> ¡Falta firma! (Clic para corregir)</span> : <span className="text-gray-400 italic">Pendiente de validación</span>
-                            }
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div>
-                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Metadatos</h4>
-                <div className="space-y-2 text-xs bg-gray-50 p-3 rounded-lg border border-gray-100">
-                    <div className="flex justify-between"><span className="text-gray-500">ID Original</span> <span className="text-gray-900 font-mono truncate max-w-[140px]" title={file.rawName}>{file.rawName}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Creado</span> <span className="text-gray-900 font-medium">{new Date(file.created).toLocaleDateString()}</span></div>
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={12}/> Estado del Proceso</h4>
+                <div className="space-y-3">
+                    <div className={clsx("p-3 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-white border-gray-200")}><div className="flex items-center justify-between mb-1"><span className="text-sm font-semibold text-gray-700">Metrólogo</span><button onClick={() => onToggleStatus(file, 'completed', !file.completed)} className={clsx("w-9 h-5 rounded-full relative transition-all shadow-inner", file.completed ? "bg-blue-600" : "bg-gray-200")}><div className={clsx("absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.completed ? "left-4.5" : "left-0.5")}></div></button></div><p className="text-xs text-gray-500">{file.completedByName || "Pendiente"}</p></div>
+                    <div className={clsx("p-3 rounded-xl border transition-all", file.reviewed ? "bg-green-50 border-green-200" : "bg-white border-gray-200")}><div className="flex items-center justify-between mb-1"><span className="text-sm font-semibold text-gray-700">Calidad</span><button disabled={!isQualityUser} onClick={() => onToggleStatus(file, 'reviewed', !file.reviewed)} className={clsx("w-9 h-5 rounded-full relative transition-all shadow-inner", file.reviewed ? "bg-green-600" : "bg-gray-200", !isQualityUser && "opacity-50 cursor-not-allowed")}><div className={clsx("absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.reviewed ? "left-4.5" : "left-0.5")}></div></button></div><p className="text-xs text-gray-500">{file.reviewedByName || "Pendiente"}</p></div>
                 </div>
             </div>
         </div>
-        <div className="p-4 bg-gray-50 border-t border-gray-200 grid grid-cols-2 gap-3">
-            <button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-sm font-bold text-gray-700 shadow-sm transition-all"><Download size={16}/> Abrir</button>
-            {isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-2.5 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 shadow-sm transition-all"><Trash2 size={16}/> Borrar</button>}
-        </div>
+        <div className="p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3 pb-8 md:pb-4"><button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 text-sm font-bold text-gray-700 transition-all"><Maximize2 size={16}/> Vista Previa</button>{isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-3 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 transition-all"><Trash2 size={16}/> Borrar</button>}</div>
     </div>
 );

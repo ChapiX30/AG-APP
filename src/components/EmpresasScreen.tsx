@@ -20,10 +20,20 @@ import {
   List,
   TrendingUp,
   Calendar,
-  ExternalLink
+  ExternalLink,
+  Briefcase
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import toast, { Toaster } from 'react-hot-toast';
+
+// --- CONSTANTES DE FILTRO (Nombres Completos) ---
+const NOMBRES_PERMITIDOS = [
+  "Jorge Amador",
+  "Edgar Amador",
+  "Naimi Muro",
+  "Viridiana Moreno",
+  "Angel Amador"
+];
 
 // --- Tipos ---
 interface Empresa {
@@ -34,6 +44,7 @@ interface Empresa {
   email: string;
   contacto: string;
   requerimientos: string;
+  responsable: string;
   fechaCreacion: Date;
 }
 
@@ -44,6 +55,7 @@ interface EmpresaFormData {
   email: string;
   contacto: string;
   requerimientos: string;
+  responsable: string;
 }
 
 const INITIAL_FORM_STATE: EmpresaFormData = {
@@ -52,7 +64,8 @@ const INITIAL_FORM_STATE: EmpresaFormData = {
   telefono: "",
   email: "",
   contacto: "",
-  requerimientos: ""
+  requerimientos: "",
+  responsable: ""
 };
 
 // --- Utilidades ---
@@ -110,6 +123,14 @@ const CardView = ({ empresas, handleEdit, handleDelete }: { empresas: Empresa[],
           </div>
 
           <div className="space-y-3 mt-6">
+            {/* Responsable Badge */}
+            <div className="flex items-center text-sm px-1 mb-2">
+               <div className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">
+                  <Briefcase className="w-3 h-3 mr-1.5" />
+                  Atiende: {empresa.responsable || "Sin asignar"}
+               </div>
+            </div>
+
             {/* Dirección Clicable */}
             <a 
               href={getGoogleMapsUrl(empresa.direccion)}
@@ -178,7 +199,6 @@ const TableView = ({ empresas, handleEdit, handleDelete }: { empresas: Empresa[]
                     <InitialsAvatar name={empresa.nombre} size="sm" />
                     <div className="ml-4">
                       <div className="text-sm font-bold text-gray-900">{empresa.nombre}</div>
-                      {/* Dirección Clicable en Tabla */}
                       <a 
                         href={getGoogleMapsUrl(empresa.direccion)}
                         target="_blank" 
@@ -195,10 +215,15 @@ const TableView = ({ empresas, handleEdit, handleDelete }: { empresas: Empresa[]
                 <div className="text-xs text-gray-500">{empresa.email}</div>
               </td>
               <td className="px-6 py-4">
-                <div className="flex flex-col space-y-1">
+                <div className="flex flex-col space-y-2">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 w-fit">
                     <Phone className="w-3 h-3 mr-1"/> {empresa.telefono}
                   </span>
+                  {empresa.responsable && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 w-fit border border-purple-200 uppercase tracking-wide">
+                        Atiende: {empresa.responsable}
+                    </span>
+                  )}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -243,16 +268,17 @@ interface ModalProps {
   data: EmpresaFormData;
   setData: (data: EmpresaFormData) => void;
   isEditing: boolean;
+  staffList: string[]; // Recibimos la lista FILTRADA
 }
 
-const EmpresaFormModal = ({ isOpen, onClose, onSubmit, data, setData, isEditing }: ModalProps) => {
+const EmpresaFormModal = ({ isOpen, onClose, onSubmit, data, setData, isEditing, staffList }: ModalProps) => {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         <div className="fixed inset-0 transition-opacity bg-gray-900 bg-opacity-60 backdrop-blur-sm" onClick={onClose} />
-        <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+        <span className="hidden sm:inline-block sm:align-middle sm:h-screen">​</span>
         
         <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl w-full animate-in zoom-in-95 duration-200">
           <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
@@ -272,6 +298,33 @@ const EmpresaFormModal = ({ isOpen, onClose, onSubmit, data, setData, isEditing 
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white" placeholder="Ej. Tech Solutions S.A." />
                 </div>
                 
+                {/* Selector de Responsable (Filtrado) */}
+                <div className="col-span-1 md:col-span-2 bg-blue-50 p-3 rounded-xl border border-blue-100">
+                    <label className="block text-xs font-bold text-blue-800 uppercase tracking-wide mb-1.5">
+                        Responsable Asignado (Interno)
+                    </label>
+                    <div className="relative">
+                        <User className="absolute top-3 left-3 h-4 w-4 text-blue-500" />
+                        <select
+                            required
+                            value={data.responsable} 
+                            onChange={(e) => setData({ ...data, responsable: e.target.value })} 
+                            className="w-full pl-10 pr-4 py-2.5 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-all appearance-none cursor-pointer text-gray-700"
+                        >
+                            <option value="" disabled>Selecciona al encargado...</option>
+                            {/* Mapeamos la lista filtrada */}
+                            {staffList.map((nombre, idx) => (
+                                <option key={idx} value={nombre}>
+                                    {nombre}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+                            <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                    </div>
+                </div>
+
                 {[
                   { label: "Correo Electrónico", icon: Mail, type: "email", val: data.email, key: "email", ph: "contacto@empresa.com" },
                   { label: "Teléfono", icon: Phone, type: "tel", val: data.telefono, key: "telefono", ph: "+52 (81) 1234 5678" },
@@ -324,13 +377,26 @@ const EmpresasScreen = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingEmpresa, setEditingEmpresa] = useState<Empresa | null>(null);
   const [formData, setFormData] = useState<EmpresaFormData>(INITIAL_FORM_STATE);
+  
+  // Estado para la lista de responsables filtrada
+  const [staffOptions, setStaffOptions] = useState<string[]>([]);
 
   const [view, setView] = useState<'grid' | 'table'>('grid');
   const { goBack } = useNavigation();
 
-  const loadEmpresas = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
+      
+      // 1. Cargar lista de responsables (usuarios) Y FILTRAR POR NOMBRES COMPLETOS
+      const usersSnapshot = await getDocs(collection(db, "usuarios"));
+      const usersList = usersSnapshot.docs
+        .map(doc => doc.data().nombre) // Obtenemos nombres
+        .filter(nombre => nombre && NOMBRES_PERMITIDOS.includes(nombre)); // FILTRO EXACTO: Solo nombres completos permitidos
+        
+      setStaffOptions(usersList);
+
+      // 2. Cargar Empresas
       const querySnapshot = await getDocs(collection(db, "clientes"));
       const empresasData = querySnapshot.docs.map(doc => ({
         id: doc.id,
@@ -338,15 +404,16 @@ const EmpresasScreen = () => {
         fechaCreacion: doc.data().fechaCreacion?.toDate() || new Date()
       })) as Empresa[];
       setEmpresas(empresasData);
+      
     } catch (error) {
-      console.error("Error loading empresas:", error);
-      toast.error("No se pudieron cargar las empresas.");
+      console.error("Error loading data:", error);
+      toast.error("Error cargando datos.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadEmpresas(); }, []);
+  useEffect(() => { loadData(); }, []);
 
   const filteredEmpresas = useMemo(() => {
     const term = searchTerm.toLowerCase();
@@ -386,7 +453,7 @@ const EmpresasScreen = () => {
       setShowModal(false);
       setEditingEmpresa(null);
       setFormData(INITIAL_FORM_STATE);
-      loadEmpresas();
+      loadData(); // Recargamos todo
     } catch (error) { console.error(error); }
   };
 
@@ -394,7 +461,7 @@ const EmpresasScreen = () => {
     if (window.confirm("¿Estás seguro que deseas eliminar esta empresa?")) {
       const deletePromise = deleteDoc(doc(db, "clientes", id));
       toast.promise(deletePromise, { loading: 'Eliminando...', success: 'Empresa eliminada.', error: 'Error al eliminar.' });
-      try { await deletePromise; loadEmpresas(); } catch (error) { console.error(error); }
+      try { await deletePromise; loadData(); } catch (error) { console.error(error); }
     }
   };
 
@@ -402,8 +469,13 @@ const EmpresasScreen = () => {
     if (empresa) {
       setEditingEmpresa(empresa);
       setFormData({
-        nombre: empresa.nombre, direccion: empresa.direccion, telefono: empresa.telefono,
-        email: empresa.email, contacto: empresa.contacto, requerimientos: empresa.requerimientos || ""
+        nombre: empresa.nombre, 
+        direccion: empresa.direccion, 
+        telefono: empresa.telefono,
+        email: empresa.email, 
+        contacto: empresa.contacto, 
+        requerimientos: empresa.requerimientos || "",
+        responsable: empresa.responsable || ""
       });
     } else {
       setEditingEmpresa(null);
@@ -504,6 +576,7 @@ const EmpresasScreen = () => {
         data={formData} 
         setData={setFormData} 
         isEditing={!!editingEmpresa} 
+        staffList={staffOptions} 
       />
     </div>
   );

@@ -16,7 +16,7 @@ import html2canvas from 'html2canvas';
 import { isBefore, format, addMonths, addYears, parseISO, addBusinessDays, isAfter, differenceInBusinessDays, isValid } from "date-fns"; 
 import { es } from 'date-fns/locale'; 
 import { unit } from 'mathjs';
-import logoAg from '../assets/Logo_AG.png'; 
+import logoAg from '../assets/lab_logo.png'; 
 
 // --- CORRECCIÓN: AQUÍ ESTÁ LA IMPORTACIÓN QUE FALTABA ---
 import ToastNotification from "./ToastNotification"; 
