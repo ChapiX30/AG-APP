@@ -49,17 +49,10 @@ type SortMode = "order" | "asc" | "desc";
 type TabMode = "metrologos" | "calidad";
 type ViewMode = "month" | "year";
 
-// --- HELPERS ---
+// --- AGBOT HELPERS & LOGIC ---
 const cleanName = (name?: string) => {
     if (!name || name === "null" || name === "undefined") return "";
     return name.trim();
-};
-
-// Determina si un usuario tiene rol de calidad en la BD
-const isQualityRole = (user: Usuario) => {
-    const p = (user.puesto || "").toLowerCase();
-    const r = (user.role || "").toLowerCase();
-    return p.includes('calidad') || p.includes('quality') || r.includes('calidad') || r.includes('quality');
 };
 
 const parseDateRobust = (dateStr: string | null): Date | null => {
@@ -77,6 +70,18 @@ const parseDateRobust = (dateStr: string | null): Date | null => {
         }
     }
     return null;
+};
+
+// AGBOT: Lógica estricta de roles
+const isQualityRole = (user: Usuario) => {
+    const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
+    return text.includes('calidad') || text.includes('quality') || text.includes('aseguramiento');
+};
+
+const isMetrologyRole = (user: Usuario) => {
+    const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
+    // Incluye metrólogos, técnicos, o roles específicos de calibración. Excluye explícitamente calidad si es necesario.
+    return text.includes('metrólogo') || text.includes('tecnico') || text.includes('técnico');
 };
 
 const CustomTooltip = ({ active, payload, label }: TooltipProps<any, any>) => {
@@ -111,7 +116,6 @@ const CalibrationStatsScreen: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [sortMode, setSortMode] = useState<SortMode>("order");
   
-  // Selección de Usuario (Ahora usamos string para el nombre, más flexible)
   const [selectedUserName, setSelectedUserName] = useState<string>("");
   
   // Holograma
@@ -129,12 +133,12 @@ const CalibrationStatsScreen: React.FC = () => {
     const unsubUsuarios = onSnapshot(collection(db, "usuarios"), (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Usuario));
       setUsuarios(data);
-    }, (error) => console.error("Error usuarios:", error));
+    });
 
     const unsubHojas = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as HojaTrabajo));
       setHojasDeTrabajo(data);
-    }, (error) => console.error("Error hojas:", error));
+    });
 
     const unsubDrive = onSnapshot(collection(db, "fileMetadata"), (snapshot) => {
       const data = snapshot.docs.map(d => {
@@ -149,7 +153,7 @@ const CalibrationStatsScreen: React.FC = () => {
       });
       setDriveFiles(data);
       setLoading(false);
-    }, (error) => console.error("Error drive:", error));
+    });
 
     return () => { unsubUsuarios(); unsubHojas(); unsubDrive(); };
   }, []);
@@ -157,9 +161,9 @@ const CalibrationStatsScreen: React.FC = () => {
   // Reset selección al cambiar tab
   useEffect(() => { setSelectedUserName(""); }, [activeTab]);
 
-  // --- 2. CÁLCULOS PRINCIPALES ---
+  // --- 2. CÁLCULOS PRINCIPALES (AGBOT LOGIC) ---
   const { 
-    uniqueUserList, // Lista combinada para el dropdown
+    uniqueUserList, 
     metrologosData, 
     qualityData, 
     top3, 
@@ -172,6 +176,15 @@ const CalibrationStatsScreen: React.FC = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
+    // AGBOT: Crear Sets de Nombres Validados por Rol
+    // Esto asegura que "Juan Perez" solo aparezca en Metrólogos si su rol en BD es Metrólogo
+    const validMetrologosNames = new Set(
+        usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name))
+    );
+    const validQualityNames = new Set(
+        usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name))
+    );
+
     const isDateInRange = (dateStr: string | null) => {
         const d = parseDateRobust(dateStr);
         if (!d) return false;
@@ -180,71 +193,65 @@ const CalibrationStatsScreen: React.FC = () => {
         return true; 
     };
 
-    // --- FILTRADO DE DATOS ---
+    // --- FILTRADO DE DATOS CRUDOS ---
     const hojasFiltradas = hojasDeTrabajo.filter(h => isDateInRange(h.fecha));
     const driveFiltrados = driveFiles.filter(f => isDateInRange(f.created));
 
-    // --- GENERACIÓN DE LA LISTA DEL DROPDOWN (LO IMPORTANTE) ---
-    // 1. Obtenemos usuarios de la BD según el rol
-    let dbUsersNames: string[] = [];
-    if (activeTab === 'calidad') {
-        dbUsersNames = usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name));
-    } else {
-        // Para metrología tomamos los que digan metrólogo o todos si no hay filtro estricto
-        dbUsersNames = usuarios.filter(u => (u.puesto || "").toLowerCase().includes('metrólogo')).map(u => cleanName(u.name));
-    }
+    // --- TAB 1: METRÓLOGOS (Lógica Estricta) ---
+    // Solo contamos hojas si el nombre está en la lista blanca de metrólogos
+    const countsMet: Record<string, number> = {};
+    let totalMetCount = 0;
 
-    // 2. Obtenemos usuarios "reales" que aparecen en los archivos (aunque no estén en BD)
-    const fileUsersNames = new Set<string>();
-    if (activeTab === 'calidad') {
-        driveFiles.forEach(f => { if (f.reviewedByName) fileUsersNames.add(cleanName(f.reviewedByName)); });
-    } else {
-        driveFiltrados.forEach(h => { if (h.nombre) fileUsersNames.add(cleanName(h.nombre)); }); // Hojas trabajo
-        driveFiles.forEach(f => { if (f.completedByName) fileUsersNames.add(cleanName(f.completedByName)); }); // Drive completed
-    }
-
-    // 3. Unimos todo y quitamos vacíos
-    const allNames = Array.from(new Set([...dbUsersNames, ...Array.from(fileUsersNames)]))
-                         .filter(n => n !== "" && n.toLowerCase() !== "undefined");
-    allNames.sort();
-
-    // --- TAB 1: METRÓLOGOS (Gráficas) ---
-    const counts: Record<string, number> = {};
-    hojasFiltradas.forEach(h => { if(h.nombre) counts[cleanName(h.nombre)] = (counts[cleanName(h.nombre)] || 0) + 1; });
-
-    let statsMet = METROLOGOS_ORDER_COLOR.map(m => ({
-        name: m.name, total: counts[cleanName(m.name)] || 0, color: m.color
-    }));
-    
-    // Agregar dinámicos que no estén en la lista estática
-    Object.keys(counts).forEach((name, i) => {
-        if (!statsMet.find(s => cleanName(s.name) === name)) {
-            statsMet.push({ name, total: counts[name], color: FALLBACK_COLORS[i % FALLBACK_COLORS.length] });
+    hojasFiltradas.forEach(h => { 
+        const name = cleanName(h.nombre);
+        if (name && validMetrologosNames.has(name)) { // <--- AGBOT FILTER
+            countsMet[name] = (countsMet[name] || 0) + 1;
+            totalMetCount++;
         }
     });
-    
+
+    // Construir datos de gráfica Metrólogos
+    let statsMet = METROLOGOS_ORDER_COLOR.map(m => ({
+        name: m.name, 
+        total: countsMet[cleanName(m.name)] || 0, 
+        color: m.color
+    })).filter(item => validMetrologosNames.has(cleanName(item.name))); // Solo mostrar si es metrólogo válido
+
+    // Agregar metrólogos dinámicos que no están en la lista de colores fijos
+    Object.keys(countsMet).forEach((name, i) => {
+        if (!statsMet.find(s => cleanName(s.name) === name)) {
+            statsMet.push({ name, total: countsMet[name], color: FALLBACK_COLORS[i % FALLBACK_COLORS.length] });
+        }
+    });
+
+    // Ordenamiento Metrólogos
     if (sortMode === "asc") statsMet.sort((a, b) => a.total - b.total);
     else if (sortMode === "desc") statsMet.sort((a, b) => b.total - a.total);
+    // Para el ranking siempre usamos el total descendente
     const ranking = [...statsMet].sort((a, b) => b.total - a.total).slice(0, 3);
 
-    // --- TAB 2: CALIDAD (Gráficas) ---
+
+    // --- TAB 2: CALIDAD (Lógica Estricta) ---
     const qualityMap = new Map<string, { realizado: number, revisado: number }>();
     
-    // Inicializar mapa con la lista combinada (así "Prueba" aparece con datos)
-    allNames.forEach(name => qualityMap.set(name, { realizado: 0, revisado: 0 }));
+    // Inicializar mapa solo con usuarios de calidad válidos
+    validQualityNames.forEach(name => {
+        qualityMap.set(name, { realizado: 0, revisado: 0 });
+    });
 
     driveFiltrados.forEach(f => {
-        if (f.reviewedByName) {
-            const validador = cleanName(f.reviewedByName);
-            if (!qualityMap.has(validador)) qualityMap.set(validador, { realizado: 0, revisado: 0 });
-            const current = qualityMap.get(validador)!;
-            qualityMap.set(validador, { ...current, revisado: current.revisado + 1 });
+        const reviewer = cleanName(f.reviewedByName);
+        const completer = cleanName(f.completedByName);
+
+        // Solo sumar si el usuario es de calidad (Whitelist Check)
+        if (reviewer && validQualityNames.has(reviewer)) {
+             const current = qualityMap.get(reviewer) || { realizado: 0, revisado: 0 };
+             qualityMap.set(reviewer, { ...current, revisado: current.revisado + 1 });
         }
-        if (f.completedByName) {
-            const realizador = cleanName(f.completedByName);
-            if (!qualityMap.has(realizador)) qualityMap.set(realizador, { realizado: 0, revisado: 0 });
-            const current = qualityMap.get(realizador)!;
-            qualityMap.set(realizador, { ...current, realizado: current.realizado + 1 });
+
+        if (completer && validQualityNames.has(completer)) {
+             const current = qualityMap.get(completer) || { realizado: 0, revisado: 0 };
+             qualityMap.set(completer, { ...current, realizado: current.realizado + 1 });
         }
     });
 
@@ -252,7 +259,19 @@ const CalibrationStatsScreen: React.FC = () => {
         .map(([name, val]) => ({ name, ...val }))
         .filter(item => item.realizado > 0 || item.revisado > 0); 
 
-    // --- ESTADÍSTICAS INDIVIDUALES (Selección) ---
+
+    // --- GENERACIÓN DE LISTA DROPDOWN ---
+    // Depende estrictamente del TAB activo y la whitelist correspondiente
+    let dropdownList: string[] = [];
+    if (activeTab === 'metrologos') {
+        dropdownList = statsMet.map(s => s.name); // Solo los que tienen datos o son metrólogos
+    } else {
+        dropdownList = Array.from(validQualityNames); // Todos los de calidad
+    }
+    dropdownList.sort();
+
+
+    // --- ESTADÍSTICAS INDIVIDUALES (Drill Down) ---
     let hist = []; 
     let qHist = []; 
     let pies = [];
@@ -260,55 +279,70 @@ const CalibrationStatsScreen: React.FC = () => {
 
     if (selectedUserName) {
         if (activeTab === 'metrologos') {
+            // Filtrar hojas del año para historial
             const userHojas = hojasDeTrabajo.filter(h => {
                 const d = parseDateRobust(h.fecha);
                 return d && d.getFullYear() === year && cleanName(h.nombre) === selectedUserName;
             });
+            
             const historyMap: Record<string, number> = {};
             userHojas.forEach(h => {
                 const d = parseDateRobust(h.fecha)!;
                 const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                 historyMap[mKey] = (historyMap[mKey] || 0) + 1;
             });
+            
             hist = Object.entries(historyMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({
                 mes: new Date(`${k}-02`).toLocaleString("es-MX", { month: "short" }), total: v
             }));
+
+            // Magnitudes (usamos filtered para respetar mes/año seleccionado)
             const userHojasFiltered = hojasFiltradas.filter(h => cleanName(h.nombre) === selectedUserName);
             const magMap: Record<string, number> = {};
             userHojasFiltered.forEach(h => { if(h.magnitud) magMap[h.magnitud] = (magMap[h.magnitud] || 0) + 1; });
+            
             pies = Object.entries(magMap).map(([k,v], i) => ({
                 name: k, value: v, color: MAGNITUDES_COLORS[k] || FALLBACK_COLORS[i%5]
             })).sort((a,b)=>b.value - a.value);
+            
             single.total = userHojasFiltered.length;
             single.best = pies.length > 0 ? pies[0].name : "N/A";
-        } 
-        else if (activeTab === 'calidad') {
+
+        } else if (activeTab === 'calidad') {
+             // Historial Calidad
              const userDriveYear = driveFiles.filter(f => {
                  const d = parseDateRobust(f.created);
                  if (!d) return false;
                  return d.getFullYear() === year && (cleanName(f.reviewedByName) === selectedUserName || cleanName(f.completedByName) === selectedUserName);
              });
+             
              const qHistoryMap = new Map<string, { realizado: number, revisado: number }>();
              userDriveYear.forEach(f => {
                  const d = parseDateRobust(f.created)!; 
                  const sortKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
+                 
                  if (!qHistoryMap.has(sortKey)) qHistoryMap.set(sortKey, { realizado: 0, revisado: 0 });
                  const curr = qHistoryMap.get(sortKey)!;
+                 
                  if (cleanName(f.reviewedByName) === selectedUserName) curr.revisado++;
                  if (cleanName(f.completedByName) === selectedUserName) curr.realizado++;
              });
+             
              qHist = Array.from(qHistoryMap.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([key, val]) => ({
                     mes: new Date(`${key}-02`).toLocaleString("es-MX", { month: "short" }), ...val
              }));
         }
     }
 
+    // Calcular totales correctos según el tab
+    const totalDisplay = activeTab === 'metrologos' ? totalMetCount : statsQual.reduce((acc, curr) => acc + curr.realizado + curr.revisado, 0);
+
     return {
-        uniqueUserList: allNames,
+        uniqueUserList: dropdownList,
         metrologosData: statsMet,
         qualityData: statsQual,
         top3: ranking,
-        totalFiltered: activeTab === 'metrologos' ? hojasFiltradas.length : driveFiltrados.length,
+        totalFiltered: totalDisplay,
         magnitudesPie: pies,
         mesesHistory: hist,
         qualityHistory: qHist,
