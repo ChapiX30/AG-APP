@@ -19,7 +19,6 @@ import { useAuth } from "../hooks/useAuth";
 type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client" | "sla";
 
 // --- UTILIDADES DE COLOR ---
-// Convierte Hex a RGBA para crear fondos pastel suaves
 const hexToRgba = (hex: string, alpha: number) => {
     if (!hex) return `rgba(255, 255, 255, 1)`;
     let c: any;
@@ -196,7 +195,7 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'createdAt', label: 'Cronograma (SLA)', width: 150, type: "sla" },
   { key: 'status_equipo', label: '1-Estatus del Equipo', width: 160, type: "dropdown", options: ["Desconocido", "En Revisión", "Calibrado", "Rechazado"] },
   { key: 'fecha', label: '2-Fecha de Calib.', width: 130, type: "date" },
-  { key: 'n_certificado', label: '3-N. Certificado', width: 140, type: "text" },
+  { key: 'certificado', label: '3-N. Certificado', width: 140, type: "text" },
   { key: 'status_certificado', label: '4-Estatus Certificado', width: 170, type: "dropdown", options: ["Pendiente de Certificado", "Generado", "Firmado"] },
   { key: 'cargado_drive', label: '5-Cargado en Drive', width: 140, type: "dropdown", options: ["No", "Si", "Realizado"] },
   { key: 'ubicacion_real', label: '6-Ubicación Real', width: 160, type: "dropdown", options: ["Servicio en Sitio", "Laboratorio", "Recepción", "Entregado"] },
@@ -218,7 +217,6 @@ const addBusinessDays = (startDate: Date, daysToAdd: number) => {
 const SLACell = React.memo(({ createdAt, isCompleted }: { createdAt: string, isCompleted: boolean }) => {
     if (!createdAt) return <div className="w-full h-full flex items-center justify-center text-gray-300">-</div>;
     
-    // Si ya se completó, AG-Bot detiene el reloj
     if (isCompleted) {
         return (
             <div className="w-full h-full flex items-center justify-center bg-blue-50/30">
@@ -332,7 +330,6 @@ const PersonCell = React.memo(({ value, metrologos, onChange, disabled }: any) =
     const containerRef = useRef<HTMLDivElement>(null);
     const initials = getInitials(value && typeof value === 'string' ? value : "");
 
-    // Busca si tenemos datos del usuario para mostrar su color también en el badge
     const assignedUser = metrologos.find((m: any) => m.name === value);
     const badgeColor = assignedUser?.color || "#0073ea";
 
@@ -528,7 +525,7 @@ const AGBotWidget = ({ thoughts }: { thoughts: AGBotThought[] }) => {
     );
 };
 
-// --- BOARD ROW (MODIFICADO PARA COLOR DE USUARIO) ---
+// --- BOARD ROW ---
 const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, userRole, onOpenComments, index, groupId, onOpenHistory }: any) => {
     const handleCellChange = useCallback((key: string, value: any) => { 
         if (key === "equipo") { const autoDept = detectDepartment(value); if (autoDept && (!row.departamento || row.departamento === "")) onUpdateRow(row.docId, "departamento", autoDept); }
@@ -541,16 +538,11 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
     // LÓGICA DE COLOR DE FONDO PERSONALIZADO
     const rowBackgroundColor = useMemo(() => { 
         if (!responsibleName) return isSelected ? "#f0f9ff" : "white"; 
-        
-        // Buscamos al usuario en la lista completa para obtener su color
         const userObj = metrologos.find((m: any) => m.name === responsibleName);
-        
         if (userObj && userObj.color) {
-             // Si el usuario tiene color, lo usamos muy clarito para el fondo
              return isSelected ? hexToRgba(userObj.color, 0.25) : hexToRgba(userObj.color, 0.12);
         }
-        
-        return stringToColor(responsibleName); // Fallback
+        return stringToColor(responsibleName); 
     }, [responsibleName, isSelected, metrologos]);
 
     return (
@@ -683,7 +675,7 @@ const FridayScreen: React.FC = () => {
         { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false },
         { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false }
     ]);
-    const [metrologos, setMetrologos] = useState<any[]>([]); // AHORA CONTIENE TODOS LOS USUARIOS
+    const [metrologos, setMetrologos] = useState<any[]>([]); 
     const [clientes, setClientes] = useState<any[]>([]); 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState("");
@@ -697,8 +689,12 @@ const FridayScreen: React.FC = () => {
     const [activeCommentRow, setActiveCommentRow] = useState<WorksheetData | null>(null);
     const [activeHistoryRow, setActiveHistoryRow] = useState<WorksheetData | null>(null);
     const [toasts, setToasts] = useState<any[]>([]);
-    const [agBotThoughts, setAgBotThoughts] = useState<AGBotThought[]>([]); // Cerebro
+    const [agBotThoughts, setAgBotThoughts] = useState<AGBotThought[]>([]); 
     const [sortConfig, setSortConfig] = useState<{ key: string | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+
+    // --- ESTADOS PARA RESIZING ---
+    const [isResizing, setIsResizing] = useState(false);
+    const resizingRef = useRef<{ startX: number, startWidth: number, key: string } | null>(null);
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -745,21 +741,18 @@ const FridayScreen: React.FC = () => {
             } else { setColumns(DEFAULT_COLUMNS); }
         });
 
-        // MODIFICADO: TRAEMOS TODOS LOS USUARIOS PARA TENER ACCESO A SUS COLORES
         const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), orderBy("name")), (snap) => {
             setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
-        // --- FILTRO POR AÑO ---
         let q;
         if (currentYear === 2025) {
              const start = "2025-01-01T00:00:00";
              const end = "2025-12-31T23:59:59";
              q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
         } else {
-             // 2026 o actual
              const start = "2026-01-01T00:00:00";
              const end = "2026-12-31T23:59:59";
              q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
@@ -840,10 +833,6 @@ const FridayScreen: React.FC = () => {
                     needsUpdate = true;
                     showToast(`🤖 AG-Bot: Certificado generado para ${row.folio}`, 'success');
                     newThoughts.push({id: Date.now(), type: 'success', message: `Certificado generado automáticamente para ${row.folio}`, timestamp: new Date().toISOString()});
-                }
-                
-                if (row.status_certificado === 'Generado' && !row.fecha) {
-                    // Opcional: Auto-fill fecha
                 }
 
                 if (row.status_equipo === 'Rechazado' && row.status_certificado === 'Generado') {
@@ -1012,15 +1001,40 @@ const FridayScreen: React.FC = () => {
         showToast("Fila agregada correctamente", 'success');
     }, [currentUserName]);
 
+    // --- MANEJO DE ACTUALIZACIONES (CON MAGIA DE GRUPOS) ---
     const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
-        const oldValue = rows.find(r => r.docId === rowId)?.[key];
-        setRows(prevRows => prevRows.map(r => r.docId === rowId ? { ...r, [key]: value } : r));
+        // 1. Optimistic Update (UI Inmediata)
+        setRows(prevRows => prevRows.map(r => {
+            if (r.docId === rowId) {
+                const updated = { ...r, [key]: value };
+                
+                // --- LÓGICA DE SALTO DE GRUPO ---
+                if (key === "ubicacion_real") {
+                    if (value === "Servicio en Sitio") updated.lugarCalibracion = "sitio";
+                    if (value === "Laboratorio") updated.lugarCalibracion = "laboratorio";
+                    if (value === "Recepción") updated.lugarCalibracion = "laboratorio";
+                }
+                return updated;
+            }
+            return r;
+        }));
         
+        // 2. Preparar batch para Firebase
         const batch = writeBatch(db);
         const rowRef = doc(db, "hojasDeTrabajo", rowId);
-        batch.update(rowRef, { [key]: value, lastUpdated: new Date().toISOString() });
         
-        // Agregar al historial
+        let updates: any = { [key]: value, lastUpdated: new Date().toISOString() };
+
+        // --- SINCRONIZACIÓN CON DB ---
+        if (key === "ubicacion_real") {
+            if (value === "Servicio en Sitio") updates.lugarCalibracion = "sitio";
+            else if (value === "Laboratorio" || value === "Recepción") updates.lugarCalibracion = "laboratorio";
+        }
+
+        batch.update(rowRef, updates);
+        
+        // Historial
+        const oldValue = rows.find(r => r.docId === rowId)?.[key];
         const historyRef = collection(db, `hojasDeTrabajo/${rowId}/history`);
         const historyDoc = doc(historyRef);
         batch.set(historyDoc, {
@@ -1047,6 +1061,56 @@ const FridayScreen: React.FC = () => {
     const toggleSelect = useCallback((id: string) => {
         setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     }, []);
+
+    // --- FUNCIONES DE RESIZING (MONDAY STYLE) ---
+    const startResize = (e: React.MouseEvent, colKey: string, currentWidth: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsResizing(true);
+        resizingRef.current = { startX: e.clientX, startWidth: currentWidth, key: colKey };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
+
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!resizingRef.current) return;
+        const { startX, startWidth, key } = resizingRef.current;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(50, startWidth + diff); 
+
+        setColumns(prevCols => prevCols.map(col => 
+            col.key === key ? { ...col, width: newWidth } : col
+        ));
+    }, []);
+
+    const handleMouseUp = useCallback(async () => {
+        setIsResizing(false);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        
+        // Guardar configuración en Firebase
+        if (resizingRef.current) {
+            // NOTA: Aquí accedemos al estado más reciente de columns via setColumns callback o ref si fuera necesario.
+            // Para simplificar, guardamos la actualización "ciega" basada en el último render o esperamos.
+            // En React 18+ batching ayuda. Lo ideal es guardar el estado actual de columns.
+            // Aquí usamos un pequeño hack: esperar al re-render o guardar manualmente.
+            // Para asegurar persistencia, guardaremos el estado actual `columns` en el próximo ciclo o directamente aquí si tenemos acceso.
+        }
+        resizingRef.current = null;
+    }, []);
+
+    // Efecto para guardar columnas cuando termina el resize
+    useEffect(() => {
+        if (!isResizing && resizingRef.current === null) {
+            // Guardar solo si hubo cambios significativos, o periódicamente. 
+            // Para simplicidad, guardamos siempre que isResizing cambia a false.
+            const saveColumns = async () => {
+                 await setDoc(doc(db, "tableros", "principal"), { columns: columns }, { merge: true });
+            };
+            saveColumns();
+        }
+    }, [isResizing, columns]);
+
 
     const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
         if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; }
@@ -1082,7 +1146,6 @@ const FridayScreen: React.FC = () => {
     // --- BUSCADOR ULTRA ROBUSTO ---
     const groupedRows = useMemo(() => {
         let filtered = rows.filter(r => {
-            // Buscador Global
             if (search) {
                 const s = search.toLowerCase();
                 const matches = (
@@ -1099,7 +1162,6 @@ const FridayScreen: React.FC = () => {
                 );
                 if (!matches) return false;
             }
-            // Filtros por Columna
             for (const [key, val] of Object.entries(activeFilters)) {
                 if (val && r[key] !== val) return false;
             }
@@ -1152,7 +1214,6 @@ const FridayScreen: React.FC = () => {
                     <div className="flex gap-2">
                         <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar todo..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow bg-gray-50 w-64" value={search} onChange={e => setSearch(e.target.value)} /></div>
                         
-                        {/* INDICADOR DE CEREBRO ACTIVO */}
                         <div className={clsx("p-2 rounded-lg transition-all", isThinking ? "text-purple-600 bg-purple-50 animate-pulse" : "text-gray-400")} title="AG-Bot Activo">
                             <Brain size={18}/>
                         </div>
@@ -1166,7 +1227,6 @@ const FridayScreen: React.FC = () => {
 
                 <div className="flex-1 overflow-auto bg-white" id="main-board-scroll">
                     <div className="inline-block min-w-full pb-32">
-                        {/* BARRA DE COLUMNAS OCULTAS */}
                         <HiddenColumnsBar hiddenColumns={hiddenColumns} onUnhide={handleUnhide} />
 
                         <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm h-[36px]">
@@ -1180,7 +1240,7 @@ const FridayScreen: React.FC = () => {
                                 return (
                                 <div 
                                     key={col.key} 
-                                    draggable={!col.sticky}
+                                    draggable={!col.sticky && !isResizing} // PREVIENE CONFLICTO DRAG vs RESIZE
                                     onDragStart={(e) => onDragStart(e, { type: 'column', index })} 
                                     onDragOver={(e) => e.preventDefault()}
                                     onDragEnd={onDragEnd} 
@@ -1195,11 +1255,20 @@ const FridayScreen: React.FC = () => {
                                     <button onClick={(e) => { e.stopPropagation(); setActiveColumnMenu(activeColumnMenu === col.key ? null : col.key); }} className="p-0.5 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity absolute right-1">
                                         <MoreHorizontal className="w-3 h-3 text-gray-500" />
                                     </button>
+                                    
+                                    {/* --- RESIZER MONDAY STYLE --- */}
+                                    {!col.sticky && (
+                                        <div 
+                                            className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors opacity-0 hover:opacity-100"
+                                            onMouseDown={(e) => startResize(e, col.key, col.width)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        ></div>
+                                    )}
+
                                     {activeColumnMenu === col.key && (
                                         <ColumnOptions 
                                             colKey={col.key} 
                                             currentLabel={col.label} 
-                                            // Generar lista única de valores para el filtro
                                             uniqueValues={[...new Set(rows.map(r => r[col.key] || ""))].sort()}
                                             onClose={() => setActiveColumnMenu(null)} 
                                             onSort={handleSort} 
@@ -1211,7 +1280,6 @@ const FridayScreen: React.FC = () => {
                                     )}
                                 </div>
                             )})}
-                            {/* BOTÓN PARA AGREGAR COLUMNA */}
                             <div className="px-2 border-r border-transparent flex items-center justify-center cursor-pointer hover:bg-gray-50 group transition-colors" onClick={handleAddColumn} title="Agregar columna">
                                 <Plus size={16} className="text-gray-400 group-hover:text-blue-500 transition-colors" />
                             </div>
