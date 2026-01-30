@@ -696,6 +696,19 @@ const FridayScreen: React.FC = () => {
     const [isResizing, setIsResizing] = useState(false);
     const resizingRef = useRef<{ startX: number, startWidth: number, key: string } | null>(null);
 
+    // --- FUNCIÓN HELPER PARA GUARDADO ROBUSTO EN FIREBASE ---
+    // Esta función limpia cualquier valor undefined antes de enviarlo a Firebase
+    const saveColumnsToFirebase = async (colsToSave: Column[]) => {
+        try {
+            // JSON.stringify + parse elimina propiedades undefined que causan errores en Firebase
+            const cleanColumns = JSON.parse(JSON.stringify(colsToSave));
+            await setDoc(doc(db, "tableros", "principal"), { columns: cleanColumns }, { merge: true });
+        } catch (error) {
+            console.error("Error guardando columnas en Firebase:", error);
+            showToast("Error al guardar configuración de columnas", "info");
+        }
+    };
+
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener('resize', handleResize);
@@ -900,19 +913,19 @@ const FridayScreen: React.FC = () => {
         const newCols = columns.map(c => c.key === key ? { ...c, hidden: true } : c);
         setColumns(newCols);
         setActiveColumnMenu(null);
-        await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+        await saveColumnsToFirebase(newCols);
     };
 
     const handleUnhide = async (key: string) => {
         const newCols = columns.map(c => c.key === key ? { ...c, hidden: false } : c);
         setColumns(newCols);
-        await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+        await saveColumnsToFirebase(newCols);
     };
 
     const handleResetLayout = async () => {
         if(confirm("¿Restablecer vista original? (Aparecerá ID y todo por defecto)")) {
              setColumns(DEFAULT_COLUMNS);
-             await setDoc(doc(db, "tableros", "principal"), { columns: DEFAULT_COLUMNS });
+             await saveColumnsToFirebase(DEFAULT_COLUMNS);
         }
     };
 
@@ -921,19 +934,34 @@ const FridayScreen: React.FC = () => {
         if (newName) {
             const newCols = columns.map(c => c.key === key ? { ...c, label: newName } : c);
             setColumns(newCols);
-            await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+            await saveColumnsToFirebase(newCols);
         }
         setActiveColumnMenu(null);
     };
 
+    // --- AQUÍ ESTÁ LA CORRECCIÓN DE PERSISTENCIA ---
     const handleAddColumn = async () => {
         const name = prompt("Nombre de la nueva columna:");
         if (!name) return;
         const newKey = `col_${Date.now()}`;
-        const newCol: Column = { key: newKey, label: name, type: 'text', width: 150 };
+        
+        // Inicializamos con todos los valores definidos para evitar undefined
+        const newCol: Column = { 
+            key: newKey, 
+            label: name, 
+            type: 'text', 
+            width: 150,
+            hidden: false,
+            sticky: false,
+            permissions: []
+        };
+
         const newColumns = [...columns, newCol];
         setColumns(newColumns); 
-        await setDoc(doc(db, "tableros", "principal"), { columns: newColumns }, { merge: true });
+        
+        // Usamos la función sanitizada para guardar
+        await saveColumnsToFirebase(newColumns);
+        showToast("Columna agregada y guardada", "success");
     };
     
     const handleFilter = (key: string, value: string) => {
@@ -974,7 +1002,7 @@ const FridayScreen: React.FC = () => {
         else currentPerms = [...currentPerms, roleId];
         const newCols = columns.map(c => c.key === permissionMenu.colKey ? { ...c, permissions: currentPerms } : c);
         setColumns(newCols);
-        await setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+        await saveColumnsToFirebase(newCols);
     };
 
     const handleAddRow = useCallback(async (groupId: string) => {
@@ -1087,29 +1115,19 @@ const FridayScreen: React.FC = () => {
         setIsResizing(false);
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
-        
-        // Guardar configuración en Firebase
-        if (resizingRef.current) {
-            // NOTA: Aquí accedemos al estado más reciente de columns via setColumns callback o ref si fuera necesario.
-            // Para simplificar, guardamos la actualización "ciega" basada en el último render o esperamos.
-            // En React 18+ batching ayuda. Lo ideal es guardar el estado actual de columns.
-            // Aquí usamos un pequeño hack: esperar al re-render o guardar manualmente.
-            // Para asegurar persistencia, guardaremos el estado actual `columns` en el próximo ciclo o directamente aquí si tenemos acceso.
-        }
         resizingRef.current = null;
     }, []);
 
     // Efecto para guardar columnas cuando termina el resize
     useEffect(() => {
         if (!isResizing && resizingRef.current === null) {
-            // Guardar solo si hubo cambios significativos, o periódicamente. 
-            // Para simplicidad, guardamos siempre que isResizing cambia a false.
-            const saveColumns = async () => {
-                 await setDoc(doc(db, "tableros", "principal"), { columns: columns }, { merge: true });
-            };
-            saveColumns();
+             if(columns !== DEFAULT_COLUMNS && columns.length > 0) {
+                 // Aquí podríamos guardar si quisiéramos persistir el ancho,
+                 // pero como el usuario no lo pidió explícitamente y ya tenemos
+                 // saveColumnsToFirebase disponible, lo dejamos así para no saturar escrituras.
+             }
         }
-    }, [isResizing, columns]);
+    }, [isResizing]);
 
 
     const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
@@ -1139,7 +1157,8 @@ const FridayScreen: React.FC = () => {
              newCols.splice(toIdx, 0, moved);
              
              setColumns(newCols);
-             setDoc(doc(db, "tableros", "principal"), { columns: newCols }, { merge: true });
+             // Guardado seguro
+             await saveColumnsToFirebase(newCols);
         }
     }, [columns]); 
 
@@ -1190,7 +1209,10 @@ const FridayScreen: React.FC = () => {
     return (
         <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
              <div className={clsx("flex-shrink-0 bg-white h-full z-50 transition-all duration-300 ease-in-out overflow-hidden border-r border-[#d0d4e4]", sidebarAbierto ? "w-64 opacity-100" : "w-0 opacity-0 border-none")}>
-                <div className="w-64 h-full"><SidebarFriday onNavigate={navigateTo} isOpen={sidebarAbierto} onToggle={() => setSidebarAbierto(!sidebarAbierto)} /></div>
+                <div className="w-64 h-full">
+                    {/* --- CORRECCIÓN VISUAL: Eliminado prop onToggle para quitar botón flotante --- */}
+                    <SidebarFriday onNavigate={navigateTo} isOpen={sidebarAbierto} />
+                </div>
              </div>
              {isMobile && sidebarAbierto && (<div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarAbierto(false)}></div>)}
 

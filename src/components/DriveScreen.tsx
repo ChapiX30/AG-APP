@@ -154,9 +154,21 @@ const getDeadlineInfo = (createdDateStr: string) => {
     return { progress, daysLeft, status };
 };
 
+// --- AQUÍ ESTÁ LA MODIFICACIÓN PARA DARLE PERMISO A EDGAR ---
 const isQualityUser = (user: UserData | null) => {
   const p = (user?.puesto || user?.role || "").toLowerCase();
-  return ['calidad', 'quality', 'admin', 'gerente', 'manager'].some(role => p.includes(role));
+  const email = (user?.email || "").toLowerCase();
+
+  // 1. Roles que tienen acceso total por defecto
+  const hasAdminRole = ['calidad', 'quality', 'admin', 'gerente', 'manager'].some(role => p.includes(role));
+
+  // 2. Lista blanca de correos específicos (¡PON AQUÍ EL CORREO DE EDGAR!)
+  const allowedEmails = [
+      'eaaese07@gmail.com', // <--- CAMBIA ESTO POR EL EMAIL REAL DE EDGAR
+      'edgar.metrologo@ejemplo.com' // Puedes agregar más correos si hace falta
+  ];
+
+  return hasAdminRole || allowedEmails.includes(email);
 };
 
 const formatFileSize = (bytes?: number) => {

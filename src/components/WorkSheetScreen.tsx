@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useReducer } from "rea
 import { useNavigation } from "../hooks/useNavigation";
 import {
   ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
-  Loader2, NotebookPen, Edit3, Search, Calculator, ArrowRightLeft, AlertTriangle,
+  Loader2, NotebookPen, Search, Calculator, ArrowRightLeft, AlertTriangle,
   CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
@@ -17,13 +17,17 @@ import { isBefore, format, addMonths, addYears, parseISO, addBusinessDays, isAft
 import { es } from 'date-fns/locale'; 
 import { unit } from 'mathjs';
 import logoAg from '../assets/lab_logo.png'; 
-
-// --- CORRECCIÓN: AQUÍ ESTÁ LA IMPORTACIÓN QUE FALTABA ---
 import ToastNotification from "./ToastNotification"; 
-// --------------------------------------------------------
+
+// --- IMPORTS DE CAPACITOR ---
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
+
+// --- TU NUEVO PLUGIN NATIVO EPSON ---
+import EpsonLabel from '../utils/EpsonPlugin';
 
 // ====================================================================
-// 1. COMPONENTE DE ETIQUETA (MASTER VERSION - HIGH DEFINITION)
+// 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
 // ====================================================================
 
 interface LabelData {
@@ -45,6 +49,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     setIsGenerating(true);
 
     try {
+      // 1. Pequeña pausa para asegurar renderizado del DOM
       await new Promise(resolve => setTimeout(resolve, 200));
 
       const canvas = await html2canvas(labelRef.current, {
@@ -55,36 +60,59 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         imageTimeout: 0
       });
 
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const cleanId = data.id.replace(/[^a-zA-Z0-9]/g, '-');
-        const fileName = `ETIQUETA_${tapeSize}_${cleanId}.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
+      // 2. Obtener Base64 puro de la imagen (quitando el encabezado data:image/png...)
+      const base64Data = canvas.toDataURL('image/png').split(',')[1];
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: 'Etiqueta Epson',
-              text: 'Guardar imagen e insertar en Epson Label Editor'
-            });
-          } catch (error) {
-            console.log("Compartir cancelado");
-          }
-        } else {
-          const link = document.createElement('a');
-          link.download = fileName;
-          link.href = canvas.toDataURL('image/png');
-          link.click();
-          alert("Imagen descargada. Insértala en la App Epson.");
+      // LÓGICA HÍBRIDA (APK vs WEB)
+      if (Capacitor.isNativePlatform()) {
+        // --- MODO ANDROID NATIVO (PLUGIN EPSON) ---
+        try {
+            console.log("Enviando a plugin EpsonLabel...");
+            await EpsonLabel.printBase64({ base64: base64Data });
+            
+            // Éxito
+            alert("✅ Enviado a impresora Epson"); 
+
+        } catch (err: any) {
+            console.error("Error plugin Epson:", err);
+            alert("❌ Error Epson: " + (err.message || err));
         }
-        setIsGenerating(false);
-        setShowOptions(false);
-      }, 'image/png');
+
+      } else {
+        // --- MODO WEB (Navegador PC/Chrome) ---
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          const cleanId = data.id.replace(/[^a-zA-Z0-9]/g, '-');
+          const fileName = `ETIQUETA_${tapeSize}_${cleanId}.png`;
+          
+          // Intentar API de compartir web moderna
+          const file = new File([blob], fileName, { type: "image/png" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                files: [file],
+                title: 'Etiqueta Epson',
+                text: 'Guardar imagen'
+              });
+            } catch (error) {
+              console.log("Compartir cancelado");
+            }
+          } else {
+            // Fallback clásico: Descargar archivo
+            const link = document.createElement('a');
+            link.download = fileName;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+          }
+        }, 'image/png');
+      }
+
+      setIsGenerating(false);
+      setShowOptions(false);
 
     } catch (error) {
-      console.error("Error", error);
-      alert("Error al generar etiqueta");
+      console.error("Error al generar etiqueta", error);
+      alert("Error general al generar la imagen.");
       setIsGenerating(false);
     }
   };
@@ -123,6 +151,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         </div>
       )}
 
+      {/* RENDERIZADO OCULTO PARA FOTO */}
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
         
         {tapeSize === "24mm" && (
@@ -233,7 +262,6 @@ const UNIT_CATEGORIES: Record<string, { value: string, label: string }[]> = {
         { value: "cm", label: "Centímetros" },
         { value: "m", label: "Metros" }
     ]
-    // Puedes agregar más categorías aquí según necesites
 };
 
 const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -477,7 +505,7 @@ const getUserName = (user: any) => user ? (user.displayName || user.name || user
 
 const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   if (!consecutivo) return "";
-  const m: Record<string, string> = { AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional" };
+  const m: Record<string, string> = { AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional", AGH: "Humedad" };
   const parts = consecutivo.split("-");
   if (parts.length >= 2 && m[parts[1]]) return m[parts[1]];
   for (const [code, mag] of Object.entries(m)) { if (consecutivo.includes(code)) return mag; }
@@ -485,7 +513,7 @@ const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
 };
 
 const magnitudesDisponibles = [
-  "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion"
+  "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Humedad", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion"
 ];
 
 const unidadesPorMagnitud: Record<string, any> = {
@@ -496,6 +524,7 @@ const unidadesPorMagnitud: Record<string, any> = {
   Temperatura: ["°C", "°F", "°K"], Optica: ["BRIX", "°"], Masa: ["g", "kg", "lb"], Tiempo: ["s", "min", "h"],
   "Reporte de Diagnostico": ["check"], Velocidad: ["m/s", "km/h"], Vacio: ["atm", "Psi", "mbar", "Torr", "mmHg", "micron", "inHg"],
   Vibracion: ["g", "rad/s"], "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
+  Humedad: ["% HR", "%", "°C Punto de Rocío"]
 };
 
 const findTechopsById = (id: string): MasterRecord | null => {
@@ -534,35 +563,87 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
   return null;
 }
 
+// --- GENERADOR DE PDF INTELIGENTE ---
 const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   // @ts-ignore
-  const doc = new JsPDF({ orientation:"p", unit: "pt", format: "a4" });
-  const marginLeft = 40; 
-  const marginRight = 560; 
-  const lineHeight = 20; 
-  let y = 60;
+  const doc = new JsPDF({ orientation: "p", unit: "pt", format: "a4" });
 
-  doc.addImage(logoAg, 'PNG', marginLeft, 20, 100, 50); 
+  const pageHeight = doc.internal.pageSize.height; 
+  const marginBottom = 40; 
+  const marginLeft = 40;
+  const marginRight = 560;
+  const lineHeight = 20;
+  
+  const maxY = pageHeight - marginBottom; 
+  let currentY = 60; 
 
-  doc.setFont("helvetica", "bold"); 
-  doc.setFontSize(18); 
-  doc.setTextColor(0, 0, 139); 
-  doc.text("Equipos y Servicios Especializados AG", marginLeft + 120, y); 
-  y += 30;
+  const drawHeaderBase = () => {
+    doc.addImage(logoAg, 'PNG', marginLeft, 20, 100, 50);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 139); 
+    doc.text("Equipos y Servicios Especializados AG", marginLeft + 120, 50);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+  };
 
-  doc.setFontSize(12); 
-  doc.setFont("helvetica", "normal"); 
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Fecha: ${formData.fecha || "-"}`, marginRight - 150, y);
-  y += lineHeight;
+  const drawFooter = () => {
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(100);
+      doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
+      doc.text(`Página ${i} de ${totalPages}`, marginRight - 50, pageHeight - 20);
+    }
+  };
+
+  const checkPageBreak = (heightNeeded: number) => {
+    if (currentY + heightNeeded > maxY) {
+      doc.addPage();
+      currentY = 60; 
+      drawHeaderBase(); 
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text("Mediciones (Continuación)", marginLeft, currentY);
+      currentY += 25;
+      
+      doc.setDrawColor(200);
+      doc.setFillColor(240, 240, 240);
+      doc.setLineWidth(0.5);
+      doc.rect(marginLeft, currentY, 500, 20, 'FD');
+      
+      doc.setFontSize(12);
+      if (formData.magnitud === "Masa") {
+        doc.text("Parámetro", marginLeft + 10, currentY + 15);
+        doc.text("Valor", marginLeft + 250, currentY + 15);
+      } else {
+        doc.text("Medición Patrón", marginLeft + 10, currentY + 15);
+        doc.text("Medición Instrumento", marginLeft + 260, currentY + 15);
+      }
+      currentY += 20;
+      return true;
+    }
+    return false;
+  };
+
+  drawHeaderBase();
+  currentY = 60;
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Fecha: ${formData.fecha || "-"}`, marginRight - 150, currentY);
+  currentY += lineHeight;
   doc.setFont("helvetica", "bold");
-  doc.text(`Nombre: ${formData.nombre || "-"}`, marginRight - 150, y);
-  y += 30;
+  doc.text(`Nombre: ${formData.nombre || "-"}`, marginRight - 150, currentY);
+  currentY += 30;
 
-  doc.setDrawColor(128, 128, 128); 
+  doc.setDrawColor(128, 128, 128);
   doc.setLineWidth(1.5);
-  doc.line(marginLeft, y, marginRight, y);
-  y += 30;
+  doc.line(marginLeft, currentY, marginRight, currentY);
+  currentY += 30;
 
   const infoPairs = [
     ["Lugar de Calibración:", formData.lugarCalibracion || "-"],
@@ -583,83 +664,122 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   ];
 
   doc.setFontSize(11);
-  const col1Width = 180; 
+  const col1Width = 180;
+  
   infoPairs.forEach(([label, value]) => {
-    doc.setFont("helvetica", "bold");
-    doc.text(label, marginLeft, y);
-    doc.setFont("helvetica", "normal");
     const valueLines = doc.splitTextToSize(value, marginRight - marginLeft - col1Width - 10);
-    doc.text(valueLines, marginLeft + col1Width, y);
-    y += lineHeight * valueLines.length;
+    const heightNeeded = lineHeight * valueLines.length;
+    checkPageBreak(heightNeeded);
+    doc.setFont("helvetica", "bold");
+    doc.text(label, marginLeft, currentY);
+    doc.setFont("helvetica", "normal");
+    doc.text(valueLines, marginLeft + col1Width, currentY);
+    currentY += heightNeeded;
   });
-  y += 20;
+  currentY += 20;
 
+  checkPageBreak(40); 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text("Mediciones", marginLeft, y);
-  y += lineHeight + 10;
+  doc.text("Mediciones", marginLeft, currentY);
+  currentY += lineHeight + 10;
 
   const isMasa = formData.magnitud === "Masa";
-  doc.setDrawColor(200); doc.setFillColor(240, 240, 240); doc.setLineWidth(0.5);
+  doc.setDrawColor(200);
+  doc.setFillColor(240, 240, 240);
+  doc.setLineWidth(0.5);
 
+  checkPageBreak(30);
+  doc.rect(marginLeft, currentY, 500, 20, 'FD');
+  doc.setFontSize(12);
+  
   if (isMasa) {
-    const masaHeaders = ["Parámetro", "Valor"];
+    doc.text("Parámetro", marginLeft + 10, currentY + 15);
+    doc.text("Valor", marginLeft + 250, currentY + 15);
+    currentY += 20;
+    
     const masaData = [
       ["Excentricidad", formData.excentricidad || "-"],
       ["Linealidad", formData.linealidad || "-"],
       ["Repetibilidad", formData.repetibilidad || "-"]
     ];
 
-    doc.rect(marginLeft, y, 500, 20, 'FD');
-    doc.text(masaHeaders[0], marginLeft + 10, y + 15);
-    doc.text(masaHeaders[1], marginLeft + 250, y + 15);
-    y += 20;
-
     masaData.forEach(([param, val]) => {
+      doc.setFontSize(11);
       const valLines = doc.splitTextToSize(val, 240);
       const rowHeight = Math.max(20, valLines.length * lineHeight);
-      doc.rect(marginLeft, y, 250, rowHeight);
-      doc.rect(marginLeft + 250, y, 250, rowHeight);
-      doc.text(param, marginLeft + 10, y + 15);
-      doc.text(valLines, marginLeft + 260, y + 15);
-      y += rowHeight;
+      checkPageBreak(rowHeight); 
+
+      doc.setDrawColor(200); 
+      doc.setFillColor(255, 255, 255); 
+      doc.rect(marginLeft, currentY, 250, rowHeight);
+      doc.rect(marginLeft + 250, currentY, 250, rowHeight);
+      
+      doc.setFont("helvetica", "bold");
+      doc.text(param, marginLeft + 10, currentY + 15);
+      doc.setFont("helvetica", "normal");
+      doc.text(valLines, marginLeft + 260, currentY + 15);
+      currentY += rowHeight;
     });
+
   } else {
-    const patronLines = (formData.medicionPatron || "").split('\n').filter(line => line.trim());
-    const instrumentoLines = (formData.medicionInstrumento || "").split('\n').filter(line => line.trim());
-    const maxLines = Math.max(patronLines.length, instrumentoLines.length, 1); 
+    doc.text("Medición Patrón", marginLeft + 10, currentY + 15);
+    doc.text("Medición Instrumento", marginLeft + 260, currentY + 15);
+    currentY += 20;
 
-    doc.rect(marginLeft, y, 500, 20, 'FD');
-    doc.text("Medición Patrón", marginLeft + 10, y + 15);
-    doc.text("Medición Instrumento", marginLeft + 260, y + 15);
-    y += 20;
+    const patronRaw = (formData.medicionPatron || "").split('\n');
+    const instrumentoRaw = (formData.medicionInstrumento || "").split('\n');
+    const maxLines = Math.max(patronRaw.length, instrumentoRaw.length);
+    const loopLimit = maxLines > 0 ? maxLines : 1;
 
-    for (let i = 0; i < maxLines; i++) {
-      const patron = patronLines[i] || "-";
-      const instrumento = instrumentoLines[i] || "-";
-      const patronSplit = doc.splitTextToSize(patron, 240);
-      const instrumentoSplit = doc.splitTextToSize(instrumento, 240);
-      const rowHeight = Math.max(20, Math.max(patronSplit.length, instrumentoSplit.length) * lineHeight);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10); 
 
-      doc.rect(marginLeft, y, 250, rowHeight);
-      doc.rect(marginLeft + 250, y, 250, rowHeight);
-      doc.text(patronSplit, marginLeft + 10, y + 15);
-      doc.text(instrumentoSplit, marginLeft + 260, y + 15);
-      y += rowHeight;
+    for (let i = 0; i < loopLimit; i++) {
+      const pLine = patronRaw[i] || "";
+      const iLine = instrumentoRaw[i] || "";
+      const isHeaderLine = (pLine.trim().endsWith(':') || iLine.trim().endsWith(':'));
+      const pSplit = doc.splitTextToSize(pLine, 240);
+      const iSplit = doc.splitTextToSize(iLine, 240);
+      const rowHeight = Math.max(18, Math.max(pSplit.length, iSplit.length) * 14);
+
+      checkPageBreak(rowHeight);
+
+      doc.setDrawColor(220);
+      if (isHeaderLine) {
+        doc.setFillColor(245, 247, 250); 
+        doc.rect(marginLeft, currentY, 250, rowHeight, 'FD');
+        doc.rect(marginLeft + 250, currentY, 250, rowHeight, 'FD');
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 50, 150); 
+      } else {
+        doc.rect(marginLeft, currentY, 250, rowHeight);
+        doc.rect(marginLeft + 250, currentY, 250, rowHeight);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(0, 0, 0);
+      }
+      doc.text(pSplit, marginLeft + 5, currentY + 12);
+      doc.text(iSplit, marginLeft + 255, currentY + 12);
+      currentY += rowHeight;
     }
   }
-  y += 30;
 
-  doc.setFontSize(12); doc.setFont("helvetica", "bold");
-  doc.text("Notas:", marginLeft, y);
-  y += lineHeight;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+  currentY += 20;
   const notasLines = doc.splitTextToSize(formData.notas || "-", 500);
-  doc.text(notasLines, marginLeft, y);
-  y += notasLines.length * lineHeight + 20;
+  const notasHeight = (notasLines.length * lineHeight) + 40; 
+  checkPageBreak(notasHeight);
 
-  doc.setFontSize(9); doc.setFont("helvetica", "italic"); doc.setTextColor(100);
-  doc.text("AG-CAL-F39-00", marginLeft, 790);
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.text("Notas:", marginLeft, currentY);
+  currentY += lineHeight;
+  
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(notasLines, marginLeft, currentY);
+
+  drawFooter();
   return doc;
 };
 
@@ -701,8 +821,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const { user } = useAuth();
   const [state, dispatch] = useReducer(worksheetReducer, initialState);
   const [isSaving, setIsSaving] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
@@ -797,7 +915,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           setMetrologyWarning(null);
           return;
       }
-      const limits = { tMin: 18, tMax: 26, hMin: 30, hMax: 70 }; // VALORES POR DEFECTO APROXIMADOS
+      const limits = { tMin: 18, tMax: 26, hMin: 30, hMax: 70 }; 
       const temp = Number(state.tempAmbiente);
       const hr = Number(state.humedadRelativa);
       let warning = "";
@@ -911,6 +1029,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   // --- HANDLE SAVE ---
   const handleSave = useCallback(async () => {
+    // 1. VALIDACIÓN RIGUROSA
     const errors: Record<string, boolean> = {};
     const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad"];
     let hasError = false;
@@ -929,27 +1048,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setToast({ message: "La fecha de recepción debe ser antes de la fecha de calibración.", type: 'error' });
       hasError = true;
     }
-    if (state.tempAmbiente) {
-      const temp = Number(state.tempAmbiente);
-      if (temp < -50 || temp > 100) {
-        errors.tempAmbiente = true;
-        setToast({ message: "Temperatura ambiente fuera de rango realista (-50°C a 100°C).", type: 'warning' });
-        hasError = true;
-      }
-    }
-    if (state.humedadRelativa) {
-      const hr = Number(state.humedadRelativa);
-      if (hr < 0 || hr > 100) {
-        errors.humedadRelativa = true;
-        setToast({ message: "Humedad relativa debe estar entre 0% y 100%.", type: 'error' });
-        hasError = true;
-      }
-    }
 
     if (hasError) {
         setValidationErrors(errors);
-        setToast({ message: "Completa los campos en rojo para continuar.", type: 'error' });
-        return;
+        setToast({ message: "Completa los campos obligatorios para continuar.", type: 'error' });
+        // DETENER AQUÍ SI HAY ERRORES
+        return; 
     }
     setValidationErrors({});
 
@@ -1037,10 +1141,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         await addDoc(collection(db, "hojasDeTrabajo"), fullData);
       }
 
-      setToast({ message: "Hoja de trabajo guardada y enviada a Friday.", type: 'success' });
+      setToast({ message: "Hoja de trabajo guardada correctamente.", type: 'success' });
       localStorage.removeItem('backup_worksheet_data');
       
-      setTimeout(() => goBack(), 1500);
+      setTimeout(() => goBack(), 1000);
 
     } catch (e: any) {
       console.error("Error al guardar:", e);
@@ -1056,21 +1160,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setIsSaving(false);
     }
   }, [state, currentUser, user, goBack, worksheetId]);
-
-  const handleTogglePreview = useCallback(async () => {
-    const newShow = !showPreview;
-    setShowPreview(newShow);
-    if (newShow) {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      try {
-        const { jsPDF } = await import("jspdf");
-        setPreviewUrl(URL.createObjectURL(generateTemplatePDF(state, jsPDF as any).output("blob")));
-      } catch (e) { console.error(e); setPreviewUrl(null); }
-    } else if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(null);
-    }
-  }, [showPreview, previewUrl, state]);
 
   const slaInfo = React.useMemo(() => {
     if (state.lugarCalibracion !== "Laboratorio" || !state.fechaRecepcion || !state.fecha) {
@@ -1099,7 +1188,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return {
         id: state.id || "PENDIENTE",
         certificado: state.certificado || "PENDIENTE",
-        // FECHAS EN ESPAÑOL Y LIMPIAS (Sin puntos, ej: ENE)
         fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
         fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
         calibro: state.nombre 
@@ -1133,25 +1221,21 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           </div>
           <div className="flex items-center space-x-3">
             
-            {/* BOTÓN ETIQUETA MEJORADO */}
             <LabelPrinterButton data={labelData} logo={logoAg} />
 
             <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
               <Calculator className="w-4 h-4" /><span className="text-sm font-medium hidden md:inline">Convertidor</span>
-            </button>
-            <button onClick={handleTogglePreview} className="px-4 py-2 text-white hover:bg-white/10 rounded-lg flex items-center space-x-2">
-              <Edit3 className="w-4 h-4" /><span className="hidden md:inline">{showPreview ? "Ocultar Vista" : "Mostrar Vista"}</span>
             </button>
           </div>
         </div>
       </div>
 
       <div className="p-6">
-        <div className={`grid gap-8 ${showPreview ? "lg:grid-cols-2" : "lg:grid-cols-1 max-w-4xl mx-auto"}`}>
+        <div className="max-w-5xl mx-auto">
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
             <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
               <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
-              <p className="text-gray-600 mt-1">Complete los datos. Los cambios se reflejarán automáticamente en Friday.</p>
+              <p className="text-gray-600 mt-1">Complete los datos obligatorios marcados con *.</p>
             </div>
             <div className="p-8 space-y-8">
               <div>
@@ -1358,7 +1442,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           <Calculator className="w-4 h-4 text-blue-500"/> 
                           Mediciones por Unidad Eléctrica
                       </h3>
-                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Multilínea habilitada</span>
                   </div>
               
                   <div className="grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
@@ -1398,11 +1481,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                       </div>
                   ))}
                   </div>
-                  
-                  <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500 flex items-center gap-2">
-                      <AlertTriangle className="w-3 h-3 text-orange-400" />
-                      <span>Puedes presionar <strong>Enter</strong> para agregar múltiples lecturas por cada unidad.</span>
-                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1428,12 +1506,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 )}
               </div>
             </div>
-            {showPreview && (
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden h-full min-h-[1000px]">
-                <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-4 border-b border-gray-200"><h2 className="text-lg font-bold text-gray-900">Vista Previa del PDF Real</h2></div>
-                <div className="h-full w-full">{previewUrl ? <iframe src={previewUrl} width="100%" className="h-full min-h-[900px]" style={{ border: 'none' }} title="Vista Previa PDF" /> : <div className="p-8 flex items-center justify-center h-[900px]"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><span className="ml-3 text-gray-700">Generando vista previa...</span></div>}</div>
-              </div>
-            )}
           </div>
         </div>
         <div className="bg-gray-50 px-8 py-6 border-t border-gray-200 mt-8 rounded-lg">
