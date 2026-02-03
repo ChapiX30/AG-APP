@@ -1,26 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, Plus, Minus, Calendar, User, Hash, Code } from 'lucide-react'; 
+import { 
+  ArrowLeft, 
+  Plus, 
+  RotateCcw, 
+  Calendar, 
+  User, 
+  Hash, 
+  History, 
+  AlertTriangle,
+  CheckCircle2,
+  Activity,
+  Trash2
+} from 'lucide-react';
 import { generarConsecutivo } from '../utils/firebaseConsecutivos';
 import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  onSnapshot, 
-  doc, 
-  deleteDoc, 
-  getDocs,
-  getDoc,       
-  updateDoc,    
-  increment,
-  arrayUnion 
+  collection, query, where, orderBy, limit, onSnapshot, 
+  doc, deleteDoc, getDocs, getDoc, updateDoc, increment, arrayUnion 
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { getPrefijo } from '../utils/prefijos'; 
 
+// Extended Image Map to handle variations (with and without spaces)
 const magnitudImages: Record<string, string> = {
   Acustica: "/images/acustica.png",
   Dimensional: "/images/dimensional.png",
@@ -38,23 +40,53 @@ const magnitudImages: Record<string, string> = {
   Quimica: "/images/quimica.png",
   Tiempo: "/images/tiempo.png",
 
+  // Trazables (Normalized)
   ParTorsionalTrazable: "/images/par-torsional-trazable.png",
+  "Par Torsional Trazable": "/images/par-torsional-trazable.png",
+  
   AcusticaTrazable: "/images/acustica.png",
+  "Acustica Trazable": "/images/acustica.png",
+  
   DimensionalTrazable: "/images/dimensional.png",
+  "Dimensional Trazable": "/images/dimensional.png",
+  
   TemperaturaTrazable: "/images/temperatura-trazable.png",
+  "Temperatura Trazable": "/images/temperatura-trazable.png",
+  
   HumedadTrazable: "/images/humedad-trazable.png",
+  "Humedad Trazable": "/images/humedad-trazable.png",
+  
   FlujoTrazable: "/images/flujo-trazable.png",
+  "Flujo Trazable": "/images/flujo-trazable.png",
+  
   PresionTrazable: "/images/presion-trazable.png",
+  "Presion Trazable": "/images/presion-trazable.png",
+  
   FuerzaTrazable: "/images/fuerza-trazable.png",
+  "Fuerza Trazable": "/images/fuerza-trazable.png",
+  
   ElectricaTrazable: "/images/electrica.png",
+  "Electrica Trazable": "/images/electrica.png",
+  
   FrecuenciaTrazable: "/images/frecuencia-trazable.png",
+  "Frecuencia Trazable": "/images/frecuencia-trazable.png",
+  
   DurezaTrazable: "/images/dureza-trazable.png",
+  "Dureza Trazable": "/images/dureza-trazable.png",
+  
   MasaTrazable: "/images/masa.png",
+  "Masa Trazable": "/images/masa.png",
+  
   VolumenTrazable: "/images/volumen-trazable.png",
+  "Volumen Trazable": "/images/volumen-trazable.png",
+  
   OpticaTrazable: "/images/optica-trazable.png",
+  "Optica Trazable": "/images/optica-trazable.png",
+  
   Masa: "/images/masa.png",
   ParTorsional: "/images/par-torsional.png",
   VibracionTrazable: "/images/vibracion-trazable.png",
+  "Vibracion Trazable": "/images/vibracion-trazable.png",
 };
 
 export const MagnitudeDetailScreen: React.FC = () => {
@@ -64,19 +96,21 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const [consecutivos, setConsecutivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // ------------ Estados para Deshacer --------------
+  // Modal State
   const [deshacerModalOpen, setDeshacerModalOpen] = useState(false);
   const [consecutivoAEliminar, setConsecutivoAEliminar] = useState<any | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ----------- ESCUCHA EN TIEMPO REAL -----------------
+  // Derived State
+  const isTrazable = selectedMagnitude?.toLowerCase().includes('trazable');
+  // Safe Image Lookup (Try direct match, then remove spaces)
+  const imageSrc = magnitudImages[selectedMagnitude] || magnitudImages[selectedMagnitude?.replace(/\s/g, '')] || "/images/default.png";
+
   useEffect(() => {
     if (!selectedMagnitude) return;
     setLoading(true);
 
-    // Escuchar cambios en la colección de consecutivos
-    // Traemos los últimos 2 sin importar el año (el filtro visual se hace abajo)
     const q = query(
       collection(db, "consecutivos"),
       where("magnitud", "==", selectedMagnitude),
@@ -97,11 +131,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
     return () => unsubscribe();
   }, [selectedMagnitude]);
 
-  // Generar Consecutivo
   const handleGenerarConsecutivo = async () => {
     setGenerando(true);
     try {
-      // Calculamos el año actual ("26")
       const anio = new Date().getFullYear().toString().slice(-2);
       setLoading(true);
       const consecutivo = await generarConsecutivo(selectedMagnitude, anio, user.name);
@@ -114,29 +146,13 @@ export const MagnitudeDetailScreen: React.FC = () => {
     }
   };
 
-  const handleOpenDeshacerModal = () => {
-    setDeshacerModalOpen(true);
-    setError(null);
-    setConsecutivoAEliminar(null);
-  };
-
-  const handleSeleccionarAEliminar = (consecutivo: any) => {
-    setConsecutivoAEliminar(consecutivo);
-  };
-
-  // ------------------------------------------------------------------
-  //  LÓGICA MAESTRA DE ELIMINACIÓN Y RECICLAJE
-  // ------------------------------------------------------------------
   const handleEliminarConsecutivo = async () => {
     if (!consecutivoAEliminar) return;
     setEliminando(true);
     setError(null);
 
     try {
-      // 1. Obtener el prefijo CORRECTO (Ej. "Masa Trazable" -> "AGMT")
       const prefijoContador = getPrefijo(selectedMagnitude);
-
-      // Desarmar el string: AGMT-0181-25
       const partes = consecutivoAEliminar.consecutivo.split('-');
       
       if (partes.length >= 3) {
@@ -152,24 +168,14 @@ export const MagnitudeDetailScreen: React.FC = () => {
           const valorActualEnBaseDatos = dataContador.valor;
           const anioEnBaseDatos = dataContador.anio || anioDelBorrado;
 
-          // CASO A: Es el ÚLTIMO generado (Ej. vamos en 186 y borras 186)
           if (valorActualEnBaseDatos === numeroBorrado && anioEnBaseDatos === anioDelBorrado) {
-             console.log(`Borrando el último (${numeroBorrado}). Restando contador.`);
-             await updateDoc(contadorRef, {
-               valor: increment(-1) 
-             });
-          } 
-          // CASO B: Es uno de EN MEDIO (Ej. vamos en 186 y borras 184)
-          else if (anioEnBaseDatos === anioDelBorrado) {
-             console.log(`Guardando el hueco ${numeroBorrado} para reciclar.`);
-             await updateDoc(contadorRef, {
-                huecos: arrayUnion(numeroBorrado)
-             });
+             await updateDoc(contadorRef, { valor: increment(-1) });
+          } else if (anioEnBaseDatos === anioDelBorrado) {
+             await updateDoc(contadorRef, { huecos: arrayUnion(numeroBorrado) });
           }
         }
       }
 
-      // 2. Eliminar historial
       const q = query(
         collection(db, "consecutivos"),
         where("consecutivo", "==", consecutivoAEliminar.consecutivo),
@@ -180,7 +186,6 @@ export const MagnitudeDetailScreen: React.FC = () => {
         await deleteDoc(doc(db, "consecutivos", docu.id));
       }
 
-      // 3. Eliminar worksheet
       const q2 = query(
         collection(db, "worksheets"),
         where("consecutivo", "==", consecutivoAEliminar.consecutivo),
@@ -201,182 +206,228 @@ export const MagnitudeDetailScreen: React.FC = () => {
     }
   };
 
-  const getMagnitudeIcon = (name: string) => {
-    const icons: { [key: string]: string } = {
-      'acustica': '🔊', 'dimensional': '📏', 'electrica': '⚡', 'flujo': '🌊',
-      'frecuencia': '📡', 'fuerza': '💪', 'humedad': '💧', 'masa': '⚖️',
-      'par-torsional': '🔧', 'presion': '📊', 'quimica': '🔬',
-      'Reporte Diagnostico': '📊', 'temperatura': '🌡️', 'tiempo': '⏱️', 'volumen': '📦'
-    };
-    return icons[name?.toLowerCase()] || '⚙️';
-  };
-
-  // --------------------------------------------------------
-  // FILTRO VISUAL: Ocultar datos del año pasado
-  // --------------------------------------------------------
-  const currentYearShort = new Date().getFullYear().toString().slice(-2); // "26"
-
-  const isCurrentYear = (record: any) => {
-    if (!record || !record.consecutivo) return false;
-    const parts = record.consecutivo.split('-'); 
-    const recordYear = parts[parts.length - 1]; // Toma la última parte ("25" o "26")
-    return recordYear === currentYearShort;
-  };
-
-  // Si el registro 0 no es de este año, mostramos null (pantalla vacía)
+  const currentYearShort = new Date().getFullYear().toString().slice(-2);
+  const isCurrentYear = (record: any) => record?.consecutivo?.endsWith(currentYearShort);
   const actual = isCurrentYear(consecutivos[0]) ? consecutivos[0] : null;
-  // Si el registro 1 no es de este año, mostramos null
   const anterior = isCurrentYear(consecutivos[1]) ? consecutivos[1] : null;
-  // --------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-      <div className="absolute inset-0 z-0 opacity-20 dark:opacity-30 pointer-events-none">
-        <div className="w-[120vw] h-[120vw] bg-blue-900 rounded-full blur-[100px] absolute top-[-50vh] left-[-50vw] sm:top-[-30vh] sm:left-[-30vw] transform" style={{ background: 'radial-gradient(circle, rgba(23,37,84,1) 0%, rgba(15,23,42,0) 70%)' }} />
-        <div className="w-96 h-96 bg-indigo-900 rounded-full blur-[100px] absolute bottom-0 right-0 transform translate-x-1/2 translate-y-1/2" style={{ background: 'radial-gradient(circle, rgba(79,70,229,1) 0%, rgba(15,23,42,0) 70%)' }} />
-      </div>
-
-      {/* Header */}
-      <div className="bg-slate-900/90 shadow-xl sticky top-0 z-30 backdrop-blur-md border-b border-blue-700/50">
-        <div className="px-4 sm:px-6 py-4 flex items-center space-x-4 max-w-2xl mx-auto">
-          <button onClick={goBack} className="p-2 bg-slate-800/80 hover:bg-slate-700 rounded-full transition-all duration-200 shadow-lg border border-blue-800 transform hover:scale-105 active:scale-95">
-            <ArrowLeft className="w-5 h-5 text-cyan-400" />
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      
+      {/* Header Fijo */}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
+          <button onClick={goBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-700 rounded-lg flex items-center justify-center shadow-lg border border-cyan-400/50">
-              <span className="text-xl">{getMagnitudeIcon(selectedMagnitude || '')}</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-wide truncate">Detalles</h1>
-              <p className="text-sm text-cyan-400 font-medium truncate">{selectedMagnitude}</p>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800 tracking-tight">{selectedMagnitude}</h1>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mt-0.5">
+              <span className={`px-2 py-0.5 rounded-full ${isTrazable ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                {isTrazable ? 'Servicio Trazable' : 'Servicio Acreditado'}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center px-4 py-8 z-10">
-        <div className="w-full max-w-md sm:max-w-xl mx-auto">
+      <div className="max-w-4xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+        
+        {/* Left Col: Info & Actions */}
+        <div className="md:col-span-2 space-y-6">
           
-          {/* Imagen Magnitud */}
-          <div className="relative bg-slate-900 rounded-3xl shadow-[0_0_50px_rgba(59,130,246,0.3)] p-6 pt-16 mb-8 overflow-visible transition-all duration-300 border border-blue-700/70">
-            <div className="flex flex-col items-center -mt-24">
-              <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center drop-shadow-xl z-10">
-                <div className="absolute w-full h-full rounded-3xl bg-gradient-to-br from-yellow-400 via-pink-500 to-red-600 opacity-30 blur-xl animate-pulse" />
-                <div className="w-32 h-32 sm:w-36 sm:h-36 bg-slate-950 border-4 border-cyan-500 rounded-3xl flex items-center justify-center shadow-inner shadow-cyan-900/50 ring-4 ring-cyan-500/10 relative overflow-hidden transform transition-transform duration-300 hover:scale-[1.05]">
-                  <img
-                    src={magnitudImages[selectedMagnitude] || "/images/default.png"}
-                    alt={selectedMagnitude}
-                    className="w-28 h-28 sm:w-32 sm:h-32 object-contain drop-shadow-xl transition-all duration-500 hover:rotate-3"
-                    style={{ filter: "drop-shadow(0 0 10px #22d3ee)" }}
-                  />
-                </div>
+          {/* Main Dashboard Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none">
+              <img src={imageSrc} alt="" className="w-32 h-32 object-contain grayscale" />
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                Estado Actual
+              </span>
+              {actual ? (
+                <span className="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Activo
+                </span>
+              ) : (
+                <span className="text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-bold">Inactivo</span>
+              )}
+            </div>
+
+            <div className="p-8 flex flex-col items-center justify-center text-center relative z-10">
+               {actual ? (
+                 <>
+                   <span className="text-sm text-slate-400 font-medium mb-3 uppercase tracking-wider">Último Consecutivo</span>
+                   <div className={`font-mono text-5xl sm:text-6xl font-bold tracking-tight mb-8 tabular-nums ${isTrazable ? 'text-amber-600' : 'text-blue-600'}`}>
+                     {actual.consecutivo}
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+                     <div className="flex flex-col items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                       <Calendar className="w-4 h-4 text-slate-400 mb-1" />
+                       <span className="text-xs text-slate-400 font-medium uppercase">Fecha</span>
+                       <span className="text-sm font-semibold text-slate-700">
+                         {actual.fecha?.toDate ? actual.fecha.toDate().toLocaleDateString() : 'N/A'}
+                       </span>
+                     </div>
+                     <div className="flex flex-col items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                       <User className="w-4 h-4 text-slate-400 mb-1" />
+                       <span className="text-xs text-slate-400 font-medium uppercase">Usuario</span>
+                       <span className="text-sm font-semibold text-slate-700 truncate w-full text-center">
+                         {actual.usuario}
+                       </span>
+                     </div>
+                   </div>
+                 </>
+               ) : (
+                 <div className="py-12 text-slate-400 flex flex-col items-center">
+                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                      <Hash className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <p className="font-medium text-slate-500">Sin registros este año</p>
+                    <p className="text-sm mt-1">Genera un nuevo consecutivo para comenzar.</p>
+                 </div>
+               )}
+            </div>
+
+            {/* Action Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+               <button
+                  onClick={handleGenerarConsecutivo}
+                  disabled={loading || generando}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-bold text-white transition-all shadow-sm hover:shadow active:scale-[0.99] ${
+                    isTrazable 
+                      ? 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 disabled:opacity-50' 
+                      : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 disabled:opacity-50'
+                  }`}
+               >
+                  {loading || generando ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <Plus className="w-5 h-5" />}
+                  <span>Generar Nuevo</span>
+               </button>
+            </div>
+          </div>
+
+          {/* History Snippet */}
+          {anterior && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <History className="w-4 h-4" />
+                Historial Reciente
+              </h3>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                 <div className="flex items-center gap-3">
+                   <div className="bg-white p-2 rounded-md shadow-sm border border-slate-200">
+                      <Hash className="w-4 h-4 text-slate-400" />
+                   </div>
+                   <div>
+                      <p className="font-mono font-bold text-slate-700">{anterior.consecutivo}</p>
+                      <p className="text-xs text-slate-500">{anterior.usuario}</p>
+                   </div>
+                 </div>
+                 <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">ANTERIOR</span>
               </div>
-              <h2 className="mt-4 text-3xl font-extrabold text-white capitalize tracking-tight drop-shadow-md text-center">
-                {selectedMagnitude}
-              </h2>
             </div>
-          </div>
-
-          {/* Info Card */}
-          <div className="bg-slate-900/90 rounded-2xl shadow-2xl p-5 mb-8 backdrop-blur-sm border border-blue-700/50 shadow-blue-900/30">
-            <h3 className="text-lg font-bold mb-4 text-cyan-400 flex items-center gap-2"><Code className="w-5 h-5"/> Registro de Datos</h3>
-            <div className="space-y-4">
-              {actual && (
-                <div className="flex flex-col gap-2 p-3 bg-slate-800 rounded-xl border border-green-600/50 shadow-inner shadow-green-900/30">
-                  <span className="text-xs font-semibold uppercase text-green-400">Último Consecutivo Generado</span>
-                  <div className="flex items-center gap-3">
-                    <Hash className="w-6 h-6 text-green-500 min-w-[1.5rem]" />
-                    <span className="font-mono text-2xl sm:text-3xl font-extrabold text-green-300 truncate tracking-wider">
-                      {actual.consecutivo}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm pt-2 border-t border-dashed border-slate-700">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-blue-400 min-w-[1rem]" />
-                      <span className="text-slate-300 font-medium truncate">
-                        {actual.fecha && actual.fecha.toDate 
-                          ? actual.fecha.toDate().toLocaleString() 
-                          : (actual.fechaCreacion && actual.fechaCreacion.toDate 
-                              ? actual.fechaCreacion.toDate().toLocaleString() 
-                              : "Fecha Desconocida")}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-purple-400 min-w-[1rem]" />
-                      <span className="text-pink-400 font-semibold truncate">{actual.usuario}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {anterior && (
-                <div className="flex flex-col gap-2 pt-2 p-2 border-t border-dashed border-slate-800">
-                  <span className="text-xs font-semibold uppercase text-slate-500">Anterior</span>
-                  <div className="flex items-center gap-3">
-                    <Hash className="w-4 h-4 text-orange-500 min-w-[1rem]" />
-                    <span className="font-mono text-lg text-slate-300 font-semibold truncate">{anterior.consecutivo}</span>
-                    <span className="text-slate-500 italic text-sm truncate ml-auto">{anterior.usuario}</span>
-                  </div>
-                </div>
-              )}
-              {!actual && (
-                 <div className="text-center py-4 text-slate-500 italic text-sm">No hay consecutivos recientes para esta magnitud.</div>
-              )}
-            </div>
-          </div>
-
-          {/* Botones */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            <button
-              onClick={handleGenerarConsecutivo}
-              disabled={loading || generando}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 px-4 rounded-xl font-extrabold shadow-lg shadow-green-700/50 hover:from-green-600 hover:to-emerald-700 active:shadow-none active:translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none disabled:transform-none text-lg border border-green-400/50"
-            >
-              <Plus className="w-6 h-6" />
-              <span className='truncate'>{loading || generando ? "Generando..." : "Generar Consecutivo"}</span>
-            </button>
-            <button
-              onClick={handleOpenDeshacerModal}
-              className="w-full bg-gradient-to-r from-red-500 to-rose-600 text-white py-4 px-4 rounded-xl font-extrabold shadow-lg shadow-red-700/50 hover:from-red-600 hover:to-rose-700 active:shadow-none active:translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 text-lg border border-red-400/50"
-            >
-              <Minus className="w-6 h-6" />
-              <span>Deshacer</span>
-            </button>
-          </div>
+          )}
         </div>
+
+        {/* Right Col: Admin/Tools */}
+        <div className="space-y-6">
+           {/* Visual Aid Card */}
+           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center">
+              <div className="w-24 h-24 mb-4 relative">
+                <div className={`absolute inset-0 bg-gradient-to-tr ${isTrazable ? 'from-amber-100 to-orange-50' : 'from-blue-100 to-indigo-50'} rounded-full blur-xl opacity-60`}></div>
+                <img src={imageSrc} alt={selectedMagnitude} className="w-full h-full object-contain relative z-10 drop-shadow-sm" />
+              </div>
+              <h3 className="font-semibold text-slate-800">{selectedMagnitude}</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                {isTrazable ? "Trazabilidad verificada" : "Acreditación vigente"}
+              </p>
+           </div>
+
+           {/* Danger Zone */}
+           <div className="bg-red-50/50 rounded-xl border border-red-100 p-5">
+              <h3 className="text-xs font-bold text-red-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Zona de Corrección
+              </h3>
+              <p className="text-xs text-red-600/80 mb-4 leading-relaxed">
+                Si generaste un consecutivo por error, puedes deshacerlo aquí. Solo se pueden eliminar registros creados por tu usuario.
+              </p>
+              <button
+                onClick={() => { setDeshacerModalOpen(true); setError(null); setConsecutivoAEliminar(null); }}
+                className="w-full py-2.5 bg-white border border-red-200 text-red-700 font-semibold rounded-lg hover:bg-red-50 hover:border-red-300 transition-all shadow-sm text-sm flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Deshacer Último
+              </button>
+           </div>
+        </div>
+
       </div>
 
-      {/* Modal Deshacer */}
+      {/* MODAL DESHACER */}
       {deshacerModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 transition-opacity duration-300 animate-fadein">
-          <div className="bg-slate-900 rounded-2xl shadow-2xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full border border-red-700/50 relative transform transition-transform duration-300 animate-modalpop">
-            <h3 className="text-xl font-extrabold mb-4 text-red-400 border-b pb-2 border-dashed border-slate-700">Eliminar Consecutivo</h3>
-            <p className="mb-4 text-sm text-slate-400">Selecciona uno de *tus* consecutivos recientes para deshacerlo.</p>
-            <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
-              {consecutivos
-                .filter(cons => cons.usuario === user.name)
-                .map((cons) => (
-                  <button
-                    key={cons.consecutivo}
-                    onClick={() => handleSeleccionarAEliminar(cons)}
-                    className={`block w-full text-left p-3 rounded-lg border-2 transition-all duration-150 font-mono text-base ${
-                      consecutivoAEliminar && consecutivoAEliminar.consecutivo === cons.consecutivo
-                        ? "bg-red-800/40 border-red-500 text-red-200 font-extrabold ring-2 ring-red-500/20 shadow-lg shadow-red-900/50"
-                        : "bg-slate-800 hover:bg-red-900/30 border-slate-700 text-slate-100"
-                    }`}
-                  >
-                    <span className='font-bold'>{cons.consecutivo}</span> <span className='text-xs italic text-slate-400'>({cons.usuario})</span>
-                  </button>
-              ))}
-              {consecutivos.filter(cons => cons.usuario === user.name).length === 0 && (
-                <div className="text-slate-500 text-center text-sm p-4 border border-dashed border-slate-700 rounded-lg">No tienes consecutivos recientes que puedas deshacer.</div>
-              )}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-red-50 p-6 border-b border-red-100">
+              <div className="flex items-center gap-3 text-red-800 mb-1">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <h3 className="text-lg font-bold">Deshacer Consecutivo</h3>
+              </div>
+              <p className="text-sm text-red-600 pl-12">
+                Selecciona el registro que deseas eliminar permanentemente.
+              </p>
             </div>
-            {error && <div className="text-red-400 mt-4 p-2 bg-red-900/30 rounded-lg text-sm font-medium border border-red-500/50">{error}</div>}
-            <div className="flex justify-end space-x-3 mt-6">
+
+            <div className="p-6">
+               <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                 {consecutivos.filter(cons => cons.usuario === user.name).length > 0 ? (
+                   consecutivos
+                    .filter(cons => cons.usuario === user.name)
+                    .map((cons) => (
+                      <button
+                        key={cons.consecutivo}
+                        onClick={() => setConsecutivoAEliminar(cons)}
+                        className={`w-full flex items-center justify-between p-4 rounded-xl border text-left transition-all ${
+                          consecutivoAEliminar?.consecutivo === cons.consecutivo
+                            ? 'bg-red-50 border-red-500 ring-1 ring-red-500 shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-red-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-mono font-bold text-slate-800 text-lg">{cons.consecutivo}</span>
+                          <span className="text-xs text-slate-500">Creado por ti</span>
+                        </div>
+                        {consecutivoAEliminar?.consecutivo === cons.consecutivo && (
+                          <div className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        )}
+                      </button>
+                    ))
+                 ) : (
+                   <div className="text-center p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                     <p className="text-slate-500 font-medium">No tienes registros recientes</p>
+                     <p className="text-xs text-slate-400 mt-1">Solo puedes eliminar consecutivos creados por ti.</p>
+                   </div>
+                 )}
+               </div>
+
+               {error && (
+                 <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                   <AlertTriangle className="w-4 h-4" /> {error}
+                 </div>
+               )}
+            </div>
+
+            <div className="p-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100">
               <button
                 onClick={() => setDeshacerModalOpen(false)}
-                className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 font-medium transition-colors"
+                className="px-4 py-2.5 text-slate-600 font-semibold hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors text-sm"
                 disabled={eliminando}
               >
                 Cancelar
@@ -384,9 +435,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
               <button
                 onClick={handleEliminarConsecutivo}
                 disabled={!consecutivoAEliminar || eliminando}
-                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-red-500/20 transition-all text-sm flex items-center gap-2"
               >
-                {eliminando ? "Eliminando..." : "Deshacer"}
+                {eliminando ? "Eliminando..." : "Confirmar Eliminación"}
               </button>
             </div>
           </div>

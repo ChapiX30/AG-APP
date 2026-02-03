@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata, updateMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, where } from "firebase/firestore"; 
+import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, where, limit, orderBy } from "firebase/firestore"; 
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
 import { 
-  Folder, Cloud, Search, LayoutGrid, List, Trash2, 
+  Folder, Search, LayoutGrid, List, Trash2, 
   CheckCircle2, FileText, Download, Star, Info, X, 
   FolderPlus, UploadCloud, ChevronRight, File, Image as ImageIcon, 
-  Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, User,
-  CalendarClock, ArrowLeft, MoveRight, ArrowUp, FolderOpen,
-  ArrowDownWideNarrow, ArrowUpWideNarrow, ArrowDownAZ, ArrowUpAZ, Menu,
-  AlertCircle, LogOut, ShieldAlert, Edit, CornerDownRight, Maximize2,
-  RefreshCw // Icono para indicar sincronización
+  Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, 
+  ArrowLeft, MoveRight, ArrowUp, FolderOpen,
+  ArrowUpWideNarrow, Menu,
+  AlertCircle, LogOut, Edit, CornerDownRight, Maximize2,
+  RefreshCw, Zap
 } from "lucide-react";
 import clsx from "clsx";
 import labLogo from '../assets/lab_logo.png'; 
@@ -34,6 +34,7 @@ interface DriveFile {
   starred?: boolean;
   uploadedBy?: string;
   parentFolder?: string;
+  keywords?: string[];
 }
 
 interface DriveFolder {
@@ -71,8 +72,26 @@ function useDebounce<T>(value: T, delay: number): T {
 
 // --- UTILS ---
 const normalizeText = (text: string) => {
-    // Normaliza: Quita acentos, pasa a minúsculas y ELIMINA ESPACIOS EXTRA al inicio/final
     return text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
+};
+
+const generateSearchTokens = (text: string): string[] => {
+    if (!text) return [];
+    const normalized = normalizeText(text);
+    const parts = normalized.split(/[_ \-\.]+/).filter(p => p.length > 2);
+    return [...new Set([normalized, ...parts])];
+};
+
+const fuzzyMatch = (file: DriveFile, searchTerms: string[]) => {
+    const textToSearch = [
+        file.name, 
+        file.rawName, 
+        file.uploadedBy, 
+        file.parentFolder,
+        ...(file.keywords || [])
+    ].join(' ').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+    return searchTerms.every(term => textToSearch.includes(term));
 };
 
 const cleanFileName = (rawName: string) => {
@@ -154,20 +173,11 @@ const getDeadlineInfo = (createdDateStr: string) => {
     return { progress, daysLeft, status };
 };
 
-// --- AQUÍ ESTÁ LA MODIFICACIÓN PARA DARLE PERMISO A EDGAR ---
 const isQualityUser = (user: UserData | null) => {
   const p = (user?.puesto || user?.role || "").toLowerCase();
   const email = (user?.email || "").toLowerCase();
-
-  // 1. Roles que tienen acceso total por defecto
   const hasAdminRole = ['calidad', 'quality', 'admin', 'gerente', 'manager'].some(role => p.includes(role));
-
-  // 2. Lista blanca de correos específicos (¡PON AQUÍ EL CORREO DE EDGAR!)
-  const allowedEmails = [
-      'eaaese07@gmail.com', // <--- CAMBIA ESTO POR EL EMAIL REAL DE EDGAR
-      'edgar.metrologo@ejemplo.com' // Puedes agregar más correos si hace falta
-  ];
-
+  const allowedEmails = ['eaaese07@gmail.com', 'edgar.metrologo@ejemplo.com'];
   return hasAdminRole || allowedEmails.includes(email);
 };
 
@@ -199,8 +209,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // Estados Datos
   const [folders, setFolders] = useState<DriveFolder[]>([]);
   const [files, setFiles] = useState<DriveFile[]>([]); 
+  const [suggestedFiles, setSuggestedFiles] = useState<DriveFile[]>([]); 
   const [loading, setLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false); // Nuevo estado para feedback visual
+  const [isSyncing, setIsSyncing] = useState(false); 
   const [currentUserData, setCurrentUserData] = useState<UserData | null>(null);
   
   // UI & Nav
@@ -213,13 +224,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [completedGroupView, setCompletedGroupView] = useState<string | null>(null);
 
-  // Selección Múltiple y Preview
+  // Selección
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, file: DriveFile | null, folder: DriveFolder | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearch = useDebounce(searchQuery, 400); 
+  const debouncedSearch = useDebounce(searchQuery, 300); 
 
   const [dragActive, setDragActive] = useState(false); 
   const [toasts, setToasts] = useState<ToastMessage[]>([]); 
@@ -232,7 +244,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [newFolderName, setNewFolderName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados de Mover
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTargetFile, setMoveTargetFile] = useState<DriveFile | null>(null);
   const [moveTargetFolder, setMoveTargetFolder] = useState<DriveFolder | null>(null);
@@ -240,12 +251,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
   const [isMoving, setIsMoving] = useState(false);
 
-  // Estados de Renombrar
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetFile, setRenameTargetFile] = useState<DriveFile | null>(null);
   const [renameTargetFolder, setRenameTargetFolder] = useState<DriveFolder | null>(null);
   const [newName, setNewName] = useState("");
-  const [isRenaming, setIsRenaming] = useState(false);
 
   const handleBack = () => { onBack ? onBack() : goBack(); };
 
@@ -274,65 +283,93 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadUser();
   }, [user]);
 
+  // Acceso Rápido
+  useEffect(() => {
+    const loadSuggestions = async () => {
+        if (!currentUserData || path.length > 0 || debouncedSearch) {
+            setSuggestedFiles([]);
+            return;
+        }
+        try {
+            const q = query(collection(db, 'fileMetadata'), orderBy('updated', 'desc'), limit(4));
+            const snap = await getDocs(q);
+            const recents: DriveFile[] = [];
+            snap.forEach(doc => {
+                const data = doc.data();
+                recents.push({
+                    name: cleanFileName(data.name),
+                    rawName: data.name,
+                    fullPath: data.filePath,
+                    updated: data.updated,
+                    created: data.created,
+                    size: data.size,
+                    url: "", 
+                    contentType: data.contentType,
+                    ...data
+                } as DriveFile);
+            });
+            setSuggestedFiles(recents);
+        } catch (e) { console.error("Error loading suggestions", e); }
+    };
+    loadSuggestions();
+  }, [currentUserData, path, debouncedSearch, files]);
+
   const loadContent = useCallback(async () => {
     setLoading(true);
     setContextMenu(null);
     setSelectedIds(new Set());
+    setLastSelectedId(null);
     
     try {
-      // LOGICA HÍBRIDA MEJORADA:
-      // 1. Si estás en Raíz + Buscando -> Búsqueda Global (DB)
-      // 2. Si estás en Carpeta -> Búsqueda Local (Storage) + AUTO-REPARACIÓN DE DB
       const isGlobalSearch = path.length === 0 && debouncedSearch !== "";
       
       if (isGlobalSearch) {
-        // --- MODO BÚSQUEDA GLOBAL ---
-        const querySnapshot = await getDocs(collection(db, 'fileMetadata'));
+        // MODO BÚSQUEDA GLOBAL
+        const q = query(collection(db, 'fileMetadata'), limit(200));
+        const querySnapshot = await getDocs(q);
         const results: DriveFile[] = [];
         const isQuality = isQualityUser(currentUserData);
         const myName = normalizeText(currentUserData?.name || "");
-        const term = normalizeText(debouncedSearch);
+        const searchTerms = normalizeText(debouncedSearch).split(" ").filter(t => t.length > 0);
 
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id; 
           const cleanNameStr = cleanFileName(rawName);
           let fullPath = data.filePath || `worksheets/${data.name || docSnap.id}`;
-          const normalizedPath = normalizeText(fullPath);
 
           if (!isQuality) { 
-              const pathIncludesName = normalizedPath.includes(myName);
               const isUploader = normalizeText(data.uploadedBy || "") === myName;
-              if (!pathIncludesName && !isUploader) return; 
+              if (!fullPath.toLowerCase().includes(myName) && !isUploader) return; 
           }
 
-          const matchesName = normalizeText(cleanNameStr).includes(term);
-          const matchesRaw = normalizeText(rawName).includes(term);
-          
-          if (matchesName || matchesRaw) {
-              results.push({
-                  name: cleanNameStr,
-                  rawName: rawName,
-                  url: "",
-                  fullPath: fullPath,
-                  updated: data.updated || new Date().toISOString(),
-                  created: data.created || data.updated || new Date().toISOString(),
-                  size: data.size || 0,
-                  contentType: data.contentType,
-                  reviewed: data.reviewed,
-                  reviewedByName: data.reviewedByName,
-                  completed: data.completed,
-                  completedByName: data.completedByName,
-                  starred: data.starred,
-                  uploadedBy: data.uploadedBy,
-                  parentFolder: getParentFolderName(fullPath)
-              });
+          const fileObj: DriveFile = {
+            name: cleanNameStr,
+            rawName: rawName,
+            url: "",
+            fullPath: fullPath,
+            updated: data.updated || new Date().toISOString(),
+            created: data.created || data.updated || new Date().toISOString(),
+            size: data.size || 0,
+            contentType: data.contentType,
+            reviewed: data.reviewed,
+            reviewedByName: data.reviewedByName,
+            completed: data.completed,
+            completedByName: data.completedByName,
+            starred: data.starred,
+            uploadedBy: data.uploadedBy,
+            parentFolder: getParentFolderName(fullPath),
+            keywords: data.keywords
+          };
+
+          if (fuzzyMatch(fileObj, searchTerms)) {
+              results.push(fileObj);
           }
         });
         setFiles(results);
         setFolders([]); 
       } else {
-        // --- MODO NAVEGACIÓN Y BÚSQUEDA CONTEXTUAL ---
+        // MODO NAVEGACIÓN
         const pathStr = [ROOT_PATH, ...path].join('/');
         const res = await listAll(ref(storage, pathStr));
         
@@ -349,15 +386,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         }
         setFolders(loadedFolders);
         
-        // AUTO-REPARACIÓN Y LISTADO
         const filePromises = res.items.map(async (item) => {
             if (item.name === '.keep') return null;
             
-            // Usamos item.name del Storage como la verdad absoluta para el nombre
             const rawName = item.name;
             const cleanName = cleanFileName(rawName);
             
-            // FILTRO DE BÚSQUEDA LOCAL
             if (debouncedSearch) {
                 const term = normalizeText(debouncedSearch);
                 const matchName = normalizeText(cleanName).includes(term);
@@ -373,10 +407,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 const metaSnap = await getDoc(doc(db, 'fileMetadata', metaId));
                 if (metaSnap.exists()) {
                     meta = metaSnap.data();
-                    // Si el nombre en DB no coincide con el real (Storage), marcamos para reparar
                     if (meta.name !== item.name) needsRepair = true;
                 } else {
-                    // Si no existe metadata, creamos una básica
                     needsRepair = true;
                 }
             } catch (e) { }
@@ -384,41 +416,41 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             let storageMeta = { size: 0, updated: new Date().toISOString(), timeCreated: new Date().toISOString(), contentType: 'unknown' };
             try { storageMeta = await getMetadata(item) as any; } catch (e) { }
 
-            // Lógica de auto-reparación silenciosa
             if (needsRepair && !isSyncing) {
                 setIsSyncing(true);
                 const newMeta = {
-                    name: item.name, // Aseguramos que el nombre sea el real del archivo
+                    name: item.name,
                     filePath: item.fullPath,
                     size: storageMeta.size,
                     contentType: storageMeta.contentType,
                     updated: storageMeta.updated,
                     created: meta.created || storageMeta.timeCreated,
-                    uploadedBy: meta.uploadedBy || "Sistema (Auto-Sync)",
-                    // Preservar estados si existían parcialmente
+                    uploadedBy: meta.uploadedBy || "Sistema",
+                    keywords: generateSearchTokens(cleanFileName(item.name)),
                     completed: meta.completed || false,
                     reviewed: meta.reviewed || false,
                     starred: meta.starred || false
                 };
-                // Ejecutamos update en fondo sin await para no bloquear UI
                 setDoc(doc(db, 'fileMetadata', metaId), newMeta, { merge: true })
                     .then(() => setIsSyncing(false))
                     .catch(() => setIsSyncing(false));
-                
-                // Usamos los datos nuevos inmediatamente para visualización
                 meta = newMeta;
             }
 
-            // Filtros de pestaña (Solo si no estamos buscando)
             if (!debouncedSearch) {
                 if (activeFilter === 'starred' && meta.starred !== true) return null;
                 if (activeFilter === 'pending_review' && !((meta.completed === true) && (meta.reviewed !== true))) return null;
                 if (activeFilter === 'completed' && meta.reviewed !== true) return null;
+                if (activeFilter === 'recent') {
+                     const date = new Date(meta.updated || meta.created);
+                     const diff = Math.abs(new Date().getTime() - date.getTime());
+                     if (Math.ceil(diff / (1000 * 60 * 60 * 24)) > 7) return null;
+                }
             }
 
             return {
                 name: cleanName,
-                rawName: rawName, // Importante: Usar nombre real de Storage
+                rawName: rawName,
                 fullPath: item.fullPath,
                 url: '', 
                 size: storageMeta.size,
@@ -437,6 +469,32 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, [path, activeFilter, currentUserData, debouncedSearch]);
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            setSelectedIds(new Set(processedFiles.map(f => f.fullPath)));
+        }
+        if (e.key === 'Escape') {
+            if (previewFile) setPreviewFile(null);
+            else if (selectedIds.size > 0) setSelectedIds(new Set());
+            else if (debouncedSearch) setSearchQuery("");
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (selectedIds.size > 0 && isQualityUser(currentUserData)) handleBatchDelete();
+        }
+        if (e.key === ' ' && selectedIds.size === 1) {
+            e.preventDefault();
+            const file = files.find(f => f.fullPath === Array.from(selectedIds)[0]);
+            if (file) handlePreview(file);
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIds, files, previewFile, currentUserData]);
 
   const processedFiles = useMemo(() => {
     let result = [...files];
@@ -465,32 +523,33 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     return groups;
   }, [processedFiles, activeFilter]);
 
-  // --- SELECCION MÚLTIPLE ---
-  const handleSelect = (file: DriveFile, multi: boolean) => {
-    const newSelected = new Set(multi ? selectedIds : []);
-    if (newSelected.has(file.fullPath)) {
-        newSelected.delete(file.fullPath);
+  const handleSelect = (file: DriveFile, isMulti: boolean, isRange: boolean) => {
+    const newSelected = new Set(isMulti ? selectedIds : []);
+    
+    if (isRange && lastSelectedId) {
+        const allPaths = processedFiles.map(f => f.fullPath);
+        const startIdx = allPaths.indexOf(lastSelectedId);
+        const endIdx = allPaths.indexOf(file.fullPath);
+        if (startIdx !== -1 && endIdx !== -1) {
+            const [min, max] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+            for (let i = min; i <= max; i++) newSelected.add(allPaths[i]);
+        }
     } else {
-        newSelected.add(file.fullPath);
+        if (newSelected.has(file.fullPath)) newSelected.delete(file.fullPath);
+        else newSelected.add(file.fullPath);
+        setLastSelectedId(file.fullPath);
     }
+    
     setSelectedIds(newSelected);
-    if (newSelected.size === 1) {
-        if (!multi) setDetailsOpen(true); 
-    } else {
-        setDetailsOpen(false); 
-    }
+    setDetailsOpen(newSelected.size === 1 && (!isMulti && !isRange));
   };
 
   const handlePreview = async (file: DriveFile) => {
       try {
         let url = file.url;
-        if (!url) {
-             url = await getDownloadURL(ref(storage, file.fullPath));
-        }
+        if (!url) url = await getDownloadURL(ref(storage, file.fullPath));
         setPreviewFile({ ...file, url });
-      } catch (e) {
-          showToast("No se pudo cargar la vista previa", 'error');
-      }
+      } catch (e) { showToast("No se pudo cargar la vista previa", 'error'); }
   };
 
   const handleBatchDelete = async () => {
@@ -513,7 +572,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       loadContent();
   };
 
-  // --- LOGICA DE MOVER RECURSIVA ---
   const moveFolderRecursive = async (sourcePrefix: string, destPrefix: string) => {
       const sourceRef = ref(storage, sourcePrefix);
       const res = await listAll(sourceRef);
@@ -640,9 +698,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadMoveFolders();
   }, [moveDialogOpen, moveToPath]);
 
-  // --- HANDLERS (Drag, Drop, Upload) ---
   const handleDrag = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (draggingItem) return; if (e.type === "dragenter" || e.type === "dragover") setDragActive(true); else if (e.type === "dragleave") setDragActive(false); };
-  const handleDrop = async (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); if (draggingItem) return; if (e.dataTransfer.files && e.dataTransfer.files.length > 0) { await processFiles(e.dataTransfer.files); } };
+  
+  const handleDrop = async (e: React.DragEvent) => { 
+      e.preventDefault(); e.stopPropagation(); setDragActive(false); 
+      if (draggingItem) return; 
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) { await processFiles(e.dataTransfer.files); } 
+  };
 
   const processFiles = async (fileList: FileList) => {
       const isQuality = isQualityUser(currentUserData);
@@ -658,6 +720,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               const existingData = existingDoc.exists() ? existingDoc.data() : {};
               const snap = await uploadBytes(ref(storage, fullPath), file);
               const meta = await getMetadata(snap.ref);
+              const cleanName = cleanFileName(file.name);
+              const keywords = generateSearchTokens(cleanName);
+
               await setDoc(doc(db, 'fileMetadata', docId), {
                   name: file.name,
                   filePath: fullPath,
@@ -666,6 +731,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   updated: meta.updated,
                   created: existingData.created || new Date().toISOString(),
                   uploadedBy: currentUserData?.name || "Desconocido",
+                  keywords: keywords,
                   completed: existingData.completed || false,
                   completedByName: existingData.completedByName || null,
                   reviewed: false, 
@@ -740,7 +806,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
   const handleFolderDragOver = (e: React.DragEvent, folderFullPath: string) => { e.preventDefault(); e.stopPropagation(); if (!draggingItem) return; if (draggingItem.type === 'folder' && (draggingItem.data as DriveFolder).fullPath === folderFullPath) return; setDropTargetFolder(folderFullPath); };
   
-  // DRAG AND DROP MOVER (CORREGIDO)
   const handleFolderDrop = async (e: React.DragEvent, targetFolder: DriveFolder) => {
       e.preventDefault(); e.stopPropagation();
       setDropTargetFolder(null);
@@ -800,7 +865,24 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
 
     return (
-        <div className="animate-in slide-in-from-bottom-2 duration-300">
+        <div className="animate-in slide-in-from-bottom-2 duration-300 pb-20">
+            {path.length === 0 && !debouncedSearch && suggestedFiles.length > 0 && (
+                <div className="mb-8">
+                    <h2 className="text-[11px] font-bold text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2"><Zap size={12} className="text-amber-500 fill-amber-100"/> Acceso Rápido</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {suggestedFiles.map(f => (
+                            <div key={`sugg-${f.fullPath}`} onClick={() => handlePreview(f)} className="bg-white p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-md cursor-pointer transition-all flex items-center gap-3 group">
+                                {getFileIcon(f.name, 32)}
+                                <div className="min-w-0">
+                                    <p className="text-xs font-bold text-gray-700 truncate group-hover:text-blue-600">{f.name}</p>
+                                    <p className="text-[10px] text-gray-400">Editado {new Date(f.updated).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {showFolders && (
                 <div className="mb-8">
                     <h2 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center gap-2"><Folder size={14}/> Carpetas</h2>
@@ -829,7 +911,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             )}
             
             {displayFiles.length > 0 && (
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex items-center justify-between sticky top-0 bg-[#f8f9fa] z-10 py-2">
                     <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                         <File size={14}/> {debouncedSearch ? 'Resultados de Búsqueda' : 'Archivos'} <span className="bg-gray-100 text-gray-600 px-1.5 rounded-md">{displayFiles.length}</span>
                     </h2>
@@ -847,15 +929,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             )}
             
             {view === 'grid' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 pb-20">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                     {displayFiles.map((file) => (
                         <FileCard 
                             key={file.fullPath} 
                             file={file} 
                             selected={selectedIds.has(file.fullPath)} 
                             searchActive={!!debouncedSearch} 
-                            onSelect={(multi: boolean) => handleSelect(file, multi)} 
-                            onContextMenu={(e: any) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if(!selectedIds.has(file.fullPath)) handleSelect(file, false); }}
+                            onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)} 
+                            onContextMenu={(e: any) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if(!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
                             onDoubleClick={() => handlePreview(file)} 
                         />
                     ))}
@@ -875,8 +957,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                             file={file} 
                             selected={selectedIds.has(file.fullPath)} 
                             searchActive={!!debouncedSearch}
-                            onSelect={(multi: boolean) => handleSelect(file, multi)} 
-                            onContextMenu={(e: any) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if(!selectedIds.has(file.fullPath)) handleSelect(file, false); }}
+                            onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)} 
+                            onContextMenu={(e: any) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if(!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
                             onDoubleClick={() => handlePreview(file)} 
                         />
                     ))}
@@ -919,6 +1001,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <div className="relative flex-1 group">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
                     <input type="text" placeholder="Buscar archivos, carpetas, folios..." className="w-full bg-gray-100/50 hover:bg-gray-100 focus:bg-white focus:ring-2 focus:ring-blue-500/20 border border-transparent focus:border-blue-500 rounded-xl py-2.5 pl-10 pr-4 transition-all outline-none text-sm font-medium" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                    {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14}/></button>}
                 </div>
             </div>
             <div className="flex items-center gap-2 md:gap-3 ml-4">
@@ -962,17 +1045,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
       {/* --- CONTEXT MENU --- */}
       {contextMenu && (
-        <div className="fixed bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-64 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={(e) => e.stopPropagation()}>
+        <div className="fixed bg-white/95 backdrop-blur-xl border border-gray-200 shadow-2xl rounded-xl py-1 w-64 z-50 text-sm animate-in fade-in zoom-in-95 duration-100" style={{ top: Math.min(contextMenu.y, window.innerHeight - 300), left: Math.min(contextMenu.x, window.innerWidth - 250) }} onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 rounded-t-xl"><p className="font-bold text-gray-800 truncate text-xs">{contextMenu.file ? contextMenu.file.name : contextMenu.folder?.name}</p></div>
             {contextMenu.file && (
                 <>
-                    <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
+                    <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} shortcut="Espacio"/>
                     <MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
                     <div className="my-1 border-t border-gray-100"></div>
                     <MenuOption icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} />
                     {isQualityUser(currentUserData) && (<MenuOption icon={<CheckCircle2 size={16} className={contextMenu.file.reviewed ? "text-green-600" : "text-gray-400"} />} label={contextMenu.file.reviewed ? "Invalidar Calidad" : "Validar Calidad"} onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} />)}
                     <div className="my-1 border-t border-gray-100"></div>
-                    {isQualityUser(currentUserData) && (<><MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /></>)}
+                    {isQualityUser(currentUserData) && (<><MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} /><MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar archivo" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} shortcut="Del" /></>)}
                 </>
             )}
              {contextMenu.folder && isQualityUser(currentUserData) && (
@@ -987,7 +1070,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
       {/* --- MOVE MODAL --- */}
       {moveDialogOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
               <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95">
                   <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                       <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -1030,17 +1113,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           {toasts.map(toast => (<div key={toast.id} className={clsx("pointer-events-auto px-4 py-3 rounded-xl shadow-xl shadow-gray-200/50 flex items-center gap-3 animate-in slide-in-from-right-10 fade-in duration-300 border text-sm font-medium", toast.type === 'success' ? 'bg-white border-green-200 text-green-700' : toast.type === 'error' ? 'bg-white border-red-200 text-red-700' : 'bg-gray-800 text-white')}>{toast.type === 'success' ? <CheckCircle2 size={18} className="text-green-500"/> : toast.type === 'error' ? <AlertCircle size={18} className="text-red-500"/> : <Info size={18}/>}{toast.text}</div>))}
       </div>
       
-      {createFolderOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"><div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl ring-1 ring-gray-900/5"><h3 className="text-lg font-bold mb-4 text-gray-800">Nueva Carpeta</h3><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /><div className="flex justify-end gap-3"><button onClick={() => setCreateFolderOpen(false)} className="px-4 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancelar</button><button onClick={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">Crear</button></div></div></div>}
+      {createFolderOpen && <Dialog title="Nueva Carpeta" onClose={() => setCreateFolderOpen(false)} onConfirm={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }}><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /></Dialog>}
       
-      {renameDialogOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50"><h3 className="font-bold text-gray-800 flex items-center gap-2"><Edit className="text-purple-600" size={20} /> Renombrar</h3><button onClick={() => setRenameDialogOpen(false)} className="p-1 hover:bg-gray-200 rounded-full"><X size={20} /></button></div>
-                <div className="p-6"><input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500" placeholder="Nuevo nombre..." /></div>
-                <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white"><button onClick={() => setRenameDialogOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button><button onClick={() => setRenameDialogOpen(false)} className="px-5 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium">Renombrar</button></div>
-            </div>
-        </div>
-      )}
+      {renameDialogOpen && <Dialog title="Renombrar" onClose={() => setRenameDialogOpen(false)} onConfirm={async () => { /* Logica placeholder */ setRenameDialogOpen(false); }}><input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500" placeholder="Nuevo nombre..." /></Dialog>}
     </div>
   );
 }
@@ -1053,7 +1128,7 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
 
     return (
         <div 
-            onClick={(e) => onSelect(e.ctrlKey || e.metaKey)} 
+            onClick={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)} 
             onContextMenu={onContextMenu} 
             onDoubleClick={onDoubleClick} 
             className={clsx(
@@ -1095,7 +1170,7 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
     const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
     return (
         <div 
-            onClick={(e) => onSelect(e.ctrlKey || e.metaKey)} 
+            onClick={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)} 
             onContextMenu={onContextMenu} 
             onDoubleClick={onDoubleClick} 
             className={clsx("grid grid-cols-12 gap-4 px-4 md:px-6 py-4 border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer items-center transition-all group select-none", selected ? "bg-blue-50 border-l-4 border-l-blue-500 pl-3 md:pl-[20px]" : "")}
@@ -1117,7 +1192,6 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
     );
 });
 
-// NUEVO: Componente Modal de Previsualización
 const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile, onClose: () => void, onDownload: () => void }) => {
     const isImage = ['jpg', 'jpeg', 'png', 'svg', 'webp', 'gif'].includes(file.name.split('.').pop()?.toLowerCase() || '');
     const isPdf = file.name.endsWith('.pdf');
@@ -1174,7 +1248,7 @@ const DeadlineBar = ({ createdDate }: { createdDate: string }) => {
 const EmptyState = ({ icon: Icon, text }: any) => <div className="h-full flex flex-col items-center justify-center text-gray-300 py-20 animate-in fade-in zoom-in-95"><div className="bg-gray-50 p-6 rounded-full mb-4"><Icon className="w-12 h-12 text-gray-200" strokeWidth={1.5} /></div><p className="text-base font-medium text-gray-400">{text}</p></div>;
 const LoadingSkeleton = () => <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">{Array.from({length: 8}).map((_, i) => <div key={i} className="bg-white border border-gray-100 rounded-2xl h-[260px] animate-pulse"><div className="h-32 bg-gray-100/50 rounded-t-2xl"></div><div className="p-4 space-y-3"><div className="h-4 bg-gray-100 rounded w-3/4"></div><div className="h-3 bg-gray-50 rounded w-1/2"></div><div className="mt-6 h-2 bg-gray-100 rounded w-full"></div></div></div>)}</div>;
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>}</div></button>);
-const MenuOption = ({ icon, label, onClick, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label}</button>);
+const MenuOption = ({ icon, label, onClick, shortcut, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label} {shortcut && <span className="text-xs text-gray-400 ml-auto">{shortcut}</span>}</button>);
 
 const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete }: any) => (
     <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl z-[60] overflow-y-auto animate-in slide-in-from-right duration-300 flex flex-col h-full">
@@ -1197,5 +1271,19 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
             </div>
         </div>
         <div className="p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3 pb-8 md:pb-4"><button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 text-sm font-bold text-gray-700 transition-all"><Maximize2 size={16}/> Vista Previa</button>{isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-3 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 transition-all"><Trash2 size={16}/> Borrar</button>}</div>
+    </div>
+);
+
+// Aquí agregué el componente Dialog que faltaba
+const Dialog = ({ title, children, onClose, onConfirm }: any) => (
+    <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+            <div className="px-4 py-3 border-b border-gray-100 font-bold text-gray-800">{title}</div>
+            <div className="p-4">{children}</div>
+            <div className="bg-gray-50 px-4 py-3 flex justify-end gap-2">
+                <button onClick={onClose} className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium">Cancelar</button>
+                <button onClick={onConfirm} className="px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium">Confirmar</button>
+            </div>
+        </div>
     </div>
 );
