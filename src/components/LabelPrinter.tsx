@@ -22,7 +22,7 @@ export const LabelPrinter: React.FC<{ data: LabelData }> = ({ data }) => {
     try {
       // 1. Generar la imagen de alta calidad
       const canvas = await html2canvas(labelRef.current, {
-        scale: 4, // Escala alta para que el texto pequeño se vea nítido
+        scale: 6, // Escala alta para que el texto pequeño se vea nítido
         backgroundColor: '#ffffff',
         useCORS: true
       });

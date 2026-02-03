@@ -28,6 +28,7 @@ const METROLOGOS_ORDER_COLOR = [
   { name: "Edgar Amador", color: "#22c55e" },
   { name: "Angel Amador", color: "#14b8a6" },
   { name: "Ricardo Domínguez", color: "#d946ef" },
+  { name: "Mario Medina", color: "#facc15" },
 ];
 const FALLBACK_COLORS = ["#f59e0b", "#6366f1", "#8b5cf6", "#ec4899", "#64748b"];
 

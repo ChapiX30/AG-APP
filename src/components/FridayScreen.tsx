@@ -6,17 +6,17 @@ import {
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
   MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil,
-  Eye, RotateCcw, Zap, Columns, Download, Filter, History, FileSpreadsheet, Brain, Lightbulb, Info, CheckCircle, TrendingUp
+  RotateCcw, Brain, Download, Filter, History, CheckCircle
 } from "lucide-react";
 import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
-import { doc, updateDoc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs } from "firebase/firestore";
+import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from "../hooks/useAuth"; 
 
 // --- TIPOS ---
-type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client" | "sla";
+type CellType = "text" | "number" | "dropdown" | "date" | "person" | "client" | "sla_manual";
 
 // --- UTILIDADES DE COLOR ---
 const hexToRgba = (hex: string, alpha: number) => {
@@ -40,7 +40,7 @@ const stringToColor = (str: string) => {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
     const h = Math.abs(hash) % 360;
-    return `hsl(${h}, 70%, 96%)`; // Fallback por defecto
+    return `hsl(${h}, 70%, 96%)`;
 };
 
 // --- MÓDULO 1: CEREBRO DEPARTAMENTAL (AG-Bot Core) ---
@@ -66,7 +66,6 @@ const DEPARTMENT_KEYWORDS: Record<string, string[]> = {
     ]
 };
 
-// --- MÓDULO 2: INFERENCIA DE MARCAS ---
 const BRAND_INFERENCE: Record<string, string> = {
     "87v": "FLUKE", "179": "FLUKE", "789": "FLUKE", "1587": "FLUKE",
     "mitutoyo": "MITUTOYO", "500-196": "MITUTOYO", "293-340": "MITUTOYO", "cd-6": "MITUTOYO", "id-c": "MITUTOYO",
@@ -107,7 +106,6 @@ const getInitials = (name: string) => {
     return "?";
 };
 
-// --- CONFIGURACIÓN DE ROLES ---
 const AVAILABLE_PROFILES = [
     { id: 'admin', label: 'Administrador', type: 'role' }, 
     { id: 'metrologo', label: 'Metrólogo', type: 'puesto' },
@@ -134,7 +132,9 @@ interface WorksheetData {
   lugarCalibracion: string; 
   assignedTo?: string; 
   nombre?: string;     
-  fecha?: string;      
+  fecha?: string;
+  fechaEntrada?: string;
+  diasPromesa?: number; // CAMBIO: Ahora es un número simple
   cargado_drive?: string; 
   entregado?: boolean; 
   folioSalida?: string; 
@@ -162,7 +162,6 @@ interface AGBotThought {
     timestamp: string; 
 }
 
-// --- CONFIGURACIÓN DE COLORES DE ESTATUS ---
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Desconocido": { label: "Desconocido", bg: "#c4c4c4" },
   "En Revisión": { label: "En Revisión", bg: "#fdab3d" },
@@ -183,17 +182,22 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Eléctrica": { label: "Eléctrica", bg: "#ff8f00" }
 };
 
+// --- CONFIGURACIÓN DE COLUMNAS ACTUALIZADA ---
 const DEFAULT_COLUMNS: Column[] = [
   { key: 'folio', label: 'Folio', width: 80, type: "text", sticky: true, permissions: ['admin', 'ventas'] }, 
   { key: 'cliente', label: 'Cliente', width: 200, type: "client", permissions: ['admin', 'ventas', 'logistica'] },
   { key: 'equipo', label: 'Equipo', width: 180, type: "text", permissions: ['admin', 'metrologo'] },
+  // 1. FECHA DE ENTRADA
+  { key: 'fechaEntrada', label: 'F. Entrada', width: 130, type: "date", permissions: ['admin', 'logistica', 'ventas'] },
+  // 2. SLA MANUAL (Número editable con vista de pastilla)
+  { key: 'diasPromesa', label: 'Cronograma (SLA)', width: 140, type: "sla_manual" }, 
   { key: 'id', label: 'ID Interno', width: 100, type: "text", permissions: ['admin', 'metrologo'] }, 
   { key: 'marca', label: 'Marca', width: 120, type: "text" },
   { key: 'modelo', label: 'Modelo', width: 120, type: "text" },
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
   { key: 'nombre', label: 'Responsable', width: 120, type: "person", permissions: ['admin', 'logistica'] }, 
-  { key: 'createdAt', label: 'Cronograma (SLA)', width: 150, type: "sla" },
   { key: 'status_equipo', label: '1-Estatus del Equipo', width: 160, type: "dropdown", options: ["Desconocido", "En Revisión", "Calibrado", "Rechazado"] },
+  // 3. FECHA CALIB (Con semáforo)
   { key: 'fecha', label: '2-Fecha de Calib.', width: 130, type: "date" },
   { key: 'certificado', label: '3-N. Certificado', width: 140, type: "text" },
   { key: 'status_certificado', label: '4-Estatus Certificado', width: 170, type: "dropdown", options: ["Pendiente de Certificado", "Generado", "Firmado"] },
@@ -202,6 +206,7 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'departamento', label: 'Departamento', width: 140, type: "dropdown", options: ["Mecánica", "Dimensional", "Eléctrica"], permissions: ['logistica', 'admin'] },
 ];
 
+// Función auxiliar para calcular fecha límite basada en días hábiles
 const addBusinessDays = (startDate: Date, daysToAdd: number) => {
     let currentDate = new Date(startDate);
     let added = 0;
@@ -213,14 +218,17 @@ const addBusinessDays = (startDate: Date, daysToAdd: number) => {
     return currentDate;
 };
 
-// --- CELDAS INTELIGENTES ---
-const SLACell = React.memo(({ createdAt, isCompleted }: { createdAt: string, isCompleted: boolean }) => {
-    if (!createdAt) return <div className="w-full h-full flex items-center justify-center text-gray-300">-</div>;
-    
-    if (isCompleted) {
+// --- NUEVA CELDA SLA MANUAL E INTELIGENTE ---
+// Muestra la "pastilla" verde por defecto. Al hacer click, permite editar el número.
+const EditableSLACell = React.memo(({ days, startDate, onChange, isCompleted, disabled }: { days: number, startDate: string, onChange: (val: number) => void, isCompleted: boolean, disabled: boolean }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Si ya completaron el proceso, mostramos completado siempre
+    if (isCompleted && !isEditing) {
         return (
-            <div className="w-full h-full flex items-center justify-center bg-blue-50/30">
-                <div className="flex flex-col items-center justify-center w-[90%] py-1 rounded bg-blue-500 text-white shadow-sm transition-all animate-in zoom-in-95">
+            <div className="w-full h-full flex items-center justify-center bg-blue-50/30" onClick={() => !disabled && setIsEditing(true)}>
+                <div className="flex flex-col items-center justify-center w-[90%] py-1 rounded bg-blue-500 text-white shadow-sm transition-all">
                     <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">
                         <CheckCircle size={12} /> Completado
                     </div>
@@ -229,10 +237,30 @@ const SLACell = React.memo(({ createdAt, isCompleted }: { createdAt: string, isC
         );
     }
 
-    const start = new Date(createdAt);
-    const deadline = addBusinessDays(start, 5); 
+    if (isEditing) {
+        return (
+            <input 
+                ref={inputRef}
+                autoFocus
+                type="number"
+                defaultValue={days}
+                onBlur={(e) => { setIsEditing(false); onChange(Number(e.target.value)); }}
+                onKeyDown={(e) => { if(e.key === 'Enter') { setIsEditing(false); onChange(Number((e.target as HTMLInputElement).value)); }}}
+                className="w-full h-full text-center font-bold text-blue-600 bg-white outline-none border-2 border-blue-400 rounded"
+            />
+        );
+    }
+
+    // Calculamos visualmente cuántos días faltan para la fecha límite
+    // Fecha Límite = Fecha Entrada + Días Promesa (Hábiles)
+    if (!startDate) return <div className="text-gray-300 text-xs text-center">-</div>;
+
+    const start = new Date(startDate + 'T00:00:00'); // Asegurar medianoche local
+    const deadline = addBusinessDays(start, days || 0); 
     const now = new Date();
-    const diffTime = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate()).getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    now.setHours(0,0,0,0); // Normalizar hoy
+    
+    const diffTime = deadline.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     let bgClass = "bg-[#00c875] text-white"; 
@@ -244,7 +272,7 @@ const SLACell = React.memo(({ createdAt, isCompleted }: { createdAt: string, isC
     else if (diffDays < 0) { bgClass = "bg-[#333333] text-white"; label = `Vencido (${Math.abs(diffDays)})`; icon = <AlertTriangle size={12} />; }
 
     return (
-        <div className="w-full h-full flex items-center justify-center bg-gray-50/30">
+        <div className="w-full h-full flex items-center justify-center bg-gray-50/30 cursor-pointer hover:brightness-95" onClick={() => !disabled && setIsEditing(true)}>
             <div className={clsx("flex flex-col items-center justify-center w-[90%] py-1 rounded", bgClass)}>
                 <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide">{icon} {label}</div>
                 <span className="text-[9px] opacity-90">{deadline.toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}</span>
@@ -314,7 +342,8 @@ const DropdownCell = React.memo(({ value, options, onChange, disabled }: any) =>
 });
 
 const DateCell = React.memo(({ value, onChange, disabled }: any) => {
-    const displayDate = value ? new Date(value).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : null;
+    // IMPORTANTE: Aseguramos que la fecha se vea correcta
+    const displayDate = value ? new Date(value + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
     const inputRef = useRef<HTMLInputElement>(null);
     if (disabled) return <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 cursor-not-allowed bg-gray-50/20">{displayDate || "-"}</div>;
     return (
@@ -475,7 +504,6 @@ const HistoryPanel = ({ row, onClose }: { row: WorksheetData, onClose: () => voi
     );
 };
 
-// --- TOAST COMPONENT ---
 const ToastContainer = ({ toasts, removeToast }: { toasts: any[], removeToast: (id: string) => void }) => {
     return (
         <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 pointer-events-none">
@@ -535,7 +563,6 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
     let currentStickyLeft = 40; const checkPermission = (col: Column) => (!col.permissions || col.permissions.length === 0 || col.permissions.includes(userRole));
     const responsibleName = row.nombre || row.assignedTo;
     
-    // LÓGICA DE COLOR DE FONDO PERSONALIZADO
     const rowBackgroundColor = useMemo(() => { 
         if (!responsibleName) return isSelected ? "#f0f9ff" : "white"; 
         const userObj = metrologos.find((m: any) => m.name === responsibleName);
@@ -565,19 +592,40 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                 let cellValue = row[col.key];
                 if (col.key === 'folio') { if (groupId === 'laboratorio') cellValue = row.folioSalida || ""; else cellValue = row.folio || ""; }
                 
-                if (col.key === 'createdAt') {
-                    const isDone = row.status_certificado === 'Generado' || row.status_certificado === 'Firmado' || row.cargado_drive === 'Si' || row.cargado_drive === 'Realizado';
-                    return (<div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative flex items-center", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}><SLACell createdAt={row.createdAt} isCompleted={isDone} /></div>);
+                // --- SEMÁFORO INTELIGENTE PARA FECHA DE CALIBRACIÓN ---
+                let customClass = "";
+                if (col.key === 'fecha' && row.diasPromesa && row.fechaEntrada && cellValue) {
+                     // Calcular Deadline real
+                     const start = new Date(row.fechaEntrada + 'T00:00:00');
+                     const deadline = addBusinessDays(start, row.diasPromesa);
+                     
+                     const calibDate = new Date(cellValue + 'T00:00:00');
+                     calibDate.setHours(0,0,0,0);
+                     deadline.setHours(0,0,0,0);
+
+                     if (calibDate > deadline) {
+                         // TARDE (ROJO)
+                         customClass = "bg-red-50 text-red-700 font-bold border-l-2 border-red-400";
+                     } else {
+                         // A TIEMPO (VERDE)
+                         customClass = "bg-green-50 text-green-700 font-bold border-l-2 border-green-400";
+                     }
                 }
+                // -------------------------------------
+
+                // DETERMINAR SI EL TRABAJO ESTÁ TERMINADO PARA PINTAR SLA EN VERDE
+                const isWorkDone = row.status_certificado === 'Generado' || row.status_certificado === 'Firmado' || row.cargado_drive === 'Si' || row.cargado_drive === 'Realizado';
 
                 return (
-                    <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative flex items-center", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
-                        {col.key === 'createdAt' ? <SLACell createdAt={row.createdAt} isCompleted={false} /> :
-                         col.type === 'dropdown' ? <DropdownCell value={cellValue} options={col.options!} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         col.type === 'date' ? <DateCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         col.type === 'person' ? <PersonCell value={cellValue} metrologos={metrologos} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         col.type === 'client' ? <ClientCell value={cellValue} clientes={clientes} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                         <TextCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} />}
+                    <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative flex items-center transition-colors", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
+                        <div className={clsx("w-full h-full", customClass)}>
+                             {col.type === 'dropdown' ? <DropdownCell value={cellValue} options={col.options!} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                             col.type === 'date' ? <DateCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                             col.type === 'person' ? <PersonCell value={cellValue} metrologos={metrologos} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                             col.type === 'client' ? <ClientCell value={cellValue} clientes={clientes} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
+                             col.type === 'sla_manual' ? <EditableSLACell days={cellValue} startDate={row.fechaEntrada} onChange={(v:any) => handleCellChange(col.key, v)} isCompleted={isWorkDone} disabled={!canEdit} /> :
+                             <TextCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} />}
+                        </div>
                     </div>
                 );
             })}
@@ -586,7 +634,6 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
     );
 });
 
-// --- MENÚ DE OPCIONES DE COLUMNA ---
 const ColumnOptions = ({ colKey, onClose, onSort, onHide, onRename, onPermissions, currentLabel, onFilter, uniqueValues }: any) => {
     useEffect(() => { const h = () => onClose(); window.addEventListener('click', h); return () => window.removeEventListener('click', h); }, [onClose]);
     return (
@@ -692,15 +739,11 @@ const FridayScreen: React.FC = () => {
     const [agBotThoughts, setAgBotThoughts] = useState<AGBotThought[]>([]); 
     const [sortConfig, setSortConfig] = useState<{ key: string | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
 
-    // --- ESTADOS PARA RESIZING ---
     const [isResizing, setIsResizing] = useState(false);
     const resizingRef = useRef<{ startX: number, startWidth: number, key: string } | null>(null);
 
-    // --- FUNCIÓN HELPER PARA GUARDADO ROBUSTO EN FIREBASE ---
-    // Esta función limpia cualquier valor undefined antes de enviarlo a Firebase
     const saveColumnsToFirebase = async (colsToSave: Column[]) => {
         try {
-            // JSON.stringify + parse elimina propiedades undefined que causan errores en Firebase
             const cleanColumns = JSON.parse(JSON.stringify(colsToSave));
             await setDoc(doc(db, "tableros", "principal"), { columns: cleanColumns }, { merge: true });
         } catch (error) {
@@ -727,7 +770,6 @@ const FridayScreen: React.FC = () => {
         fetchUser();
     }, [user]);
 
-    // --- CARGA DE DATOS ---
     useEffect(() => {
         setIsLoadingData(true);
         const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
@@ -761,15 +803,9 @@ const FridayScreen: React.FC = () => {
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
         let q;
-        if (currentYear === 2025) {
-             const start = "2025-01-01T00:00:00";
-             const end = "2025-12-31T23:59:59";
-             q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
-        } else {
-             const start = "2026-01-01T00:00:00";
-             const end = "2026-12-31T23:59:59";
-             q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
-        }
+        const start = `${currentYear}-01-01T00:00:00`;
+        const end = `${currentYear}-12-31T23:59:59`;
+        q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
 
         const unsubRows = onSnapshot(q, (snapshot) => {
             let newRows: WorksheetData[] = [];
@@ -794,7 +830,6 @@ const FridayScreen: React.FC = () => {
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
     }, [currentYear]); 
 
-    // --- CEREBRO DE I.A. (AG-Bot Core) ---
     useEffect(() => {
         if (isLoadingData || rows.length === 0) return;
 
@@ -805,29 +840,18 @@ const FridayScreen: React.FC = () => {
             const isNightMode = currentHour >= 19;
             const newThoughts: AGBotThought[] = [];
 
-            const electCount = rows.filter(r => r.departamento === 'Eléctrica').length;
-            if(electCount > rows.length * 0.4 && Math.random() > 0.95) {
-                 newThoughts.push({id: Date.now(), type: 'info', message: `Carga alta en Eléctrica detectada (${electCount} equipos).`, timestamp: new Date().toISOString()});
-            }
-
             rows.forEach(row => {
                 let needsUpdate = false;
                 const updates: any = {};
 
                 if (!row.departamento || row.departamento === "") {
                     const detected = detectDepartment(row.equipo || "");
-                    if (detected) {
-                        updates.departamento = detected;
-                        needsUpdate = true;
-                    }
+                    if (detected) { updates.departamento = detected; needsUpdate = true; }
                 }
                 
                 if ((!row.marca || row.marca === "") && row.modelo) {
                     const inferredBrand = inferBrand(row.modelo);
-                    if (inferredBrand) {
-                        updates.marca = inferredBrand;
-                        needsUpdate = true;
-                    }
+                    if (inferredBrand) { updates.marca = inferredBrand; needsUpdate = true; }
                 }
 
                 if (row.folio && row.folio !== row.folio.trim().toUpperCase()) {
@@ -845,33 +869,11 @@ const FridayScreen: React.FC = () => {
                     updates.status_certificado = 'Generado';
                     needsUpdate = true;
                     showToast(`🤖 AG-Bot: Certificado generado para ${row.folio}`, 'success');
-                    newThoughts.push({id: Date.now(), type: 'success', message: `Certificado generado automáticamente para ${row.folio}`, timestamp: new Date().toISOString()});
-                }
-
-                if (row.status_equipo === 'Rechazado' && row.status_certificado === 'Generado') {
-                    updates.status_certificado = 'N/A';
-                    needsUpdate = true;
-                    showToast(`🤖 AG-Bot: Corrección lógica aplicada a ${row.folio}`, 'info');
                 }
 
                 if (row.lugarCalibracion === 'sitio') {
                     if (row.status_equipo !== 'Calibrado') { updates.status_equipo = 'Calibrado'; needsUpdate = true; }
                     if (row.ubicacion_real !== 'Servicio en Sitio') { updates.ubicacion_real = 'Servicio en Sitio'; needsUpdate = true; }
-                }
-                if (row.lugarCalibracion === 'laboratorio') {
-                    if (row.entregado === true && row.ubicacion_real !== 'Entregado') { updates.ubicacion_real = 'Entregado'; needsUpdate = true; }
-                    else if (!row.entregado && (!row.ubicacion_real || row.ubicacion_real === "")) { updates.ubicacion_real = 'Laboratorio'; needsUpdate = true; }
-                }
-
-                if (isNightMode) {
-                    if (!row.status_equipo) { updates.status_equipo = "Desconocido"; needsUpdate = true; }
-                    if (!row.cargado_drive) { updates.cargado_drive = "No"; needsUpdate = true; }
-                }
-                
-                if (row.fecha && row.status_equipo === 'En Revisión') {
-                    updates.status_equipo = 'Calibrado';
-                    needsUpdate = true;
-                    showToast(`🤖 AG-Bot: Equipo ${row.folio} marcado como Calibrado`, 'success');
                 }
 
                 if (needsUpdate) {
@@ -923,9 +925,10 @@ const FridayScreen: React.FC = () => {
     };
 
     const handleResetLayout = async () => {
-        if(confirm("¿Restablecer vista original? (Aparecerá ID y todo por defecto)")) {
+        if(confirm("¿Restablecer vista original? (Esto borrará configuraciones personales de columnas)")) {
              setColumns(DEFAULT_COLUMNS);
              await saveColumnsToFirebase(DEFAULT_COLUMNS);
+             window.location.reload(); 
         }
     };
 
@@ -939,13 +942,10 @@ const FridayScreen: React.FC = () => {
         setActiveColumnMenu(null);
     };
 
-    // --- AQUÍ ESTÁ LA CORRECCIÓN DE PERSISTENCIA ---
     const handleAddColumn = async () => {
         const name = prompt("Nombre de la nueva columna:");
         if (!name) return;
         const newKey = `col_${Date.now()}`;
-        
-        // Inicializamos con todos los valores definidos para evitar undefined
         const newCol: Column = { 
             key: newKey, 
             label: name, 
@@ -955,11 +955,8 @@ const FridayScreen: React.FC = () => {
             sticky: false,
             permissions: []
         };
-
         const newColumns = [...columns, newCol];
         setColumns(newColumns); 
-        
-        // Usamos la función sanitizada para guardar
         await saveColumnsToFirebase(newColumns);
         showToast("Columna agregada y guardada", "success");
     };
@@ -978,7 +975,6 @@ const FridayScreen: React.FC = () => {
                 return `"${String(val).replace(/"/g, '""')}"`;
             }).join(",");
         }).join("\n");
-        
         const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + csvRows;
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
@@ -1005,6 +1001,7 @@ const FridayScreen: React.FC = () => {
         await saveColumnsToFirebase(newCols);
     };
 
+    // --- AGREGAR FILA CON VALORES POR DEFECTO ---
     const handleAddRow = useCallback(async (groupId: string) => {
         const docRef = doc(collection(db, "hojasDeTrabajo"));
         let initialStatus = 'Desconocido';
@@ -1017,26 +1014,31 @@ const FridayScreen: React.FC = () => {
             initialLocation = 'Laboratorio';
         }
 
+        const now = new Date();
+        const fechaEntradaStr = now.toISOString().split('T')[0]; // Hoy YYYY-MM-DD
+        
         const newRowData = {
             id: "", folio: "", cliente: "", equipo: "", 
             lugarCalibracion: groupId, 
             status_equipo: initialStatus, 
             ubicacion_real: initialLocation,
             nombre: currentUserName, assignedTo: currentUserName, 
-            createdAt: new Date().toISOString(), status_certificado: 'Pendiente de Certificado'
+            createdAt: now.toISOString(), 
+            
+            // CAMPOS NUEVOS
+            fechaEntrada: fechaEntradaStr,
+            diasPromesa: 5, // Por defecto 5 días hábiles
+            
+            status_certificado: 'Pendiente de Certificado'
         };
         await setDoc(docRef, newRowData);
         showToast("Fila agregada correctamente", 'success');
     }, [currentUserName]);
 
-    // --- MANEJO DE ACTUALIZACIONES (CON MAGIA DE GRUPOS) ---
     const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
-        // 1. Optimistic Update (UI Inmediata)
         setRows(prevRows => prevRows.map(r => {
             if (r.docId === rowId) {
                 const updated = { ...r, [key]: value };
-                
-                // --- LÓGICA DE SALTO DE GRUPO ---
                 if (key === "ubicacion_real") {
                     if (value === "Servicio en Sitio") updated.lugarCalibracion = "sitio";
                     if (value === "Laboratorio") updated.lugarCalibracion = "laboratorio";
@@ -1047,21 +1049,15 @@ const FridayScreen: React.FC = () => {
             return r;
         }));
         
-        // 2. Preparar batch para Firebase
         const batch = writeBatch(db);
         const rowRef = doc(db, "hojasDeTrabajo", rowId);
-        
         let updates: any = { [key]: value, lastUpdated: new Date().toISOString() };
-
-        // --- SINCRONIZACIÓN CON DB ---
         if (key === "ubicacion_real") {
             if (value === "Servicio en Sitio") updates.lugarCalibracion = "sitio";
             else if (value === "Laboratorio" || value === "Recepción") updates.lugarCalibracion = "laboratorio";
         }
-
         batch.update(rowRef, updates);
         
-        // Historial
         const oldValue = rows.find(r => r.docId === rowId)?.[key];
         const historyRef = collection(db, `hojasDeTrabajo/${rowId}/history`);
         const historyDoc = doc(historyRef);
@@ -1090,7 +1086,6 @@ const FridayScreen: React.FC = () => {
         setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     }, []);
 
-    // --- FUNCIONES DE RESIZING (MONDAY STYLE) ---
     const startResize = (e: React.MouseEvent, colKey: string, currentWidth: number) => {
         e.preventDefault();
         e.stopPropagation();
@@ -1105,10 +1100,7 @@ const FridayScreen: React.FC = () => {
         const { startX, startWidth, key } = resizingRef.current;
         const diff = e.clientX - startX;
         const newWidth = Math.max(50, startWidth + diff); 
-
-        setColumns(prevCols => prevCols.map(col => 
-            col.key === key ? { ...col, width: newWidth } : col
-        ));
+        setColumns(prevCols => prevCols.map(col => col.key === key ? { ...col, width: newWidth } : col));
     }, []);
 
     const handleMouseUp = useCallback(async () => {
@@ -1117,18 +1109,6 @@ const FridayScreen: React.FC = () => {
         document.removeEventListener('mouseup', handleMouseUp);
         resizingRef.current = null;
     }, []);
-
-    // Efecto para guardar columnas cuando termina el resize
-    useEffect(() => {
-        if (!isResizing && resizingRef.current === null) {
-             if(columns !== DEFAULT_COLUMNS && columns.length > 0) {
-                 // Aquí podríamos guardar si quisiéramos persistir el ancho,
-                 // pero como el usuario no lo pidió explícitamente y ya tenemos
-                 // saveColumnsToFirebase disponible, lo dejamos así para no saturar escrituras.
-             }
-        }
-    }, [isResizing]);
-
 
     const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
         if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; }
@@ -1157,12 +1137,10 @@ const FridayScreen: React.FC = () => {
              newCols.splice(toIdx, 0, moved);
              
              setColumns(newCols);
-             // Guardado seguro
              await saveColumnsToFirebase(newCols);
         }
     }, [columns]); 
 
-    // --- BUSCADOR ULTRA ROBUSTO ---
     const groupedRows = useMemo(() => {
         let filtered = rows.filter(r => {
             if (search) {
@@ -1210,7 +1188,6 @@ const FridayScreen: React.FC = () => {
         <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
              <div className={clsx("flex-shrink-0 bg-white h-full z-50 transition-all duration-300 ease-in-out overflow-hidden border-r border-[#d0d4e4]", sidebarAbierto ? "w-64 opacity-100" : "w-0 opacity-0 border-none")}>
                 <div className="w-64 h-full">
-                    {/* --- CORRECCIÓN VISUAL: Eliminado prop onToggle para quitar botón flotante --- */}
                     <SidebarFriday onNavigate={navigateTo} isOpen={sidebarAbierto} />
                 </div>
              </div>
@@ -1262,7 +1239,7 @@ const FridayScreen: React.FC = () => {
                                 return (
                                 <div 
                                     key={col.key} 
-                                    draggable={!col.sticky && !isResizing} // PREVIENE CONFLICTO DRAG vs RESIZE
+                                    draggable={!col.sticky && !isResizing}
                                     onDragStart={(e) => onDragStart(e, { type: 'column', index })} 
                                     onDragOver={(e) => e.preventDefault()}
                                     onDragEnd={onDragEnd} 
@@ -1278,7 +1255,6 @@ const FridayScreen: React.FC = () => {
                                         <MoreHorizontal className="w-3 h-3 text-gray-500" />
                                     </button>
                                     
-                                    {/* --- RESIZER MONDAY STYLE --- */}
                                     {!col.sticky && (
                                         <div 
                                             className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors opacity-0 hover:opacity-100"

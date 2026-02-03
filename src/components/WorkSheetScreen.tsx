@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback, useReducer } from "react";
+import React, { useEffect, useRef, useState, useCallback, useReducer, useMemo } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
   ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
   Loader2, NotebookPen, Search, Calculator, ArrowRightLeft, AlertTriangle,
-  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2
+  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2, FileText, Info
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -20,10 +20,7 @@ import logoAg from '../assets/lab_logo.png';
 import ToastNotification from "./ToastNotification"; 
 
 // --- IMPORTS DE CAPACITOR ---
-import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-
-// --- TU NUEVO PLUGIN NATIVO EPSON ---
 import EpsonLabel from '../utils/EpsonPlugin';
 
 // ====================================================================
@@ -49,7 +46,6 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     setIsGenerating(true);
 
     try {
-      // 1. Pequeña pausa para asegurar renderizado del DOM
       await new Promise(resolve => setTimeout(resolve, 200));
 
       const canvas = await html2canvas(labelRef.current, {
@@ -60,45 +56,27 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         imageTimeout: 0
       });
 
-      // 2. Obtener Base64 puro de la imagen (quitando el encabezado data:image/png...)
       const base64Data = canvas.toDataURL('image/png').split(',')[1];
 
-      // LÓGICA HÍBRIDA (APK vs WEB)
       if (Capacitor.isNativePlatform()) {
-        // --- MODO ANDROID NATIVO (PLUGIN EPSON) ---
         try {
-            console.log("Enviando a plugin EpsonLabel...");
             await EpsonLabel.printBase64({ base64: base64Data });
-            
-            // Éxito
             alert("✅ Enviado a impresora Epson"); 
-
         } catch (err: any) {
             console.error("Error plugin Epson:", err);
             alert("❌ Error Epson: " + (err.message || err));
         }
-
       } else {
-        // --- MODO WEB (Navegador PC/Chrome) ---
         canvas.toBlob(async (blob) => {
           if (!blob) return;
           const cleanId = data.id.replace(/[^a-zA-Z0-9]/g, '-');
           const fileName = `ETIQUETA_${tapeSize}_${cleanId}.png`;
-          
-          // Intentar API de compartir web moderna
           const file = new File([blob], fileName, { type: "image/png" });
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             try {
-              await navigator.share({
-                files: [file],
-                title: 'Etiqueta Epson',
-                text: 'Guardar imagen'
-              });
-            } catch (error) {
-              console.log("Compartir cancelado");
-            }
+              await navigator.share({ files: [file], title: 'Etiqueta Epson', text: 'Guardar imagen' });
+            } catch (error) { console.log("Compartir cancelado"); }
           } else {
-            // Fallback clásico: Descargar archivo
             const link = document.createElement('a');
             link.download = fileName;
             link.href = canvas.toDataURL('image/png');
@@ -106,10 +84,8 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
           }
         }, 'image/png');
       }
-
       setIsGenerating(false);
       setShowOptions(false);
-
     } catch (error) {
       console.error("Error al generar etiqueta", error);
       alert("Error general al generar la imagen.");
@@ -120,18 +96,11 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
   return (
     <div className="relative">
       <div className="flex bg-slate-900 text-white rounded-lg overflow-hidden shadow-lg border border-slate-700">
-        <button 
-            onClick={() => handlePrintAction()}
-            disabled={isGenerating}
-            className="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 transition-all disabled:opacity-50"
-        >
+        <button onClick={() => handlePrintAction()} disabled={isGenerating} className="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 transition-all disabled:opacity-50">
             {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
             <span className="font-bold text-sm">Etiqueta {tapeSize}</span>
         </button>
-        <button 
-            onClick={() => setShowOptions(!showOptions)}
-            className="px-2 bg-slate-800 border-l border-slate-700 hover:bg-slate-700 transition-colors"
-        >
+        <button onClick={() => setShowOptions(!showOptions)} className="px-2 bg-slate-800 border-l border-slate-700 hover:bg-slate-700 transition-colors">
             <Settings2 className="w-4 h-4" />
         </button>
       </div>
@@ -139,98 +108,35 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
       {showOptions && (
         <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48 animate-in fade-in slide-in-from-top-2">
             <div className="space-y-1">
-                <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}>
-                    <span>24mm (Grande)</span>
-                    {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}
-                </button>
-                <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}>
-                    <span>12mm (Pequeña)</span>
-                    {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}
-                </button>
+                <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}><span>24mm (Grande)</span> {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
+                <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}><span>12mm (Pequeña)</span> {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
             </div>
         </div>
       )}
 
-      {/* RENDERIZADO OCULTO PARA FOTO */}
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
-        
         {tapeSize === "24mm" && (
-            <div ref={labelRef} style={{
-                width: '500px',   
-                height: '240px', 
-                backgroundColor: 'white',
-                display: 'flex',
-                flexDirection: 'column', 
-                fontFamily: 'Arial, Helvetica, sans-serif',
-                overflow: 'hidden',
-                border: '1px solid #ccc',
-                padding: '0'
-            }}>
-                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}>
-                    <img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} />
-                </div>
-
+            <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, Helvetica, sans-serif', overflow: 'hidden', border: '1px solid #ccc', padding: '0' }}>
+                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}><img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} /></div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', padding: '5px 12px' }}>
-                    
-                    <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px', letterSpacing: '-1px' }}>
-                        {data.id}
-                    </div>
-
+                    <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px', letterSpacing: '-1px' }}>{data.id}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #333', borderBottom: '2px solid #333', padding: '4px 0', marginBottom: '6px' }}>
-                        <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>CALIBRADO</div>
-                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'black' }}>{data.fechaCal}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>VENCE</div>
-                            <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.fechaSug}</div>
-                        </div>
+                        <div style={{ textAlign: 'left' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>CALIBRADO</div><div style={{ fontSize: '18px', fontWeight: 'bold', color: 'black' }}>{data.fechaCal}</div></div>
+                        <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>VENCE</div><div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.fechaSug}</div></div>
                     </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-                            <span style={{ fontSize: '10px', color: '#555', marginRight: '4px' }}>CERT:</span>
-                            {data.certificado}
-                         </div>
-                         <div style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#000', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>
-                            TEC: {data.calibro.substring(0,4)}
-                         </div>
-                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: '16px', fontWeight: 'bold' }}><span style={{ fontSize: '10px', color: '#555', marginRight: '4px' }}>CERT:</span>{data.certificado}</div><div style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#000', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>TEC: {data.calibro.substring(0,4)}</div></div>
                 </div>
             </div>
         )}
-
         {tapeSize === "12mm" && (
-             <div ref={labelRef} style={{
-                width: '600px',   
-                height: '90px', 
-                backgroundColor: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                fontFamily: 'Arial, Helvetica, sans-serif',
-                border: '1px solid #ccc',
-                padding: '0' 
-            }}>
-                <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}>
-                     <img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain' }} />
-                </div>
-
+             <div ref={labelRef} style={{ width: '600px', height: '90px', backgroundColor: 'white', display: 'flex', alignItems: 'center', fontFamily: 'Arial, Helvetica, sans-serif', border: '1px solid #ccc', padding: '0' }}>
+                <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}><img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain' }} /></div>
                 <div style={{ flex: 1, paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9', marginBottom: '4px' }}>{data.id}</div>
-                    
-                    <div style={{ display: 'flex', gap: '15px' }}>
-                        <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#000' }}>
-                            <span style={{ fontSize: '10px', color: '#444' }}>CAL: </span>{data.fechaCal}
-                        </div>
-                        <div style={{ fontSize: '15px', fontWeight: '900', color: '#000' }}>
-                            <span style={{ fontSize: '10px', color: '#444' }}>VEN: </span>{data.fechaSug}
-                        </div>
-                    </div>
+                    <div style={{ display: 'flex', gap: '15px' }}><div style={{ fontSize: '15px', fontWeight: 'bold', color: '#000' }}><span style={{ fontSize: '10px', color: '#444' }}>CAL: </span>{data.fechaCal}</div><div style={{ fontSize: '15px', fontWeight: '900', color: '#000' }}><span style={{ fontSize: '10px', color: '#444' }}>VEN: </span>{data.fechaSug}</div></div>
                 </div>
-
                 <div style={{ paddingRight: '5px', paddingLeft: '5px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', borderLeft: '2px solid #ccc', height: '80%' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase' }}>CERT</div>
-                    <div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
+                    <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase' }}>CERT</div><div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
                 </div>
             </div>
         )}
@@ -243,7 +149,14 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
 // MODAL CONVERTIDOR
 // ====================================================================
 
-const UNIT_CATEGORIES: Record<string, { value: string, label: string }[]> = {
+const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [category, setCategory] = useState<string>("Par Torsional (Torque)");
+  const [amount, setAmount] = useState<string>("1");
+  const [fromUnit, setFromUnit] = useState<string>("N*m");
+  const [toUnit, setToUnit] = useState<string>("lbf*in");
+  const [result, setResult] = useState<string>("");
+
+  const UNIT_CATEGORIES: Record<string, { value: string, label: string }[]> = {
     "Par Torsional (Torque)": [
         { value: "N*m", label: "N·m (Newton metro)" },
         { value: "lbf*in", label: "lbf·in (Libra fuerza pulgada)" },
@@ -262,14 +175,7 @@ const UNIT_CATEGORIES: Record<string, { value: string, label: string }[]> = {
         { value: "cm", label: "Centímetros" },
         { value: "m", label: "Metros" }
     ]
-};
-
-const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [category, setCategory] = useState<string>("Par Torsional (Torque)");
-  const [amount, setAmount] = useState<string>("1");
-  const [fromUnit, setFromUnit] = useState<string>(UNIT_CATEGORIES["Par Torsional (Torque)"][0].value);
-  const [toUnit, setToUnit] = useState<string>(UNIT_CATEGORIES["Par Torsional (Torque)"][1].value);
-  const [result, setResult] = useState<string>("");
+  };
 
   const handleCategoryChange = (newCategory: string) => {
     setCategory(newCategory);
@@ -292,48 +198,32 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     } catch (err) { setResult("-"); }
   };
 
-  const handleSwap = () => {
-    const temp = fromUnit;
-    setFromUnit(toUnit);
-    setToUnit(temp);
-  };
+  const handleSwap = () => { const temp = fromUnit; setFromUnit(toUnit); setToUnit(temp); };
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200 flex flex-col max-h-[90vh]">
         <div className="bg-gray-900 text-white p-4 flex justify-between items-center shrink-0">
-          <h3 className="text-lg font-bold flex items-center gap-2"><Calculator className="w-5 h-5 text-blue-400" /> Convertidor de Unidades</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X className="w-6 h-6" /></button>
+          <h3 className="text-lg font-bold flex items-center gap-2"><Calculator className="w-5 h-5 text-blue-400" /> Convertidor</h3>
+          <button onClick={onClose}><X className="w-6 h-6" /></button>
         </div>
         <div className="p-6 overflow-y-auto">
-          <div className="mb-6">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">1. Categoría</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 gap-2">
               {Object.keys(UNIT_CATEGORIES).map((cat) => (
-                <button key={cat} onClick={() => handleCategoryChange(cat)}
-                  className={`px-3 py-2 text-sm rounded-lg border transition-all text-left truncate ${category === cat ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-gray-50 text-gray-900 border-gray-200 hover:bg-gray-100'}`}>
-                  {cat}
-                </button>
+                <button key={cat} onClick={() => handleCategoryChange(cat)} className={`px-3 py-2 text-sm rounded-lg border transition-all text-left truncate ${category === cat ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-900'}`}>{cat}</button>
               ))}
-            </div>
           </div>
           <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-6 rounded-xl border border-gray-200">
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">De:</label>
-              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none shadow-sm bg-white text-gray-900" placeholder="0" />
-              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
-                {UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value} className="text-gray-900 bg-white">{u.label}</option>))}
-              </select>
+              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg" placeholder="0" />
+              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
-            <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0">
-               <button onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><ArrowRightLeft className="w-5 h-5 md:rotate-90 text-gray-600" /></button>
-            </div>
+            <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0"><button onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full"><ArrowRightLeft className="w-5 h-5" /></button></div>
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">A:</label>
               <div className="w-full p-3 text-lg font-mono font-bold bg-blue-50 text-blue-900 border border-blue-100 rounded-lg flex items-center min-h-[54px]">{result || "-"}</div>
-              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
-                {UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value} className="text-gray-900 bg-white">{u.label}</option>))}
-              </select>
+              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
           </div>
         </div>
@@ -346,7 +236,7 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 // 3. TIPOS Y LÓGICA DE NEGOCIO
 // ====================================================================
 
-type ClienteRecord = { id: string; nombre: string; }
+type ClienteRecord = { id: string; nombre: string; requerimientos?: string; }
 type MasterRecord = { A: string; B: string; C: string; D: string; E: string; };
 
 interface WorksheetState {
@@ -563,17 +453,22 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
   return null;
 }
 
-// --- GENERADOR DE PDF INTELIGENTE ---
+// --- GENERADOR DE PDF ---
 const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   // @ts-ignore
   const doc = new JsPDF({ orientation: "p", unit: "pt", format: "a4" });
 
+  const pageWidth = doc.internal.pageSize.width; // ~595 pts
   const pageHeight = doc.internal.pageSize.height; 
   const marginBottom = 40; 
   const marginLeft = 40;
-  const marginRight = 560;
-  const lineHeight = 20;
+  const marginRight = pageWidth - 40;
   
+  // CENTRADO DE TABLAS
+  const tableWidth = 500; 
+  const tableX = (pageWidth - tableWidth) / 2; // Centrado automático
+
+  const lineHeight = 20;
   const maxY = pageHeight - marginBottom; 
   let currentY = 60; 
 
@@ -582,7 +477,8 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.setTextColor(0, 0, 139); 
-    doc.text("Equipos y Servicios Especializados AG", marginLeft + 120, 50);
+    // Centrar título
+    doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
     doc.setFont("helvetica", "normal");
@@ -603,129 +499,143 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   const checkPageBreak = (heightNeeded: number) => {
     if (currentY + heightNeeded > maxY) {
       doc.addPage();
-      currentY = 60; 
       drawHeaderBase(); 
-      
+      currentY = 85; 
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
       doc.text("Mediciones (Continuación)", marginLeft, currentY);
       currentY += 25;
       
+      // Dibujar cabecera de tabla nuevamente en la nueva página
       doc.setDrawColor(200);
-      doc.setFillColor(240, 240, 240);
+      doc.setFillColor(230, 235, 245); 
       doc.setLineWidth(0.5);
-      doc.rect(marginLeft, currentY, 500, 20, 'FD');
+      doc.rect(tableX, currentY, tableWidth, 20, 'FD');
       
       doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      
       if (formData.magnitud === "Masa") {
-        doc.text("Parámetro", marginLeft + 10, currentY + 15);
-        doc.text("Valor", marginLeft + 250, currentY + 15);
+        doc.text("Parámetro", tableX + 20, currentY + 14);
+        doc.text("Valor", tableX + (tableWidth/2) + 20, currentY + 14);
       } else {
-        doc.text("Medición Patrón", marginLeft + 10, currentY + 15);
-        doc.text("Medición Instrumento", marginLeft + 260, currentY + 15);
+        doc.text("Medición Patrón", tableX + 20, currentY + 14);
+        doc.text("Medición Instrumento", tableX + (tableWidth/2) + 20, currentY + 14);
       }
-      currentY += 20;
+      currentY += 20; 
       return true;
     }
     return false;
   };
 
+  // --- INICIO DEL DOCUMENTO ---
   drawHeaderBase();
-  currentY = 60;
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Fecha: ${formData.fecha || "-"}`, marginRight - 150, currentY);
-  currentY += lineHeight;
-  doc.setFont("helvetica", "bold");
-  doc.text(`Nombre: ${formData.nombre || "-"}`, marginRight - 150, currentY);
-  currentY += 30;
-
-  doc.setDrawColor(128, 128, 128);
-  doc.setLineWidth(1.5);
-  doc.line(marginLeft, currentY, marginRight, currentY);
-  currentY += 30;
-
-  const infoPairs = [
-    ["Lugar de Calibración:", formData.lugarCalibracion || "-"],
-    ["N.Certificado:", formData.certificado || "-"],
-    ["Fecha de Recepción:", formData.fechaRecepcion || "-"],
-    ["Cliente:", formData.cliente || "-"],
-    ["Equipo:", formData.equipo || "-"],
-    ["ID:", formData.id || "-"],
-    ["Marca:", formData.marca || "-"],
-    ["Modelo:", formData.modelo || "-"],
-    ["Número de Serie:", formData.numeroSerie || "-"],
-    ["Unidad:", Array.isArray(formData.unidad) ? formData.unidad.join(', ') : formData.unidad || "-"],
-    ["Alcance:", formData.alcance || "-"],
-    ["Resolución:", formData.resolucion || "-"],
-    ["Frecuencia de Calibración:", formData.frecuenciaCalibracion || "-"],
-    ["Temp. Ambiente:", `${formData.tempAmbiente || "-"} °C`],
-    ["HR%:", `${formData.humedadRelativa || "-"} %`],
-  ];
-
-  doc.setFontSize(11);
-  const col1Width = 180;
+  currentY = 80; // Bajamos un poco el inicio
   
-  infoPairs.forEach(([label, value]) => {
-    const valueLines = doc.splitTextToSize(value, marginRight - marginLeft - col1Width - 10);
-    const heightNeeded = lineHeight * valueLines.length;
-    checkPageBreak(heightNeeded);
-    doc.setFont("helvetica", "bold");
-    doc.text(label, marginLeft, currentY);
-    doc.setFont("helvetica", "normal");
-    doc.text(valueLines, marginLeft + col1Width, currentY);
-    currentY += heightNeeded;
-  });
+  // Bloque superior (Datos generales)
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  
+  const col1X = marginLeft;
+  const col2X = pageWidth / 2 + 20;
+
+  doc.text(`Fecha: ${formData.fecha || "-"}`, col2X, currentY);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Nombre: ${formData.nombre || "-"}`, marginLeft, currentY); 
+  currentY += lineHeight + 5;
+
+  doc.setDrawColor(100);
+  doc.setLineWidth(1);
+  doc.line(marginLeft, currentY, marginRight, currentY);
   currentY += 20;
 
+  // Lista de datos
+  const infoData = [
+    { l: "Cliente:", v: formData.cliente, l2: "N. Certificado:", v2: formData.certificado },
+    { l: "Equipo:", v: formData.equipo, l2: "ID:", v2: formData.id },
+    { l: "Marca:", v: formData.marca, l2: "Modelo:", v2: formData.modelo },
+    { l: "N. Serie:", v: formData.numeroSerie, l2: "Ubicación:", v2: formData.lugarCalibracion },
+    { l: "Magnitud:", v: formData.magnitud, l2: "Unidad:", v2: Array.isArray(formData.unidad) ? formData.unidad.join(', ') : formData.unidad },
+    { l: "Alcance:", v: formData.alcance, l2: "Resolución:", v2: formData.resolucion },
+    { l: "Frecuencia:", v: formData.frecuenciaCalibracion, l2: "Recepción:", v2: formData.fechaRecepcion || "N/A" },
+    { l: "Temp. Amb:", v: `${formData.tempAmbiente || "-"} °C`, l2: "Humedad:", v2: `${formData.humedadRelativa || "-"} %` },
+  ];
+
+  doc.setFontSize(10);
+  
+  infoData.forEach(row => {
+    checkPageBreak(20);
+    // Columna 1
+    doc.setFont("helvetica", "bold");
+    doc.text(row.l, col1X, currentY);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(row.v || "-").substring(0, 35), col1X + 65, currentY);
+
+    // Columna 2
+    doc.setFont("helvetica", "bold");
+    doc.text(row.l2, col2X, currentY);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY);
+    
+    currentY += 16;
+  });
+
+  currentY += 15;
+
+  // --- SECCIÓN MEDICIONES ---
   checkPageBreak(40); 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("Mediciones", marginLeft, currentY);
-  currentY += lineHeight + 10;
+  doc.setFontSize(13);
+  doc.setFillColor(220, 220, 220);
+  doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F'); // Fondo título
+  doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
+  currentY += 20;
 
   const isMasa = formData.magnitud === "Masa";
-  doc.setDrawColor(200);
-  doc.setFillColor(240, 240, 240);
-  doc.setLineWidth(0.5);
+  
+  // Cabecera Tabla Principal
+  doc.setDrawColor(0);
+  doc.setFillColor(50, 80, 160); 
+  doc.setTextColor(255, 255, 255); 
+  doc.setLineWidth(0.1);
 
   checkPageBreak(30);
-  doc.rect(marginLeft, currentY, 500, 20, 'FD');
-  doc.setFontSize(12);
+  doc.rect(tableX, currentY, tableWidth, 20, 'FD');
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
   
   if (isMasa) {
-    doc.text("Parámetro", marginLeft + 10, currentY + 15);
-    doc.text("Valor", marginLeft + 250, currentY + 15);
+    doc.text("Parámetro", tableX + 20, currentY + 14);
+    doc.text("Valor", tableX + (tableWidth/2) + 20, currentY + 14);
     currentY += 20;
+    doc.setTextColor(0,0,0); 
     
     const masaData = [
-      ["Excentricidad", formData.excentricidad || "-"],
-      ["Linealidad", formData.linealidad || "-"],
-      ["Repetibilidad", formData.repetibilidad || "-"]
+        ["Excentricidad", formData.excentricidad || "-"],
+        ["Linealidad", formData.linealidad || "-"],
+        ["Repetibilidad", formData.repetibilidad || "-"]
     ];
-
     masaData.forEach(([param, val]) => {
-      doc.setFontSize(11);
-      const valLines = doc.splitTextToSize(val, 240);
-      const rowHeight = Math.max(20, valLines.length * lineHeight);
-      checkPageBreak(rowHeight); 
-
-      doc.setDrawColor(200); 
-      doc.setFillColor(255, 255, 255); 
-      doc.rect(marginLeft, currentY, 250, rowHeight);
-      doc.rect(marginLeft + 250, currentY, 250, rowHeight);
-      
-      doc.setFont("helvetica", "bold");
-      doc.text(param, marginLeft + 10, currentY + 15);
-      doc.setFont("helvetica", "normal");
-      doc.text(valLines, marginLeft + 260, currentY + 15);
-      currentY += rowHeight;
+         doc.setFontSize(10);
+         doc.setDrawColor(200);
+         doc.rect(tableX, currentY, tableWidth/2, 20);
+         doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, 20);
+         
+         doc.setFont("helvetica", "bold");
+         doc.text(param, tableX + 10, currentY + 14);
+         doc.setFont("helvetica", "normal");
+         doc.text(val, tableX + tableWidth/2 + 10, currentY + 14);
+         currentY += 20;
     });
 
   } else {
-    doc.text("Medición Patrón", marginLeft + 10, currentY + 15);
-    doc.text("Medición Instrumento", marginLeft + 260, currentY + 15);
+    // STANDARD (Presión, Torque, etc)
+    doc.text("Medición Patrón", tableX + 20, currentY + 14);
+    doc.text("Medición Instrumento", tableX + (tableWidth/2) + 20, currentY + 14);
     currentY += 20;
+    doc.setTextColor(0,0,0); 
 
     const patronRaw = (formData.medicionPatron || "").split('\n');
     const instrumentoRaw = (formData.medicionInstrumento || "").split('\n');
@@ -738,45 +648,43 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     for (let i = 0; i < loopLimit; i++) {
       const pLine = patronRaw[i] || "";
       const iLine = instrumentoRaw[i] || "";
+      
       const isHeaderLine = (pLine.trim().endsWith(':') || iLine.trim().endsWith(':'));
-      const pSplit = doc.splitTextToSize(pLine, 240);
-      const iSplit = doc.splitTextToSize(iLine, 240);
-      const rowHeight = Math.max(18, Math.max(pSplit.length, iSplit.length) * 14);
-
+      const rowHeight = 18; 
       checkPageBreak(rowHeight);
 
-      doc.setDrawColor(220);
+      doc.setDrawColor(200);
       if (isHeaderLine) {
-        doc.setFillColor(245, 247, 250); 
-        doc.rect(marginLeft, currentY, 250, rowHeight, 'FD');
-        doc.rect(marginLeft + 250, currentY, 250, rowHeight, 'FD');
+        doc.setFillColor(240, 240, 240); 
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 50, 150); 
+        doc.rect(tableX, currentY, tableWidth, rowHeight, 'FD'); 
+        doc.setTextColor(0, 0, 100); 
       } else {
-        doc.rect(marginLeft, currentY, 250, rowHeight);
-        doc.rect(marginLeft + 250, currentY, 250, rowHeight);
+        doc.setFillColor(255, 255, 255);
         doc.setFont("helvetica", "normal");
+        doc.rect(tableX, currentY, tableWidth/2, rowHeight); 
+        doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, rowHeight);
         doc.setTextColor(0, 0, 0);
       }
-      doc.text(pSplit, marginLeft + 5, currentY + 12);
-      doc.text(iSplit, marginLeft + 255, currentY + 12);
+      
+      doc.text(pLine, tableX + 10, currentY + 12);
+      doc.text(iLine, tableX + (tableWidth/2) + 10, currentY + 12);
       currentY += rowHeight;
     }
   }
 
   currentY += 20;
-  const notasLines = doc.splitTextToSize(formData.notas || "-", 500);
-  const notasHeight = (notasLines.length * lineHeight) + 40; 
-  checkPageBreak(notasHeight);
+  // Notas
+  const notasLines = doc.splitTextToSize(formData.notas || "-", tableWidth);
+  checkPageBreak(notasLines.length * 15 + 30);
 
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text("Notas:", marginLeft, currentY);
-  currentY += lineHeight;
-  
-  doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Observaciones / Notas:", marginLeft, currentY);
+  currentY += 15;
+  
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(10);
   doc.text(notasLines, marginLeft, currentY);
 
   drawFooter();
@@ -831,6 +739,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
 
   const [electricalValues, setElectricalValues] = useState<Record<string, { patron: string, instrumento: string }>>({});
+
+  // ✅ MEMORIZAR NOTAS DE CLIENTE
+  const activeClientNotes = useMemo(() => {
+    const found = listaClientes.find(c => c.nombre === state.cliente);
+    return found?.requerimientos || "";
+  }, [state.cliente, listaClientes]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -977,7 +891,11 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const cargarEmpresas = async () => {
     try {
       const qs = await getDocs(collection(db, "clientes"));
-      setListaClientes(qs.docs.map((d) => ({ id: d.id, nombre: d.data().nombre || "Sin nombre" })));
+      setListaClientes(qs.docs.map((d) => ({ 
+          id: d.id, 
+          nombre: d.data().nombre || "Sin nombre",
+          requerimientos: d.data().requerimientos || "" // <-- Cargamos requerimientos
+      })));
     } catch { setListaClientes([{ id: "1", nombre: "ERROR AL CARGAR CLIENTES" }]); }
   };
 
@@ -1027,11 +945,29 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const sanitize = (str: string) => str.replace(/<script.*?>.*?<\/script>/gi, '').trim();
 
-  // --- HANDLE SAVE ---
+  // --- VALIDACIÓN DE TEXTO Y CONTENIDO (Anti-Flojera) ---
+  const validarContenidoMedicion = (texto: string): { valido: boolean, error?: string } => {
+    if (!texto) return { valido: true }; 
+    const lineas = texto.split('\n').filter(l => l.trim() !== '' && !l.trim().endsWith(':')); 
+    const regexProhibido = /^(ok|pasa|bien|cumple|n\/a|\.|-|\*|x|\?|pendiente|tbd)$/i;
+    
+    for (const linea of lineas) {
+        const limpia = linea.trim();
+        if (regexProhibido.test(limpia)) {
+            return { valido: false, error: `No se permite texto genérico como "${limpia}". Ingrese valores numéricos reales.` };
+        }
+        if (!/\d/.test(limpia)) {
+             return { valido: false, error: `La medición "${limpia}" no contiene números. Se requieren valores reales.` };
+        }
+    }
+    return { valido: true };
+  };
+
+  // --- HANDLE SAVE MEJORADO Y ESTRICTO ---
   const handleSave = useCallback(async () => {
-    // 1. VALIDACIÓN RIGUROSA
+    // 1. CAMPOS OBLIGATORIOS (Ahora incluye Alcance y Resolución)
     const errors: Record<string, boolean> = {};
-    const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad"];
+    const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad", "alcance", "resolucion"];
     let hasError = false;
     
     requiredFields.forEach(field => {
@@ -1041,6 +977,68 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
            hasError = true;
        }
     });
+
+    // 2. VALIDACIÓN DE CONTENIDO DE MEDICIONES
+    const camposAValidar: { campo: string, valor: string, nombre: string }[] = [];
+
+    if (state.magnitud === "Masa") {
+        camposAValidar.push(
+            { campo: 'excentricidad', valor: state.excentricidad, nombre: 'Excentricidad' },
+            { campo: 'linealidad', valor: state.linealidad, nombre: 'Linealidad' },
+            { campo: 'repetibilidad', valor: state.repetibilidad, nombre: 'Repetibilidad' }
+        );
+    } else if (state.magnitud === "Electrica") {
+        state.unidad.forEach(u => {
+            const vals = electricalValues[u] || { patron: "", instrumento: "" };
+            camposAValidar.push(
+                { campo: `patron_${u}`, valor: vals.patron, nombre: `Patrón (${u})` },
+                { campo: `instrumento_${u}`, valor: vals.instrumento, nombre: `Instrumento (${u})` }
+            );
+        });
+    } else {
+        camposAValidar.push(
+            { campo: 'medicionPatron', valor: state.medicionPatron, nombre: 'Medición Patrón' },
+            { campo: 'medicionInstrumento', valor: state.medicionInstrumento, nombre: 'Medición Instrumento' }
+        );
+    }
+
+    for (const item of camposAValidar) {
+        const check = validarContenidoMedicion(item.valor);
+        if (!check.valido) {
+            setToast({ message: `Error en ${item.nombre}: ${check.error}`, type: 'error' });
+            return;
+        }
+    }
+
+    // 3. VALIDACIÓN DE PUNTOS MÍNIMOS (NORMA ~3 Puntos)
+    let advertenciaNorma = "";
+    
+    if (state.magnitud === "Masa") {
+         const lineasLinealidad = state.linealidad.split('\n').filter(l => /\d/.test(l));
+         if (lineasLinealidad.length < 3) {
+             advertenciaNorma = `Para MASA (Linealidad), se recomiendan mínimo 3 puntos. Detectados: ${lineasLinealidad.length}.`;
+         }
+    } else if (state.magnitud === "Electrica") {
+        for (const u of state.unidad) {
+             const vals = electricalValues[u];
+             const lineas = (vals?.patron || "").split('\n').filter(l => /\d/.test(l));
+             if (lineas.length < 3) {
+                 advertenciaNorma = `Para ELÉCTRICA (${u}), se recomiendan mínimo 3 puntos de medición.`;
+                 break;
+             }
+        }
+    } else {
+        const lineas = state.medicionPatron.split('\n').filter(l => /\d/.test(l));
+        if (lineas.length < 3) {
+             advertenciaNorma = `Para ${state.magnitud}, la norma sugiere cubrir el alcance (mínimo 3 puntos). Solo detecté ${lineas.length}.`;
+        }
+    }
+
+    if (advertenciaNorma) {
+        if (!window.confirm(`⚠️ ADVERTENCIA DE NORMA (ISO 17025):\n\n${advertenciaNorma}\n\n¿Deseas guardar de todos modos?`)) {
+            return;
+        }
+    }
 
     if (state.fechaRecepcion && state.fecha && new Date(state.fechaRecepcion) > new Date(state.fecha)) {
       errors.fecha = true;
@@ -1052,7 +1050,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     if (hasError) {
         setValidationErrors(errors);
         setToast({ message: "Completa los campos obligatorios para continuar.", type: 'error' });
-        // DETENER AQUÍ SI HAY ERRORES
         return; 
     }
     setValidationErrors({});
@@ -1231,283 +1228,341 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       </div>
 
       <div className="p-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
-              <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
-              <p className="text-gray-600 mt-1">Complete los datos obligatorios marcados con *.</p>
-            </div>
-            <div className="p-8 space-y-8">
-              <div>
-                <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><MapPin className="w-4 h-4 text-orange-500" /><span>Lugar de Calibración*</span></label>
-                <div className={`grid grid-cols-3 gap-4 text-gray-700 p-1 rounded-lg ${validationErrors.lugarCalibracion ? 'bg-red-50 border border-red-200' : ''}`}>
-                  {["Sitio", "Laboratorio"].map((opt) => (
-                    <button key={opt} onClick={() => { 
-                        dispatch({ type: 'SET_FIELD', field: 'lugarCalibracion', payload: opt });
-                        if(validationErrors.lugarCalibracion) setValidationErrors({...validationErrors, lugarCalibracion: false});
-                    }}
-                      className={`py-3 px-4 rounded-lg border-2 font-medium transition-all ${state.lugarCalibracion === opt ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>{opt}</button>
-                  ))}
-                </div>
+        
+        {/* ✅ LAYOUT GRID CORREGIDO */}
+        <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* COLUMNA PRINCIPAL (Formulario) */}
+          <div className={activeClientNotes ? "lg:col-span-8 transition-all duration-300" : "lg:col-span-10 lg:col-start-2 transition-all duration-300"}>
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
+                <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
+                <p className="text-gray-600 mt-1">Complete los datos obligatorios marcados con *.</p>
               </div>
-              {state.lugarCalibracion === "Laboratorio" && (
-                <div className="mt-4 animate-in fade-in slide-in-from-top-2">
-                  <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
-                  <input type="date" className={`w-full border rounded px-3 py-2 text-sm ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : ''}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
-                </div>
-              )}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="p-8 space-y-8">
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
-                  <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
-                  <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
-                  
-                  {slaInfo && (
-                    <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
-                      slaInfo.esTardio 
-                        ? "bg-red-50 border-red-200 text-red-800" 
-                        : "bg-green-50 border-green-200 text-green-800"
-                    }`}>
-                      {slaInfo.esTardio ? (
-                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                      ) : (
-                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                      )}
-                      <div>
-                        <p className="font-bold">
-                          {slaInfo.esTardio ? "Fuera de Tiempo Compromiso" : "Dentro de Tiempo Compromiso"}
-                        </p>
-                        <p className="text-xs opacity-90 mt-1">
-                          {slaInfo.esTardio 
-                            ? `La fecha límite era el ${slaInfo.fechaLimiteStr} (5 días hábiles).` 
-                            : `Estás en el día ${Math.max(0, slaInfo.diasTomados)} de 5 hábiles permitidos.`}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label><input type="text" value={state.certificado} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.certificado ? 'border-red-500 ring-1 ring-red-500' : ''}`} placeholder="Automático" /></div>
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Mail className="w-4 h-4 text-red-500" /><span>Nombre*</span></label><input type="text" value={state.nombre} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.nombre ? 'border-red-500 ring-1 ring-red-500' : ''}`} /></div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
-                
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
-                  <input 
-                    type="text" 
-                    value={state.id} 
-                    onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
-                    onBlur={handleIdBlur} 
-                    className={`w-full p-4 border-2 rounded-lg transition-all ${
-                        state.idBlocked 
-                            ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
-                            : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
-                    }`} 
-                    placeholder="ID" 
-                  />
-                  
-                  {state.idBlocked && (
-                      <p className={`mt-2 text-sm font-medium animate-pulse ${state.permitirExcepcion ? "text-orange-600" : "text-red-600"}`}>
-                          {state.permitirExcepcion ? "⚠️ Advertencia: Guardando bajo excepción." : state.idErrorMessage}
-                      </p>
-                  )}
-                  
-                  <div className="mt-3">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input 
-                            type="checkbox" 
-                            checked={state.permitirExcepcion} 
-                            onChange={(e) => dispatch({ type: 'SET_EXCEPCION', payload: e.target.checked })} 
-                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" 
-                            disabled={!state.idBlocked} 
-                           />
-                          <span className={`text-sm ${state.idBlocked ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
-                            Permitir excepción de fecha
-                          </span>
-                      </label>
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><MapPin className="w-4 h-4 text-orange-500" /><span>Lugar de Calibración*</span></label>
+                  <div className={`grid grid-cols-3 gap-4 text-gray-700 p-1 rounded-lg ${validationErrors.lugarCalibracion ? 'bg-red-50 border border-red-200' : ''}`}>
+                    {["Sitio", "Laboratorio"].map((opt) => (
+                      <button key={opt} onClick={() => { 
+                          dispatch({ type: 'SET_FIELD', field: 'lugarCalibracion', payload: opt });
+                          if(validationErrors.lugarCalibracion) setValidationErrors({...validationErrors, lugarCalibracion: false});
+                      }}
+                        className={`py-3 px-4 rounded-lg border-2 font-medium transition-all ${state.lugarCalibracion === opt ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>{opt}</button>
+                    ))}
                   </div>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label><input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} readOnly={state.fieldsLocked} className={inputClass('equipo')} /></div>
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label><input type="text" value={state.marca} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value }); if(validationErrors.marca) setValidationErrors({...validationErrors, marca: false}); }} readOnly={state.fieldsLocked} className={inputClass('marca')} /></div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label><input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Tag className="w-4 h-4 text-blue-500" /><span>Magnitud*</span>
-                  </label>
-                  {currentMagnitude ? (
-                    <div className="relative">
-                      <input type="text" value={state.magnitud} readOnly 
-                        className="w-full p-4 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 font-bold" />
-                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">Auto</div>
-                    </div>
-                  ) : (
-                    <select value={state.magnitud} 
-                      onChange={(e) => { 
-                        dispatch({ type: 'SET_MAGNITUD', payload: e.target.value }); 
-                        if(validationErrors.magnitud) setValidationErrors({...validationErrors, magnitud: false}); 
-                      }} 
-                      className={`w-full p-4 border rounded-lg outline-none bg-white text-gray-900 appearance-none cursor-pointer ${validationErrors.magnitud ? "border-red-500 ring-1 ring-red-500" : "border-gray-300 focus:ring-2 focus:ring-blue-500"}`}>
-                      <option value="" className="text-gray-400">Seleccionar...</option>
-                      {magnitudesDisponibles.map(m => <option key={m} value={m} className="text-gray-900">{m}</option>)}
-                    </select>
-                  )}
-                </div>
-
-                <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
-                    <Tag className="w-4 h-4 text-violet-500" /><span>Unidad*</span>
-                  </label>
-                  {state.magnitud === "Electrica" ? (
-                    <div className={`p-4 border rounded-lg bg-white ${validationErrors.unidad ? "border-red-500 bg-red-50" : "border-gray-200"}`}>
-                      <div className="font-bold text-gray-800 mb-3 text-sm">Tipo Eléctrico</div>
-                      <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg mb-4">
-                        {(["DC", "AC", "Otros"] as const).map((tipo) => (
-                          <button key={tipo} onClick={() => setTipoElectrica(tipo)}
-                            className={`py-1.5 text-sm font-medium rounded-md transition-all ${tipoElectrica === tipo ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"}`}>
-                            {tipo}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-3 gap-3">
-                        {unidadesPorMagnitud.Electrica[tipoElectrica].map((u: string) => {
-                          let checkValue = u;
-                          if (["V", "mV", "kV", "A", "mA", "µA"].includes(u)) {
-                             if (tipoElectrica === "DC") checkValue = `${u}DC`;
-                             if (tipoElectrica === "AC") checkValue = `${u}AC`;
-                          }
-                          const isChecked = state.unidad.includes(checkValue);
-                          return (
-                            <label key={u} className={`flex items-center space-x-2 p-2 rounded border cursor-pointer transition-all ${isChecked ? "bg-blue-50 border-blue-200" : "border-transparent hover:bg-gray-50"}`}>
-                              <input type="checkbox" checked={isChecked} onChange={() => handleToggleElectrica(u)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
-                              <span className={`text-sm ${isChecked ? "font-bold text-blue-800" : "text-gray-700"}`}>{u}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      {state.unidad.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                          Seleccionado: <span className="font-medium text-blue-600">{state.unidad.join(", ")}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <select multiple value={state.unidad} 
-                      onChange={(e) => { 
-                        dispatch({ type: 'SET_FIELD', field: 'unidad', payload: Array.from(e.target.selectedOptions, o => o.value) }); 
-                        if(validationErrors.unidad) setValidationErrors({...validationErrors, unidad: false}); 
-                      }} 
-                      disabled={!state.magnitud} 
-                      className={`w-full p-4 border rounded-lg bg-white text-gray-900 outline-none h-[150px] ${validationErrors.unidad ? "border-red-500" : "border-gray-300 focus:ring-2 focus:ring-blue-500"}`}>
-                      {!state.magnitud && <option value="" disabled>Seleccione magnitud primero</option>}
-                      {unidadesDisponibles.map(u => <option key={u} value={u} className="p-1">{u}</option>)}
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              <div><label className="block text-sm font-medium text-gray-700 mb-3">Alcance</label><input type="text" className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" value={state.alcance} onChange={e => dispatch({ type: 'SET_FIELD', field: 'alcance', payload: e.target.value })} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-3">Resolución</label><input type="text" className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" value={state.resolucion} onChange={e => dispatch({ type: 'SET_FIELD', field: 'resolucion', payload: e.target.value })} /></div>
-              
-              {state.magnitud === "Masa" ? (
-                <>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-400" /><span>Excentricidad</span></label><input type="text" value={state.excentricidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>Linealidad</span></label><input type="text" value={state.linealidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                  </div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-orange-400" /><span>Repetibilidad</span></label><input type="text" value={state.repetibilidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                </>
-              ) : state.magnitud === "Electrica" && state.unidad.length > 0 ? (
-                <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                          <Calculator className="w-4 h-4 text-blue-500"/> 
-                          Mediciones por Unidad Eléctrica
-                      </h3>
-                  </div>
-              
-                  <div className="grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      <div className="col-span-2 flex items-center">Unidad</div>
-                      <div className="col-span-5 pl-1">Medición Patrón</div>
-                      <div className="col-span-5 pl-1">Medición Instrumento</div>
-                  </div>
-              
-                  <div className="space-y-4">
-                  {state.unidad.map((u) => (
-                      <div key={u} className="grid grid-cols-12 gap-6 items-start">
-                          <div className="col-span-2 pt-2">
-                              <div className="text-sm font-bold text-blue-800 bg-blue-100 py-3 px-2 rounded-lg flex items-center justify-center text-center break-words shadow-sm border border-blue-200">
-                                  {u}
-                              </div>
-                          </div>
-              
-                          <div className="col-span-5">
-                              <textarea 
-                                placeholder="Ej: 10.00&#10;10.01&#10;10.02" 
-                                value={electricalValues[u]?.patron || ""}
-                                onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
-                                rows={4} 
-                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
-                              />
-                          </div>
-              
-                          <div className="col-span-5">
-                              <textarea 
-                                placeholder="Ej: 9.99&#10;10.00&#10;10.01"
-                                value={electricalValues[u]?.instrumento || ""}
-                                onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
-                                rows={4} 
-                                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
-                              />
-                          </div>
-                      </div>
-                  ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                </div>
-              )}
-              
-              <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 border-gray-200" rows={2} /></div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} /></div>
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa')} /></div>
-                
-                {metrologyWarning && (
-                  <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-                      <AlertOctagon className="w-5 h-5 shrink-0 mt-0.5 text-yellow-600"/>
-                      <div>
-                          <p className="font-bold text-sm">Condiciones Ambientales Fuera de Norma</p>
-                          <p className="text-xs mt-1">{metrologyWarning}</p>
-                      </div>
+                {state.lugarCalibracion === "Laboratorio" && (
+                  <div className="mt-4 animate-in fade-in slide-in-from-top-2">
+                    <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
+                    <input type="date" className={`w-full border rounded px-3 py-2 text-sm ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : ''}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
                   </div>
                 )}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
+                    <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                      <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
+                    <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
+                    
+                    {slaInfo && (
+                      <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
+                        slaInfo.esTardio 
+                          ? "bg-red-50 border-red-200 text-red-800" 
+                          : "bg-green-50 border-green-200 text-green-800"
+                      }`}>
+                        {slaInfo.esTardio ? (
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                        )}
+                        <div>
+                          <p className="font-bold">
+                            {slaInfo.esTardio ? "Fuera de Tiempo Compromiso" : "Dentro de Tiempo Compromiso"}
+                          </p>
+                          <p className="text-xs opacity-90 mt-1">
+                            {slaInfo.esTardio 
+                              ? `La fecha límite era el ${slaInfo.fechaLimiteStr} (5 días hábiles).` 
+                              : `Estás en el día ${Math.max(0, slaInfo.diasTomados)} de 5 hábiles permitidos.`}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label><input type="text" value={state.certificado} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.certificado ? 'border-red-500 ring-1 ring-red-500' : ''}`} placeholder="Automático" /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Mail className="w-4 h-4 text-red-500" /><span>Nombre*</span></label><input type="text" value={state.nombre} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.nombre ? 'border-red-500 ring-1 ring-red-500' : ''}`} /></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
+                  
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
+                    <input 
+                      type="text" 
+                      value={state.id} 
+                      onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
+                      onBlur={handleIdBlur} 
+                      className={`w-full p-4 border-2 rounded-lg transition-all ${
+                          state.idBlocked 
+                              ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
+                              : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
+                      }`} 
+                      placeholder="ID" 
+                    />
+                    
+                    {state.idBlocked && (
+                        <p className={`mt-2 text-sm font-medium animate-pulse ${state.permitirExcepcion ? "text-orange-600" : "text-red-600"}`}>
+                            {state.permitirExcepcion ? "⚠️ Advertencia: Guardando bajo excepción." : state.idErrorMessage}
+                        </p>
+                    )}
+                    
+                    <div className="mt-3">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input 
+                              type="checkbox" 
+                              checked={state.permitirExcepcion} 
+                              onChange={(e) => dispatch({ type: 'SET_EXCEPCION', payload: e.target.checked })} 
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" 
+                              disabled={!state.idBlocked} 
+                             />
+                            <span className={`text-sm ${state.idBlocked ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
+                              Permitir excepción de fecha
+                            </span>
+                        </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label><input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} readOnly={state.fieldsLocked} className={inputClass('equipo')} /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label><input type="text" value={state.marca} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value }); if(validationErrors.marca) setValidationErrors({...validationErrors, marca: false}); }} readOnly={state.fieldsLocked} className={inputClass('marca')} /></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label><input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <Tag className="w-4 h-4 text-blue-500" /><span>Magnitud*</span>
+                    </label>
+                    {currentMagnitude ? (
+                      <div className="relative">
+                        <input type="text" value={state.magnitud} readOnly 
+                          className="w-full p-4 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 font-bold" />
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">Auto</div>
+                      </div>
+                    ) : (
+                      <select value={state.magnitud} 
+                        onChange={(e) => { 
+                          dispatch({ type: 'SET_MAGNITUD', payload: e.target.value }); 
+                          if(validationErrors.magnitud) setValidationErrors({...validationErrors, magnitud: false}); 
+                        }} 
+                        className={`w-full p-4 border rounded-lg outline-none bg-white text-gray-900 appearance-none cursor-pointer ${validationErrors.magnitud ? "border-red-500 ring-1 ring-red-500" : "border-gray-300 focus:ring-2 focus:ring-blue-500"}`}>
+                        <option value="" className="text-gray-400">Seleccionar...</option>
+                        {magnitudesDisponibles.map(m => <option key={m} value={m} className="text-gray-900">{m}</option>)}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                      <Tag className="w-4 h-4 text-violet-500" /><span>Unidad*</span>
+                    </label>
+                    {state.magnitud === "Electrica" ? (
+                      <div className={`p-4 border rounded-lg bg-white ${validationErrors.unidad ? "border-red-500 bg-red-50" : "border-gray-200"}`}>
+                        <div className="font-bold text-gray-800 mb-3 text-sm">Tipo Eléctrico</div>
+                        <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg mb-4">
+                          {(["DC", "AC", "Otros"] as const).map((tipo) => (
+                            <button key={tipo} onClick={() => setTipoElectrica(tipo)}
+                              className={`py-1.5 text-sm font-medium rounded-md transition-all ${tipoElectrica === tipo ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"}`}>
+                              {tipo}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          {unidadesPorMagnitud.Electrica[tipoElectrica].map((u: string) => {
+                            let checkValue = u;
+                            if (["V", "mV", "kV", "A", "mA", "µA"].includes(u)) {
+                               if (tipoElectrica === "DC") checkValue = `${u}DC`;
+                               if (tipoElectrica === "AC") checkValue = `${u}AC`;
+                            }
+                            const isChecked = state.unidad.includes(checkValue);
+                            return (
+                              <label key={u} className={`flex items-center space-x-2 p-2 rounded border cursor-pointer transition-all ${isChecked ? "bg-blue-50 border-blue-200" : "border-transparent hover:bg-gray-50"}`}>
+                                <input type="checkbox" checked={isChecked} onChange={() => handleToggleElectrica(u)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                                <span className={`text-sm ${isChecked ? "font-bold text-blue-800" : "text-gray-700"}`}>{u}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {state.unidad.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                            Seleccionado: <span className="font-medium text-blue-600">{state.unidad.join(", ")}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <select multiple value={state.unidad} 
+                        onChange={(e) => { 
+                          dispatch({ type: 'SET_FIELD', field: 'unidad', payload: Array.from(e.target.selectedOptions, o => o.value) }); 
+                          if(validationErrors.unidad) setValidationErrors({...validationErrors, unidad: false}); 
+                        }} 
+                        disabled={!state.magnitud} 
+                        className={`w-full p-4 border rounded-lg bg-white text-gray-900 outline-none h-[150px] ${validationErrors.unidad ? "border-red-500" : "border-gray-300 focus:ring-2 focus:ring-blue-500"}`}>
+                        {!state.magnitud && <option value="" disabled>Seleccione magnitud primero</option>}
+                        {unidadesDisponibles.map(u => <option key={u} value={u} className="p-1">{u}</option>)}
+                      </select>
+                    )}
+                  </div>
+                </div>
+
+                {/* CAMPOS ALCANCE Y RESOLUCIÓN OBLIGATORIOS */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Alcance*</label>
+                  <input 
+                      type="text" 
+                      className={inputClass('alcance')} 
+                      value={state.alcance} 
+                      onChange={e => {
+                           dispatch({ type: 'SET_FIELD', field: 'alcance', payload: e.target.value });
+                           if(validationErrors.alcance) setValidationErrors({...validationErrors, alcance: false});
+                      }} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Resolución*</label>
+                  <input 
+                      type="text" 
+                      className={inputClass('resolucion')} 
+                      value={state.resolucion} 
+                      onChange={e => {
+                           dispatch({ type: 'SET_FIELD', field: 'resolucion', payload: e.target.value });
+                           if(validationErrors.resolucion) setValidationErrors({...validationErrors, resolucion: false});
+                      }} 
+                  />
+                </div>
+                
+                {state.magnitud === "Masa" ? (
+                  <>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-400" /><span>Excentricidad</span></label><input type="text" value={state.excentricidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                      <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>Linealidad</span></label><input type="text" value={state.linealidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                    </div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-orange-400" /><span>Repetibilidad</span></label><input type="text" value={state.repetibilidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                  </>
+                ) : state.magnitud === "Electrica" && state.unidad.length > 0 ? (
+                  <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                            <Calculator className="w-4 h-4 text-blue-500"/> 
+                            Mediciones por Unidad Eléctrica
+                        </h3>
+                    </div>
+                
+                    <div className="grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        <div className="col-span-2 flex items-center">Unidad</div>
+                        <div className="col-span-5 pl-1">Medición Patrón</div>
+                        <div className="col-span-5 pl-1">Medición Instrumento</div>
+                    </div>
+                
+                    <div className="space-y-4">
+                    {state.unidad.map((u) => (
+                        <div key={u} className="grid grid-cols-12 gap-6 items-start">
+                            <div className="col-span-2 pt-2">
+                                <div className="text-sm font-bold text-blue-800 bg-blue-100 py-3 px-2 rounded-lg flex items-center justify-center text-center break-words shadow-sm border border-blue-200">
+                                    {u}
+                                </div>
+                            </div>
+                
+                            <div className="col-span-5">
+                                <textarea 
+                                  placeholder="Ej: 10.00&#10;10.01&#10;10.02" 
+                                  value={electricalValues[u]?.patron || ""}
+                                  onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
+                                  rows={4} 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
+                                />
+                            </div>
+                
+                            <div className="col-span-5">
+                                <textarea 
+                                  placeholder="Ej: 9.99&#10;10.00&#10;10.01"
+                                  value={electricalValues[u]?.instrumento || ""}
+                                  onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
+                                  rows={4} 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
+                                />
+                            </div>
+                        </div>
+                    ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                  </div>
+                )}
+                
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 border-gray-200" rows={2} /></div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa')} /></div>
+                  
+                  {metrologyWarning && (
+                    <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                        <AlertOctagon className="w-5 h-5 shrink-0 mt-0.5 text-yellow-600"/>
+                        <div>
+                            <p className="font-bold text-sm">Condiciones Ambientales Fuera de Norma</p>
+                            <p className="text-xs mt-1">{metrologyWarning}</p>
+                        </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
+
+          {/* ✅ SIDEBAR DERECHO: NOTAS DEL CLIENTE (STICKY) */}
+          {activeClientNotes && (
+            <div className="lg:col-span-4 sticky top-24 animate-in fade-in slide-in-from-right duration-500">
+               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm ring-1 ring-yellow-200">
+                  <div className="flex items-center gap-3 mb-4 border-b border-yellow-200 pb-3">
+                     <div className="p-2 bg-yellow-100 rounded-lg text-yellow-700">
+                        <FileText className="w-6 h-6" />
+                     </div>
+                     <div>
+                        <h3 className="font-bold text-yellow-900 text-lg">Requerimientos</h3>
+                        <p className="text-xs text-yellow-700 font-medium">Notas específicas del cliente</p>
+                     </div>
+                  </div>
+                  
+                  <div className="prose prose-sm text-yellow-900 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                     <p className="whitespace-pre-wrap leading-relaxed">{activeClientNotes}</p>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-yellow-200 flex items-center gap-2 text-xs text-yellow-600">
+                      <Info className="w-4 h-4" />
+                      <span>Verifica estos puntos antes de calibrar.</span>
+                  </div>
+               </div>
+            </div>
+          )}
+
         </div>
+
+        {/* Footer de botones */}
         <div className="bg-gray-50 px-8 py-6 border-t border-gray-200 mt-8 rounded-lg">
           <div className="flex justify-end space-x-4">
             <button onClick={() => goBack()} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2" disabled={isSaving}><X className="w-4 h-4" /><span>Cancelar</span></button>
