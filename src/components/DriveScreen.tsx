@@ -283,7 +283,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadUser();
   }, [user]);
 
-  // Acceso Rápido
+  // Acceso Rápido (Corregido con Filtro de Seguridad)
   useEffect(() => {
     const loadSuggestions = async () => {
         if (!currentUserData || path.length > 0 || debouncedSearch) {
@@ -291,11 +291,31 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             return;
         }
         try {
-            const q = query(collection(db, 'fileMetadata'), orderBy('updated', 'desc'), limit(4));
+            // Traemos un lote mayor (50) para poder descartar los ajenos en cliente
+            const q = query(collection(db, 'fileMetadata'), orderBy('updated', 'desc'), limit(50));
             const snap = await getDocs(q);
             const recents: DriveFile[] = [];
-            snap.forEach(doc => {
+            
+            const isQuality = isQualityUser(currentUserData);
+            const myName = normalizeText(currentUserData?.name || "");
+
+            for (const doc of snap.docs) {
+                // Solo queremos 4 sugerencias
+                if (recents.length >= 4) break; 
+
                 const data = doc.data();
+                const rawName = data.name || doc.id;
+                const fullPath = data.filePath || `worksheets/${data.name || doc.id}`;
+                
+                // --- FILTRO DE SEGURIDAD ---
+                if (!isQuality) {
+                     const isUploader = normalizeText(data.uploadedBy || "") === myName;
+                     const isInMyFolder = fullPath.toLowerCase().includes(myName);
+                     
+                     // Si no lo subió él Y no está en una carpeta con su nombre -> LO SALTAMOS
+                     if (!isInMyFolder && !isUploader) continue;
+                }
+
                 recents.push({
                     name: cleanFileName(data.name),
                     rawName: data.name,
@@ -307,12 +327,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     contentType: data.contentType,
                     ...data
                 } as DriveFile);
-            });
+            }
             setSuggestedFiles(recents);
         } catch (e) { console.error("Error loading suggestions", e); }
     };
     loadSuggestions();
-  }, [currentUserData, path, debouncedSearch, files]);
+  }, [currentUserData, path, debouncedSearch]); // Dependencias limpias
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -1274,7 +1294,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
     </div>
 );
 
-// Aquí agregué el componente Dialog que faltaba
 const Dialog = ({ title, children, onClose, onConfirm }: any) => (
     <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
