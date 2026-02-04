@@ -8,7 +8,7 @@ import {
   Folder, Search, LayoutGrid, List, Trash2, 
   CheckCircle2, FileText, Download, Star, Info, X, 
   FolderPlus, UploadCloud, ChevronRight, File, Image as ImageIcon, 
-  Loader2, FileCheck, Home, Filter, Clock, Eye, Settings, 
+  FileCheck, Home, Filter, Clock, Eye, Settings, 
   ArrowLeft, MoveRight, ArrowUp, FolderOpen,
   ArrowUpWideNarrow, Menu,
   AlertCircle, LogOut, Edit, CornerDownRight, Maximize2,
@@ -283,7 +283,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     loadUser();
   }, [user]);
 
-  // Acceso Rápido (Corregido con Filtro de Seguridad)
+  // Acceso Rápido (Filtro de Seguridad)
   useEffect(() => {
     const loadSuggestions = async () => {
         if (!currentUserData || path.length > 0 || debouncedSearch) {
@@ -291,7 +291,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             return;
         }
         try {
-            // Traemos un lote mayor (50) para poder descartar los ajenos en cliente
             const q = query(collection(db, 'fileMetadata'), orderBy('updated', 'desc'), limit(50));
             const snap = await getDocs(q);
             const recents: DriveFile[] = [];
@@ -300,19 +299,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             const myName = normalizeText(currentUserData?.name || "");
 
             for (const doc of snap.docs) {
-                // Solo queremos 4 sugerencias
                 if (recents.length >= 4) break; 
 
                 const data = doc.data();
                 const rawName = data.name || doc.id;
                 const fullPath = data.filePath || `worksheets/${data.name || doc.id}`;
                 
-                // --- FILTRO DE SEGURIDAD ---
                 if (!isQuality) {
                      const isUploader = normalizeText(data.uploadedBy || "") === myName;
                      const isInMyFolder = fullPath.toLowerCase().includes(myName);
-                     
-                     // Si no lo subió él Y no está en una carpeta con su nombre -> LO SALTAMOS
                      if (!isInMyFolder && !isUploader) continue;
                 }
 
@@ -332,7 +327,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         } catch (e) { console.error("Error loading suggestions", e); }
     };
     loadSuggestions();
-  }, [currentUserData, path, debouncedSearch]); // Dependencias limpias
+  }, [currentUserData, path, debouncedSearch]);
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -1026,7 +1021,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             </div>
             <div className="flex items-center gap-2 md:gap-3 ml-4">
                 {isSyncing && <div className="text-xs text-blue-500 flex items-center gap-1 animate-pulse"><RefreshCw size={12} className="animate-spin"/> Sync...</div>}
-                <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95 shadow-sm">{isUploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />} <span>Subir</span></button>
+                <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95 shadow-sm">
+                    {isUploading ? <img src={labLogo} className="w-4 h-4 animate-spin" alt="uploading" /> : <UploadCloud size={16} />} <span>Subir</span>
+                </button>
                 <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
                 <div className="bg-gray-100 p-1 rounded-xl flex items-center"><button onClick={() => setView('list')} className={clsx("p-2 rounded-lg transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 hover:text-gray-600")}><List size={18} /></button><button onClick={() => setView('grid')} className={clsx("p-2 rounded-lg transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 hover:text-gray-600")}><LayoutGrid size={18} /></button></div>
                 <button onClick={() => setDetailsOpen(!detailsOpen)} className={clsx("p-2.5 rounded-xl transition-all border", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-gray-200 text-gray-400 hover:text-gray-700")}><Info size={18} /></button>
@@ -1122,7 +1119,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white">
                       <button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">Cancelar</button>
                       <button onClick={handleModalMove} disabled={(!moveTargetFile && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-lg flex items-center gap-2 disabled:opacity-50">
-                          {isMoving ? <Loader2 size={16} className="animate-spin" /> : "Mover Aquí"}
+                          {isMoving ? <img src={labLogo} className="w-4 h-4 animate-spin" alt="moving" /> : "Mover Aquí"}
                       </button>
                   </div>
               </div>
@@ -1140,7 +1137,32 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   );
 }
 
-// --- SUBCOMPONENTES ---
+// --- SUBCOMPONENTES PRO ---
+
+// Nuevo Componente Switch Animado PRO
+const ProSwitch = ({ checked, onChange, disabled, activeColor = "bg-blue-600" }: any) => {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            disabled={disabled}
+            onClick={onChange}
+            className={clsx(
+                "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+                checked ? activeColor : "bg-gray-200",
+                disabled && "opacity-50 cursor-not-allowed"
+            )}
+        >
+            <span
+                className={clsx(
+                    "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out relative top-[0.5px]",
+                    checked ? "translate-x-5" : "translate-x-0"
+                )}
+            />
+        </button>
+    );
+};
 
 const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive }: any) => {
     const isReadyForReview = file.completed && !file.reviewed;
@@ -1266,7 +1288,18 @@ const DeadlineBar = ({ createdDate }: { createdDate: string }) => {
 };
 
 const EmptyState = ({ icon: Icon, text }: any) => <div className="h-full flex flex-col items-center justify-center text-gray-300 py-20 animate-in fade-in zoom-in-95"><div className="bg-gray-50 p-6 rounded-full mb-4"><Icon className="w-12 h-12 text-gray-200" strokeWidth={1.5} /></div><p className="text-base font-medium text-gray-400">{text}</p></div>;
-const LoadingSkeleton = () => <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">{Array.from({length: 8}).map((_, i) => <div key={i} className="bg-white border border-gray-100 rounded-2xl h-[260px] animate-pulse"><div className="h-32 bg-gray-100/50 rounded-t-2xl"></div><div className="p-4 space-y-3"><div className="h-4 bg-gray-100 rounded w-3/4"></div><div className="h-3 bg-gray-50 rounded w-1/2"></div><div className="mt-6 h-2 bg-gray-100 rounded w-full"></div></div></div>)}</div>;
+
+// Nuevo LoadingSkeleton PRO con Logo Giratorio
+const LoadingSkeleton = () => (
+    <div className="h-full w-full flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-500">
+        <div className="relative">
+            <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse"></div>
+            <img src={labLogo} alt="Cargando..." className="w-24 h-24 animate-spin relative z-10 drop-shadow-lg" style={{ animationDuration: '3s' }} />
+        </div>
+        <p className="text-gray-400 font-medium mt-6 animate-pulse tracking-wider text-sm">Cargando tu espacio...</p>
+    </div>
+);
+
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>}</div></button>);
 const MenuOption = ({ icon, label, onClick, shortcut, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label} {shortcut && <span className="text-xs text-gray-400 ml-auto">{shortcut}</span>}</button>);
 
@@ -1284,9 +1317,15 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         <div className="p-6 space-y-8 flex-1">
             <div>
                 <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={12}/> Estado del Proceso</h4>
-                <div className="space-y-3">
-                    <div className={clsx("p-3 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-white border-gray-200")}><div className="flex items-center justify-between mb-1"><span className="text-sm font-semibold text-gray-700">Metrólogo</span><button onClick={() => onToggleStatus(file, 'completed', !file.completed)} className={clsx("w-9 h-5 rounded-full relative transition-all shadow-inner", file.completed ? "bg-blue-600" : "bg-gray-200")}><div className={clsx("absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.completed ? "left-4.5" : "left-0.5")}></div></button></div><p className="text-xs text-gray-500">{file.completedByName || "Pendiente"}</p></div>
-                    <div className={clsx("p-3 rounded-xl border transition-all", file.reviewed ? "bg-green-50 border-green-200" : "bg-white border-gray-200")}><div className="flex items-center justify-between mb-1"><span className="text-sm font-semibold text-gray-700">Calidad</span><button disabled={!isQualityUser} onClick={() => onToggleStatus(file, 'reviewed', !file.reviewed)} className={clsx("w-9 h-5 rounded-full relative transition-all shadow-inner", file.reviewed ? "bg-green-600" : "bg-gray-200", !isQualityUser && "opacity-50 cursor-not-allowed")}><div className={clsx("absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm", file.reviewed ? "left-4.5" : "left-0.5")}></div></button></div><p className="text-xs text-gray-500">{file.reviewedByName || "Pendiente"}</p></div>
+                <div className="space-y-4">
+                    <div className={clsx("p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 shadow-sm", file.completed ? "bg-blue-50 border-blue-200/60" : "bg-white border-gray-200/60")}>
+                        <div className="flex-1"><span className="text-sm font-bold text-gray-700 block mb-1">Metrólogo</span><p className="text-xs text-gray-500">{file.completedByName || "Pendiente"}</p></div>
+                        <ProSwitch checked={file.completed} onChange={() => onToggleStatus(file, 'completed', !file.completed)} />
+                    </div>
+                    <div className={clsx("p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 shadow-sm", file.reviewed ? "bg-green-50 border-green-200/60" : "bg-white border-gray-200/60")}>
+                        <div className="flex-1"><span className="text-sm font-bold text-gray-700 block mb-1">Calidad</span><p className="text-xs text-gray-500">{file.reviewedByName || "Pendiente"}</p></div>
+                        <ProSwitch checked={file.reviewed} disabled={!isQualityUser} activeColor="bg-green-600" onChange={() => onToggleStatus(file, 'reviewed', !file.reviewed)} />
+                    </div>
                 </div>
             </div>
         </div>
