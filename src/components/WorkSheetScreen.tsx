@@ -24,6 +24,35 @@ import { Capacitor } from '@capacitor/core';
 import EpsonLabel from '../utils/EpsonPlugin';
 
 // ====================================================================
+// FUNCIÓN AUXILIAR PARA LIMPIAR IMAGEN (BLANCO Y NEGRO PURO)
+// ====================================================================
+const binarizeCanvas = (canvas: HTMLCanvasElement, threshold: number = 170) => {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    // Calculamos el brillo del pixel
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    
+    // Convertimos a BLANCO (255) o NEGRO (0) puro según el umbral
+    const color = brightness > threshold ? 255 : 0;
+
+    data[i] = color;     // R
+    data[i + 1] = color; // G
+    data[i + 2] = color; // B
+    
+    // Si es negro, forzamos opacidad total para asegurar impresión
+    if (color === 0) data[i + 3] = 255; 
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
+};
+
+// ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
 // ====================================================================
 
@@ -46,9 +75,11 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     setIsGenerating(true);
 
     try {
+      // Pequeña pausa para asegurar renderizado
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      const canvas = await html2canvas(labelRef.current, {
+      // 1. Generar canvas original con alta calidad
+      const originalCanvas = await html2canvas(labelRef.current, {
         scale: 4, 
         backgroundColor: '#ffffff',
         useCORS: true,
@@ -56,18 +87,24 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         imageTimeout: 0
       });
 
-      const base64Data = canvas.toDataURL('image/png').split(',')[1];
+      // 2. Limpiar imagen (Convertir a B/N puro para evitar "tramado" sucio)
+      const binaryCanvas = binarizeCanvas(originalCanvas);
+
+      // 3. Obtener Base64 limpio
+      const base64Data = binaryCanvas.toDataURL('image/png').split(',')[1];
 
       if (Capacitor.isNativePlatform()) {
         try {
             await EpsonLabel.printBase64({ base64: base64Data });
-            alert("✅ Enviado a impresora Epson"); 
+            // Puedes descomentar esto si quieres confirmación visual
+            // alert("✅ Enviado a impresora Epson"); 
         } catch (err: any) {
             console.error("Error plugin Epson:", err);
             alert("❌ Error Epson: " + (err.message || err));
         }
       } else {
-        canvas.toBlob(async (blob) => {
+        // Lógica Web (Descarga)
+        binaryCanvas.toBlob(async (blob) => {
           if (!blob) return;
           const cleanId = data.id.replace(/[^a-zA-Z0-9]/g, '-');
           const fileName = `ETIQUETA_${tapeSize}_${cleanId}.png`;
@@ -79,7 +116,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
           } else {
             const link = document.createElement('a');
             link.download = fileName;
-            link.href = canvas.toDataURL('image/png');
+            link.href = binaryCanvas.toDataURL('image/png');
             link.click();
           }
         }, 'image/png');
@@ -117,7 +154,10 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, Helvetica, sans-serif', overflow: 'hidden', border: '1px solid #ccc', padding: '0' }}>
-                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}><img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain', imageRendering: 'pixelated' }} /></div>
+                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}>
+                    {/* AÑADIDO: imageRendering pixelated */}
+                    <img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain', imageRendering: 'pixelated' }} />
+                </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', padding: '5px 12px' }}>
                     <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px', letterSpacing: '-1px' }}>{data.id}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #333', borderBottom: '2px solid #333', padding: '4px 0', marginBottom: '6px' }}>
@@ -130,7 +170,10 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         )}
         {tapeSize === "12mm" && (
              <div ref={labelRef} style={{ width: '600px', height: '90px', backgroundColor: 'white', display: 'flex', alignItems: 'center', fontFamily: 'Arial, Helvetica, sans-serif', border: '1px solid #ccc', padding: '0' }}>
-                <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}><img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain' }} /></div>
+                <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}>
+                    {/* AÑADIDO: imageRendering pixelated */}
+                    <img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain', imageRendering: 'pixelated' }} />
+                </div>
                 <div style={{ flex: 1, paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9', marginBottom: '4px' }}>{data.id}</div>
                     <div style={{ display: 'flex', gap: '15px' }}><div style={{ fontSize: '15px', fontWeight: 'bold', color: '#000' }}><span style={{ fontSize: '10px', color: '#444' }}>CAL: </span>{data.fechaCal}</div><div style={{ fontSize: '15px', fontWeight: '900', color: '#000' }}><span style={{ fontSize: '10px', color: '#444' }}>VEN: </span>{data.fechaSug}</div></div>
