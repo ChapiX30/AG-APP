@@ -17,10 +17,7 @@ import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// ==========================================
-// 1. TYPES & INTERFACES
-// ==========================================
-
+// ... (Resto de imports e interfaces sin cambios hasta el componente principal)
 interface Usuario {
   id: string;
   name?: string;
@@ -51,10 +48,6 @@ interface Service {
   email?: string;
   ubicacion?: string;
 }
-
-// ==========================================
-// 2. HELPERS & CONSTANTS
-// ==========================================
 
 const formatDateRelative = (dateString: string) => {
   if (!dateString) return 'Sin fecha';
@@ -97,10 +90,7 @@ const CONSTANTS = {
   ]
 };
 
-// ==========================================
-// 3. ATOMIC COMPONENTS
-// ==========================================
-
+// ... (Componentes auxiliares Avatar, PriorityBadge, ServiceCard, ServiceDetailModal, ServiceFormModal se mantienen igual)
 const Avatar = ({ user, size = 'sm' }: { user: Usuario | undefined, size?: 'sm'|'md'|'lg' }) => {
   const sizeClass = size === 'lg' ? 'w-10 h-10 text-sm' : size === 'md' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
   return (
@@ -120,14 +110,12 @@ const PriorityBadge = ({ priority }: { priority: string }) => {
   );
 };
 
-// --- COMPONENTE TARJETA INTELIGENTE ---
 const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban' }: { service: Service, users: Usuario[], onClick: () => void, onQuickAction: (id:string, action:string) => void, variant?: 'kanban' | 'list' }) => {
   const tipoConfig = CONSTANTS.tipos.find(t => t.value === service.tipo);
   const TipoIcon = tipoConfig?.icon || Settings;
   const assignedUsers = users.filter(u => service.personas?.includes(u.id));
   const [showMenu, setShowMenu] = useState(false);
 
-  // Lógica de Botones Rápidos
   const renderQuickButton = () => {
     if (service.estado === 'programado') {
       return (
@@ -143,7 +131,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
         </button>
       );
     }
-    return null; // Si está finalizado, no mostrar botón rápido principal
+    return null;
   };
 
   const QuickMenu = () => (
@@ -166,7 +154,6 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
                 <PriorityBadge priority={service.prioridad} />
                 <span className="text-[10px] text-gray-400 font-mono">#{service.id.slice(-4).toUpperCase()}</span>
              </div>
-             {/* Mobile Quick Action Top Right */}
              <div className="sm:hidden">{renderQuickButton()}</div>
           </div>
           <h4 className="font-bold text-gray-900 truncate text-base">{service.titulo}</h4>
@@ -197,7 +184,6 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
     );
   }
 
-  // Kanban Variant
   return (
     <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer flex flex-col gap-3 relative overflow-visible">
       <div className={`absolute top-0 left-0 w-1 h-full ${CONSTANTS.estados.find(e => e.value === service.estado)?.color.replace('text', 'bg')}`} />
@@ -227,10 +213,6 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
     </div>
   );
 };
-
-// ==========================================
-// 4. MODALS 
-// ==========================================
 
 const ServiceDetailModal = ({ isOpen, onClose, service, onEdit, onDelete, onViewFile, metrologos }: any) => {
   if (!isOpen || !service) return null;
@@ -584,13 +566,11 @@ const FridayServiciosScreen: React.FC = () => {
         const usersData = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         setUsuarios(usersData);
         
-        // --- FILTRO DE PERSONAL CORREGIDO ---
         setMetrologos(usersData.filter((u:any) => {
             const r = (u.position || u.puesto || u.role || '').toLowerCase();
             const allowed = ['metrologo', 'metrólogo', 'tecnico', 'técnico', 'ingeniero', 'supervisor',];
-            return allowed.some(k => r.includes(k)) || r === ''; // Permitir vacíos por si acaso
+            return allowed.some(k => r.includes(k)) || r === ''; 
         }));
-        // ------------------------------------
 
         setClientes(clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
@@ -626,7 +606,6 @@ const FridayServiciosScreen: React.FC = () => {
     };
   }, [servicios]);
 
-  // --- ACCIÓN RÁPIDA DE ESTADO ---
   const handleQuickStatus = async (id: string, newStatus: string) => {
     try {
         await updateDoc(doc(db, 'servicios', id), { estado: newStatus });
@@ -698,7 +677,8 @@ const FridayServiciosScreen: React.FC = () => {
             <header className="bg-white border-b border-gray-200 z-10 sticky top-0 shadow-sm">
                 <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                         <button onClick={() => navigateTo('dashboard')} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                         {/* CAMBIO PRINCIPAL: Redirigir a 'menu' en lugar de 'dashboard' */}
+                         <button onClick={() => navigateTo('menu')} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg">
                              <ArrowLeft className="w-6 h-6"/>
                          </button>
                          <div>

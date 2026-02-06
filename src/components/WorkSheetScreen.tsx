@@ -117,7 +117,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, Helvetica, sans-serif', overflow: 'hidden', border: '1px solid #ccc', padding: '0' }}>
-                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}><img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} /></div>
+                <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}><img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain', imageRendering: 'pixelated' }} /></div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', padding: '5px 12px' }}>
                     <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px', letterSpacing: '-1px' }}>{data.id}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #333', borderBottom: '2px solid #333', padding: '4px 0', marginBottom: '6px' }}>

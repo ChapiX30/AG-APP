@@ -49,109 +49,29 @@ interface UserData {
   phone?: string;
 }
 
-// --- CONFIGURACIÓN DE COLORES Y MENÚ ---
-// Agregamos clases para el estado "Active" (Auto-Highlight)
+// --- CONFIGURACIÓN DE COLORES ---
 const COLOR_VARIANTS: Record<string, any> = {
-  blue: {
-    border: 'group-hover:border-blue-500/50',
-    borderActive: 'border-blue-500/40', // Borde un poco más sutil para el auto-highlight
-    shadow: 'group-hover:shadow-blue-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(59,130,246,0.3)]', // Sombra suave estática
-    iconBg: 'group-hover:bg-blue-500/20',
-    iconBgActive: 'bg-blue-500/10',
-    iconColor: 'group-hover:text-blue-400',
-    iconColorActive: 'text-blue-400',
-    gradient: 'from-blue-500/10 to-transparent'
-  },
-  emerald: {
-    border: 'group-hover:border-emerald-500/50',
-    borderActive: 'border-emerald-500/40',
-    shadow: 'group-hover:shadow-emerald-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)]',
-    iconBg: 'group-hover:bg-emerald-500/20',
-    iconBgActive: 'bg-emerald-500/10',
-    iconColor: 'group-hover:text-emerald-400',
-    iconColorActive: 'text-emerald-400',
-    gradient: 'from-emerald-500/10 to-transparent'
-  },
-  amber: {
-    border: 'group-hover:border-amber-500/50',
-    borderActive: 'border-amber-500/40',
-    shadow: 'group-hover:shadow-amber-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]',
-    iconBg: 'group-hover:bg-amber-500/20',
-    iconBgActive: 'bg-amber-500/10',
-    iconColor: 'group-hover:text-amber-400',
-    iconColorActive: 'text-amber-400',
-    gradient: 'from-amber-500/10 to-transparent'
-  },
-  purple: {
-    border: 'group-hover:border-purple-500/50',
-    borderActive: 'border-purple-500/40',
-    shadow: 'group-hover:shadow-purple-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(168,85,247,0.3)]',
-    iconBg: 'group-hover:bg-purple-500/20',
-    iconBgActive: 'bg-purple-500/10',
-    iconColor: 'group-hover:text-purple-400',
-    iconColorActive: 'text-purple-400',
-    gradient: 'from-purple-500/10 to-transparent'
-  },
-  cyan: {
-    border: 'group-hover:border-cyan-500/50',
-    borderActive: 'border-cyan-500/40',
-    shadow: 'group-hover:shadow-cyan-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)]',
-    iconBg: 'group-hover:bg-cyan-500/20',
-    iconBgActive: 'bg-cyan-500/10',
-    iconColor: 'group-hover:text-cyan-400',
-    iconColorActive: 'text-cyan-400',
-    gradient: 'from-cyan-500/10 to-transparent'
-  },
-  rose: {
-    border: 'group-hover:border-rose-500/50',
-    borderActive: 'border-rose-500/40',
-    shadow: 'group-hover:shadow-rose-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(244,63,94,0.3)]',
-    iconBg: 'group-hover:bg-rose-500/20',
-    iconBgActive: 'bg-rose-500/10',
-    iconColor: 'group-hover:text-rose-400',
-    iconColorActive: 'text-rose-400',
-    gradient: 'from-rose-500/10 to-transparent'
-  },
-  orange: {
-    border: 'group-hover:border-orange-500/50',
-    borderActive: 'border-orange-500/40',
-    shadow: 'group-hover:shadow-orange-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(249,115,22,0.3)]',
-    iconBg: 'group-hover:bg-orange-500/20',
-    iconBgActive: 'bg-orange-500/10',
-    iconColor: 'group-hover:text-orange-400',
-    iconColorActive: 'text-orange-400',
-    gradient: 'from-orange-500/10 to-transparent'
-  },
-  indigo: {
-    border: 'group-hover:border-indigo-500/50',
-    borderActive: 'border-indigo-500/40',
-    shadow: 'group-hover:shadow-indigo-500/20',
-    shadowActive: 'shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]',
-    iconBg: 'group-hover:bg-indigo-500/20',
-    iconBgActive: 'bg-indigo-500/10',
-    iconColor: 'group-hover:text-indigo-400',
-    iconColorActive: 'text-indigo-400',
-    gradient: 'from-indigo-500/10 to-transparent'
-  },
+  blue: { border: 'group-hover:border-blue-500/50', borderActive: 'border-blue-500/40', shadow: 'group-hover:shadow-blue-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(59,130,246,0.3)]', iconBg: 'group-hover:bg-blue-500/20', iconBgActive: 'bg-blue-500/10', iconColor: 'group-hover:text-blue-400', iconColorActive: 'text-blue-400', gradient: 'from-blue-500/10 to-transparent' },
+  emerald: { border: 'group-hover:border-emerald-500/50', borderActive: 'border-emerald-500/40', shadow: 'group-hover:shadow-emerald-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)]', iconBg: 'group-hover:bg-emerald-500/20', iconBgActive: 'bg-emerald-500/10', iconColor: 'group-hover:text-emerald-400', iconColorActive: 'text-emerald-400', gradient: 'from-emerald-500/10 to-transparent' },
+  amber: { border: 'group-hover:border-amber-500/50', borderActive: 'border-amber-500/40', shadow: 'group-hover:shadow-amber-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]', iconBg: 'group-hover:bg-amber-500/20', iconBgActive: 'bg-amber-500/10', iconColor: 'group-hover:text-amber-400', iconColorActive: 'text-amber-400', gradient: 'from-amber-500/10 to-transparent' },
+  purple: { border: 'group-hover:border-purple-500/50', borderActive: 'border-purple-500/40', shadow: 'group-hover:shadow-purple-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(168,85,247,0.3)]', iconBg: 'group-hover:bg-purple-500/20', iconBgActive: 'bg-purple-500/10', iconColor: 'group-hover:text-purple-400', iconColorActive: 'text-purple-400', gradient: 'from-purple-500/10 to-transparent' },
+  cyan: { border: 'group-hover:border-cyan-500/50', borderActive: 'border-cyan-500/40', shadow: 'group-hover:shadow-cyan-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)]', iconBg: 'group-hover:bg-cyan-500/20', iconBgActive: 'bg-cyan-500/10', iconColor: 'group-hover:text-cyan-400', iconColorActive: 'text-cyan-400', gradient: 'from-cyan-500/10 to-transparent' },
+  rose: { border: 'group-hover:border-rose-500/50', borderActive: 'border-rose-500/40', shadow: 'group-hover:shadow-rose-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(244,63,94,0.3)]', iconBg: 'group-hover:bg-rose-500/20', iconBgActive: 'bg-rose-500/10', iconColor: 'group-hover:text-rose-400', iconColorActive: 'text-rose-400', gradient: 'from-rose-500/10 to-transparent' },
+  orange: { border: 'group-hover:border-orange-500/50', borderActive: 'border-orange-500/40', shadow: 'group-hover:shadow-orange-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(249,115,22,0.3)]', iconBg: 'group-hover:bg-orange-500/20', iconBgActive: 'bg-orange-500/10', iconColor: 'group-hover:text-orange-400', iconColorActive: 'text-orange-400', gradient: 'from-orange-500/10 to-transparent' },
+  indigo: { border: 'group-hover:border-indigo-500/50', borderActive: 'border-indigo-500/40', shadow: 'group-hover:shadow-indigo-500/20', shadowActive: 'shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]', iconBg: 'group-hover:bg-indigo-500/20', iconBgActive: 'bg-indigo-500/10', iconColor: 'group-hover:text-indigo-400', iconColorActive: 'text-indigo-400', gradient: 'from-indigo-500/10 to-transparent' },
 };
 
 const MENU_ITEMS = [
+  { id: 'friday', title: 'Friday Projects', icon: Activity, category: 'Gestión', color: 'indigo' },
+  { id: 'friday-servicios', title: 'Servicios', icon: Briefcase, category: 'Operativo', color: 'emerald' },
+  { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión', color: 'blue' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico', color: 'emerald' },
   { id: 'drive', title: 'Drive', icon: FolderKanban, category: 'Archivos', color: 'amber' },
   { id: 'empresas', title: 'Empresas', icon: Building2, category: 'Gestión', color: 'purple' },
   { id: 'calibration-stats', title: 'Estadísticas', icon: TrendingUp, category: 'Análisis', color: 'cyan' },
-  { id: 'friday', title: 'Friday', icon: Activity, category: 'Gestión', color: 'indigo' },
   { id: 'normas', title: 'Hoja de Herramienta', icon: BookOpen, category: 'Técnico', color: 'rose' },
   { id: 'entrada-salida', title: 'Hoja de Salida', icon: FileOutput, category: 'Logística', color: 'orange' },
-  { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
   { id: 'programa-calibracion', title: 'Patrones', icon: Award, category: 'Técnico', color: 'emerald' },
   { id: 'control-prestamos', title: 'Préstamos', icon: ArrowRightLeft, category: 'Logística', color: 'purple' },
   { id: 'vencimientos', title: 'Vencimientos', icon: Bell, category: 'Análisis', color: 'rose' },
@@ -166,7 +86,6 @@ const safeDateParse = (dateStr?: string): Date | null => {
 };
 
 // --- WIDGETS ---
-
 const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[], navigateTo: any, loading: boolean }) => {
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 flex flex-col h-full overflow-hidden shadow-sm">
@@ -200,7 +119,7 @@ const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]
             return (
               <div 
                 key={s.id}
-                onClick={() => navigateTo('friday')} 
+                onClick={() => navigateTo('friday-servicios')} 
                 className={`group relative p-3 rounded-lg border transition-all cursor-pointer hover:shadow-md ${
                     esHoy 
                     ? 'bg-blue-950/20 border-blue-900/50 hover:border-blue-700' 
@@ -291,7 +210,6 @@ const KpiWidget = ({ navigateTo }: { navigateTo: any }) => {
   }, []);
 
   if (stats.loading) return <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />;
-
   const hasAlerts = stats.vencidos > 0 || stats.criticos > 0;
 
   return (
@@ -303,7 +221,6 @@ const KpiWidget = ({ navigateTo }: { navigateTo: any }) => {
         </h3>
         {!hasAlerts && <span className="text-[10px] text-emerald-500 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900">Normal</span>}
       </div>
-
       <div className="grid grid-cols-3 gap-2">
         <button onClick={() => navigateTo('vencimientos')} className="flex flex-col items-center justify-center p-2 rounded-lg bg-red-950/20 border border-red-900/30 hover:bg-red-950/40 transition-colors group">
             <span className="text-2xl font-bold text-red-500 group-hover:scale-110 transition-transform">{stats.vencidos}</span>
@@ -322,9 +239,7 @@ const KpiWidget = ({ navigateTo }: { navigateTo: any }) => {
   );
 };
 
-// --- MODAL DE PERFIL ---
 const ProfileModal = ({ currentUser, onClose, onUpdate }: { currentUser: UserData, onClose: () => void, onUpdate: (data: Partial<UserData>) => void }) => {
-    // ... (Manteniendo la lógica del modal intacta para brevedad, es el mismo que el anterior)
     const { uid, name, email, phone, role, photoUrl: initialPhotoUrl } = currentUser;
     const [localName, setLocalName] = useState(name || '');
     const [localEmail, setLocalEmail] = useState(email || '');
@@ -422,8 +337,6 @@ export const MainMenu: React.FC = () => {
   
   const [localUser, setLocalUser] = useState<UserData | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Estado para el resaltado aleatorio "PRO"
   const [activeHighlightIndex, setActiveHighlightIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -465,34 +378,26 @@ export const MainMenu: React.FC = () => {
     return roleFiltered.filter(item => item.title.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [localUser, searchTerm]);
 
-  // --- EFECTO DE ESCANEO ALEATORIO ---
-  useEffect(() => {
-    if (filteredMenu.length === 0) return;
-
-    // Cambia el índice activo cada 3.5 segundos para un efecto de "respiración" lento y profesional
-    const interval = setInterval(() => {
-        const randomIndex = Math.floor(Math.random() * filteredMenu.length);
-        setActiveHighlightIndex(randomIndex);
-        
-        // Lo apaga después de 1.5s para que no esté siempre encendido
-        setTimeout(() => setActiveHighlightIndex(null), 1500);
-    }, 3500);
-
-    return () => clearInterval(interval);
-  }, [filteredMenu.length]);
-
   useEffect(() => {
     if (!localUser?.uid) { setLoadingServices(false); return; }
     
-    const q = query(collection(db, 'servicios'), where('personas', 'array-contains', localUser.uid), where('estado', '!=', 'Finalizado'));
+    // CORRECCIÓN: Filtrado mixto (Query + JS) para evitar errores de índices compuestos en Firebase
+    const q = query(collection(db, 'servicios'), where('personas', 'array-contains', localUser.uid));
+    
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
-      const activos = docs.filter(s => s.estado?.toLowerCase() !== 'finalizado' && s.estado?.toLowerCase() !== 'cancelado');
+      
+      const activos = docs.filter(s => {
+          const st = (s.estado || '').toLowerCase();
+          return st !== 'finalizado' && st !== 'cancelado';
+      });
+
       activos.sort((a, b) => {
         const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
         const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
         return dateB - dateA; 
       });
+
       setAssignedServices(activos); 
       setLoadingServices(false);
     });
@@ -507,8 +412,6 @@ export const MainMenu: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">
-      
-      {/* Navbar Enterprise */}
       <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -521,27 +424,19 @@ export const MainMenu: React.FC = () => {
                 <p className="text-[10px] text-slate-500 font-medium">Gestión de Laboratorio</p>
              </div>
           </div>
-
           <div className="flex items-center gap-3 sm:gap-6">
              <div className="hidden md:flex flex-col items-end mr-2">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{formattedDate}</span>
              </div>
              <div className="h-6 w-px bg-slate-800 hidden md:block"></div>
              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setShowProfile(true)}
-                  className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors group"
-                >
-                   <span className="text-xs font-medium text-slate-300 group-hover:text-white pl-1 hidden sm:block">
-                     {localUser.name.split(' ')[0]}
-                   </span>
+                <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors group">
+                   <span className="text-xs font-medium text-slate-300 group-hover:text-white pl-1 hidden sm:block">{localUser.name.split(' ')[0]}</span>
                    <div className="w-7 h-7 rounded-full bg-slate-800 overflow-hidden relative">
                       {localUser.photoUrl ? <img src={localUser.photoUrl} className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-slate-500 m-auto mt-1.5" />}
                    </div>
                 </button>
-                <button onClick={logout} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
-                    <LogOut size={18} />
-                </button>
+                <button onClick={logout} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><LogOut size={18} /></button>
              </div>
           </div>
         </div>
@@ -549,111 +444,52 @@ export const MainMenu: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex flex-col lg:flex-row gap-6">
-            
-            {/* LEFT COLUMN: MENU GRID */}
             <div className="flex-1">
-                {/* Search Bar */}
                 <div className="flex items-center justify-between mb-6">
                     <div className="relative w-full max-w-md">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
-                        <input 
-                          type="text" 
-                          placeholder="Buscar módulo..." 
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm rounded-lg pl-9 pr-4 py-2.5 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-slate-600"
-                        />
+                        <input type="text" placeholder="Buscar módulo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm rounded-lg pl-9 pr-4 py-2.5 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-slate-600"/>
                     </div>
                 </div>
-
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {filteredMenu.map((item, index) => {
                         const style = COLOR_VARIANTS[item.color] || COLOR_VARIANTS.blue;
                         const isAutoHighlighted = index === activeHighlightIndex;
-                        
                         return (
                             <motion.div
                                 key={item.id}
-                                whileHover={{ y: -4 }} 
-                                whileTap={{ scale: 0.98 }}
+                                whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}
                                 onClick={() => navigateTo(item.id)}
-                                // Aquí aplicamos condicionalmente los estilos de "Active" si el Auto-Highlight cae en este index
-                                className={`
-                                    group relative bg-slate-900 border rounded-xl p-5 cursor-pointer overflow-hidden transition-all duration-700
-                                    ${isAutoHighlighted ? style.borderActive : 'border-slate-800'}
-                                    ${isAutoHighlighted ? style.shadowActive : ''}
-                                    ${style.border} ${style.shadow}
-                                `}
+                                className={`group relative bg-slate-900 border rounded-xl p-5 cursor-pointer overflow-hidden transition-all duration-700 ${isAutoHighlighted ? style.borderActive : 'border-slate-800'} ${isAutoHighlighted ? style.shadowActive : ''} ${style.border} ${style.shadow}`}
                             >
-                                {/* Gradient Background: Se activa con Hover O con Auto-Highlight */}
-                                <div 
-                                    className={`absolute inset-0 bg-gradient-to-br ${style.gradient} transition-opacity duration-1000 ease-in-out`}
-                                    style={{ opacity: isAutoHighlighted ? 0.6 : undefined }} // Opacidad suave si es auto, o CSS hover si es mouse
-                                />
-                                {/* Clase extra para hover manual (CSS puro) */}
+                                <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} transition-opacity duration-1000 ease-in-out`} style={{ opacity: isAutoHighlighted ? 0.6 : undefined }} />
                                 <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-
                                 <div className="relative z-10 flex flex-col h-full justify-between gap-4">
                                     <div className="flex justify-between items-start">
-                                        <div 
-                                            className={`
-                                                p-2.5 rounded-lg transition-all duration-700
-                                                ${isAutoHighlighted ? style.iconBgActive : 'bg-slate-800'}
-                                                ${isAutoHighlighted ? style.iconColorActive : 'text-slate-400'}
-                                                ${style.iconBg} ${style.iconColor}
-                                            `}
-                                        >
+                                        <div className={`p-2.5 rounded-lg transition-all duration-700 ${isAutoHighlighted ? style.iconBgActive : 'bg-slate-800'} ${isAutoHighlighted ? style.iconColorActive : 'text-slate-400'} ${style.iconBg} ${style.iconColor}`}>
                                             <item.icon className="w-6 h-6" />
                                         </div>
                                         <ChevronRight className={`w-4 h-4 text-slate-600 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 ${style.iconColor}`} />
                                     </div>
-                                    
                                     <div>
-                                        <h3 className={`text-sm font-semibold transition-colors duration-700 mb-1 ${isAutoHighlighted ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
-                                            {item.title}
-                                        </h3>
-                                        <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
-                                            {item.category}
-                                        </span>
+                                        <h3 className={`text-sm font-semibold transition-colors duration-700 mb-1 ${isAutoHighlighted ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>{item.title}</h3>
+                                        <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">{item.category}</span>
                                     </div>
                                 </div>
                             </motion.div>
                         );
                     })}
                 </div>
-                
-                {filteredMenu.length === 0 && (
-                    <div className="text-center py-12 text-slate-500">
-                        <p>No se encontraron módulos con ese nombre.</p>
-                    </div>
-                )}
             </div>
-
-            {/* RIGHT COLUMN: SIDEBAR */}
             <div className="lg:w-80 flex flex-col gap-6">
-                {(localUser.role.includes('calidad') || localUser.role.includes('admin') || SUPER_ADMINS.includes(localUser.email)) && (
-                    <KpiWidget navigateTo={navigateTo} />
-                )}
+                {(localUser.role.includes('calidad') || localUser.role.includes('admin') || SUPER_ADMINS.includes(localUser.email)) && <KpiWidget navigateTo={navigateTo} />}
                 <div className="flex-1 min-h-[400px]">
-                    <ServicesWidget 
-                        services={assignedServices} 
-                        navigateTo={navigateTo} 
-                        loading={loadingServices}
-                    />
+                    <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
                 </div>
             </div>
         </div>
       </main>
-
-      <AnimatePresence>
-        {showProfile && localUser && (
-            <ProfileModal 
-              currentUser={localUser}
-              onClose={() => setShowProfile(false)}
-              onUpdate={handleUserUpdate}
-            />
-        )}
-      </AnimatePresence>
+      <AnimatePresence>{showProfile && localUser && <ProfileModal currentUser={localUser} onClose={() => setShowProfile(false)} onUpdate={handleUserUpdate} />}</AnimatePresence>
     </div>
   );
 };
