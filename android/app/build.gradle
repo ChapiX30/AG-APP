@@ -3,6 +3,7 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.example.app"
     compileSdk rootProject.ext.compileSdkVersion
+
     defaultConfig {
         applicationId "com.example.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -16,11 +17,30 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+
+    // ==================================================================
+    // AGREGADO PARA EPSON: OBLIGAR A CARGAR LAS LIBRERÍAS NATIVAS (.so)
+    // ==================================================================
+    sourceSets {
+        main {
+            // Esto le dice a Android explícitamente dónde buscar libLWPrint.so
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+    
+    // ==================================================================
+    // CONFIGURACIÓN ADICIONAL PARA COMPATIBILIDAD
+    // ==================================================================
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
@@ -40,6 +60,11 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    
+    // ==================================================================
+    // ⚡ SDK DE EPSON LABELWORKS - TU ARCHIVO LWPrint.jar ⚡
+    // ==================================================================
+    implementation files('libs/LWPrint.jar')
 }
 
 apply from: 'capacitor.build.gradle'

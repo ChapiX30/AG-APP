@@ -23,34 +23,19 @@ import ToastNotification from "./ToastNotification";
 import { Capacitor } from '@capacitor/core';
 import EpsonLabel from '../utils/EpsonPlugin';
 
+
 // ====================================================================
-// FUNCIÓN AUXILIAR PARA LIMPIAR IMAGEN (BLANCO Y NEGRO PURO)
+// FUNCIONES DE PROCESAMIENTO DE IMAGEN ELIMINADAS
+// Ya no se usan porque imprimimos directamente desde archivo .lemd
 // ====================================================================
-const binarizeCanvas = (canvas: HTMLCanvasElement, threshold: number = 170) => {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
 
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imgData.data;
 
-  for (let i = 0; i < data.length; i += 4) {
-    // Calculamos el brillo del pixel
-    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-    
-    // Convertimos a BLANCO (255) o NEGRO (0) puro según el umbral
-    const color = brightness > threshold ? 255 : 0;
 
-    data[i] = color;     // R
-    data[i + 1] = color; // G
-    data[i + 2] = color; // B
-    
-    // Si es negro, forzamos opacidad total para asegurar impresión
-    if (color === 0) data[i + 3] = 255; 
-  }
+// ====================================================================
+// FUNCIÓN ELIMINADA: generateAndPrintLabel ya no es necesaria
+// El método printLabel() usa directamente el archivo .lemd
+// ====================================================================
 
-  ctx.putImageData(imgData, 0, 0);
-  return canvas;
-};
 
 // ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
@@ -70,65 +55,45 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
   const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
   const [showOptions, setShowOptions] = useState(false);
 
-  const handlePrintAction = async () => {
-    if (!labelRef.current) return;
-    setIsGenerating(true);
+ const handlePrintAction = async () => {
+  if (!labelRef.current) return;
+  setIsGenerating(true);
 
-    try {
-      // Pequeña pausa para asegurar renderizado
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // 1. Generar canvas original con alta calidad
+  try {
+    if (Capacitor.isNativePlatform()) {
+      // 🔥 USA EL NUEVO MÉTODO CON .lemd
+      await EpsonLabel.printLabel({
+        id: data.id,
+        fechaCal: data.fechaCal,
+        fechaSug: data.fechaSug,
+        certificado: data.certificado,
+        calibro: data.calibro,
+        tapeSize: tapeSize
+      });
+    } else {
+      // En web, captura y descarga como antes
+      await new Promise(resolve => setTimeout(resolve, 300));
       const originalCanvas = await html2canvas(labelRef.current, {
-        scale: 4, 
+        scale: 3,
         backgroundColor: '#ffffff',
         useCORS: true,
-        logging: false,
-        imageTimeout: 0
+        logging: true,
       });
-
-      // 2. Limpiar imagen (Convertir a B/N puro para evitar "tramado" sucio)
-      const binaryCanvas = binarizeCanvas(originalCanvas);
-
-      // 3. Obtener Base64 limpio
-      const base64Data = binaryCanvas.toDataURL('image/png').split(',')[1];
-
-      if (Capacitor.isNativePlatform()) {
-        try {
-            await EpsonLabel.printBase64({ base64: base64Data });
-            // Puedes descomentar esto si quieres confirmación visual
-            // alert("✅ Enviado a impresora Epson"); 
-        } catch (err: any) {
-            console.error("Error plugin Epson:", err);
-            alert("❌ Error Epson: " + (err.message || err));
-        }
-      } else {
-        // Lógica Web (Descarga)
-        binaryCanvas.toBlob(async (blob) => {
-          if (!blob) return;
-          const cleanId = data.id.replace(/[^a-zA-Z0-9]/g, '-');
-          const fileName = `ETIQUETA_${tapeSize}_${cleanId}.png`;
-          const file = new File([blob], fileName, { type: "image/png" });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({ files: [file], title: 'Etiqueta Epson', text: 'Guardar imagen' });
-            } catch (error) { console.log("Compartir cancelado"); }
-          } else {
-            const link = document.createElement('a');
-            link.download = fileName;
-            link.href = binaryCanvas.toDataURL('image/png');
-            link.click();
-          }
-        }, 'image/png');
-      }
-      setIsGenerating(false);
-      setShowOptions(false);
-    } catch (error) {
-      console.error("Error al generar etiqueta", error);
-      alert("Error general al generar la imagen.");
-      setIsGenerating(false);
+      const link = document.createElement('a');
+      link.download = `ETIQUETA_${data.id}.png`;
+      link.href = originalCanvas.toDataURL('image/png');
+      link.click();
     }
-  };
+    
+    setIsGenerating(false);
+    setShowOptions(false);
+
+  } catch (error: any) {
+    console.error("Error al generar etiqueta", error);
+    alert("Error: " + (error.message || error));
+    setIsGenerating(false);
+  }
+};
 
   return (
     <div className="relative">
@@ -143,7 +108,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
       </div>
 
       {showOptions && (
-        <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48 animate-in fade-in slide-in-from-top-2">
+        <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-48">
             <div className="space-y-1">
                 <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}><span>24mm (Grande)</span> {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
                 <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}><span>12mm (Pequeña)</span> {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
@@ -151,35 +116,40 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         </div>
       )}
 
-      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }}>
+      {/* CORRECCIÓN IMPORTANTE: 
+          No usamos top: -10000px porque Android puede ignorarlo.
+          Usamos opacity: 0 y z-index negativo para que esté "ahí" pero invisible.
+      */}
+      <div style={{ position: 'absolute', opacity: 0, zIndex: -100, pointerEvents: 'none', left: 0, top: 0 }}>
         {tapeSize === "24mm" && (
-            <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, Helvetica, sans-serif', overflow: 'hidden', border: '1px solid #ccc', padding: '0' }}>
+            <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif', border: '2px solid black', padding: '0' }}>
                 <div style={{ height: '70px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '3px solid black', padding: '5px' }}>
-                    {/* AÑADIDO: imageRendering pixelated */}
-                    <img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain', imageRendering: 'pixelated' }} />
+                    <img src={logo} alt="Logo" style={{ height: '100%', width: 'auto', objectFit: 'contain' }} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', padding: '5px 12px' }}>
-                    <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px', letterSpacing: '-1px' }}>{data.id}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #333', borderBottom: '2px solid #333', padding: '4px 0', marginBottom: '6px' }}>
-                        <div style={{ textAlign: 'left' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>CALIBRADO</div><div style={{ fontSize: '18px', fontWeight: 'bold', color: 'black' }}>{data.fechaCal}</div></div>
-                        <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: '#555' }}>VENCE</div><div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.fechaSug}</div></div>
+                    <div style={{ fontSize: '38px', fontWeight: '900', color: 'black', textAlign: 'center', lineHeight: '1', marginBottom: '8px' }}>{data.id}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid black', borderBottom: '2px solid black', padding: '4px 0', marginBottom: '6px' }}>
+                        <div style={{ textAlign: 'left' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: 'black' }}>CALIBRADO</div><div style={{ fontSize: '18px', fontWeight: 'bold', color: 'black' }}>{data.fechaCal}</div></div>
+                        <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: 'black' }}>VENCE</div><div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.fechaSug}</div></div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: '16px', fontWeight: 'bold' }}><span style={{ fontSize: '10px', color: '#555', marginRight: '4px' }}>CERT:</span>{data.certificado}</div><div style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#000', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>TEC: {data.calibro.substring(0,4)}</div></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'black' }}>CERT: {data.certificado}</div>
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: 'black', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>TEC: {data.calibro.substring(0,4)}</div>
+                    </div>
                 </div>
             </div>
         )}
         {tapeSize === "12mm" && (
-             <div ref={labelRef} style={{ width: '600px', height: '90px', backgroundColor: 'white', display: 'flex', alignItems: 'center', fontFamily: 'Arial, Helvetica, sans-serif', border: '1px solid #ccc', padding: '0' }}>
+             <div ref={labelRef} style={{ width: '600px', height: '90px', backgroundColor: 'white', display: 'flex', alignItems: 'center', fontFamily: 'Arial, sans-serif', border: '1px solid black' }}>
                 <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}>
-                    {/* AÑADIDO: imageRendering pixelated */}
-                    <img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain', imageRendering: 'pixelated' }} />
+                    <img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain' }} />
                 </div>
                 <div style={{ flex: 1, paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9', marginBottom: '4px' }}>{data.id}</div>
-                    <div style={{ display: 'flex', gap: '15px' }}><div style={{ fontSize: '15px', fontWeight: 'bold', color: '#000' }}><span style={{ fontSize: '10px', color: '#444' }}>CAL: </span>{data.fechaCal}</div><div style={{ fontSize: '15px', fontWeight: '900', color: '#000' }}><span style={{ fontSize: '10px', color: '#444' }}>VEN: </span>{data.fechaSug}</div></div>
-                </div>
-                <div style={{ paddingRight: '5px', paddingLeft: '5px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', borderLeft: '2px solid #ccc', height: '80%' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase' }}>CERT</div><div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.certificado}</div>
+                    <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9' }}>{data.id}</div>
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                        <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'black' }}>CAL: {data.fechaCal}</div>
+                        <div style={{ fontSize: '15px', fontWeight: '900', color: 'black' }}>VEN: {data.fechaSug}</div>
+                    </div>
                 </div>
             </div>
         )}
@@ -776,6 +746,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
   
+  // 🆕 ESTADOS PARA IMPRESIÓN AUTOMÁTICA
+  const hiddenLabelRef = useRef<HTMLDivElement>(null);
+  const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
+  
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [metrologyWarning, setMetrologyWarning] = useState<string | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
@@ -1184,7 +1158,16 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setToast({ message: "Hoja de trabajo guardada correctamente.", type: 'success' });
       localStorage.removeItem('backup_worksheet_data');
       
-      setTimeout(() => goBack(), 1000);
+      // 🖨️ IMPRIMIR ETIQUETA AUTOMÁTICAMENTE DESPUÉS DE GUARDAR
+      try {
+        await generateAndPrintLabel(hiddenLabelRef, tapeSize);
+        setToast({ message: "✅ Guardado e impreso correctamente.", type: 'success' });
+      } catch (printError) {
+        console.error("Error al imprimir:", printError);
+        setToast({ message: "⚠️ Guardado OK, pero falló la impresión.", type: 'warning' });
+      }
+      
+      setTimeout(() => goBack(), 1500);
 
     } catch (e: any) {
       console.error("Error al guardar:", e);
@@ -1618,13 +1601,52 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800'}`}
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{isSaving ? "Guardando..." : "Guardar"}</span>
+              <span>{isSaving ? "Guardando e imprimiendo..." : "Guardar e Imprimir"}</span>
             </button>
           </div>
         </div>
       </div>
 
       {showConverter && <UnitConverterModal onClose={() => setShowConverter(false)} />}
+      
+      {/* 🆕 ETIQUETA OCULTA PARA IMPRESIÓN AUTOMÁTICA */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div 
+          ref={hiddenLabelRef}
+          style={{
+            width: tapeSize === "24mm" ? "576px" : "288px",
+            padding: "24px",
+            backgroundColor: "white",
+            fontFamily: "Arial, sans-serif"
+          }}
+        >
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '12px',
+            color: '#000'
+          }}>
+            <div style={{ 
+              fontSize: tapeSize === "24mm" ? "32px" : "20px",
+              fontWeight: "bold" 
+            }}>
+              {state.id || "PENDIENTE"}
+            </div>
+            <div style={{ fontSize: tapeSize === "24mm" ? "16px" : "12px" }}>
+              Cal: {state.fecha ? format(parseISO(state.fecha), "yyyy-MMM-dd", { locale: es }).toUpperCase() : "N/A"}
+            </div>
+            <div style={{ fontSize: tapeSize === "24mm" ? "16px" : "12px" }}>
+              Prox: {labelData.fechaSug || "N/A"}
+            </div>
+            <div style={{ fontSize: tapeSize === "24mm" ? "14px" : "10px" }}>
+              Cert: {state.certificado || "Pendiente"}
+            </div>
+            <div style={{ fontSize: tapeSize === "24mm" ? "12px" : "8px" }}>
+              Tec: {labelData.calibro}
+            </div>
+          </div>
+        </div>
+      </div>
       
     </div>
   );

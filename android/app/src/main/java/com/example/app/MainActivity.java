@@ -6,9 +6,10 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        
-        // Aquí registramos el plugin para que funcione
+        // 1. ¡PRIMERO registramos al empleado!
         registerPlugin(EpsonLabelPlugin.class);
+
+        // 2. LUEGO iniciamos la fábrica (la app)
+        super.onCreate(savedInstanceState);
     }
 }

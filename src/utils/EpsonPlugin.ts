@@ -1,7 +1,16 @@
 import { registerPlugin } from '@capacitor/core';
 
 export interface EpsonLabelPlugin {
-  printBase64(options: { base64: string }): Promise<void>;
+    printLabel(options: {
+        id: string;
+        fechaCal: string;
+        fechaSug: string;
+        certificado: string;
+        calibro: string;
+        tapeSize: string;
+    }): Promise<void>;
+
+    findEpsonPackages(): Promise<{ packages: string[]; count: number }>;
 }
 
 const EpsonLabel = registerPlugin<EpsonLabelPlugin>('EpsonLabel');

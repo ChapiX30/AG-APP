@@ -7,16 +7,20 @@ import { es } from "date-fns/locale";
 admin.initializeApp();
 const db = admin.firestore();
 
-// --- 1. CONFIGURACIÓN DEL CORREO ---
+// ==================================================================
+// 1. CONFIGURACIÓN DEL CORREO
+// ==================================================================
 const transporter = nodemailer.createTransport({
   service: "gmail", 
   auth: {
     user: "eseagmaster@gmail.com", 
-    pass: "hcbqlsbtmppvulv"  // Tu clave
+    pass: "hcbqlsbtmppvulv"  // Tu clave de aplicación
   }
 });
 
-// --- 2. LÓGICA DE FECHAS (Cerebro Matemático) ---
+// ==================================================================
+// 2. LÓGICA DE FECHAS (Cerebro Matemático)
+// ==================================================================
 const calcularProximoVencimiento = (fechaBase: Date, frecuenciaTexto: string): Date | null => {
   if (!fechaBase || !isValid(fechaBase)) return null;
   const texto = frecuenciaTexto ? frecuenciaTexto.toLowerCase().trim() : "";
@@ -26,16 +30,20 @@ const calcularProximoVencimiento = (fechaBase: Date, frecuenciaTexto: string): D
   if (texto.includes("6 meses") || texto.includes("semestral")) return addMonths(fechaBase, 6);
   if (texto.includes("3 meses") || texto.includes("trimestral")) return addMonths(fechaBase, 3);
   
+  // Default: 1 año
   return addYears(fechaBase, 1);
 };
 
-// --- 3. EL AUDITOR (Se activa al guardar) ---
+// ==================================================================
+// 3. EL AUDITOR (Se activa al guardar/editar una hoja de trabajo)
+// ==================================================================
 export const agbotAuditorCalibraciones = functions.firestore
   .document("hojasDeTrabajo/{docId}")
   .onWrite(async (change: any, context: any) => {
     if (!change.after.exists) return null; 
 
     const data = change.after.data();
+    // Evitar bucle infinito si ya lo revisamos
     if (data._agbotChecked === true) return null;
 
     const fechaCalibracion = data.fecha ? parseISO(data.fecha) : null;
@@ -49,6 +57,7 @@ export const agbotAuditorCalibraciones = functions.firestore
         agbotStatus = "ERROR_FECHA";
     }
 
+    // Guardamos los cálculos en el mismo documento
     return change.after.ref.update({
       _fechaVencimiento: fechaVencimiento,
       _agbotChecked: true,
@@ -57,7 +66,9 @@ export const agbotAuditorCalibraciones = functions.firestore
     });
   });
 
-// --- 4. EL MONITOR MULTI-ALERTA (Cada mañana a las 8 AM) ---
+// ==================================================================
+// 4. EL MONITOR MULTI-ALERTA (Corre todos los días a las 8 AM)
+// ==================================================================
 export const agbotMonitorDiario = functions.pubsub
   .schedule("0 8 * * *")
   .timeZone("America/Mexico_City")
@@ -75,12 +86,13 @@ export const agbotMonitorDiario = functions.pubsub
     let reporteHTML = "";
     let totalEquipos = 0;
 
-    // Ejecutamos las búsquedas en paralelo
+    // Ejecutamos las búsquedas en paralelo para cada rango de días
     for (const obj of objetivos) {
         const fechaTarget = addDays(hoy, obj.dias);
         const start = new Date(fechaTarget); start.setHours(0,0,0,0);
         const end = new Date(fechaTarget); end.setHours(23,59,59,999);
 
+        // Buscamos equipos que venzan exactamente en esa fecha
         const snapshot = await db.collection("hojasDeTrabajo")
             .where("_fechaVencimiento", ">=", start)
             .where("_fechaVencimiento", "<=", end)
@@ -97,10 +109,11 @@ export const agbotMonitorDiario = functions.pubsub
             
             snapshot.docs.forEach(doc => {
                 const d = doc.data();
-                const cliente = d.cliente || "Sin Cliente";
-                const equipo = d.equipo || d.nombre || "Equipo";
+                const cliente = d.cliente || d.clienteNombre || "Sin Cliente";
+                const equipo = d.equipo || d.nombre || d.descripcion || "Equipo";
                 const id = d.id || d.certificado || "S/N";
-                const vence = format(d._fechaVencimiento.toDate(), 'dd/MM/yyyy', { locale: es });
+                // Formato de fecha legible
+                const vence = d._fechaVencimiento ? format(d._fechaVencimiento.toDate(), 'dd/MM/yyyy', { locale: es }) : "Fecha inválida";
                 
                 reporteHTML += `<li><strong>${cliente}</strong>: ${equipo} (${id}) - ${vence}</li>`;
             });
@@ -115,7 +128,7 @@ export const agbotMonitorDiario = functions.pubsub
         return null;
     }
 
-    // Encabezado del correo
+    // Construimos el HTML final del correo
     const htmlFinal = `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <h2 style="color: #2c3e50;">🤖 Reporte Diario de Inteligencia</h2>
@@ -129,7 +142,7 @@ export const agbotMonitorDiario = functions.pubsub
     try {
         await transporter.sendMail({
             from: '"AGbot System" <eseagmaster@gmail.com>',
-            to: "calidad@ese-ag.mx",
+            to: "calidad@ese-ag.mx", // Cambia esto si quieres otro destinatario
             subject: `🔔 Reporte Diario: ${totalEquipos} equipos requieren atención`,
             html: htmlFinal
         });
@@ -137,3 +150,56 @@ export const agbotMonitorDiario = functions.pubsub
     } catch (e) { console.error(e); }
     return null;
   });
+
+// ==================================================================
+// 5. NUEVO: PUENTE API PARA EXCEL (Conexión en Vivo)
+// ==================================================================
+export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
+  // A. SEGURIDAD: Revisa que la petición traiga la clave correcta
+  const secretKey = req.query.key;
+  if (secretKey !== "TU_CLAVE_SECRETA_AG_APP_2026") {
+    res.status(403).send("Acceso denegado: Clave incorrecta.");
+    return;
+  }
+
+  try {
+    // B. OBTENER CLIENTES
+    const clientesSnapshot = await db.collection("clientes").get();
+    const clientes = clientesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      nombre: doc.data().nombre || "",
+      direccion: doc.data().direccion || "",
+      contacto: doc.data().contacto || "",
+      email: doc.data().email || "",
+      telefono: doc.data().telefono || "",
+      requerimientos: doc.data().requerimientos || ""
+    }));
+
+    // C. OBTENER HISTORIAL (Hojas de Trabajo)
+    const historialSnapshot = await db.collection("hojasDeTrabajo").get();
+    const historial = historialSnapshot.docs.map(doc => {
+      const d = doc.data();
+      return {
+        certificado: d.folio || d.certificado || doc.id, // Llave principal
+        cliente: d.clienteNombre || d.cliente || "Sin Cliente",
+        instrumento: d.equipoDescripcion || d.equipo || d.descripcion || "Equipo",
+        marca: d.equipoMarca || d.marca || "",
+        modelo: d.equipoModelo || d.modelo || "",
+        serie: d.equipoSerie || d.serie || "",
+        id_interno: d.idInterno || d.id || "S/N",
+        fecha: d.fechaServicio || d.fecha || "",
+        tecnico: d.tecnicoResponsable || d.tecnico || d.responsable || ""
+      };
+    });
+
+    // D. RESPONDER CON JSON (Para que Excel lo lea)
+    res.json({
+      clientes: clientes,
+      historial: historial
+    });
+
+  } catch (error) {
+    console.error("Error en obtenerDatosExcel:", error);
+    res.status(500).send("Error interno del servidor al obtener datos.");
+  }
+});
