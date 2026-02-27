@@ -12,7 +12,7 @@ import {
   ArrowLeft, MoveRight, ArrowUp, FolderOpen,
   ArrowUpWideNarrow, Menu,
   AlertCircle, LogOut, Edit, CornerDownRight, Maximize2,
-  RefreshCw, Zap
+  RefreshCw, Zap, MessageSquare, Loader2
 } from "lucide-react";
 import clsx from "clsx";
 import labLogo from '../assets/lab_logo.png'; 
@@ -35,6 +35,7 @@ interface DriveFile {
   uploadedBy?: string;
   parentFolder?: string;
   keywords?: string[];
+  notas?: string; // NUEVO: Campo para notas del técnico/calidad
 }
 
 interface DriveFolder {
@@ -78,7 +79,8 @@ const normalizeText = (text: string) => {
 const generateSearchTokens = (text: string): string[] => {
     if (!text) return [];
     const normalized = normalizeText(text);
-    const parts = normalized.split(/[_ \-\.]+/).filter(p => p.length > 2);
+    // FIX: Quitamos el filter(p => p.length > 2) para que tokens como "EP" no se borren
+    const parts = normalized.split(/[_ \-\.]+/).filter(p => p.length > 0);
     return [...new Set([normalized, ...parts])];
 };
 
@@ -88,9 +90,11 @@ const fuzzyMatch = (file: DriveFile, searchTerms: string[]) => {
         file.rawName, 
         file.uploadedBy, 
         file.parentFolder,
+        file.notas || "", // FIX: Incluimos las notas en la búsqueda global
         ...(file.keywords || [])
     ].join(' ').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
+    // MATCH DIRECTO MEJORADO: Busca coincidencias aunque tengan guiones
     return searchTerms.every(term => textToSearch.includes(term));
 };
 
@@ -320,6 +324,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     size: data.size,
                     url: "", 
                     contentType: data.contentType,
+                    notas: data.notas,
                     ...data
                 } as DriveFile);
             }
@@ -374,7 +379,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             starred: data.starred,
             uploadedBy: data.uploadedBy,
             parentFolder: getParentFolderName(fullPath),
-            keywords: data.keywords
+            keywords: data.keywords,
+            notas: data.notas // Cargamos las notas
           };
 
           if (fuzzyMatch(fileObj, searchTerms)) {
@@ -444,7 +450,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     keywords: generateSearchTokens(cleanFileName(item.name)),
                     completed: meta.completed || false,
                     reviewed: meta.reviewed || false,
-                    starred: meta.starred || false
+                    starred: meta.starred || false,
+                    notas: meta.notas || ""
                 };
                 setDoc(doc(db, 'fileMetadata', metaId), newMeta, { merge: true })
                     .then(() => setIsSyncing(false))
@@ -473,6 +480,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 created: meta.created || storageMeta.timeCreated,
                 contentType: storageMeta.contentType,
                 parentFolder: path.length > 0 ? path[path.length - 1] : "Raíz",
+                notas: meta.notas,
                 ...meta
             } as DriveFile;
         });
@@ -556,7 +564,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
     
     setSelectedIds(newSelected);
-    setDetailsOpen(newSelected.size === 1 && (!isMulti && !isRange));
+    if (newSelected.size !== 1) {
+        setDetailsOpen(false);
+    }    
   };
 
   const handlePreview = async (file: DriveFile) => {
@@ -750,7 +760,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   completed: existingData.completed || false,
                   completedByName: existingData.completedByName || null,
                   reviewed: false, 
-                  reviewedByName: null
+                  reviewedByName: null,
+                  notas: existingData.notas || ""
               }, { merge: true });
               count++;
           }
@@ -760,6 +771,22 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleUploadInput = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) processFiles(e.target.files); };
+
+  // NUEVA FUNCIÓN: Actualizar Notas
+  const updateNotes = async (file: DriveFile, newNotes: string) => {
+      const updatedFile = { ...file, notas: newNotes };
+      setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
+      if (previewFile?.fullPath === file.fullPath) setPreviewFile(updatedFile as DriveFile);
+
+      try {
+          const id = file.fullPath.replace(/\//g, '_');
+          await setDoc(doc(db, 'fileMetadata', id), { notas: newNotes }, { merge: true });
+          showToast("Comentarios guardados correctamente", 'success');
+      } catch (e) {
+          console.error(e);
+          showToast("Error al guardar los comentarios", 'error');
+      }
+  };
 
   const updateFileStatus = async (file: DriveFile, field: string, value: any) => {
     const userName = currentUserData?.name || user?.displayName || "Usuario Desconocido";
@@ -993,9 +1020,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         <div className="px-6 mb-8 flex items-center justify-between">
              <button onClick={handleBack} className="p-2 -ml-2 text-gray-500 hover:text-gray-800 md:hidden"><ArrowLeft size={20} /></button>
              <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2 tracking-tight">
-                <img src={labLogo} alt="Lab Logo" className="w-10 h-10 rounded-lg shadow-md bg-white object-contain p-1 border border-gray-100" />
-                AG Drive
-             </h1>
+    <img src={labLogo} alt="Lab Logo" className="w-10 h-10 object-contain drop-shadow-md" />
+    AG Drive
+</h1>
         </div>
         <div className="px-4 mb-6">
             {isQualityUser(currentUserData) && (<button onClick={() => setCreateFolderOpen(true)} className="w-full py-3 px-4 bg-blue-600 text-white shadow-lg shadow-blue-200 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-700 transition-all font-medium active:scale-95"><FolderPlus size={20}/> <span>Nueva Carpeta</span></button>)}
@@ -1048,7 +1075,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       {detailsOpen && selectedIds.size === 1 && (() => {
           const fileId = Array.from(selectedIds)[0];
           const file = files.find(f => f.fullPath === fileId);
-          return file ? <DetailsPanel file={file} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onDownload={() => handlePreview(file)} onDelete={handleDelete} /> : null;
+          // FIX: Le pasamos la nueva función updateNotes
+          return file ? <DetailsPanel file={file} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onUpdateNotes={updateNotes} onDownload={() => handlePreview(file)} onDelete={handleDelete} /> : null;
       })()}
       
       {/* --- PREVIEW MODAL --- */}
@@ -1067,6 +1095,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {contextMenu.file && (
                 <>
                     <MenuOption icon={<Eye size={16}/>} label="Vista previa" onClick={() => { if(contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} shortcut="Espacio"/>
+                    <MenuOption icon={<Info size={16}/>} label="Ver Detalles" onClick={() => { 
+                        if(contextMenu.file) { 
+                            setSelectedIds(new Set([contextMenu.file.fullPath])); 
+                            setDetailsOpen(true); 
+                        } 
+                        setContextMenu(null); 
+                    }} />
                     <MenuOption icon={<Download size={16}/>} label="Descargar" onClick={() => { if(contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
                     <div className="my-1 border-t border-gray-100"></div>
                     <MenuOption icon={<FileCheck size={16} className={contextMenu.file.completed ? "text-blue-600" : "text-gray-400"} />} label={contextMenu.file.completed ? "Marcar como Pendiente" : "Marcar como Realizado"} onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} />
@@ -1132,7 +1167,31 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       
       {createFolderOpen && <Dialog title="Nueva Carpeta" onClose={() => setCreateFolderOpen(false)} onConfirm={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }}><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /></Dialog>}
       
-      {renameDialogOpen && <Dialog title="Renombrar" onClose={() => setRenameDialogOpen(false)} onConfirm={async () => { /* Logica placeholder */ setRenameDialogOpen(false); }}><input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500" placeholder="Nuevo nombre..." /></Dialog>}
+      {/* FIX: Lógica real para renombrar completada */}
+      {renameDialogOpen && (
+          <Dialog 
+              title="Renombrar" 
+              onClose={() => setRenameDialogOpen(false)} 
+              onConfirm={async () => { 
+                  if (!newName.trim()) return;
+                  setRenameDialogOpen(false);
+                  
+                  const targetName = newName.trim();
+                  // Reconstruimos la ruta donde estamos actualmente
+                  const currentPathString = [ROOT_PATH, ...path].join('/');
+
+                  if (renameTargetFile) {
+                      const success = await executeMoveFile(renameTargetFile, currentPathString + '/' + targetName);
+                      if (success) { showToast("Archivo renombrado", "success"); loadContent(); }
+                  } else if (renameTargetFolder) {
+                      const success = await executeMoveFolder(renameTargetFolder, currentPathString + '/' + targetName);
+                      if (success) { showToast("Carpeta renombrada", "success"); loadContent(); }
+                  }
+              }}
+          >
+              <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500" placeholder="Nuevo nombre..." />
+          </Dialog>
+      )}
     </div>
   );
 }
@@ -1292,9 +1351,25 @@ const EmptyState = ({ icon: Icon, text }: any) => <div className="h-full flex fl
 // Nuevo LoadingSkeleton PRO con Logo Giratorio
 const LoadingSkeleton = () => (
     <div className="h-full w-full flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-500">
+        <style>
+            {`
+                @keyframes spin-3d {
+                    0% { transform: perspective(600px) rotateY(0deg); }
+                    100% { transform: perspective(600px) rotateY(360deg); }
+                }
+                .animate-spin-3d {
+                    animation: spin-3d 2.5s linear infinite;
+                    transform-style: preserve-3d;
+                }
+            `}
+        </style>
         <div className="relative">
             <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse"></div>
-            <img src={labLogo} alt="Cargando..." className="w-24 h-24 animate-spin relative z-10 drop-shadow-lg" style={{ animationDuration: '3s' }} />
+            <img 
+                src={labLogo} 
+                alt="Cargando..." 
+                className="w-24 h-24 animate-spin-3d relative z-10 drop-shadow-2xl" 
+            />
         </div>
         <p className="text-gray-400 font-medium mt-6 animate-pulse tracking-wider text-sm">Cargando tu espacio...</p>
     </div>
@@ -1303,35 +1378,58 @@ const LoadingSkeleton = () => (
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>}</div></button>);
 const MenuOption = ({ icon, label, onClick, shortcut, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label} {shortcut && <span className="text-xs text-gray-400 ml-auto">{shortcut}</span>}</button>);
 
-const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete }: any) => (
-    <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl z-[60] overflow-y-auto animate-in slide-in-from-right duration-300 flex flex-col h-full">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
-            <span className="font-bold text-gray-800 text-lg flex items-center gap-2">Detalles</span>
-            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full transition-colors"><X size={20} className="text-gray-400"/></button>
-        </div>
-        <div className="p-8 flex flex-col items-center border-b border-gray-100/50">
-            <div className="w-24 h-24 bg-gray-50 rounded-[2rem] flex items-center justify-center mb-6 shadow-sm border border-gray-100">{getFileIcon(file.name, 56)}</div>
-            <h3 className="font-bold text-center text-gray-800 break-words w-full text-lg mb-2 leading-tight">{file.name}</h3>
-            <div className="flex flex-wrap gap-2 justify-center"><span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-md">{formatFileSize(file.size)}</span></div>
-        </div>
-        <div className="p-6 space-y-8 flex-1">
-            <div>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={12}/> Estado del Proceso</h4>
-                <div className="space-y-4">
-                    <div className={clsx("p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 shadow-sm", file.completed ? "bg-blue-50 border-blue-200/60" : "bg-white border-gray-200/60")}>
-                        <div className="flex-1"><span className="text-sm font-bold text-gray-700 block mb-1">Metrólogo</span><p className="text-xs text-gray-500">{file.completedByName || "Pendiente"}</p></div>
-                        <ProSwitch checked={file.completed} onChange={() => onToggleStatus(file, 'completed', !file.completed)} />
-                    </div>
-                    <div className={clsx("p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 shadow-sm", file.reviewed ? "bg-green-50 border-green-200/60" : "bg-white border-gray-200/60")}>
-                        <div className="flex-1"><span className="text-sm font-bold text-gray-700 block mb-1">Calidad</span><p className="text-xs text-gray-500">{file.reviewedByName || "Pendiente"}</p></div>
-                        <ProSwitch checked={file.reviewed} disabled={!isQualityUser} activeColor="bg-green-600" onChange={() => onToggleStatus(file, 'reviewed', !file.reviewed)} />
+// FIX: Modificado para recibir onUpdateNotes y tener un textarea integrado
+const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes }: any) => {
+    const [notes, setNotes] = React.useState(file.notas || "");
+
+    // Sincronizar el estado local si seleccionas otro archivo
+    React.useEffect(() => {
+        setNotes(file.notas || "");
+    }, [file]);
+
+    return (
+        <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl z-[60] overflow-y-auto animate-in slide-in-from-right duration-300 flex flex-col h-full">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <span className="font-bold text-gray-800 text-lg flex items-center gap-2">Detalles</span>
+                <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full transition-colors"><X size={20} className="text-gray-400"/></button>
+            </div>
+            <div className="p-8 flex flex-col items-center border-b border-gray-100/50">
+                <div className="w-24 h-24 bg-gray-50 rounded-[2rem] flex items-center justify-center mb-6 shadow-sm border border-gray-100">{getFileIcon(file.name, 56)}</div>
+                <h3 className="font-bold text-center text-gray-800 break-words w-full text-lg mb-2 leading-tight">{file.name}</h3>
+                <div className="flex flex-wrap gap-2 justify-center"><span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-md">{formatFileSize(file.size)}</span></div>
+            </div>
+            <div className="p-6 space-y-8 flex-1">
+                <div>
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings size={12}/> Estado del Proceso</h4>
+                    <div className="space-y-4">
+                        <div className={clsx("p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 shadow-sm", file.completed ? "bg-blue-50 border-blue-200/60" : "bg-white border-gray-200/60")}>
+                            <div className="flex-1"><span className="text-sm font-bold text-gray-700 block mb-1">Metrólogo</span><p className="text-xs text-gray-500">{file.completedByName || "Pendiente"}</p></div>
+                            <ProSwitch checked={file.completed} onChange={() => onToggleStatus(file, 'completed', !file.completed)} />
+                        </div>
+                        <div className={clsx("p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 shadow-sm", file.reviewed ? "bg-green-50 border-green-200/60" : "bg-white border-gray-200/60")}>
+                            <div className="flex-1"><span className="text-sm font-bold text-gray-700 block mb-1">Calidad</span><p className="text-xs text-gray-500">{file.reviewedByName || "Pendiente"}</p></div>
+                            <ProSwitch checked={file.reviewed} disabled={!isQualityUser} activeColor="bg-green-600" onChange={() => onToggleStatus(file, 'reviewed', !file.reviewed)} />
+                        </div>
                     </div>
                 </div>
+
+                {/* NUEVA SECCIÓN DE COMENTARIOS */}
+                <div>
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><MessageSquare size={12}/> Notas del Documento</h4>
+                    <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        onBlur={() => { if(notes !== file.notas) onUpdateNotes(file, notes); }}
+                        placeholder="Agrega comentarios, observaciones o cambios de ID (Ej. El equipo requiere ajuste, ID real es EP-1234)..."
+                        className="w-full h-28 p-3 text-sm bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none text-gray-700"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1 ml-1">* El texto guardado aquí aparecerá en las búsquedas globales.</p>
+                </div>
             </div>
+            <div className="p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3 pb-8 md:pb-4"><button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 text-sm font-bold text-gray-700 transition-all"><Maximize2 size={16}/> Vista Previa</button>{isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-3 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 transition-all"><Trash2 size={16}/> Borrar</button>}</div>
         </div>
-        <div className="p-4 bg-white border-t border-gray-100 grid grid-cols-2 gap-3 pb-8 md:pb-4"><button onClick={() => onDownload(file)} className="flex items-center justify-center gap-2 py-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 text-sm font-bold text-gray-700 transition-all"><Maximize2 size={16}/> Vista Previa</button>{isQualityUser && <button onClick={() => onDelete(file)} className="flex items-center justify-center gap-2 py-3 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-sm font-bold text-red-600 transition-all"><Trash2 size={16}/> Borrar</button>}</div>
-    </div>
-);
+    );
+};
 
 const Dialog = ({ title, children, onClose, onConfirm }: any) => (
     <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">

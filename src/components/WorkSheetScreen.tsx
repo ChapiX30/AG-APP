@@ -63,12 +63,12 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     if (Capacitor.isNativePlatform()) {
       // 🔥 USA EL NUEVO MÉTODO CON .lemd
       await EpsonLabel.printLabel({
-        id: data.id,
-        fechaCal: data.fechaCal,
-        fechaSug: data.fechaSug,
-        certificado: data.certificado,
-        calibro: data.calibro,
-        tapeSize: tapeSize
+        id: state.id.trim(),
+        fechaCal: labelData.fechaCal,
+        fechaSug: labelData.fechaSug,
+        certificado: state.certificado.trim(),
+        calibro: labelData.calibro,
+        tapeSize: "24mm",
       });
     } else {
       // En web, captura y descarga como antes
