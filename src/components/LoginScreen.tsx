@@ -2,28 +2,31 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { Eye, EyeOff, Lock, Mail, ArrowRight, ScanFace, X, CheckCircle, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence, useMotionValue, useSpring, useTransform, useMotionTemplate } from "framer-motion";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { auth, db } from '../utils/firebase'; 
-import labLogo from '../assets/lab_logo.png'; // <-- TU LOGO ESTÁ DE VUELTA
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { getAuth, sendPasswordResetEmail } from "firebase/auth";
+import { getFirestore, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import labLogo from '../assets/lab_logo.png';
 
+// --- INTERFACES Y UTILIDADES ---
 interface UserGreeting {
   name: string;
   initial: string;
   photoUrl?: string | null;
 }
 
+// Regex simple para validar formato de email antes de gastar lecturas
 const isValidEmail = (email: string) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
 
 const fetchUserProfile = async (email: string): Promise<UserGreeting | null> => {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail || !isValidEmail(cleanEmail)) return null;
+  // Validación extra de seguridad
+  if (!email || !isValidEmail(email)) return null;
 
   try {
-    const userQuery = query(collection(db, 'usuarios'), where('email', '==', cleanEmail), limit(1));
+    const db = getFirestore();
+    // Normalizamos el email a minúsculas para evitar duplicados por mayúsculas
+    const userQuery = query(collection(db, 'usuarios'), where('email', '==', email.toLowerCase()), limit(1));
     const snapshot = await getDocs(userQuery);
     if (!snapshot.empty) {
       const userData = snapshot.docs[0].data();
@@ -34,9 +37,7 @@ const fetchUserProfile = async (email: string): Promise<UserGreeting | null> => 
         photoUrl: userData.photoUrl || userData.photoURL || null
       };
     }
-  } catch (e) { 
-    console.error("Error fetching user profile:", e); 
-  }
+  } catch (e) { console.error("Error fetching user profile:", e); }
   return null;
 };
 
@@ -45,92 +46,124 @@ const getFriendlyErrorMessage = (errorCode: string): string => {
     case 'auth/user-not-found': return 'No existe una cuenta con este correo electrónico.';
     case 'auth/wrong-password': return 'La contraseña es incorrecta.';
     case 'auth/invalid-email': return 'El formato del correo electrónico no es válido.';
+    case 'auth/user-disabled': return 'Esta cuenta ha sido deshabilitada.';
     case 'auth/too-many-requests': return 'Demasiados intentos fallidos. Intenta más tarde.';
+    case 'auth/network-request-failed': return 'Error de conexión. Verifica tu internet.';
     case 'auth/invalid-credential': return 'Credenciales inválidas. Verifica tu correo y contraseña.';
     default: return 'Ocurrió un error inesperado. Intenta nuevamente.';
   }
 };
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.1, delayChildren: 0.2 } }
-};
-
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: { y: 0, opacity: 1, transition: { duration: 0.5, ease: "easeOut" } }
-};
-
 export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ onNavigateToRegister }) => {
+  // --- ESTADOS DEL FORMULARIO ---
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isResetLoading, setIsResetLoading] = useState(false);
   const [error, setError] = useState('');
   const [loginAttempts, setLoginAttempts] = useState(0);
 
+  // --- ESTADOS DE UX/UI ---
   const [user, setUser] = useState<UserGreeting | null>(null);
   const [fetchingUser, setFetchingUser] = useState(false);
+  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetStatus, setResetStatus] = useState<{ success: boolean; msg: string } | null>(null);
+  const [darkMode, setDarkMode] = useState(true);
 
+  // --- HOOKS Y REFS ---
   const { login } = useAuth();
   const { navigateTo } = useNavigation();
   const lastGreetedUser = useRef<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const debouncedFetchRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // MEJORA: Caché local para evitar lecturas repetidas a Firebase en la misma sesión
   const userCache = useRef<Record<string, UserGreeting | null>>({});
 
-  const isFormReady = email.trim().length > 0 && password.length > 0;
+  const isFormReady = email.length > 0 && password.length > 0;
 
-  // --- EFECTOS DE CURSOR INTERACTIVO (SPOTLIGHT) ---
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
+  // --- EFECTO TILT 3D ---
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15 });
+  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 15 });
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
 
-  function handleMouseMove({ currentTarget, clientX, clientY }: React.MouseEvent) {
-    const { left, top } = currentTarget.getBoundingClientRect();
-    mouseX.set(clientX - left);
-    mouseY.set(clientY - top);
-  }
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    x.set((e.clientX - rect.left) / rect.width - 0.5);
+    y.set((e.clientY - rect.top) / rect.height - 0.5);
+  };
 
+  // --- LÓGICA DE FETCH MEJORADA ---
   const runFetchLogic = async (emailToFetch: string) => {
-    const emailKey = emailToFetch.trim().toLowerCase();
-    if (!isValidEmail(emailKey)) { setUser(null); return; }
+    const emailKey = emailToFetch.toLowerCase();
+
+    // 1. Si el email no es válido por regex, ni molestamos a Firebase
+    if (!isValidEmail(emailKey)) {
+      setUser(null);
+      return;
+    }
+
+    // 2. Revisamos si ya tenemos este usuario en caché
     if (userCache.current[emailKey] !== undefined) {
       const cachedUser = userCache.current[emailKey];
       setUser(cachedUser);
       if (cachedUser) lastGreetedUser.current = emailKey;
       return;
     }
+
+    // 3. Si no está en caché y no estamos buscando ya...
     if (fetchingUser || lastGreetedUser.current === emailKey) return;
     
     setFetchingUser(true);
     const foundUser = await fetchUserProfile(emailKey);
+    
+    // 4. Guardamos en caché y actualizamos estado
     userCache.current[emailKey] = foundUser;
     setUser(foundUser);
-    if (foundUser?.name) lastGreetedUser.current = emailKey;
+    
+    if (foundUser?.name) {
+      lastGreetedUser.current = emailKey;
+    }
     setFetchingUser(false);
   };
 
+  // --- EFECTOS ---
   useEffect(() => {
-    if (!email.trim()) {
+    if (!email) {
       setUser(null);
       lastGreetedUser.current = null;
       if (debouncedFetchRef.current) clearTimeout(debouncedFetchRef.current);
       return;
     }
-    if (debouncedFetchRef.current) clearTimeout(debouncedFetchRef.current);
-    debouncedFetchRef.current = setTimeout(() => runFetchLogic(email), 600);
-    return () => { if (debouncedFetchRef.current) clearTimeout(debouncedFetchRef.current); };
+
+    if (debouncedFetchRef.current) {
+      clearTimeout(debouncedFetchRef.current);
+    }
+
+    // Reducimos el debounce ligeramente para sentirse más "snappy"
+    debouncedFetchRef.current = setTimeout(() => {
+      runFetchLogic(email);
+    }, 600);
+
+    return () => {
+      if (debouncedFetchRef.current) {
+        clearTimeout(debouncedFetchRef.current);
+      }
+    };
   }, [email]);
 
+  // --- HANDLERS ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true); 
     setError('');
     try {
-      const cleanEmail = email.trim().toLowerCase();
-      const success = await login(cleanEmail, password);
+      const success = await login(email, password);
       if (success) {
         navigateTo('menu');
       } else {
@@ -146,284 +179,352 @@ export const LoginScreen: React.FC<{ onNavigateToRegister: () => void }> = ({ on
 
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !isValidEmail(cleanEmail)) {
+    if (!email || !isValidEmail(email)) {
       setResetStatus({ success: false, msg: 'Por favor ingresa un correo válido.' });
       return;
     }
-    setIsResetLoading(true);
+
     try {
-      await sendPasswordResetEmail(auth, cleanEmail);
-      setResetStatus({ success: true, msg: `Enlace enviado a ${cleanEmail}` });
+      await sendPasswordResetEmail(getAuth(), email);
+      setResetStatus({ success: true, msg: `Enlace de recuperación enviado a ${email}` });
       setTimeout(() => { setShowResetModal(false); setResetStatus(null); }, 3000);
     } catch (err: any) {
       setResetStatus({ success: false, msg: getFriendlyErrorMessage(err.code) });
-    } finally {
-      setIsResetLoading(false);
     }
   };
 
+  // --- RENDER ---
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4 bg-[#030712]"> {/* Fondo más profundo, estilo Vercel */}
+    <div 
+      className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 relative ${darkMode ? 'bg-slate-950' : 'bg-slate-50'}`}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => { x.set(0); y.set(0); }}
+      ref={containerRef}
+    >
+      {/* MEJORA: Fondo Técnico (Grid Pattern) */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-[0.03]"
+        style={{
+          backgroundImage: `linear-gradient(${darkMode ? '#fff' : '#000'} 1px, transparent 1px), linear-gradient(90deg, ${darkMode ? '#fff' : '#000'} 1px, transparent 1px)`,
+          backgroundSize: '40px 40px'
+        }}
+      />
       
-      {/* 1. FONDO TÉCNICO AVANZADO "METROLOGY MATRIX" */}
-      <div className="absolute inset-0 z-0 overflow-hidden">
-        {/* Cuadrícula técnica móvil */}
+      {/* Background FX (Blobs originales mantenidos para estética) */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div 
-          className="absolute inset-0 opacity-20"
-          style={{ backgroundImage: `linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)`, backgroundSize: '40px 40px' }}
-          animate={{ backgroundPositionY: ['0px', '40px'], backgroundPositionX: ['0px', '40px'] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+          className={`absolute w-96 h-96 ${darkMode ? 'bg-blue-500/10' : 'bg-blue-500/20'} rounded-full blur-3xl`}
+          animate={{ x: [-100, 100], y: [-50, 50] }}
+          transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
         />
-        
-        {/* Orbes de luz con movimiento suave */}
-        <motion.div
-          animate={{ x: [0, 100, 0], y: [0, 50, 0], scale: [1, 1.2, 1] }}
-          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute -top-[20%] -left-[10%] w-[50rem] h-[50rem] bg-blue-600/10 rounded-full blur-[120px]"
-        />
-        <motion.div
-          animate={{ x: [0, -80, 0], y: [0, -60, 0], scale: [1, 1.1, 1] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-[40%] -right-[10%] w-[40rem] h-[40rem] bg-indigo-500/10 rounded-full blur-[100px]"
-        />
-
-        {/* Línea Láser de Escaneo (Efecto de calibración) */}
-        <motion.div
-          animate={{ top: ['-10%', '110%'] }}
-          transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-          className="absolute left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)] z-0"
+        <motion.div 
+          className={`absolute right-0 w-96 h-96 ${darkMode ? 'bg-violet-500/10' : 'bg-violet-500/20'} rounded-full blur-3xl`}
+          animate={{ x: [100, -100], y: [50, -50] }}
+          transition={{ duration: 15, repeat: Infinity, repeatType: "reverse" }}
         />
       </div>
 
-      {/* CONTENEDOR PRINCIPAL CON EFECTO SPOTLIGHT */}
+      {/* Theme Toggle */}
+      <div className="absolute top-6 right-6 flex gap-3 z-50">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setDarkMode(!darkMode)}
+          className={`p-3 rounded-xl ${darkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-200/80 hover:bg-slate-300/80'} border ${darkMode ? 'border-white/10' : 'border-slate-300'} transition-all`}
+          aria-label={darkMode ? "Modo claro" : "Modo oscuro"}
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </motion.button>
+      </div>
+
+      {/* Main Card */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} // Curva de animación super suave
-        onMouseMove={handleMouseMove}
-        className="relative z-10 w-full max-w-6xl flex flex-col lg:flex-row-reverse rounded-[2.5rem] overflow-hidden bg-[#0f172a]/80 backdrop-blur-2xl border border-slate-800 shadow-[0_0_80px_rgba(15,23,42,1)] group"
+        className={`relative w-full max-w-md ${darkMode ? 'bg-white/[0.02]' : 'bg-white/80'} backdrop-blur-2xl rounded-3xl shadow-2xl ${darkMode ? 'border border-white/[0.05]' : 'border border-slate-200'} p-8`}
+        style={{ 
+          rotateX, 
+          rotateY,
+          transformStyle: "preserve-3d"
+        }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
       >
-        {/* Efecto Spotlight que sigue al cursor dentro de la tarjeta */}
-        <motion.div
-          className="pointer-events-none absolute -inset-px rounded-[2.5rem] opacity-0 transition duration-300 group-hover:opacity-100 z-50"
-          style={{
-            background: useMotionTemplate`
-              radial-gradient(
-                600px circle at ${mouseX}px ${mouseY}px,
-                rgba(59, 130, 246, 0.08),
-                transparent 80%
-              )
-            `,
-          }}
-        />
-
-        {/* PANEL DERECHO: Branding Premium */}
-        <div className="hidden lg:flex flex-1 p-16 flex-col justify-center items-end relative overflow-hidden bg-gradient-to-bl from-blue-900/20 via-transparent to-transparent border-l border-slate-800/50">
-          
-          {/* LOGO LEVITANDO */}
-          <motion.div 
-            animate={{ y: [-10, 10, -10] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="mb-12 relative"
-          >
-            {/* Resplandor detrás del logo */}
-            <div className="absolute inset-0 bg-blue-500/20 blur-[50px] rounded-full scale-150" />
-            <img 
-              src={labLogo} 
-              alt="Logo AG-APP" 
-              className="w-48 h-auto object-contain relative z-10 drop-shadow-[0_0_20px_rgba(59,130,246,0.5)]" 
-            />
-          </motion.div>
-          
-          <div className="relative z-10 text-right">
-            <h2 className="text-5xl font-extrabold text-white mb-6 leading-tight tracking-tight">
-              Plataforma de <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-l from-blue-400 to-indigo-300">
-                Calibración.
-              </span>
-            </h2>
-            <p className="text-slate-400 text-lg max-w-sm ml-auto leading-relaxed font-light">
-              Sistema integral de gestión metrológica ESE AG. Acceso restringido para personal autorizado.
-            </p>
-          </div>
-
-          {/* Indicadores técnicos estéticos */}
-          <div className="absolute bottom-16 right-16 flex gap-6 opacity-40">
-             <div className="text-right">
-                <p className="text-white font-mono text-xl">v2.0.4</p>
-                <p className="text-blue-400 text-[10px] uppercase tracking-[0.2em]">AG-APP Build</p>
-             </div>
-          </div>
+        {/* Header & Logo */}
+        <div className="flex flex-col items-center mb-8" style={{ transform: "translateZ(40px)" }}>
+          <motion.img 
+            src={labLogo} 
+            alt="Lab Logo" 
+            className="w-20 h-20 mb-4"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 15 }}
+          />
+          <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'} mb-2`}>Bienvenido</h1>
+          <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'} flex items-center gap-2`}>
+            <Lock size={14} />
+            Portal de Acceso Seguro
+          </p>
         </div>
 
-        {/* PANEL IZQUIERDO: Formulario de Login */}
-        <div className="flex-1 p-8 sm:p-14 relative z-20">
-          <div className="max-w-md mx-auto">
-            <header className="mb-10">
-              <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-center mb-6 shadow-inner">
-                <Lock className="w-6 h-6 text-blue-400" />
-              </div>
-              <h3 className="text-3xl font-bold text-white mb-2 tracking-tight">Iniciar Sesión</h3>
-              <p className="text-slate-400 font-light">Ingresa tus credenciales para acceder al sistema</p>
-            </header>
-
-            {/* TARJETA DE SALUDO DINÁMICA */}
-            <div className="h-20 mb-6">
-              <AnimatePresence mode="wait">
-                {user && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                    className="p-4 rounded-2xl bg-gradient-to-r from-slate-800/50 to-slate-900/50 border border-slate-700/50 flex items-center gap-4 shadow-xl backdrop-blur-md"
-                  >
-                    {user.photoUrl ? (
-                      <img src={user.photoUrl} alt={user.name} className="w-12 h-12 rounded-full border-2 border-blue-500/50 object-cover" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center text-white font-bold text-lg shadow-inner border border-white/10">
-                        {user.initial}
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <p className="text-[10px] text-blue-400 uppercase tracking-widest font-semibold mb-0.5">Detectado</p>
-                      <p className="font-semibold text-white truncate text-sm">{user.name}</p>
-                    </div>
-                    <ScanFace className="text-slate-500 w-6 h-6" />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-5">
-                
-                <motion.div variants={itemVariants} className="group/input">
-                  <label className="block text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2 ml-1">Correo Electrónico</label>
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within/input:text-blue-400 transition-colors z-10" />
-                    <input 
-                      type="email" 
-                      value={email} 
-                      onChange={(e) => setEmail(e.target.value)} 
-                      disabled={isLoading}
-                      className="w-full pl-12 pr-10 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white focus:outline-none focus:border-blue-500/70 focus:bg-slate-800/80 transition-all disabled:opacity-50 relative z-0 shadow-inner" 
-                      placeholder="usuario@ese-ag.com" required 
-                    />
-                    {fetchingUser && <div className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin z-10" />}
-                  </div>
-                </motion.div>
-
-                <motion.div variants={itemVariants} className="group/input">
-                  <div className="flex justify-between items-center mb-2 ml-1">
-                    <label className="block text-slate-400 text-xs font-semibold uppercase tracking-widest">Contraseña</label>
-                    <button type="button" onClick={() => setShowResetModal(true)} disabled={isLoading} className="text-xs text-blue-400 hover:text-blue-300 transition-colors outline-none focus-visible:underline disabled:opacity-50">
-                      ¿Problemas de acceso?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within/input:text-blue-400 transition-colors z-10" />
-                    <input 
-                      type={showPass ? 'text' : 'password'} 
-                      value={password} 
-                      onChange={(e) => setPassword(e.target.value)} 
-                      disabled={isLoading}
-                      className="w-full pl-12 pr-12 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white focus:outline-none focus:border-blue-500/70 focus:bg-slate-800/80 transition-all disabled:opacity-50 relative z-0 shadow-inner" 
-                      placeholder="••••••••" required 
-                    />
-                    <button type="button" onClick={() => setShowPass(!showPass)} disabled={isLoading} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors disabled:opacity-50 z-10">
-                      {showPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </motion.div>
-              </motion.div>
-
-              <AnimatePresence mode="wait">
-                {error && (
-                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl p-4 flex items-start gap-3 text-sm">
-                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p>{error}</p>
-                      {loginAttempts >= 3 && <p className="text-xs text-red-400/70 mt-1">Has intentado {loginAttempts} veces. Considera recuperar tu contraseña.</p>}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <motion.button 
-                type="submit" 
-                disabled={!isFormReady || isLoading}
-                whileHover={isFormReady && !isLoading ? { scale: 1.01 } : {}}
-                whileTap={isFormReady && !isLoading ? { scale: 0.98 } : {}}
-                className={`w-full font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 overflow-hidden relative group/btn ${
-                  isFormReady && !isLoading ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-[0_0_30px_rgba(59,130,246,0.3)]' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-                }`}
-              >
-                {isLoading ? (
-                  <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+        {/* User Greeting Card (Visual Only) */}
+        <AnimatePresence mode="wait">
+          {user && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className={`mb-6 p-4 rounded-2xl ${darkMode ? 'bg-gradient-to-r from-blue-500/10 to-violet-500/10 border border-blue-500/20' : 'bg-gradient-to-r from-blue-100 to-violet-100 border border-blue-300'}`}
+              style={{ transform: "translateZ(60px)" }}
+            >
+              <div className="flex items-center gap-3">
+                {user.photoUrl ? (
+                  <img 
+                    src={user.photoUrl} 
+                    alt={user.name}
+                    className="w-12 h-12 rounded-full border-2 border-blue-400 object-cover"
+                    onError={(e) => (e.currentTarget.style.display='none')}
+                  />
                 ) : (
-                  <>
-                    <span className="relative z-10">Autenticar Usuario</span>
-                    <ArrowRight className={`w-5 h-5 relative z-10 ${isFormReady ? 'group-hover/btn:translate-x-1' : ''} transition-transform`} />
-                  </>
+                  <div className={`w-12 h-12 rounded-full ${darkMode ? 'bg-gradient-to-br from-blue-500 to-violet-600' : 'bg-gradient-to-br from-blue-400 to-violet-500'} flex items-center justify-center text-white font-bold text-lg`}>
+                    {user.initial}
+                  </div>
                 )}
-              </motion.button>
-              
-              <div className="text-center pt-4">
-                <button 
-                  type="button" 
-                  onClick={onNavigateToRegister} 
-                  disabled={isLoading}
-                  className="text-slate-400 hover:text-white transition-colors text-sm font-medium flex items-center justify-center mx-auto gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  ¿Personal de nuevo ingreso? <span className="text-blue-400">Regístrate aquí</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /> 
-                </button>
+                <div>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Hola de nuevo</p>
+                  <p className={`font-semibold ${darkMode ? 'text-white' : 'text-slate-900'}`}>{user.name}</p>
+                </div>
+                <ScanFace className={`ml-auto ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} size={20} />
               </div>
-            </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-5" style={{ transform: "translateZ(40px)" }}>
+          {/* Email Input */}
+          <div className="relative">
+            <Mail 
+              className={`absolute left-5 top-1/2 -translate-y-1/2 z-10 transition-colors ${
+                focusedField === 'email' 
+                  ? (darkMode ? 'text-blue-400' : 'text-blue-600')
+                  : (darkMode ? 'text-slate-600' : 'text-slate-400')
+              }`} 
+              size={20} 
+            />
+            <motion.input
+              whileFocus={{ scale: 1.01 }}
+              type="email"
+              name="email" // MEJORA: Atributo para gestores
+              autoComplete="username" // MEJORA: Autocompletado
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => setFocusedField('email')}
+              onBlur={() => setFocusedField(null)}
+              placeholder="Correo electrónico"
+              aria-label="Correo electrónico"
+              className={`w-full h-16 ${darkMode ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-slate-300'} border rounded-2xl pl-14 pr-12 text-lg ${darkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'} focus:outline-none ${darkMode ? 'focus:border-blue-500/50 focus:bg-white/[0.07]' : 'focus:border-blue-500 focus:bg-white'} transition-all relative z-10`}
+            />
+            {fetchingUser && <div className={`absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 border-2 ${darkMode ? 'border-blue-400' : 'border-blue-600'} border-t-transparent rounded-full animate-spin`} />}
           </div>
+
+          {/* Password Input */}
+          <div className="relative">
+            <Lock 
+              className={`absolute left-5 top-1/2 -translate-y-1/2 z-10 transition-colors ${
+                focusedField === 'password' 
+                  ? (darkMode ? 'text-violet-400' : 'text-violet-600')
+                  : (darkMode ? 'text-slate-600' : 'text-slate-400')
+              }`} 
+              size={20} 
+            />
+            <motion.input
+              whileFocus={{ scale: 1.01 }}
+              type={showPass ? "text" : "password"}
+              name="password" // MEJORA
+              autoComplete="current-password" // MEJORA
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onFocus={() => {
+                setFocusedField('password');
+                // Si el usuario salta al password sin salir del email, intenta buscar
+                if (email && !user && !fetchingUser) {
+                  if (debouncedFetchRef.current) {
+                    clearTimeout(debouncedFetchRef.current);
+                  }
+                  runFetchLogic(email);
+                }
+              }}
+              onBlur={() => setFocusedField(null)}
+              placeholder="Contraseña"
+              aria-label="Contraseña"
+              className={`w-full h-16 ${darkMode ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-slate-300'} border rounded-2xl pl-14 pr-14 text-lg ${darkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'} focus:outline-none ${darkMode ? 'focus:border-violet-500/50 focus:bg-white/[0.07]' : 'focus:border-violet-500 focus:bg-white'} transition-all relative z-10`}
+            />
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              type="button" 
+              onClick={() => setShowPass(!showPass)} 
+              aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"} 
+              className={`absolute right-5 top-1/2 -translate-y-1/2 ${darkMode ? 'text-slate-500 hover:text-white' : 'text-slate-400 hover:text-slate-700'} transition-colors z-20 p-1 outline-none`}
+            >
+              {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
+            </motion.button>
+          </div>
+
+          {/* Forgot Password Link */}
+          <div className="flex justify-end">
+            <button 
+              type="button" 
+              onClick={() => setShowResetModal(true)} 
+              className={`text-sm font-medium ${darkMode ? 'text-slate-400 hover:text-blue-400' : 'text-slate-600 hover:text-blue-600'} transition-colors outline-none focus-visible:underline`}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
+
+          {/* Error Message with Attempts Counter */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className={`p-4 rounded-xl ${darkMode ? 'bg-red-500/10 border border-red-500/30' : 'bg-red-50 border border-red-300'} flex items-start gap-3`}
+              >
+                <AlertCircle className={darkMode ? "text-red-400" : "text-red-600"} size={20} />
+                <div className="flex-1">
+                  <p className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
+                  {loginAttempts >= 3 && (
+                    <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'} mt-1`}>
+                      Has intentado {loginAttempts} veces. Considera recuperar tu contraseña.
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Submit Button with Shake Effect */}
+          <motion.button
+            // MEJORA: Animación de "vibración" (shake) si hay error
+            animate={error ? { x: [0, -10, 10, -10, 10, 0] } : {}}
+            transition={{ duration: 0.4 }}
+            whileHover={isFormReady && !isLoading ? { scale: 1.02, boxShadow: darkMode ? "0 0 30px rgba(59, 130, 246, 0.3)" : "0 0 20px rgba(59, 130, 246, 0.4)" } : {}}
+            whileTap={isFormReady && !isLoading ? { scale: 0.98 } : {}}
+            type="submit"
+            disabled={!isFormReady || isLoading}
+            className={`w-full h-14 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 transition-all relative overflow-hidden ${
+              isFormReady && !isLoading
+                ? 'bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 shadow-lg'
+                : darkMode ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {isLoading ? (
+              <>
+                <div className={`w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin`} />
+                Accediendo...
+              </>
+            ) : (
+              <>
+                Iniciar Sesión
+                <ArrowRight size={20} />
+              </>
+            )}
+          </motion.button>
+        </form>
+
+        {/* Footer */}
+        <div className="mt-8 text-center space-y-3">
+          <p className={`text-xs ${darkMode ? 'text-slate-600' : 'text-slate-500'} flex items-center justify-center gap-2`}>
+            <CheckCircle size={14} />
+            Acceso Seguro Verificado
+          </p>
+          <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+            ¿No tienes cuenta?{' '}
+            <button 
+              type="button" 
+              onClick={onNavigateToRegister} 
+              className={`font-semibold ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'} transition-colors outline-none focus-visible:underline`}
+            >
+              Regístrate aquí
+            </button>
+          </p>
         </div>
       </motion.div>
 
-      {/* MODAL RECUPERAR CONTRASEÑA */}
+      {/* --- MODAL OLVIDÉ CONTRASEÑA --- */}
       <AnimatePresence>
         {showResetModal && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-[#030712]/90 backdrop-blur-sm z-50" onClick={() => !isResetLoading && setShowResetModal(false)} />
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={`fixed inset-0 ${darkMode ? 'bg-black/60' : 'bg-black/40'} backdrop-blur-sm z-50`}
+              onClick={() => setShowResetModal(false)}
+            />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-[#0f172a] border border-slate-700 rounded-[2rem] shadow-[0_0_50px_rgba(0,0,0,0.8)] p-8 z-50"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md ${darkMode ? 'bg-slate-900' : 'bg-white'} rounded-3xl shadow-2xl p-8 z-50 ${darkMode ? 'border border-white/10' : 'border border-slate-200'}`}
             >
-              <button onClick={() => setShowResetModal(false)} disabled={isResetLoading} className="absolute right-5 top-5 text-slate-500 hover:text-white p-1 transition-colors disabled:opacity-50"><X size={20} /></button>
+              <button 
+                onClick={() => setShowResetModal(false)} 
+                className={`absolute right-4 top-4 ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} p-1 transition-colors`}
+                aria-label="Cerrar modal"
+              >
+                <X size={24} />
+              </button>
               
-              <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Recuperar Acceso</h2>
-              <p className="text-sm text-slate-400 mb-6 font-light">Te enviaremos las instrucciones a tu correo institucional.</p>
+              <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'} mb-2`}>Recuperar Contraseña</h2>
+              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'} mb-6`}>Te enviaremos un enlace para restablecerla.</p>
               
               <form onSubmit={handlePasswordReset} className="space-y-5">
                 <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5" />
+                  <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`} size={18} />
                   <input
-                    type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isResetLoading}
-                    placeholder="usuario@ese-ag.com"
-                    className="w-full pl-12 pr-4 py-4 bg-slate-900/80 border border-slate-700 rounded-2xl text-white focus:outline-none focus:border-blue-500/70 transition-all disabled:opacity-50 shadow-inner" autoFocus
+                    type="email"
+                    name="email_reset"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Tu correo electrónico"
+                    className={`w-full h-12 ${darkMode ? 'bg-white/[0.05] border-white/[0.1]' : 'bg-slate-100 border-slate-300'} border rounded-xl pl-12 pr-4 ${darkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'} focus:outline-none ${darkMode ? 'focus:border-blue-500/50' : 'focus:border-blue-500'} transition-all`}
+                    autoFocus
+                    aria-label="Correo para recuperación"
                   />
                 </div>
 
                 <AnimatePresence>
                   {resetStatus && (
-                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`p-4 rounded-xl flex items-start gap-3 border ${resetStatus.success ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-                      {resetStatus.success ? <CheckCircle size={20} className="flex-shrink-0 mt-0.5" /> : <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />}
-                      <p className="text-sm">{resetStatus.msg}</p>
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`p-4 rounded-xl flex items-start gap-3 ${
+                        resetStatus.success 
+                          ? (darkMode ? 'bg-green-500/10 border border-green-500/30' : 'bg-green-50 border border-green-300')
+                          : (darkMode ? 'bg-red-500/10 border border-red-500/30' : 'bg-red-50 border border-red-300')
+                      }`}
+                    >
+                      {resetStatus.success ? <CheckCircle className={darkMode ? "text-green-400" : "text-green-600"} size={20} /> : <AlertCircle className={darkMode ? "text-red-400" : "text-red-600"} size={20} />}
+                      <p className={`text-sm ${resetStatus.success ? (darkMode ? 'text-green-300' : 'text-green-700') : (darkMode ? 'text-red-300' : 'text-red-700')}`}>
+                        {resetStatus.msg}
+                      </p>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
                 <motion.button
-                  whileHover={!isResetLoading ? { scale: 1.02 } : {}} whileTap={!isResetLoading ? { scale: 0.98 } : {}}
-                  type="submit" disabled={isResetLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-semibold rounded-xl transition-all shadow-lg"
                 >
-                  {isResetLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Enviar Enlace"}
+                  Enviar Enlace
                 </motion.button>
               </form>
             </motion.div>
