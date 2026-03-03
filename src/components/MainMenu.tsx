@@ -5,8 +5,7 @@ import {
   Calendar, Building2, ClipboardList, BookOpen, Database, FolderKanban, 
   Bell, TrendingUp, X, ChevronRight, Activity, Award, 
   ArrowRightLeft, FileOutput, LogOut, User, CheckCircle2,
-  AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
-  FileText // <--- Importante: Icono para Formatos
+  AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
@@ -68,9 +67,6 @@ const MENU_ITEMS = [
   { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión', color: 'blue' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico', color: 'emerald' },
-  // --- AQUI ESTÁ EL NUEVO ITEM ---
-  { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad', color: 'rose' },
-  // ------------------------------
   { id: 'drive', title: 'Drive', icon: FolderKanban, category: 'Archivos', color: 'amber' },
   { id: 'empresas', title: 'Empresas', icon: Building2, category: 'Gestión', color: 'purple' },
   { id: 'calibration-stats', title: 'Estadísticas', icon: TrendingUp, category: 'Análisis', color: 'cyan' },
@@ -344,9 +340,7 @@ export const MainMenu: React.FC = () => {
   const [activeHighlightIndex, setActiveHighlightIndex] = useState<number | null>(null);
 
   useEffect(() => {
-   useEffect(() => {
-    // Verificamos si user existe y si el UID es diferente para evitar el loop
-    if (user && (user as any).uid !== localUser?.uid) {
+    if (user) {
         setLocalUser({
             uid: (user as any).uid || '',
             email: (user as any).email || '',
@@ -356,8 +350,6 @@ export const MainMenu: React.FC = () => {
             phone: (user as any).phone
         });
     }
-  // eslint-disable-next-line
-  }, [(user as any)?.uid]); // <--- SOLUCIÓN: Solo miramos el UID
   }, [user]);
 
   const [showProfile, setShowProfile] = useState(false);
@@ -459,72 +451,29 @@ export const MainMenu: React.FC = () => {
                         <input type="text" placeholder="Buscar módulo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm rounded-lg pl-9 pr-4 py-2.5 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-slate-600"/>
                     </div>
                 </div>
-                
-                {/* --- GRID DE MENÚ CON LÓGICA DE BLOQUEO --- */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {filteredMenu.map((item, index) => {
                         const style = COLOR_VARIANTS[item.color] || COLOR_VARIANTS.blue;
                         const isAutoHighlighted = index === activeHighlightIndex;
-                        
-                        // --- 1. LÓGICA DE BLOQUEO ---
-                        const isDisabled = item.id === 'formatos'; // Aquí defines cuál bloquear
-
                         return (
                             <motion.div
                                 key={item.id}
-                                // --- 2. DESACTIVAR ANIMACIONES ---
-                                whileHover={isDisabled ? {} : { y: -4 }} 
-                                whileTap={isDisabled ? {} : { scale: 0.98 }}
-                                // --- 3. BLOQUEAR CLICK ---
-                                onClick={() => !isDisabled && navigateTo(item.id)}
-                                className={`group relative bg-slate-900 border rounded-xl p-5 overflow-hidden transition-all duration-700
-                                    ${isDisabled 
-                                        ? 'opacity-40 grayscale cursor-not-allowed border-slate-800' // Estilo Bloqueado
-                                        : `cursor-pointer ${style.border} ${style.shadow} ${isAutoHighlighted ? style.borderActive : 'border-slate-800'} ${isAutoHighlighted ? style.shadowActive : ''}`
-                                    }
-                                `}
+                                whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}
+                                onClick={() => navigateTo(item.id)}
+                                className={`group relative bg-slate-900 border rounded-xl p-5 cursor-pointer overflow-hidden transition-all duration-700 ${isAutoHighlighted ? style.borderActive : 'border-slate-800'} ${isAutoHighlighted ? style.shadowActive : ''} ${style.border} ${style.shadow}`}
                             >
-                                {/* Fondo y gradientes (Solo si NO está disabled) */}
-                                {!isDisabled && (
-                                    <>
-                                        <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} transition-opacity duration-1000 ease-in-out`} style={{ opacity: isAutoHighlighted ? 0.6 : undefined }} />
-                                        <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-                                    </>
-                                )}
-
-                                {/* --- 4. BADGE DE CONSTRUCCIÓN --- */}
-                                {isDisabled && (
-                                    <div className="absolute top-3 right-3 z-20">
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
-                                            Proximamente
-                                        </span>
-                                    </div>
-                                )}
-
+                                <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} transition-opacity duration-1000 ease-in-out`} style={{ opacity: isAutoHighlighted ? 0.6 : undefined }} />
+                                <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
                                 <div className="relative z-10 flex flex-col h-full justify-between gap-4">
                                     <div className="flex justify-between items-start">
-                                        <div className={`p-2.5 rounded-lg transition-all duration-700 
-                                            ${isDisabled 
-                                                ? 'bg-slate-800 text-slate-500' // Icono apagado
-                                                : `${isAutoHighlighted ? style.iconBgActive : 'bg-slate-800'} ${isAutoHighlighted ? style.iconColorActive : 'text-slate-400'} ${style.iconBg} ${style.iconColor}`
-                                            }
-                                        `}>
+                                        <div className={`p-2.5 rounded-lg transition-all duration-700 ${isAutoHighlighted ? style.iconBgActive : 'bg-slate-800'} ${isAutoHighlighted ? style.iconColorActive : 'text-slate-400'} ${style.iconBg} ${style.iconColor}`}>
                                             <item.icon className="w-6 h-6" />
                                         </div>
-                                        
-                                        {!isDisabled && (
-                                            <ChevronRight className={`w-4 h-4 text-slate-600 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 ${style.iconColor}`} />
-                                        )}
+                                        <ChevronRight className={`w-4 h-4 text-slate-600 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 ${style.iconColor}`} />
                                     </div>
                                     <div>
-                                        <h3 className={`text-sm font-semibold transition-colors duration-700 mb-1 
-                                            ${isDisabled ? 'text-slate-500' : (isAutoHighlighted ? 'text-white' : 'text-slate-200 group-hover:text-white')}
-                                        `}>
-                                            {item.title}
-                                        </h3>
-                                        <span className={`text-[10px] uppercase font-bold tracking-wider ${isDisabled ? 'text-slate-600' : 'text-slate-600'}`}>
-                                            {item.category}
-                                        </span>
+                                        <h3 className={`text-sm font-semibold transition-colors duration-700 mb-1 ${isAutoHighlighted ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>{item.title}</h3>
+                                        <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">{item.category}</span>
                                     </div>
                                 </div>
                             </motion.div>
