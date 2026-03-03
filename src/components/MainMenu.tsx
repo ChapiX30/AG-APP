@@ -344,7 +344,9 @@ export const MainMenu: React.FC = () => {
   const [activeHighlightIndex, setActiveHighlightIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (user) {
+   useEffect(() => {
+    // Verificamos si user existe y si el UID es diferente para evitar el loop
+    if (user && (user as any).uid !== localUser?.uid) {
         setLocalUser({
             uid: (user as any).uid || '',
             email: (user as any).email || '',
@@ -354,6 +356,8 @@ export const MainMenu: React.FC = () => {
             phone: (user as any).phone
         });
     }
+  // eslint-disable-next-line
+  }, [(user as any)?.uid]); // <--- SOLUCIÓN: Solo miramos el UID
   }, [user]);
 
   const [showProfile, setShowProfile] = useState(false);
