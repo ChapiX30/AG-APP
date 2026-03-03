@@ -345,12 +345,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       
       if (isGlobalSearch) {
         // MODO BÚSQUEDA GLOBAL
-        const q = query(collection(db, 'fileMetadata'), limit(200));
+        const q = query(collection(db, 'fileMetadata'), orderBy('created', 'desc')); 
         const querySnapshot = await getDocs(q);
         const results: DriveFile[] = [];
         const isQuality = isQualityUser(currentUserData);
         const myName = normalizeText(currentUserData?.name || "");
-        const searchTerms = normalizeText(debouncedSearch).split(" ").filter(t => t.length > 0);
+        
+        // Separamos lo que el usuario escribió por espacios o guiones
+        const searchTerms = normalizeText(debouncedSearch).split(/[\s\-]+/).filter(t => t.length > 0);
 
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
@@ -380,7 +382,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             uploadedBy: data.uploadedBy,
             parentFolder: getParentFolderName(fullPath),
             keywords: data.keywords,
-            notas: data.notas // Cargamos las notas
+            notas: data.notas 
           };
 
           if (fuzzyMatch(fileObj, searchTerms)) {
@@ -388,7 +390,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           }
         });
         setFiles(results);
-        setFolders([]); 
+        setFolders([]);
       } else {
         // MODO NAVEGACIÓN
         const pathStr = [ROOT_PATH, ...path].join('/');

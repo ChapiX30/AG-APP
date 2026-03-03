@@ -25,10 +25,11 @@ const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
 const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
-
-// --- NUEVO SCREEN ---
 const EntradaSalidaScreen = lazy(() => import('./EntradaSalidaScreen').then(module => ({ default: module.EntradaSalidaScreen })));
-// --------------------
+
+// --- NUEVO IMPORT PARA FORMATOS ---
+const FormatosScreen = lazy(() => import('./FormatosScreen').then(module => ({ default: module.FormatosScreen })));
+// ----------------------------------
 
 const Loader = () => (
   <div className="w-full h-full flex flex-col items-center justify-center min-h-screen bg-slate-950 z-50 fixed top-0 left-0">
@@ -111,9 +112,10 @@ const renderScreen = (screen: string, user: any) => {
     case 'check-list': return <InventoryProScreen />;
     case 'friday': return <FridayScreen />;
     case 'vencimientos': return <VencimientosScreen />;
-    // --- NUEVO CASE ---
     case 'entrada-salida': return <EntradaSalidaScreen />;
-    // ------------------
+    // --- NUEVO CASE PARA RENDERIZAR LA PANTALLA ---
+    case 'formatos': return <FormatosScreen />;
+    // ----------------------------------------------
     default: return <MainMenu />;
   }
 };
