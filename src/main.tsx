@@ -4,19 +4,9 @@ import App from './App.tsx';
 import './index.css';
 import { BrowserRouter } from 'react-router-dom';
 
-// 👇--- LÓGICA DEL SERVICE WORKER ---👇
+// 👇--- AGREGA ESTE BLOQUE ANTES DEL RENDER ---👇
 if ('serviceWorker' in navigator) {
-  // 1. REGISTRAR EL SERVICE WORKER DE FIREBASE (NUEVO)
-  navigator.serviceWorker
-    .register('/firebase-messaging-sw.js')
-    .then((registration) => {
-      console.log('Service Worker de Firebase registrado con éxito:', registration.scope);
-    })
-    .catch((err) => {
-      console.error('Fallo al registrar el Service Worker de Firebase:', err);
-    });
-
-  // 2. TU LÓGICA PARA FORZAR ACTUALIZACIONES (SKIP_WAITING)
+  // Enviamos el mensaje SKIP_WAITING si hay un SW "waiting"
   navigator.serviceWorker.getRegistration().then(reg => {
     if (reg && reg.waiting) {
       reg.waiting.postMessage({ type: 'SKIP_WAITING' });
@@ -28,7 +18,7 @@ if ('serviceWorker' in navigator) {
     window.location.reload();
   });
 }
-// 👆--- HASTA AQUÍ LA LÓGICA DEL SW ---👆
+// 👆--- HASTA AQUÍ EL BLOQUE NUEVO ---👆
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
