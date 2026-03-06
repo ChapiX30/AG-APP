@@ -4,6 +4,8 @@ import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, 
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { 
   Folder, Search, LayoutGrid, List, Trash2, 
   CheckCircle2, FileText, Download, Star, Info, X, 
@@ -35,7 +37,7 @@ interface DriveFile {
   uploadedBy?: string;
   parentFolder?: string;
   keywords?: string[];
-  notas?: string; // NUEVO: Campo para notas del técnico/calidad
+  notas?: string;
 }
 
 interface DriveFolder {
@@ -79,7 +81,6 @@ const normalizeText = (text: string) => {
 const generateSearchTokens = (text: string): string[] => {
     if (!text) return [];
     const normalized = normalizeText(text);
-    // FIX: Quitamos el filter(p => p.length > 2) para que tokens como "EP" no se borren
     const parts = normalized.split(/[_ \-\.]+/).filter(p => p.length > 0);
     return [...new Set([normalized, ...parts])];
 };
@@ -90,11 +91,10 @@ const fuzzyMatch = (file: DriveFile, searchTerms: string[]) => {
         file.rawName, 
         file.uploadedBy, 
         file.parentFolder,
-        file.notas || "", // FIX: Incluimos las notas en la búsqueda global
+        file.notas || "",
         ...(file.keywords || [])
     ].join(' ').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-    // MATCH DIRECTO MEJORADO: Busca coincidencias aunque tengan guiones
     return searchTerms.every(term => textToSearch.includes(term));
 };
 
@@ -217,6 +217,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false); 
   const [currentUserData, setCurrentUserData] = useState<UserData | null>(null);
+  const [isZipping, setIsZipping] = useState(false);
   
   // UI & Nav
   const [path, setPath] = useState<string[]>([]);
@@ -351,7 +352,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const isQuality = isQualityUser(currentUserData);
         const myName = normalizeText(currentUserData?.name || "");
         
-        // Separamos lo que el usuario escribió por espacios o guiones
         const searchTerms = normalizeText(debouncedSearch).split(/[\s\-]+/).filter(t => t.length > 0);
 
         querySnapshot.forEach((docSnap) => {
@@ -599,6 +599,69 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       loadContent();
   };
 
+  const handleBatchDownload = async () => {
+      if (selectedIds.size === 0) return;
+      setIsZipping(true);
+      showToast("Preparando archivo ZIP, por favor espera...", 'info');
+      
+      try {
+          const zip = new JSZip();
+          const fetchPromises = Array.from(selectedIds).map(async (id) => {
+              const file = files.find(f => f.fullPath === id);
+              if (file) {
+                  let url = file.url;
+                  if (!url) url = await getDownloadURL(ref(storage, file.fullPath));
+                  const response = await fetch(url);
+                  const blob = await response.blob();
+                  zip.file(file.name, blob);
+              }
+          });
+  
+          await Promise.all(fetchPromises);
+          const zipBlob = await zip.generateAsync({ type: 'blob' });
+          saveAs(zipBlob, 'AG_Drive_Descarga.zip');
+          
+          showToast("Descarga completada", 'success');
+          setSelectedIds(new Set());
+      } catch (error) {
+          console.error("Error creando ZIP:", error);
+          showToast("Error al empaquetar los archivos", 'error');
+      } finally {
+          setIsZipping(false);
+      }
+  };
+
+  const deleteFolderRecursive = async (folderPrefix: string) => {
+      const folderRef = ref(storage, folderPrefix);
+      const res = await listAll(folderRef);
+  
+      for (const itemRef of res.items) {
+          await deleteObject(itemRef);
+          const metaId = itemRef.fullPath.replace(/\//g, '_');
+          await deleteDoc(doc(db, 'fileMetadata', metaId));
+      }
+  
+      for (const subFolderRef of res.prefixes) {
+          await deleteFolderRecursive(subFolderRef.fullPath);
+      }
+  };
+  
+  const executeDeleteFolder = async (folder: DriveFolder) => {
+      if (!confirm(`¿Estás seguro de eliminar la carpeta "${folder.name}" y TODO su contenido? Esta acción no se puede deshacer.`)) return;
+      
+      setIsMoving(true); 
+      try {
+          await deleteFolderRecursive(folder.fullPath);
+          showToast("Carpeta eliminada correctamente", 'success');
+          loadContent(); 
+      } catch (e) {
+          console.error("Error al eliminar carpeta:", e);
+          showToast("Error al eliminar la carpeta", 'error');
+      } finally {
+          setIsMoving(false);
+      }
+  };
+
   const moveFolderRecursive = async (sourcePrefix: string, destPrefix: string) => {
       const sourceRef = ref(storage, sourcePrefix);
       const res = await listAll(sourceRef);
@@ -774,7 +837,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const handleUploadInput = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) processFiles(e.target.files); };
 
-  // NUEVA FUNCIÓN: Actualizar Notas
   const updateNotes = async (file: DriveFile, newNotes: string) => {
       const updatedFile = { ...file, notas: newNotes };
       setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updatedFile : f));
@@ -962,6 +1024,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     {selectedIds.size > 0 && (
                         <div className="flex items-center gap-2 animate-in slide-in-from-right fade-in">
                             <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">{selectedIds.size} seleccionados</span>
+                            
+                            <button 
+                                onClick={handleBatchDownload} 
+                                disabled={isZipping}
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100 shadow-sm disabled:opacity-50" 
+                                title="Descargar seleccionados (ZIP)"
+                            >
+                                {isZipping ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                            </button>
+
                             {isQualityUser(currentUserData) && (
                                 <button onClick={handleBatchDelete} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-red-100 shadow-sm" title="Eliminar seleccionados">
                                     <Trash2 size={16} />
@@ -1077,7 +1149,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       {detailsOpen && selectedIds.size === 1 && (() => {
           const fileId = Array.from(selectedIds)[0];
           const file = files.find(f => f.fullPath === fileId);
-          // FIX: Le pasamos la nueva función updateNotes
           return file ? <DetailsPanel file={file} onClose={() => setDetailsOpen(false)} isQualityUser={isQualityUser(currentUserData)} onToggleStatus={updateFileStatus} onUpdateNotes={updateNotes} onDownload={() => handlePreview(file)} onDelete={handleDelete} /> : null;
       })()}
       
@@ -1117,6 +1188,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     <MenuOption icon={<FolderOpen size={16} className="text-blue-500"/>} label="Abrir" onClick={() => { if(contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} />
                     <MenuOption icon={<Edit size={16} className="text-purple-500"/>} label="Renombrar" onClick={() => { if(contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
                     <MenuOption icon={<MoveRight size={16} className="text-blue-500"/>} label="Mover a carpeta" onClick={() => { if(contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                    <div className="my-1 border-t border-gray-100"></div>
+                    <MenuOption icon={<Trash2 size={16} className="text-red-500"/>} label="Eliminar carpeta" className="text-red-600 hover:bg-red-50" onClick={() => { if(contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} />
                  </>
             )}
         </div>
@@ -1169,7 +1242,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       
       {createFolderOpen && <Dialog title="Nueva Carpeta" onClose={() => setCreateFolderOpen(false)} onConfirm={() => { if (!newFolderName.trim()) return; const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }}><input autoFocus value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl mb-6 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nombre..." /></Dialog>}
       
-      {/* FIX: Lógica real para renombrar completada */}
       {renameDialogOpen && (
           <Dialog 
               title="Renombrar" 
@@ -1179,7 +1251,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   setRenameDialogOpen(false);
                   
                   const targetName = newName.trim();
-                  // Reconstruimos la ruta donde estamos actualmente
                   const currentPathString = [ROOT_PATH, ...path].join('/');
 
                   if (renameTargetFile) {
@@ -1200,7 +1271,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
 // --- SUBCOMPONENTES PRO ---
 
-// Nuevo Componente Switch Animado PRO
 const ProSwitch = ({ checked, onChange, disabled, activeColor = "bg-blue-600" }: any) => {
     return (
         <button
@@ -1228,6 +1298,11 @@ const ProSwitch = ({ checked, onChange, disabled, activeColor = "bg-blue-600" }:
 const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive }: any) => {
     const isReadyForReview = file.completed && !file.reviewed;
     const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
+    
+    // NUEVO: Lógica de Vencimiento para Hojas de Servicio
+    const isNoExpiration = file.fullPath.toLowerCase().includes('hojas de servicio') || file.name.toUpperCase().startsWith('HSDG');
+    const { status } = getDeadlineInfo(file.created);
+    const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration;
 
     return (
         <div 
@@ -1236,16 +1311,18 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
             onDoubleClick={onDoubleClick} 
             className={clsx(
                 "group relative bg-white border rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 flex flex-col h-[270px] select-none", 
-                selected ? "ring-2 ring-blue-500 border-transparent shadow-xl translate-y-[-4px]" : "border-gray-200/80 hover:border-blue-300 hover:shadow-lg hover:translate-y-[-2px]", 
-                isReadyForReview ? "ring-1 ring-blue-400 border-blue-200 shadow-blue-100" : ""
+                selected ? "ring-2 ring-blue-500 border-transparent shadow-xl translate-y-[-4px]" : "hover:shadow-lg hover:translate-y-[-2px]", 
+                isOverdue && !selected ? "border-rose-300 shadow-rose-100/50 bg-rose-50/10 ring-1 ring-rose-200" : "border-gray-200/80 hover:border-blue-300",
+                isReadyForReview && !isOverdue && !selected ? "ring-1 ring-blue-400 border-blue-200 shadow-blue-100" : ""
             )}
         >
-            <div className="h-32 bg-gray-50 flex items-center justify-center border-b border-gray-100 group-hover:bg-white transition-colors relative">
+            <div className={clsx("h-32 flex items-center justify-center border-b border-gray-100 group-hover:bg-white transition-colors relative", isOverdue ? "bg-rose-50/30" : "bg-gray-50")}>
                 {selected && <div className="absolute top-2 left-2 z-20"><div className="bg-blue-500 text-white rounded-full p-1"><CheckCircle2 size={16} /></div></div>}
                 <div className="transform transition-transform group-hover:scale-110 duration-500 drop-shadow-sm">{getFileIcon(file.name, 60)}</div>
                 <div className="absolute top-3 right-3 flex flex-col gap-1">
                     {file.reviewed && <div className="bg-green-500 text-white p-1 rounded-full shadow-md z-10" title="Validado"><CheckCircle2 size={12}/></div>}
                     {isReadyForReview && <div className="bg-blue-500 text-white p-1 rounded-full shadow-md z-10 animate-pulse" title="Listo para Revisión"><Eye size={12}/></div>}
+                    {isOverdue && !selected && <div className="bg-rose-500 text-white p-1 rounded-full shadow-md z-10 animate-bounce" title="Vencido"><AlertCircle size={12}/></div>}
                 </div>
             </div>
             <div className="p-4 flex flex-col flex-1 justify-between">
@@ -1259,11 +1336,19 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
                             <span className="truncate font-medium">{file.parentFolder}</span>
                         </div>
                     )}
-                    <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                         <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">{formatFileSize(file.size)}</span>
+                    <div className="flex items-center gap-2 text-[10px] mt-1">
+                         <span className={clsx("px-1.5 py-0.5 rounded font-mono", isOverdue ? "bg-rose-100 text-rose-600" : "bg-gray-100 text-gray-400")}>{formatFileSize(file.size)}</span>
                     </div>
                 </div>
-                <DeadlineBar createdDate={file.created} />
+                
+                {/* NUEVO: Condicionar la barra de progreso */}
+                {!isNoExpiration ? (
+                    <DeadlineBar createdDate={file.created} />
+                ) : (
+                    <div className="w-full mt-auto">
+                        <span className="text-[9px] font-bold text-gray-300 uppercase tracking-wider">Documento Fijo</span>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -1271,21 +1356,34 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
 
 const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive }: any) => {
     const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
+    
+    // NUEVO: Lógica de Vencimiento para Hojas de Servicio
+    const isNoExpiration = file.fullPath.toLowerCase().includes('hojas de servicio') || file.name.toUpperCase().startsWith('HSDG');
+    const { status } = getDeadlineInfo(file.created);
+    const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration;
+
     return (
         <div 
             onClick={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)} 
             onContextMenu={onContextMenu} 
             onDoubleClick={onDoubleClick} 
-            className={clsx("grid grid-cols-12 gap-4 px-4 md:px-6 py-4 border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer items-center transition-all group select-none", selected ? "bg-blue-50 border-l-4 border-l-blue-500 pl-3 md:pl-[20px]" : "")}
+            className={clsx(
+                "grid grid-cols-12 gap-4 px-4 md:px-6 py-4 border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer items-center transition-all group select-none", 
+                selected ? "bg-blue-50 border-l-4 border-l-blue-500 pl-3 md:pl-[20px]" : "",
+                isOverdue && !selected ? "bg-rose-50/30 border-l-4 border-l-rose-500 pl-3 md:pl-[20px]" : ""
+            )}
         >
             <div className="col-span-10 md:col-span-4 flex items-center gap-3 overflow-hidden">
                 {selected ? <CheckCircle2 size={24} className="text-blue-500"/> : getFileIcon(file.name, 24)}
                 <div className="flex flex-col min-w-0">
-                    <span className={clsx("truncate font-semibold text-sm", selected ? "text-blue-700" : "text-gray-700")}>{file.name}</span>
+                    <span className={clsx("truncate font-semibold text-sm", selected ? "text-blue-700" : (isOverdue ? "text-rose-700" : "text-gray-700"))}>{file.name}</span>
                     {showFolder && <span className="text-[10px] text-gray-400 flex items-center gap-1"><FolderOpen size={10}/> {file.parentFolder}</span>}
                 </div>
             </div>
-            <div className="hidden md:block col-span-3 pr-8"><DeadlineBar createdDate={file.created} /></div>
+            <div className="hidden md:block col-span-3 pr-8">
+                {/* NUEVO: Condicionar la barra de progreso */}
+                {!isNoExpiration ? <DeadlineBar createdDate={file.created} /> : <span className="text-[9px] font-bold text-gray-300 uppercase tracking-wider mt-1 block">Documento Fijo</span>}
+            </div>
             <div className="hidden md:block col-span-2">
                  {file.reviewed ? <StatusBadge type="success" text="Validado" icon={CheckCircle2}/> : file.completed ? <StatusBadge type="warning" text="Por Revisar" icon={Eye}/> : <StatusBadge type="neutral" text="En Proceso" icon={Clock}/>}
             </div>
@@ -1350,7 +1448,6 @@ const DeadlineBar = ({ createdDate }: { createdDate: string }) => {
 
 const EmptyState = ({ icon: Icon, text }: any) => <div className="h-full flex flex-col items-center justify-center text-gray-300 py-20 animate-in fade-in zoom-in-95"><div className="bg-gray-50 p-6 rounded-full mb-4"><Icon className="w-12 h-12 text-gray-200" strokeWidth={1.5} /></div><p className="text-base font-medium text-gray-400">{text}</p></div>;
 
-// Nuevo LoadingSkeleton PRO con Logo Giratorio
 const LoadingSkeleton = () => (
     <div className="h-full w-full flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-500">
         <style>
@@ -1380,11 +1477,9 @@ const LoadingSkeleton = () => (
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1 group relative overflow-hidden", active ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900")}><div className="flex items-center justify-between relative z-10"><div className="flex items-center gap-3">{icon} {label}</div>{badge && <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>}</div></button>);
 const MenuOption = ({ icon, label, onClick, shortcut, className }: any) => (<button onClick={onClick} className={clsx("w-full text-left px-4 py-2.5 text-gray-700 hover:bg-blue-50 flex items-center gap-3 transition-colors text-sm font-medium", className)}>{icon} {label} {shortcut && <span className="text-xs text-gray-400 ml-auto">{shortcut}</span>}</button>);
 
-// FIX: Modificado para recibir onUpdateNotes y tener un textarea integrado
 const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes }: any) => {
     const [notes, setNotes] = React.useState(file.notas || "");
 
-    // Sincronizar el estado local si seleccionas otro archivo
     React.useEffect(() => {
         setNotes(file.notas || "");
     }, [file]);
@@ -1415,7 +1510,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
                     </div>
                 </div>
 
-                {/* NUEVA SECCIÓN DE COMENTARIOS */}
                 <div>
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><MessageSquare size={12}/> Notas del Documento</h4>
                     <textarea

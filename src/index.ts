@@ -5,6 +5,12 @@ import * as nodemailer from "nodemailer";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
 
+// --- NUEVAS IMPORTACIONES PARA GOOGLE DRIVE ---
+import * as corsLib from "cors";
+import { google } from "googleapis";
+const cors = corsLib({ origin: true });
+// ----------------------------------------------
+
 admin.initializeApp();
 const db = admin.firestore();
 
@@ -121,7 +127,6 @@ export const agbotMonitorDiario = functions.pubsub
             return null;
         }
 
-        // --- NUEVO: ENVIAR NOTIFICACIÓN PUSH AL TÓPICO ---
         const payloadPush = {
             notification: {
                 title: `🔔 AGbot: ${totalEquipos} equipos a revisión`,
@@ -137,7 +142,6 @@ export const agbotMonitorDiario = functions.pubsub
             console.error("Error al enviar la notificación push:", pushError);
         }
 
-        // Construimos el HTML final del correo
         const htmlFinal = `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <h2 style="color: #2c3e50;">🤖 Reporte Diario de Inteligencia</h2>
@@ -218,7 +222,6 @@ export const gestionarSuscripcionNotificaciones = functions.firestore
         const nuevoToken = data?.fcmToken;
         const tokenViejo = previousData?.fcmToken;
 
-        // Si hay un token nuevo y es diferente al anterior, lo suscribimos
         if (nuevoToken && nuevoToken !== tokenViejo) {
             try {
                 await admin.messaging().subscribeToTopic([nuevoToken], "admin_notifications");
@@ -228,7 +231,6 @@ export const gestionarSuscripcionNotificaciones = functions.firestore
             }
         }
 
-        // Opcional: Si el usuario borra su token (ej. cierra sesión), desuscribirlo
         if (!nuevoToken && tokenViejo) {
             try {
                 await admin.messaging().unsubscribeFromTopic([tokenViejo], "admin_notifications");
@@ -267,3 +269,45 @@ export const notificarNuevaHoja = functions.firestore
         }
         return null;
     });
+
+// ==================================================================
+// 8. NUEVO: BUSCADOR DE SCHEDULES EN GOOGLE DRIVE
+// ==================================================================
+export const buscarPdfDrive = functions.https.onRequest((req, res) => {
+    cors(req, res, async () => {
+        try {
+            const idEquipo = req.query.id as string;
+            if (!idEquipo) {
+                res.status(400).json({ error: "Falta el ID del equipo" });
+                return;
+            }
+
+            // ⚠️ IMPORTANTE: Necesitas una API Key de Google Cloud con acceso a la API de Drive
+            const drive = google.drive({
+                version: 'v3',
+                auth: 'TU_API_KEY_DE_GOOGLE_CLOUD_AQUI' // Reemplaza esto con tu clave real
+            });
+
+            const folderId = '18jCk68E2ASBEtFOVtGJAYP0K98Qj8Fy5';
+
+            const driveRes = await drive.files.list({
+                q: `'${folderId}' in parents and name contains 'Schedule' and name contains '${idEquipo}' and mimeType = 'application/pdf'`,
+                fields: 'files(id, name, webViewLink)',
+                orderBy: 'modifiedTime desc',
+                pageSize: 1
+            });
+
+            const files = driveRes.data.files;
+
+            if (files && files.length > 0) {
+                res.status(200).json({ fileUrl: files[0].webViewLink, fileName: files[0].name });
+            } else {
+                res.status(404).json({ message: "No se encontró un Schedule para este ID" });
+            }
+
+        } catch (error: any) {
+            console.error("Error buscando en Drive:", error);
+            res.status(500).json({ error: "Error al conectar con Google Drive", detalle: error.message });
+        }
+    });
+});

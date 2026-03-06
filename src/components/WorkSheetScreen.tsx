@@ -63,11 +63,11 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     if (Capacitor.isNativePlatform()) {
       // 🔥 USA EL NUEVO MÉTODO CON .lemd
       await EpsonLabel.printLabel({
-        id: state.id.trim(),
-        fechaCal: labelData.fechaCal,
-        fechaSug: labelData.fechaSug,
-        certificado: state.certificado.trim(),
-        calibro: labelData.calibro,
+        id: data.id.trim(),
+        fechaCal: data.fechaCal,
+        fechaSug: data.fechaSug,
+        certificado: data.certificado.trim(),
+        calibro: data.calibro,
         tapeSize: "24mm",
       });
     } else {
@@ -724,7 +724,7 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
     case 'AUTOCOMPLETE_SUCCESS': return { ...state, ...action.payload, isMasterData: true, fieldsLocked: true };
     case 'AUTOCOMPLETE_FAIL':
       const isCelestica = state.cliente.toLowerCase().includes("celestica");
-      return { ...state, isMasterData: false, fieldsLocked: false, equipo: (isCelestica && !state.id) ? "" : state.equipo, marca: (isCelestica && !state.id) ? "" : state.marca, modelo: (isCelestica && !state.id) ? "" : state.modelo, numeroSerie: (isCelestica && !state.id) ? "" : state.numeroSerie };
+      return { ...state, isMasterData: false, fieldsLocked: false, equipo: (isCelestica && !state.id) ? "" : state.equipo, marca: (isCelestica && !state.id) ? "" : state.marca, modelo: (isCelestica && !state.id) ? "" : state.numeroSerie };
     case 'SET_ID_BLOCKED': return { ...state, idBlocked: true, idErrorMessage: action.message };
     case 'CLEAR_ID_BLOCK': return { ...state, idBlocked: false, idErrorMessage: "" };
     case 'SET_EXCEPCION': return { ...state, permitirExcepcion: action.payload };
@@ -745,6 +745,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
+  
+  // 🆕 ESTADOS DE BÚSQUEDA DRIVE
+  const [lastPdfUrl, setLastPdfUrl] = useState<string | null>(null);
+  const [isSearchingPdf, setIsSearchingPdf] = useState(false);
   
   // 🆕 ESTADOS PARA IMPRESIÓN AUTOMÁTICA
   const hiddenLabelRef = useRef<HTMLDivElement>(null);
@@ -943,6 +947,35 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       if (rec) { masterFound = true; dispatch({ type: 'AUTOCOMPLETE_SUCCESS', payload: { equipo: rec.B ?? "", marca: rec.C ?? "", modelo: rec.D ?? "", numeroSerie: rec.E ?? "" }}); }
     }
     if (!masterFound) dispatch({ type: 'AUTOCOMPLETE_FAIL' });
+
+    // 🆕 --- BÚSQUEDA DE PDF EN DRIVE CON MANEJO DE ERRORES ---
+    if (newId.startsWith("EP-")) {
+      setIsSearchingPdf(true);
+      setLastPdfUrl(null);
+      try {
+        // URL PREPARADA PARA TU CLOUD FUNCTION: Reemplaza esto cuando tengas tu backend
+        const cloudFunctionUrl = `https://us-central1-TU-PROYECTO.cloudfunctions.net/buscarPdfDrive?id=${newId}`;
+        const response = await fetch(cloudFunctionUrl);
+
+        if (response.ok) {
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await response.json();
+            if (data.fileUrl) {
+              setLastPdfUrl(data.fileUrl);
+              setToast({ message: "Certificado anterior (Schedule) localizado en Drive.", type: 'success' });
+            }
+          }
+        } else {
+           console.warn("No se encontró archivo en Drive o la URL de la Cloud Function no está lista.");
+        }
+      } catch (error) {
+        console.error("Error buscando el PDF en Drive (Falta configurar el backend):", error);
+      } finally {
+        setIsSearchingPdf(false);
+      }
+    }
+
     validarIdEnPeriodo();
   };
 
@@ -1160,6 +1193,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       
       // 🖨️ IMPRIMIR ETIQUETA AUTOMÁTICAMENTE DESPUÉS DE GUARDAR
       try {
+        // @ts-ignore
         await generateAndPrintLabel(hiddenLabelRef, tapeSize);
         setToast({ message: "✅ Guardado e impreso correctamente.", type: 'success' });
       } catch (printError) {
@@ -1329,20 +1363,40 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
                   
+                  {/* 🆕 CAMPO ID CON BOTÓN DRIVE A LADO */}
                   <div>
                     <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
-                    <input 
-                      type="text" 
-                      value={state.id} 
-                      onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
-                      onBlur={handleIdBlur} 
-                      className={`w-full p-4 border-2 rounded-lg transition-all ${
-                          state.idBlocked 
-                              ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
-                              : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
-                      }`} 
-                      placeholder="ID" 
-                    />
+                    <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          value={state.id} 
+                          onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
+                          onBlur={handleIdBlur} 
+                          className={`flex-1 p-4 border-2 rounded-lg transition-all ${
+                              state.idBlocked 
+                                  ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
+                                  : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
+                          }`} 
+                          placeholder="ID" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => lastPdfUrl && window.open(lastPdfUrl, '_blank')}
+                          disabled={!lastPdfUrl || isSearchingPdf}
+                          className={`px-4 rounded-lg border flex items-center justify-center transition-all shadow-sm ${
+                            lastPdfUrl 
+                              ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 hover:scale-105 active:scale-95" 
+                              : "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                          }`}
+                          title={lastPdfUrl ? "Ver Schedule en Drive" : "No se encontró PDF"}
+                        >
+                          {isSearchingPdf ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <FileText className="w-5 h-5" />
+                          )}
+                        </button>
+                    </div>
                     
                     {state.idBlocked && (
                         <p className={`mt-2 text-sm font-medium animate-pulse ${state.permitirExcepcion ? "text-orange-600" : "text-red-600"}`}>

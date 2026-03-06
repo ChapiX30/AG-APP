@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useTransition } from "react";
 import {
   Plus, Trash2, ChevronDown, Search, 
   UserCircle, Calendar, X, 
@@ -134,7 +134,7 @@ interface WorksheetData {
   nombre?: string;     
   fecha?: string;
   fechaEntrada?: string;
-  diasPromesa?: number; // CAMBIO: Ahora es un número simple
+  diasPromesa?: number;
   cargado_drive?: string; 
   entregado?: boolean; 
   folioSalida?: string; 
@@ -182,14 +182,11 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Eléctrica": { label: "Eléctrica", bg: "#ff8f00" }
 };
 
-// --- CONFIGURACIÓN DE COLUMNAS ACTUALIZADA ---
 const DEFAULT_COLUMNS: Column[] = [
   { key: 'folio', label: 'Folio', width: 80, type: "text", sticky: true, permissions: ['admin', 'ventas'] }, 
   { key: 'cliente', label: 'Cliente', width: 200, type: "client", permissions: ['admin', 'ventas', 'logistica'] },
   { key: 'equipo', label: 'Equipo', width: 180, type: "text", permissions: ['admin', 'metrologo'] },
-  // 1. FECHA DE ENTRADA
   { key: 'fechaEntrada', label: 'F. Entrada', width: 130, type: "date", permissions: ['admin', 'logistica', 'ventas'] },
-  // 2. SLA MANUAL (Número editable con vista de pastilla)
   { key: 'diasPromesa', label: 'Cronograma (SLA)', width: 140, type: "sla_manual" }, 
   { key: 'id', label: 'ID Interno', width: 100, type: "text", permissions: ['admin', 'metrologo'] }, 
   { key: 'marca', label: 'Marca', width: 120, type: "text" },
@@ -197,7 +194,6 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'serie', label: 'Serie', width: 120, type: "text" },
   { key: 'nombre', label: 'Responsable', width: 120, type: "person", permissions: ['admin', 'logistica'] }, 
   { key: 'status_equipo', label: '1-Estatus del Equipo', width: 160, type: "dropdown", options: ["Desconocido", "En Revisión", "Calibrado", "Rechazado"] },
-  // 3. FECHA CALIB (Con semáforo)
   { key: 'fecha', label: '2-Fecha de Calib.', width: 130, type: "date" },
   { key: 'certificado', label: '3-N. Certificado', width: 140, type: "text" },
   { key: 'status_certificado', label: '4-Estatus Certificado', width: 170, type: "dropdown", options: ["Pendiente de Certificado", "Generado", "Firmado"] },
@@ -206,7 +202,6 @@ const DEFAULT_COLUMNS: Column[] = [
   { key: 'departamento', label: 'Departamento', width: 140, type: "dropdown", options: ["Mecánica", "Dimensional", "Eléctrica"], permissions: ['logistica', 'admin'] },
 ];
 
-// Función auxiliar para calcular fecha límite basada en días hábiles
 const addBusinessDays = (startDate: Date, daysToAdd: number) => {
     let currentDate = new Date(startDate);
     let added = 0;
@@ -218,13 +213,10 @@ const addBusinessDays = (startDate: Date, daysToAdd: number) => {
     return currentDate;
 };
 
-// --- NUEVA CELDA SLA MANUAL E INTELIGENTE ---
-// Muestra la "pastilla" verde por defecto. Al hacer click, permite editar el número.
 const EditableSLACell = React.memo(({ days, startDate, onChange, isCompleted, disabled }: { days: number, startDate: string, onChange: (val: number) => void, isCompleted: boolean, disabled: boolean }) => {
     const [isEditing, setIsEditing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Si ya completaron el proceso, mostramos completado siempre
     if (isCompleted && !isEditing) {
         return (
             <div className="w-full h-full flex items-center justify-center bg-blue-50/30" onClick={() => !disabled && setIsEditing(true)}>
@@ -251,14 +243,12 @@ const EditableSLACell = React.memo(({ days, startDate, onChange, isCompleted, di
         );
     }
 
-    // Calculamos visualmente cuántos días faltan para la fecha límite
-    // Fecha Límite = Fecha Entrada + Días Promesa (Hábiles)
     if (!startDate) return <div className="text-gray-300 text-xs text-center">-</div>;
 
-    const start = new Date(startDate + 'T00:00:00'); // Asegurar medianoche local
+    const start = new Date(startDate + 'T00:00:00'); 
     const deadline = addBusinessDays(start, days || 0); 
     const now = new Date();
-    now.setHours(0,0,0,0); // Normalizar hoy
+    now.setHours(0,0,0,0); 
     
     const diffTime = deadline.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -342,7 +332,6 @@ const DropdownCell = React.memo(({ value, options, onChange, disabled }: any) =>
 });
 
 const DateCell = React.memo(({ value, onChange, disabled }: any) => {
-    // IMPORTANTE: Aseguramos que la fecha se vea correcta
     const displayDate = value ? new Date(value + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
     const inputRef = useRef<HTMLInputElement>(null);
     if (disabled) return <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 cursor-not-allowed bg-gray-50/20">{displayDate || "-"}</div>;
@@ -592,10 +581,8 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                 let cellValue = row[col.key];
                 if (col.key === 'folio') { if (groupId === 'laboratorio') cellValue = row.folioSalida || ""; else cellValue = row.folio || ""; }
                 
-                // --- SEMÁFORO INTELIGENTE PARA FECHA DE CALIBRACIÓN ---
                 let customClass = "";
                 if (col.key === 'fecha' && row.diasPromesa && row.fechaEntrada && cellValue) {
-                     // Calcular Deadline real
                      const start = new Date(row.fechaEntrada + 'T00:00:00');
                      const deadline = addBusinessDays(start, row.diasPromesa);
                      
@@ -604,16 +591,12 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                      deadline.setHours(0,0,0,0);
 
                      if (calibDate > deadline) {
-                         // TARDE (ROJO)
                          customClass = "bg-red-50 text-red-700 font-bold border-l-2 border-red-400";
                      } else {
-                         // A TIEMPO (VERDE)
                          customClass = "bg-green-50 text-green-700 font-bold border-l-2 border-green-400";
                      }
                 }
-                // -------------------------------------
 
-                // DETERMINAR SI EL TRABAJO ESTÁ TERMINADO PARA PINTAR SLA EN VERDE
                 const isWorkDone = row.status_certificado === 'Generado' || row.status_certificado === 'Firmado' || row.cargado_drive === 'Si' || row.cargado_drive === 'Realizado';
 
                 return (
@@ -742,6 +725,8 @@ const FridayScreen: React.FC = () => {
     const [isResizing, setIsResizing] = useState(false);
     const resizingRef = useRef<{ startX: number, startWidth: number, key: string } | null>(null);
 
+    const [isPending, startTransition] = useTransition();
+
     const saveColumnsToFirebase = async (colsToSave: Column[]) => {
         try {
             const cleanColumns = JSON.parse(JSON.stringify(colsToSave));
@@ -772,6 +757,7 @@ const FridayScreen: React.FC = () => {
 
     useEffect(() => {
         setIsLoadingData(true);
+        
         const unsubBoard = onSnapshot(doc(db, "tableros", "principal"), (snap) => {
             if (snap.exists() && snap.data().columns) {
                 const savedCols = snap.data().columns;
@@ -802,27 +788,39 @@ const FridayScreen: React.FC = () => {
 
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
-        let q;
-        const start = `${currentYear}-01-01T00:00:00`;
-        const end = `${currentYear}-12-31T23:59:59`;
-        q = query(collection(db, "hojasDeTrabajo"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
-
-        const unsubRows = onSnapshot(q, (snapshot) => {
+        const unsubRows = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
             let newRows: WorksheetData[] = [];
+            
             snapshot.forEach(doc => { 
                 const data = doc.data();
-                newRows.push({ 
-                    ...data, 
-                    docId: doc.id, 
-                    id: data.id || "", 
-                    nombre: data.nombre || data.assignedTo, 
-                    fecha: data.fecha || data.fecha_calib,
-                    cargado_drive: data.cargado_drive || "No",
-                    status_certificado: data.status_certificado || "Pendiente de Certificado",
-                    entregado: data.entregado === true,
-                    folioSalida: data.folioSalida 
-                } as WorksheetData); 
+                let recordYear = "";
+                if (data.createdAt) recordYear = String(data.createdAt).substring(0, 4);
+                else if (data.fechaEntrada) recordYear = String(data.fechaEntrada).substring(0, 4);
+                else if (data.fecha) recordYear = String(data.fecha).substring(0, 4);
+                else if (data.fecha_calib) recordYear = String(data.fecha_calib).substring(0, 4);
+                else recordYear = "2025"; 
+
+                if (recordYear === currentYear.toString()) {
+                    newRows.push({ 
+                        ...data, 
+                        docId: doc.id, 
+                        id: data.id || "", 
+                        nombre: data.nombre || data.assignedTo, 
+                        fecha: data.fecha || data.fecha_calib,
+                        cargado_drive: data.cargado_drive || "No",
+                        status_certificado: data.status_certificado || "Pendiente de Certificado",
+                        entregado: data.entregado === true,
+                        folioSalida: data.folioSalida 
+                    } as WorksheetData); 
+                }
             });
+
+            newRows.sort((a, b) => {
+                const dateA = a.createdAt || a.fechaEntrada || "0";
+                const dateB = b.createdAt || b.fechaEntrada || "0";
+                return dateB.localeCompare(dateA);
+            });
+
             setRows(newRows);
             setIsLoadingData(false);
         });
@@ -830,20 +828,20 @@ const FridayScreen: React.FC = () => {
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
     }, [currentYear]); 
 
+    // --- EL CEREBRO DE AG-BOT CON MÓDULO ANTICORRUPCIÓN Y VIGILANCIA ---
     useEffect(() => {
         if (isLoadingData || rows.length === 0) return;
 
         const runAGBot = async () => {
             const batch = writeBatch(db);
             let updateCount = 0;
-            const currentHour = new Date().getHours();
-            const isNightMode = currentHour >= 19;
             const newThoughts: AGBotThought[] = [];
 
             rows.forEach(row => {
                 let needsUpdate = false;
                 const updates: any = {};
 
+                // --- 1. REGLAS ORIGINALES DE AUTOCOMPLETADO ---
                 if (!row.departamento || row.departamento === "") {
                     const detected = detectDepartment(row.equipo || "");
                     if (detected) { updates.departamento = detected; needsUpdate = true; }
@@ -865,17 +863,50 @@ const FridayScreen: React.FC = () => {
 
                 const driveStatus = (row.cargado_drive || "").toLowerCase();
                 const isDriveDone = driveStatus === 'si' || driveStatus === 'realizado';
-                if (isDriveDone && (row.status_certificado === 'Pendiente de Certificado' || row.status_certificado === '')) {
+                if (isDriveDone && (row.status_certificado === 'Pendiente de Certificado' || !row.status_certificado)) {
                     updates.status_certificado = 'Generado';
                     needsUpdate = true;
-                    showToast(`🤖 AG-Bot: Certificado generado para ${row.folio}`, 'success');
+                    newThoughts.push({ id: Date.now() + Math.random(), type: 'success', message: `Certificado autogenerado para ${row.folio || 'un equipo'}`, timestamp: new Date().toISOString() });
                 }
 
+                // --- 2. MÓDULO DE ANTICORRUPCIÓN Y CONSISTENCIA (¡NUEVO!) ---
+
+                // A. Consistencia de ubicación cruzada
                 if (row.lugarCalibracion === 'sitio') {
                     if (row.status_equipo !== 'Calibrado') { updates.status_equipo = 'Calibrado'; needsUpdate = true; }
                     if (row.ubicacion_real !== 'Servicio en Sitio') { updates.ubicacion_real = 'Servicio en Sitio'; needsUpdate = true; }
+                } else if (row.lugarCalibracion === 'laboratorio') {
+                    // Si está en el grupo de laboratorio pero la ubicación dice Sitio (error humano o de arrastre)
+                    if (row.ubicacion_real === 'Servicio en Sitio') {
+                        updates.ubicacion_real = 'Laboratorio';
+                        needsUpdate = true;
+                        newThoughts.push({ id: Date.now() + Math.random(), type: 'warning', message: `Inconsistencia de ubicación reparada para ${row.folio || 'un equipo'}`, timestamp: new Date().toISOString() });
+                    }
                 }
 
+                // B. Sanitización de SLA (Días Promesa)
+                if (row.diasPromesa === undefined || row.diasPromesa === null || isNaN(Number(row.diasPromesa))) {
+                    updates.diasPromesa = 5; // Valor seguro por defecto
+                    needsUpdate = true;
+                }
+
+                // C. Estatus huérfanos
+                if (!row.status_equipo || row.status_equipo === "") {
+                    updates.status_equipo = 'Desconocido';
+                    needsUpdate = true;
+                }
+                if (!row.status_certificado || row.status_certificado === "") {
+                    updates.status_certificado = 'Pendiente de Certificado';
+                    needsUpdate = true;
+                }
+
+                // D. Limpieza de espacios en blanco extremos que rompen la UI
+                if (row.equipo && typeof row.equipo === 'string' && row.equipo !== row.equipo.trim()) {
+                    updates.equipo = row.equipo.trim();
+                    needsUpdate = true;
+                }
+
+                // Ejecutar actualización
                 if (needsUpdate) {
                     const rowRef = doc(db, "hojasDeTrabajo", row.docId);
                     updates.lastUpdated = new Date().toISOString(); 
@@ -888,12 +919,17 @@ const FridayScreen: React.FC = () => {
 
             if (updateCount > 0) {
                 setIsThinking(true);
-                await batch.commit();
+                try {
+                    await batch.commit();
+                    showToast(`🤖 AG-Bot: ${updateCount} dato(s) corrupto(s) reparado(s) en segundo plano`, 'info');
+                } catch(error) {
+                    console.error("Error del guardián AG-Bot:", error);
+                }
                 setTimeout(() => setIsThinking(false), 1000);
             }
         };
 
-        const timer = setTimeout(runAGBot, 2000);
+        const timer = setTimeout(runAGBot, 2500); // 2.5 seg para no saturar al entrar
         return () => clearTimeout(timer);
 
     }, [rows, isLoadingData]); 
@@ -1001,7 +1037,6 @@ const FridayScreen: React.FC = () => {
         await saveColumnsToFirebase(newCols);
     };
 
-    // --- AGREGAR FILA CON VALORES POR DEFECTO ---
     const handleAddRow = useCallback(async (groupId: string) => {
         const docRef = doc(collection(db, "hojasDeTrabajo"));
         let initialStatus = 'Desconocido';
@@ -1015,7 +1050,7 @@ const FridayScreen: React.FC = () => {
         }
 
         const now = new Date();
-        const fechaEntradaStr = now.toISOString().split('T')[0]; // Hoy YYYY-MM-DD
+        const fechaEntradaStr = now.toISOString().split('T')[0]; 
         
         const newRowData = {
             id: "", folio: "", cliente: "", equipo: "", 
@@ -1024,11 +1059,8 @@ const FridayScreen: React.FC = () => {
             ubicacion_real: initialLocation,
             nombre: currentUserName, assignedTo: currentUserName, 
             createdAt: now.toISOString(), 
-            
-            // CAMPOS NUEVOS
             fechaEntrada: fechaEntradaStr,
-            diasPromesa: 5, // Por defecto 5 días hábiles
-            
+            diasPromesa: 5,
             status_certificado: 'Pendiente de Certificado'
         };
         await setDoc(docRef, newRowData);
@@ -1289,7 +1321,16 @@ const FridayScreen: React.FC = () => {
                                 groupedRows.map((group) => (
                                     <div key={group.id} className="mb-10">
                                         <div className="flex items-center mb-2 group sticky left-0 z-10 p-2 rounded hover:bg-gray-50 transition-colors">
-                                            <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-gray-200", group.collapsed && "-rotate-90")} style={{ color: group.color }} onClick={() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }}/>
+                                            <ChevronDown 
+                                                className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-gray-200", group.collapsed && "-rotate-90", isPending && "opacity-50")} 
+                                                style={{ color: group.color }} 
+                                                onClick={() => { 
+                                                    startTransition(() => {
+                                                        const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); 
+                                                        setGroupsConfig(newConf); 
+                                                    });
+                                                }}
+                                            />
                                             <h2 className="text-lg font-medium ml-2 px-1 text-gray-800" style={{ color: group.color }}>{group.name}</h2>
                                             <span className="ml-3 text-xs text-gray-400 font-light border border-gray-200 px-2 py-0.5 rounded-full">{group.rows.length}</span>
                                         </div>

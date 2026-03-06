@@ -6,7 +6,7 @@ import {
   Bell, TrendingUp, X, ChevronRight, Activity, Award, 
   ArrowRightLeft, FileOutput, LogOut, User, CheckCircle2,
   AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
-  FileText // <--- Importante: Icono para Formatos
+  FileText 
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
@@ -68,9 +68,7 @@ const MENU_ITEMS = [
   { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión', color: 'blue' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico', color: 'emerald' },
-  // --- AQUI ESTÁ EL NUEVO ITEM ---
   { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad', color: 'rose' },
-  // ------------------------------
   { id: 'drive', title: 'Drive', icon: FolderKanban, category: 'Archivos', color: 'amber' },
   { id: 'empresas', title: 'Empresas', icon: Building2, category: 'Gestión', color: 'purple' },
   { id: 'calibration-stats', title: 'Estadísticas', icon: TrendingUp, category: 'Análisis', color: 'cyan' },
@@ -462,8 +460,9 @@ export const MainMenu: React.FC = () => {
                         const style = COLOR_VARIANTS[item.color] || COLOR_VARIANTS.blue;
                         const isAutoHighlighted = index === activeHighlightIndex;
                         
-                        // --- 1. LÓGICA DE BLOQUEO ---
-                        const isDisabled = item.id === 'formatos'; // Aquí defines cuál bloquear
+                        // --- 1. LÓGICA DE BLOQUEO (SOLO ADMINISTRATIVO / ADMIN) ---
+                        const isAdmin = localUser.role.includes('admin') || localUser.role.includes('administrativo') || SUPER_ADMINS.includes(localUser.email);
+                        const isDisabled = item.id === 'formatos' && !isAdmin;
 
                         return (
                             <motion.div
