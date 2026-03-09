@@ -66,6 +66,7 @@ const MENU_ITEMS = [
   { id: 'friday', title: 'Friday Projects', icon: Activity, category: 'Gestión', color: 'indigo' },
   { id: 'friday-servicios', title: 'Servicios', icon: Briefcase, category: 'Operativo', color: 'emerald' },
   { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
+  { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo', color: 'amber' }, // <-- NUEVO ITEM AGREGADO AQUÍ
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión', color: 'blue' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico', color: 'emerald' },
   { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad', color: 'rose' },

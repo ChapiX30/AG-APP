@@ -27,9 +27,10 @@ const CalendarScreen = lazy(() => import('./CalendarScreen'));
 const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
 const EntradaSalidaScreen = lazy(() => import('./EntradaSalidaScreen').then(module => ({ default: module.EntradaSalidaScreen })));
 
-// --- NUEVO IMPORT PARA FORMATOS ---
+// --- IMPORT PARA FORMATOS Y PERMISOS DE TRABAJO ---
 const FormatosScreen = lazy(() => import('./FormatosScreen').then(module => ({ default: module.FormatosScreen })));
-// ----------------------------------
+const PermisosTrabajoScreen = lazy(() => import('./PermisosTrabajoScreen').then(module => ({ default: module.PermisosTrabajoScreen })));
+// --------------------------------------------------
 
 const Loader = () => (
   <div className="w-full h-full flex flex-col items-center justify-center min-h-screen bg-slate-950 z-50 fixed top-0 left-0">
@@ -113,9 +114,12 @@ const renderScreen = (screen: string, user: any) => {
     case 'friday': return <FridayScreen />;
     case 'vencimientos': return <VencimientosScreen />;
     case 'entrada-salida': return <EntradaSalidaScreen />;
-    // --- NUEVO CASE PARA RENDERIZAR LA PANTALLA ---
+    
+    // --- NUEVOS CASES PARA RENDERIZAR LAS PANTALLAS ---
     case 'formatos': return <FormatosScreen />;
-    // ----------------------------------------------
+    case 'permisos-trabajo': return <PermisosTrabajoScreen />;
+    // --------------------------------------------------
+    
     default: return <MainMenu />;
   }
 };
