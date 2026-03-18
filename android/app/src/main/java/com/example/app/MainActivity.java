@@ -1,4 +1,4 @@
-package com.example.app;
+package com.tuapp; // ← cambia a tu paquete real (ej: com.agcal.app)
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
@@ -6,9 +6,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState); // 1. Primero inicializamos la base de Capacitor
-        
-        // 2. Después registramos el plugin para que el "Bridge" ya exista
-        registerPlugin(EpsonLabelPlugin.class); 
+        registerPlugin(EpsonLabelPlugin.class); // ✅ PRIMERO el plugin
+        super.onCreate(savedInstanceState);     // ✅ DESPUÉS Capacitor Bridge
     }
 }

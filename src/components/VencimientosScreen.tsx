@@ -16,7 +16,6 @@ import {
   CheckCircle2, 
   Mail, 
   Download,
-  Send,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -25,7 +24,6 @@ import {
   RefreshCw 
 } from 'lucide-react';
 import { addMonths, addYears, differenceInDays, parseISO, format, isValid } from 'date-fns';
-import { es } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 
 // --- Tipos ---
@@ -77,26 +75,26 @@ export const VencimientosScreen: React.FC = () => {
     const fetchDatos = async () => {
       setLoading(true);
       try {
-        // 1. CARGAR USUARIOS INTERNOS (Para obtener sus correos reales: Jorge -> jorge@empresa.com)
+        // 1. CARGAR USUARIOS INTERNOS
         const usuariosSnapshot = await getDocs(collection(db, "usuarios"));
         const mapUsuariosEmails: Record<string, string> = {};
         
         usuariosSnapshot.forEach(doc => {
             const d = doc.data();
-            // Aseguramos coincidencia ignorando mayúsculas/minúsculas si es necesario
             if (d.nombre && d.email) {
-                mapUsuariosEmails[d.nombre] = d.email;
+                // Normalizamos la llave: "Jorge Amador" -> "jorgeamador"
+                const llaveNormalizada = d.nombre.toLowerCase().replace(/\s+/g, '');
+                mapUsuariosEmails[llaveNormalizada] = d.email;
             }
         });
 
-        // 2. CARGAR CLIENTES (Para saber quién atiende a quién)
+        // 2. CARGAR CLIENTES
         const clientesSnapshot = await getDocs(collection(db, "clientes"));
         const mapClienteResponsable: Record<string, string> = {};
         
         clientesSnapshot.forEach(doc => {
             const d = doc.data();
             if (d.nombre && d.responsable) {
-                // Mapeamos: "Cliente SA" -> "Jorge Amador"
                 mapClienteResponsable[d.nombre.trim()] = d.responsable; 
             }
         });
@@ -114,7 +112,7 @@ export const VencimientosScreen: React.FC = () => {
           const rawId = data.id || data.certificado;
           const identificadorUnico = rawId ? String(rawId).trim() : null;
 
-          // Filtro de duplicados (solo el registro más reciente)
+          // Filtro de duplicados
           if (identificadorUnico && equiposProcesados.has(identificadorUnico)) return;
           if (identificadorUnico) equiposProcesados.add(identificadorUnico);
 
@@ -129,12 +127,10 @@ export const VencimientosScreen: React.FC = () => {
 
             // --- LÓGICA DE ASIGNACIÓN DE CORREO INTERNO ---
             const nombreCliente = (data.cliente || '').trim();
-            
-            // A. Buscamos quién es el responsable (ej. "Jorge Amador")
             const nombreResponsable = mapClienteResponsable[nombreCliente] || null;
             
-            // B. Buscamos el correo de ese responsable (ej. "jorge@ese-ag.mx")
-            const emailResponsable = nombreResponsable ? mapUsuariosEmails[nombreResponsable] : '';
+            const llaveBusqueda = nombreResponsable ? nombreResponsable.toLowerCase().replace(/\s+/g, '') : '';
+            const emailResponsable = nombreResponsable ? (mapUsuariosEmails[llaveBusqueda] || '') : '';
 
             listaProcesada.push({
               id: doc.id,
@@ -146,14 +142,12 @@ export const VencimientosScreen: React.FC = () => {
               fechaVencimiento: fechaVenc,
               diasRestantes: dias,
               status: status,
-              // Guardamos la info cruzada
               emailResponsable: emailResponsable, 
               responsableInterno: nombreResponsable || 'Sin asignar'
             });
           }
         });
         
-        // Ordenar por urgencia
         listaProcesada.sort((a, b) => a.diasRestantes - b.diasRestantes);
         setEquipos(listaProcesada);
 
@@ -215,12 +209,13 @@ export const VencimientosScreen: React.FC = () => {
 
   const colapsarTodos = () => setClientesExpandidos({});
 
-  // --- Alertas y Exportaciones ---
   const equiposA60Dias = useMemo(() => {
     return equipos.filter(e => e.diasRestantes >= 50 && e.diasRestantes <= 65);
   }, [equipos]);
 
-  // Función para generar link a Outlook/Mail del Responsable Interno
+  // --- Correos ---
+  
+  // 1. Correo Individual
   const generarLinkCorreo = (equipo: EquipoVencimiento) => {
     const destinatario = equipo.emailResponsable || ""; 
     const subject = `ALERTA VENCIMIENTO - Cliente: ${equipo.cliente} - Equipo: ${equipo.equipoId}`;
@@ -235,6 +230,30 @@ export const VencimientosScreen: React.FC = () => {
                  `Vencimiento: ${format(equipo.fechaVencimiento, 'dd/MM/yyyy')}\n` +
                  `Estatus: ${equipo.status.toUpperCase()}\n\n` +
                  `Por favor contacta al cliente para programar la recolección o servicio.\n`;
+    
+    return `mailto:${destinatario}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  // 2. Correo Masivo (AHORA SOLO RECIBE LOS EQUIPOS FILTRADOS)
+  const generarLinkCorreoMasivo = (cliente: string, listaEquipos: EquipoVencimiento[]) => {
+    if (listaEquipos.length === 0) return "#";
+    
+    const destinatario = listaEquipos[0].emailResponsable || "";
+    const responsable = listaEquipos[0].responsableInterno || "Equipo";
+    
+    const subject = `ALERTA VENCIMIENTOS MULTIPLES - Cliente: ${cliente}`;
+    
+    let body = `Hola ${responsable},\n\n` +
+               `Se requiere tu atención para los siguientes equipos del cliente ${cliente} que están próximos a vencer o vencidos:\n\n` +
+               `LISTA DE EQUIPOS:\n` +
+               `--------------------------------\n`;
+               
+    listaEquipos.forEach((eq, index) => {
+        body += `${index + 1}. Equipo: ${eq.descripcion} | ID: ${eq.equipoId} | Vence: ${format(eq.fechaVencimiento, 'dd/MM/yyyy')} | Estatus: [${eq.status.toUpperCase()}]\n`;
+    });
+    
+    body += `\n--------------------------------\n` +
+            `Por favor contacta al cliente para programar la recolección o servicio de estos equipos a la brevedad.\n`;
     
     return `mailto:${destinatario}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
@@ -324,7 +343,6 @@ export const VencimientosScreen: React.FC = () => {
                 </div>
             </div>
             
-            {/* Buscador y Filtro */}
             <div className="md:col-span-2 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row gap-3 items-center">
                  <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -351,7 +369,6 @@ export const VencimientosScreen: React.FC = () => {
             </div>
         </div>
 
-        {/* Controles de Vista Agrupada */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
             <h2 className="text-lg font-semibold text-gray-700">
                 Resultados ({equiposFiltrados.length} equipos en {Object.keys(equiposAgrupados).length} clientes)
@@ -366,7 +383,6 @@ export const VencimientosScreen: React.FC = () => {
             </div>
         </div>
 
-        {/* LISTA AGRUPADA (ACORDEÓN) */}
         <div className="space-y-4">
             {loading ? (
                 <div className="flex flex-col items-center justify-center p-12 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm animate-pulse">
@@ -385,13 +401,16 @@ export const VencimientosScreen: React.FC = () => {
                     const countCriticos = itemsCliente.filter(i => i.status === 'critico').length;
                     const hasAlerts = countVencidos > 0 || countCriticos > 0;
                     
-                    // Obtenemos el responsable del primer item (todos son del mismo cliente)
+                    // NUEVO: Filtramos para sacar solo los que merecen notificación
+                    const equiposParaNotificar = itemsCliente.filter(i => i.status !== 'vigente');
+                    
                     const responsableDelGrupo = itemsCliente[0]?.responsableInterno;
+                    const emailDelGrupo = itemsCliente[0]?.emailResponsable;
 
                     return (
                         <div key={cliente} className={`bg-white rounded-xl border transition-all duration-200 shadow-sm ${hasAlerts ? 'border-l-4 border-l-red-500 border-gray-200' : 'border-gray-200'}`}>
                             
-                            {/* CABECERA DEL CLIENTE (Clickable) */}
+                            {/* CABECERA DEL CLIENTE */}
                             <button 
                                 onClick={() => toggleCliente(cliente)}
                                 className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors rounded-t-xl focus:outline-none group"
@@ -404,14 +423,26 @@ export const VencimientosScreen: React.FC = () => {
                                         <div className="flex flex-wrap items-center gap-2">
                                             <h3 className="font-bold text-gray-800 text-sm md:text-base">{cliente}</h3>
                                             
-                                            {/* BADGE DEL RESPONSABLE INTERNO */}
                                             {responsableDelGrupo && responsableDelGrupo !== 'Sin asignar' && (
                                                 <span className="text-[10px] uppercase font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded border border-purple-200">
                                                     Atiende: {responsableDelGrupo}
                                                 </span>
                                             )}
+                                            
+                                            {/* BOTÓN DE CORREO MASIVO CON FILTRO DE ALERTAS */}
+                                            {equiposParaNotificar.length > 0 && emailDelGrupo && (
+                                                <a 
+                                                    href={generarLinkCorreoMasivo(cliente, equiposParaNotificar)}
+                                                    onClick={(e) => e.stopPropagation()} 
+                                                    className="ml-2 flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors border border-red-200 shadow-sm"
+                                                    title={`Enviar reporte de ${equiposParaNotificar.length} equipos por vencer/vencidos a ${responsableDelGrupo}`}
+                                                >
+                                                    <Mail size={14} />
+                                                    Notificar Alertas ({equiposParaNotificar.length})
+                                                </a>
+                                            )}
                                         </div>
-                                        <div className="flex flex-wrap gap-2 text-xs mt-1">
+                                        <div className="flex flex-wrap gap-2 text-xs mt-2">
                                             <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{itemsCliente.length} Equipos</span>
                                             {countVencidos > 0 && <span className="text-red-700 bg-red-100 px-2 py-0.5 rounded-full font-semibold">{countVencidos} Vencidos</span>}
                                             {countCriticos > 0 && <span className="text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full font-semibold">{countCriticos} Críticos</span>}
