@@ -6,18 +6,19 @@ import {
   Bell, TrendingUp, X, ChevronRight, Activity, Award, 
   ArrowRightLeft, FileOutput, LogOut, User, CheckCircle2,
   AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
-  FileText 
+  FileText, Users 
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
 import {
-  collection, onSnapshot, doc, setDoc, query, where, getDocs, orderBy, limit
+  collection, onSnapshot, doc, setDoc, query, where, getDocs, orderBy, limit, serverTimestamp
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getAuth, updateProfile } from 'firebase/auth'; 
-import { addYears, addMonths, differenceInDays, parseISO, isValid, format, isToday } from 'date-fns';
+import { addYears, addMonths, differenceInDays, parseISO, isValid, format, isToday, parse, isWithinInterval, addHours, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-toastify';
 
 // --- TIPOS ---
 interface Service {
@@ -28,6 +29,7 @@ interface Service {
   prioridad?: 'alta' | 'critica' | 'normal' | 'baja';
   fecha?: string;
   horaInicio?: string;
+  horaFin?: string;
   ubicacion?: string;
   tipo?: string;
   estado?: string;
@@ -66,7 +68,7 @@ const MENU_ITEMS = [
   { id: 'friday', title: 'Friday Projects', icon: Activity, category: 'Gestión', color: 'indigo' },
   { id: 'friday-servicios', title: 'Servicios', icon: Briefcase, category: 'Operativo', color: 'emerald' },
   { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
-  { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo', color: 'amber' }, // <-- NUEVO ITEM AGREGADO AQUÍ
+  { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo', color: 'amber' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión', color: 'blue' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico', color: 'emerald' },
   { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad', color: 'rose' },
@@ -89,6 +91,150 @@ const safeDateParse = (dateStr?: string): Date | null => {
 };
 
 // --- WIDGETS ---
+const TechnicianStatusWidget = () => {
+  const [techStatus, setTechStatus] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchStatus = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, 'usuarios'));
+        const tecnicos = usersSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as any))
+          .filter(u => {
+            const role = (u.position || u.puesto || u.role || '').toLowerCase();
+            return ['metrologo', 'metrólogo', 'tecnico', 'técnico', 'ingeniero'].some(k => role.includes(k));
+          });
+
+        const hoyStr = format(new Date(), 'yyyy-MM-dd');
+        const qServicios = query(collection(db, 'servicios'), where('fecha', '==', hoyStr));
+        const servSnap = await getDocs(qServicios);
+        const serviciosHoy = servSnap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+
+        const ahora = new Date();
+        const horaActual = ahora.getHours();
+        
+        // Asumimos horario laboral de 8:00 AM a 5:00 PM (17:00)
+        const isFueraDeTurno = horaActual >= 17 || horaActual < 8;
+
+        const statusArray = tecnicos.map(tech => {
+          // Lógica de Luz de Estado (Online / Offline)
+          const lastActiveDate = tech.lastActive?.toDate ? tech.lastActive.toDate() : null;
+          let isOnline = false;
+          if (lastActiveDate) {
+              isOnline = differenceInMinutes(ahora, lastActiveDate) <= 5;
+          }
+
+          let dotColor = "bg-slate-500/50 border-slate-600"; // Transparente/Gris por defecto
+          if (isFueraDeTurno) {
+              dotColor = "bg-red-500 border-slate-800 shadow-[0_0_6px_rgba(239,68,68,0.6)]"; // Roja
+          } else if (isOnline) {
+              dotColor = "bg-emerald-500 border-slate-800 shadow-[0_0_6px_rgba(16,185,129,0.6)]"; // Verde
+          } else {
+              dotColor = "bg-amber-500 border-slate-800 shadow-[0_0_6px_rgba(245,158,11,0.6)]"; // Amarilla
+          }
+
+          if (isFueraDeTurno) {
+            return { ...tech, status: 'Fuera de turno', icon: LogOut, color: 'text-slate-500', bg: 'bg-slate-800', detail: 'Horario concluido', time: null, dotColor };
+          }
+
+          const servicioActual = serviciosHoy.find(s => {
+            if (!s.personas?.includes(tech.id) || !s.horaInicio) return false;
+            
+            const horaInicio = parse(s.horaInicio, 'HH:mm', new Date());
+            const horaFin = s.horaFin ? parse(s.horaFin, 'HH:mm', new Date()) : addHours(horaInicio, 2); 
+            
+            return isWithinInterval(ahora, { start: horaInicio, end: horaFin }) && s.estado !== 'finalizado' && s.estado !== 'cancelado';
+          });
+
+          if (servicioActual) {
+            return { 
+              ...tech, 
+              status: 'En Servicio', 
+              icon: MapPin, 
+              color: 'text-amber-500', 
+              bg: 'bg-amber-500/10', 
+              detail: servicioActual.cliente || 'Cliente sin nombre',
+              time: `${servicioActual.horaInicio} - ${servicioActual.horaFin || '?'}`,
+              dotColor
+            };
+          }
+
+          return { ...tech, status: 'En Laboratorio', icon: Building2, color: 'text-emerald-500', bg: 'bg-emerald-500/10', detail: 'Disponible', time: null, dotColor };
+        });
+
+        if (isMounted) {
+          setTechStatus(statusArray);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Error calculando estados:", error);
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchStatus();
+    // Refrescar el widget cada 3 minutos para mantener actualizadas las luces
+    const interval = setInterval(fetchStatus, 180000); 
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  if (loading) return <div className="h-48 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />;
+
+  return (
+    <div className="bg-slate-900 rounded-xl border border-slate-800 flex flex-col overflow-hidden shadow-sm max-h-[400px]">
+      <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <h3 className="font-semibold text-slate-200 flex items-center gap-2 text-sm">
+          <Users className="text-blue-500 w-4 h-4" />
+          Rastreo de Personal
+        </h3>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-2">
+        {techStatus.length === 0 ? (
+           <div className="flex items-center justify-center p-4 text-xs text-slate-500">
+               No hay técnicos registrados
+           </div>
+        ) : (
+          techStatus.map((tech) => {
+            const StatusIcon = tech.icon;
+            return (
+              <div key={tech.id} className="p-3 rounded-lg border border-slate-800 bg-slate-800/40 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                   {/* Contenedor relativo de la foto para poder ponerle el puntito encima */}
+                   <div className="relative flex-shrink-0">
+                       <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden flex items-center justify-center">
+                          {tech.photoUrl ? <img src={tech.photoUrl} className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-slate-400" />}
+                       </div>
+                       {/* LUZ INDICADORA DE ESTADO */}
+                       <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 transition-colors duration-500 ${tech.dotColor}`}></span>
+                   </div>
+                   
+                   <div>
+                      <h4 className="font-medium text-slate-200 text-sm">{tech.name || 'Técnico'}</h4>
+                      <p className="text-[10px] text-slate-400 truncate max-w-[120px]" title={tech.detail}>{tech.detail}</p>
+                   </div>
+                </div>
+                <div className="flex flex-col items-end">
+                    <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider ${tech.bg} ${tech.color}`}>
+                       <StatusIcon className="w-3 h-3" /> {tech.status}
+                    </span>
+                    {tech.time && <span className="text-[9px] text-slate-500 mt-1">{tech.time}</span>}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[], navigateTo: any, loading: boolean }) => {
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 flex flex-col h-full overflow-hidden shadow-sm">
@@ -254,25 +400,43 @@ const ProfileModal = ({ currentUser, onClose, onUpdate }: { currentUser: UserDat
     const inputFileRef = useRef<HTMLInputElement>(null);
 
     const handleProfileSave = async () => {
-      if (!uid) return;
-      setSaving(true);
-      try {
-        let newPhotoUrl = localPhotoUrl;
-        if (localPhotoFile) {
-          const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
-          await uploadBytes(storageReference, localPhotoFile);
-          newPhotoUrl = await getDownloadURL(storageReference);
+        if (!uid) {
+            toast.error("Error: No se detectó el ID del usuario.");
+            return;
         }
-        await setDoc(doc(db, "usuarios", uid), {
-          name: localName, email: localEmail, phone: localPhone, position: localPosition, photoUrl: newPhotoUrl,
-        }, { merge: true });
-        
-        const auth = getAuth();
-        if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: localName, photoURL: newPhotoUrl });
-        
-        onUpdate({ name: localName, photoUrl: newPhotoUrl, phone: localPhone, role: localPosition });
-        setSaving(false); onClose();
-      } catch (error) { console.error(error); setSaving(false); }
+        setSaving(true);
+        try {
+            let newPhotoUrl = localPhotoUrl;
+            
+            if (localPhotoFile) {
+                const storageReference = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
+                await uploadBytes(storageReference, localPhotoFile);
+                newPhotoUrl = await getDownloadURL(storageReference);
+            }
+            
+            await setDoc(doc(db, "usuarios", uid), {
+                name: localName, 
+                email: localEmail, 
+                phone: localPhone, 
+                position: localPosition, 
+                photoUrl: newPhotoUrl,
+            }, { merge: true });
+            
+            const auth = getAuth();
+            if (auth.currentUser) {
+                await updateProfile(auth.currentUser, { displayName: localName, photoURL: newPhotoUrl });
+            }
+            
+            onUpdate({ name: localName, photoUrl: newPhotoUrl, phone: localPhone, role: localPosition });
+            toast.success("¡Perfil actualizado con éxito!");
+            setSaving(false); 
+            onClose();
+            
+        } catch (error: any) { 
+            console.error("Error detallado:", error);
+            toast.error("Error al guardar: " + (error.message || "Revisa permisos de Storage"));
+            setSaving(false); 
+        }
     };
 
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -345,7 +509,7 @@ export const MainMenu: React.FC = () => {
   useEffect(() => {
     if (user) {
         setLocalUser({
-            uid: (user as any).uid || '',
+            uid: (user as any).uid || (user as any).id || '', 
             email: (user as any).email || '',
             name: ((user as any).name || (user as any).displayName || '').trim(),
             role: ((user as any).puesto || (user as any).role || '').trim().toLowerCase(),
@@ -354,6 +518,27 @@ export const MainMenu: React.FC = () => {
         });
     }
   }, [user]);
+
+  // Lógica de latido (Heartbeat) para saber quién está en línea
+  useEffect(() => {
+    if (!localUser?.uid) return;
+    
+    const updatePresence = async () => {
+        try {
+            await setDoc(doc(db, 'usuarios', localUser.uid), { 
+                lastActive: serverTimestamp() 
+            }, { merge: true });
+        } catch (error) {
+            console.log("No se pudo actualizar la presencia (ignorar si es por permisos)");
+        }
+    };
+
+    // Actualizamos al entrar y luego cada 3 minutos
+    updatePresence();
+    const interval = setInterval(updatePresence, 3 * 60 * 1000); 
+    
+    return () => clearInterval(interval);
+  }, [localUser?.uid]);
 
   const [showProfile, setShowProfile] = useState(false);
   const [assignedServices, setAssignedServices] = useState<Service[]>([]); 
@@ -384,7 +569,6 @@ export const MainMenu: React.FC = () => {
   useEffect(() => {
     if (!localUser?.uid) { setLoadingServices(false); return; }
     
-    // CORRECCIÓN: Filtrado mixto (Query + JS) para evitar errores de índices compuestos en Firebase
     const q = query(collection(db, 'servicios'), where('personas', 'array-contains', localUser.uid));
     
     const unsub = onSnapshot(q, (snap) => {
@@ -529,7 +713,12 @@ export const MainMenu: React.FC = () => {
                 </div>
             </div>
             <div className="lg:w-80 flex flex-col gap-6">
-                {(localUser.role.includes('calidad') || localUser.role.includes('admin') || SUPER_ADMINS.includes(localUser.email)) && <KpiWidget navigateTo={navigateTo} />}
+                {(localUser.role.includes('calidad') || localUser.role.includes('admin') || SUPER_ADMINS.includes(localUser.email)) && (
+                    <>
+                        <KpiWidget navigateTo={navigateTo} />
+                        <TechnicianStatusWidget />
+                    </>
+                )}
                 <div className="flex-1 min-h-[400px]">
                     <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
                 </div>
