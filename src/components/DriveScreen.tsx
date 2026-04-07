@@ -94,8 +94,6 @@ const generateSearchTokens = (text: string): string[] => {
 };
 
 const fuzzyMatch = (file: DriveFile, searchTerms: string[]) => {
-  // CORRECCIÓN: Se han removido 'uploadedBy' y 'parentFolder' para evitar 
-  // falsos positivos gigantescos (ej. buscar y que salgan todos los archivos de "Raíz")
   const textToSearch = [
     file.name, 
     file.rawName, 
@@ -787,7 +785,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
-  const [moveTargetFile, setMoveTargetFile] = useState<DriveFile | null>(null);
+  const [moveTargetFiles, setMoveTargetFiles] = useState<DriveFile[]>([]);
   const [moveTargetFolder, setMoveTargetFolder] = useState<DriveFolder | null>(null);
   const [moveToPath, setMoveToPath] = useState<string[]>([]);
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
@@ -994,7 +992,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     };
 
     const handleScroll = (e: Event) => {
-      // No cerrar si el usuario está haciendo scroll dentro del propio menú
       const target = e.target as HTMLElement;
       if (target && target.closest && target.closest('.context-menu-container')) {
         return;
@@ -1224,9 +1221,20 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (moveTargetFolder) {
       const ok = await executeMoveFolder(moveTargetFolder, dest);
       if (ok) { showToast("Carpeta movida", 'success'); setMoveDialogOpen(false); setMoveTargetFolder(null); setMoveToPath([]); loadContent(); }
-    } else if (moveTargetFile) {
-      const ok = await executeMoveFile(moveTargetFile, dest);
-      if (ok) { showToast("Archivo movido", 'success'); setMoveDialogOpen(false); setMoveTargetFile(null); setMoveToPath([]); loadContent(); }
+    } else if (moveTargetFiles.length > 0) {
+      let movedCount = 0;
+      for (const file of moveTargetFiles) {
+        const ok = await executeMoveFile(file, dest);
+        if (ok) movedCount++;
+      }
+      if (movedCount > 0) {
+        showToast(`${movedCount} archivo(s) movido(s)`, 'success');
+        setMoveDialogOpen(false);
+        setMoveTargetFiles([]);
+        setMoveToPath([]);
+        setSelectedIds(new Set()); // Limpiamos la selección
+        loadContent();
+      }
     }
   };
 
@@ -1491,12 +1499,25 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     Descargar
                   </button>
                   {isQuality && (
-                    <button
-                      onClick={handleBatchDelete}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-all"
-                    >
-                      <Trash2 size={13} /> Eliminar
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          const selectedFilesList = files.filter(f => selectedIds.has(f.fullPath));
+                          setMoveTargetFiles(selectedFilesList);
+                          setMoveTargetFolder(null);
+                          setMoveDialogOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-all shadow-sm"
+                      >
+                        <FolderSymlink size={13} /> Mover
+                      </button>
+                      <button
+                        onClick={handleBatchDelete}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-all"
+                      >
+                        <Trash2 size={13} /> Eliminar
+                      </button>
+                    </>
                   )}
                   <button onClick={() => setSelectedIds(new Set())} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
                     <X size={14} />
@@ -1725,7 +1746,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </header>
 
-        {/* CORRECCIÓN: relative z-40 añadido aquí para que el menú de ordenar nunca quede por detrás del contenido */}
         <div className="relative z-40 h-10 border-b border-slate-200/60 flex items-center justify-between px-4 md:px-6 bg-white/80 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-1 text-xs overflow-hidden min-w-0">
             {activeFilter !== 'all' ? (
@@ -1819,20 +1839,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} onDownload={() => handleDownload(previewFile)} />
       )}
 
-      {/* CORRECCIÓN: Lógica dinámica de posicionamiento del Context Menu para evitar recortes y permitir el Scroll */}
       {contextMenu && (() => {
         const isFolder = !!contextMenu.folder;
-        // Alturas estimadas del menú
         const estimatedHeight = isFolder ? 200 : 380; 
         
         let topPos = contextMenu.y;
         if (topPos + estimatedHeight > window.innerHeight) {
-          // Si el menú se sale de la pantalla por debajo, se acomoda o empuja hacia arriba
           topPos = Math.max(10, window.innerHeight - estimatedHeight - 20);
         }
         
         let leftPos = contextMenu.x;
-        // 224px es equivalente a w-56
         if (leftPos + 224 > window.innerWidth) { 
           leftPos = window.innerWidth - 240;
         }
@@ -1875,7 +1891,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   <>
                     <div className="my-1 mx-2 border-t border-slate-100" />
                     <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                    <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                    <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { 
+                      if (contextMenu.file) { 
+                        if (selectedIds.has(contextMenu.file.fullPath) && selectedIds.size > 1) {
+                          setMoveTargetFiles(files.filter(f => selectedIds.has(f.fullPath)));
+                        } else {
+                          setMoveTargetFiles([contextMenu.file]);
+                        }
+                        setMoveTargetFolder(null); 
+                        setMoveDialogOpen(true); 
+                        setContextMenu(null); 
+                      } 
+                    }} />
                     <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} shortcut="Del" />
                   </>
                 )}
@@ -1886,7 +1913,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <>
                 <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} />
                 <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFiles([]); setMoveDialogOpen(true); setContextMenu(null); } }} />
                 <div className="my-1 mx-2 border-t border-slate-100" />
                 <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} />
               </>
@@ -1901,7 +1928,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                 <FolderSymlink size={16} className="text-blue-500" />
-                Mover "{moveTargetFile?.name ?? moveTargetFolder?.name}"
+                {moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}
               </h3>
               <button onClick={() => setMoveDialogOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
                 <X size={15} className="text-slate-400" />
@@ -1955,7 +1982,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </button>
               <button
                 onClick={handleModalMove}
-                disabled={(!moveTargetFile && !moveTargetFolder) || isMoving}
+                disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all"
               >
                 {isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}
@@ -1982,7 +2009,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             value={newFolderName}
             onChange={e => setNewFolderName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) { const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); } }}
-            className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm transition-all"
+            className="w-full bg-white text-slate-800 border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm transition-all"
             placeholder="Nombre de la carpeta..."
           />
         </Dialog>
@@ -2011,7 +2038,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             autoFocus
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            className="w-full border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm transition-all"
+            className="w-full bg-white text-slate-800 border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm transition-all"
             placeholder="Nuevo nombre..."
           />
         </Dialog>
