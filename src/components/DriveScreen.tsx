@@ -43,6 +43,8 @@ interface DriveFile {
   parentFolder?: string;
   keywords?: string[];
   notas?: string;
+  ubicacion?: string;
+  ubicacion_real?: string;
 }
 
 interface DriveFolder {
@@ -580,6 +582,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
             { label: 'Modificado', value: formatDate(file.updated) },
             { label: 'Subido por', value: file.uploadedBy || '—' },
             { label: 'Carpeta', value: file.parentFolder || 'Raíz' },
+            ...(file.ubicacion_real || file.ubicacion ? [{ label: 'Ubicación', value: file.ubicacion_real || file.ubicacion }] : [])
           ].map(({ label, value }) => (
             <div key={label} className="flex items-start justify-between gap-3">
               <span className="text-xs text-slate-400 flex-shrink-0">{label}</span>
@@ -612,7 +615,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             onBlur={() => { if (notes !== file.notas) onUpdateNotes(file, notes); }}
-            placeholder="Agrega comentarios u observaciones..."
+            placeholder="Agrega comentarios u observaciones (Ej. Ubicacion: Sitio)..."
             className="w-full h-24 p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none text-slate-700 placeholder-slate-300"
           />
           <p className="text-[10px] text-slate-300">Se incluirá en búsquedas globales</p>
@@ -841,7 +844,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
             if (!fullPath.toLowerCase().includes(myName) && !isUploader) continue;
           }
-          recents.push({ name: cleanFileName(data.name), rawName: data.name, fullPath, updated: data.updated, created: data.created, size: data.size, url: "", contentType: data.contentType, notas: data.notas, ...data });
+          recents.push({ name: cleanFileName(data.name), rawName: data.name, fullPath, updated: data.updated, created: data.created, size: data.size, url: "", contentType: data.contentType, notas: data.notas, ubicacion: data.ubicacion, ubicacion_real: data.ubicacion_real, ...data });
         }
         setSuggestedFiles(recents);
       } catch (e) { console.error(e); }
@@ -883,7 +886,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             completed: data.completed, completedByName: data.completedByName,
             starred: data.starred, uploadedBy: data.uploadedBy,
             parentFolder: getParentFolderName(fullPath),
-            keywords: data.keywords, notas: data.notas
+            keywords: data.keywords, notas: data.notas,
+            ubicacion: data.ubicacion, ubicacion_real: data.ubicacion_real
           };
           if (fuzzyMatch(fileObj, searchTerms)) results.push(fileObj);
         });
@@ -923,13 +927,31 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           let storageMeta = { size: 0, updated: new Date().toISOString(), timeCreated: new Date().toISOString(), contentType: 'unknown' };
           try { storageMeta = await getMetadata(item) as any; } catch (e) { }
 
-          if (needsRepair && !isSyncing) {
+          // --- MAGIA: Buscar automáticamente la ubicacion_real en la base de datos si falta ---
+          let fetchedUbicacion = meta.ubicacion_real || meta.ubicacion || "";
+          let linkedDoc = false;
+          if (!fetchedUbicacion && item.name.toLowerCase().endsWith('.pdf')) {
+            try {
+              const possibleId = item.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
+              let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
+              if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
+              if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
+              
+              if (!snap.empty) {
+                fetchedUbicacion = snap.docs[0].data().ubicacion_real || snap.docs[0].data().ubicacion || "";
+                if (fetchedUbicacion) linkedDoc = true;
+              }
+            } catch(e) {}
+          }
+
+          if ((needsRepair || linkedDoc) && !isSyncing) {
             setIsSyncing(true);
             const newMeta = {
               name: item.name, filePath: item.fullPath, size: storageMeta.size, contentType: storageMeta.contentType,
               updated: storageMeta.updated, created: meta.created || storageMeta.timeCreated,
               uploadedBy: meta.uploadedBy || "Sistema", keywords: generateSearchTokens(cleanFileName(item.name)),
-              completed: meta.completed || false, reviewed: meta.reviewed || false, starred: meta.starred || false, notas: meta.notas || ""
+              completed: meta.completed || false, reviewed: meta.reviewed || false, starred: meta.starred || false, notas: meta.notas || "",
+              ubicacion_real: fetchedUbicacion
             };
             setDoc(doc(db, 'fileMetadata', metaId), newMeta, { merge: true })
               .finally(() => setIsSyncing(false));
@@ -1232,7 +1254,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         setMoveDialogOpen(false);
         setMoveTargetFiles([]);
         setMoveToPath([]);
-        setSelectedIds(new Set()); // Limpiamos la selección
+        setSelectedIds(new Set()); 
         loadContent();
       }
     }
@@ -1323,13 +1345,25 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const existingData = existing.exists() ? existing.data() : {};
         const snap = await uploadBytes(ref(storage, fullPath), file);
         const meta = await getMetadata(snap.ref);
+
+        // Extraer ubicación de hojasDeTrabajo al instante de subir
+        let fetchedUbicacion = "";
+        try {
+          const possibleId = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
+          let wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
+          if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
+          if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
+          if (!wsSnap.empty) fetchedUbicacion = wsSnap.docs[0].data().ubicacion_real || wsSnap.docs[0].data().ubicacion || "";
+        } catch(e) {}
+
         await setDoc(doc(db, 'fileMetadata', docId), {
           name: file.name, filePath: fullPath, size: meta.size, contentType: meta.contentType,
           updated: meta.updated, created: existingData.created || new Date().toISOString(),
           uploadedBy: currentUserData?.name || "Desconocido",
           keywords: generateSearchTokens(cleanFileName(file.name)),
           completed: existingData.completed || false, completedByName: existingData.completedByName || null,
-          reviewed: false, reviewedByName: null, notas: existingData.notas || ""
+          reviewed: false, reviewedByName: null, notas: existingData.notas || "",
+          ubicacion_real: fetchedUbicacion || existingData.ubicacion_real || existingData.ubicacion || ""
         }, { merge: true });
         count++;
       }
@@ -1426,6 +1460,90 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       return <EmptyState icon={Folder} title="Esta carpeta está vacía" subtitle="Sube archivos o crea una carpeta para comenzar" />;
     }
 
+    // --- LÓGICA DE SEPARACIÓN (POR UBICACION_REAL O NOTAS) ---
+    const isMetrologistFolder = path.length > 0 && !path.some(p => ['hojas de trabajo', 'hojas de servicio'].some(ex => p.toLowerCase().includes(ex)));
+
+    const labFiles: DriveFile[] = [];
+    const siteFiles: DriveFile[] = [];
+    const otherFiles: DriveFile[] = [];
+
+    if (isMetrologistFolder && activeFilter === 'all' && !debouncedSearch) {
+      displayFiles.forEach(f => {
+        // Obtenemos los campos y los pasamos a minúscula para la comparación
+        const ubicacionAttr = (f.ubicacion_real || f.ubicacion || "").toLowerCase();
+        const notasLower = (f.notas || "").toLowerCase();
+        
+        // Verificamos estrictamente la palabra "sitio" o "laboratorio" en la db o en las notas
+        const isSitio = ubicacionAttr.includes('sitio') || notasLower.includes('sitio');
+        const isLab = ubicacionAttr.includes('laboratorio') || notasLower.includes('laboratorio') || ubicacionAttr.includes('lab');
+
+        if (isSitio) {
+          siteFiles.push(f);
+        } else if (isLab) {
+          labFiles.push(f);
+        } else {
+          // Si no hay datos (ni sitio ni lab), lo mandamos a Laboratorio por defecto
+          labFiles.push(f);
+        }
+      });
+    } else {
+      otherFiles.push(...displayFiles);
+    }
+
+    const renderFilesBlock = (title: string | null, filesToRender: DriveFile[]) => {
+      if (filesToRender.length === 0) return null;
+      return (
+        <div className="mb-6">
+          {title && (
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 ml-1 flex items-center gap-2">
+              {title}
+              <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md text-[10px]">{filesToRender.length}</span>
+            </h3>
+          )}
+          {view === 'grid' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {filesToRender.map(file => (
+                <FileCard
+                  key={file.fullPath} file={file}
+                  selected={selectedIds.has(file.fullPath)}
+                  searchActive={!!debouncedSearch}
+                  onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
+                  onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
+                  onDoubleClick={() => handlePreview(file)}
+                  onStar={handleToggleStar}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
+              <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <div className="col-span-12 md:col-span-5 flex items-center gap-2">
+                  <div className="w-5" />
+                  Nombre
+                </div>
+                <div className="hidden md:block col-span-3">Plazo</div>
+                <div className="hidden md:block col-span-2">Estado</div>
+                <div className="hidden md:block col-span-1 text-right">Fecha</div>
+                <div className="hidden md:block col-span-1 text-right">Tamaño</div>
+              </div>
+              {filesToRender.map(file => (
+                <FileListRow
+                  key={file.fullPath} file={file}
+                  selected={selectedIds.has(file.fullPath)}
+                  searchActive={!!debouncedSearch}
+                  onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
+                  onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
+                  onDoubleClick={() => handlePreview(file)}
+                  onDownload={handleDownload}
+                  onStar={handleToggleStar}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     return (
       <div className="animate-in slide-in-from-bottom-1 duration-200 pb-24">
         {path.length === 0 && !debouncedSearch && suggestedFiles.length > 0 && (
@@ -1479,11 +1597,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
         {displayFiles.length > 0 && (
           <section>
-            <div className="flex items-center justify-between mb-3 sticky top-0 bg-slate-50/90 backdrop-blur-sm py-2 z-10">
+            <div className="flex items-center justify-between mb-3 sticky top-0 bg-[#f0f2f5]/90 backdrop-blur-sm py-2 z-10">
               <h2 className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                 <File size={13} className="text-slate-400" />
                 {debouncedSearch ? 'Resultados' : 'Archivos'}
-                <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{displayFiles.length}</span>
+                <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md">{displayFiles.length}</span>
               </h2>
 
               {selectedIds.size > 0 && (
@@ -1526,46 +1644,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               )}
             </div>
 
-            {view === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                {displayFiles.map(file => (
-                  <FileCard
-                    key={file.fullPath} file={file}
-                    selected={selectedIds.has(file.fullPath)}
-                    searchActive={!!debouncedSearch}
-                    onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
-                    onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
-                    onDoubleClick={() => handlePreview(file)}
-                    onStar={handleToggleStar}
-                  />
-                ))}
-              </div>
+            {isMetrologistFolder && activeFilter === 'all' && !debouncedSearch ? (
+              <>
+                {renderFilesBlock('Laboratorio', labFiles)}
+                {renderFilesBlock('Servicio en Sitio', siteFiles)}
+              </>
             ) : (
-              <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
-                <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider sticky top-0">
-                  <div className="col-span-12 md:col-span-5 flex items-center gap-2">
-                    <div className="w-5" />
-                    Nombre
-                  </div>
-                  <div className="hidden md:block col-span-3">Plazo</div>
-                  <div className="hidden md:block col-span-2">Estado</div>
-                  <div className="hidden md:block col-span-1 text-right">Fecha</div>
-                  <div className="hidden md:block col-span-1 text-right">Tamaño</div>
-                </div>
-                {displayFiles.map(file => (
-                  <FileListRow
-                    key={file.fullPath} file={file}
-                    selected={selectedIds.has(file.fullPath)}
-                    searchActive={!!debouncedSearch}
-                    onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
-                    onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
-                    onDoubleClick={() => handlePreview(file)}
-                    onDownload={handleDownload}
-                    onStar={handleToggleStar}
-                  />
-                ))}
-              </div>
+              renderFilesBlock(null, otherFiles)
             )}
+
           </section>
         )}
       </div>
@@ -2009,7 +2096,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             value={newFolderName}
             onChange={e => setNewFolderName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) { const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); } }}
-            className="w-full bg-white text-slate-800 border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm transition-all"
+            className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm transition-all bg-white text-slate-800"
             placeholder="Nombre de la carpeta..."
           />
         </Dialog>
@@ -2038,7 +2125,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             autoFocus
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            className="w-full bg-white text-slate-800 border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm transition-all"
+            className="w-full border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm transition-all bg-white text-slate-800"
             placeholder="Nuevo nombre..."
           />
         </Dialog>
