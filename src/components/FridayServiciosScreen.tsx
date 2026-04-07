@@ -17,7 +17,6 @@ import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// ... (Resto de imports e interfaces sin cambios hasta el componente principal)
 interface Usuario {
   id: string;
   name?: string;
@@ -90,7 +89,6 @@ const CONSTANTS = {
   ]
 };
 
-// ... (Componentes auxiliares Avatar, PriorityBadge, ServiceCard, ServiceDetailModal, ServiceFormModal se mantienen igual)
 const Avatar = ({ user, size = 'sm' }: { user: Usuario | undefined, size?: 'sm'|'md'|'lg' }) => {
   const sizeClass = size === 'lg' ? 'w-10 h-10 text-sm' : size === 'md' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
   return (
@@ -113,7 +111,9 @@ const PriorityBadge = ({ priority }: { priority: string }) => {
 const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban' }: { service: Service, users: Usuario[], onClick: () => void, onQuickAction: (id:string, action:string) => void, variant?: 'kanban' | 'list' }) => {
   const tipoConfig = CONSTANTS.tipos.find(t => t.value === service.tipo);
   const TipoIcon = tipoConfig?.icon || Settings;
-  const assignedUsers = users.filter(u => service.personas?.includes(u.id));
+  
+  // Aseguramos que service.personas sea un array antes de hacer el .includes
+  const assignedUsers = users.filter(u => Array.isArray(service.personas) && service.personas.includes(u.id));
   const [showMenu, setShowMenu] = useState(false);
 
   const renderQuickButton = () => {
@@ -284,7 +284,7 @@ const ServiceDetailModal = ({ isOpen, onClose, service, onEdit, onDelete, onView
           <section>
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Equipo Técnico</h3>
             <div className="flex flex-wrap gap-3">
-               {service.personas?.length > 0 ? (
+               {Array.isArray(service.personas) && service.personas.length > 0 ? (
                  service.personas.map((id:string) => {
                    const m = metrologos.find((u:any) => u.id === id);
                    return (
@@ -443,10 +443,12 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
                <h3 className="font-semibold text-gray-900">Asignar Personal</h3>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                    {metrologos.length > 0 ? metrologos.map((m: any) => {
-                     const selected = formData.personas.includes(m.id);
+                     // Nos aseguramos que formData.personas exista como arreglo para evitar crasheos al renderizar el formulario
+                     const personasArray = Array.isArray(formData.personas) ? formData.personas : [];
+                     const selected = personasArray.includes(m.id);
                      return (
                        <div key={m.id} onClick={() => {
-                           const newPersonas = selected ? formData.personas.filter((id: string) => id !== m.id) : [...formData.personas, m.id];
+                           const newPersonas = selected ? personasArray.filter((id: string) => id !== m.id) : [...personasArray, m.id];
                            handleChange('personas', newPersonas);
                        }} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selected ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300' : 'bg-white border-gray-200 hover:border-blue-200'}`}>
                          <div className={`w-5 h-5 rounded border flex items-center justify-center ${selected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
@@ -527,6 +529,7 @@ const FridayServiciosScreen: React.FC = () => {
   const [processing, setProcessing] = useState(false);
 
   const currentUserId = localStorage.getItem('usuario_id'); 
+  // console.log("ID del usuario actual:", currentUserId); // Descomenta esta línea si la vista de Mis Asignaciones sigue sin funcionar para ver si el ID existe en el storage
 
   // Modal States
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -592,7 +595,11 @@ const FridayServiciosScreen: React.FC = () => {
         s.cliente.toLowerCase().includes(filterText.toLowerCase());
       
       const matchStatus = filterStatus === 'todos' || s.estado === filterStatus;
-      const matchMyTasks = !showOnlyMyTasks || (currentUserId && s.personas.includes(currentUserId));
+      
+      // LA CORRECCIÓN APLICADA ESTÁ AQUÍ
+      const matchMyTasks = !showOnlyMyTasks || 
+        (currentUserId && Array.isArray(s.personas) && s.personas.includes(currentUserId));
+
       return matchSearch && matchStatus && matchMyTasks;
     });
   }, [servicios, filterText, filterStatus, showOnlyMyTasks, currentUserId]);
@@ -677,7 +684,6 @@ const FridayServiciosScreen: React.FC = () => {
             <header className="bg-white border-b border-gray-200 z-10 sticky top-0 shadow-sm">
                 <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                         {/* CAMBIO PRINCIPAL: Redirigir a 'menu' en lugar de 'dashboard' */}
                          <button onClick={() => navigateTo('menu')} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg">
                              <ArrowLeft className="w-6 h-6"/>
                          </button>

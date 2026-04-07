@@ -32,6 +32,12 @@ const FormatosScreen = lazy(() => import('./FormatosScreen').then(module => ({ d
 const PermisosTrabajoScreen = lazy(() => import('./PermisosTrabajoScreen').then(module => ({ default: module.PermisosTrabajoScreen })));
 // --------------------------------------------------
 
+// --- IMPORT PARA HISTORIAL DE EQUIPOS (NUEVO) ---
+const DirectorioEmpresasScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.DirectorioEmpresasScreen })));
+const EquiposPorEmpresaScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.EquiposPorEmpresaScreen })));
+const DetalleEquipoScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.DetalleEquipoScreen })));
+// --------------------------------------------------
+
 const Loader = () => (
   <div className="w-full h-full flex flex-col items-center justify-center min-h-screen bg-slate-950 z-50 fixed top-0 left-0">
     <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
@@ -93,11 +99,19 @@ export const MainApp: React.FC = () => {
 };
 
 const renderScreen = (screen: string, user: any) => {
+  // Limpiar el ID de edición si NO estamos en la hoja de trabajo (para evitar que se quede pegado)
+  if (screen !== 'work-sheet') {
+    localStorage.removeItem('edit_worksheet_id');
+  }
+
   switch (screen) {
     case 'menu': return <MainMenu />;
     case 'consecutivos': return <ConsecutivosScreen />;
     case 'magnitude-detail': return <MagnitudeDetailScreen />;
-    case 'work-sheet': return <WorkSheetScreen />;
+    
+    // Le pasamos el ID recuperado del historial para que edite
+    case 'work-sheet': return <WorkSheetScreen worksheetId={localStorage.getItem('edit_worksheet_id') || undefined} />;
+    
     case 'empresas': return <EmpresasScreen />;
     case 'calendario': return <CalendarScreen />;
     case 'hoja-servicio': return <HojaDeServicioScreen />;
@@ -115,10 +129,14 @@ const renderScreen = (screen: string, user: any) => {
     case 'vencimientos': return <VencimientosScreen />;
     case 'entrada-salida': return <EntradaSalidaScreen />;
     
-    // --- NUEVOS CASES PARA RENDERIZAR LAS PANTALLAS ---
+    // --- FORMATOS Y PERMISOS DE TRABAJO ---
     case 'formatos': return <FormatosScreen />;
     case 'permisos-trabajo': return <PermisosTrabajoScreen />;
-    // --------------------------------------------------
+    
+    // --- NUEVAS PANTALLAS DE HISTORIAL DE EQUIPOS ---
+    case 'directorio-empresas': return <DirectorioEmpresasScreen />;
+    case 'equipos-empresa': return <EquiposPorEmpresaScreen />;
+    case 'detalle-equipo': return <DetalleEquipoScreen />;
     
     default: return <MainMenu />;
   }

@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, useTransition } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useTransition, useDeferredValue } from "react";
 import {
   Plus, Trash2, ChevronDown, Search, 
   UserCircle, Calendar, X, 
-  Menu, Building2, ArrowLeft,
+  Building2, ArrowLeft,
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
   MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil,
   RotateCcw, Brain, Download, Filter, History, CheckCircle
 } from "lucide-react";
-import SidebarFriday from "./SidebarFriday";
 import { db } from "../utils/firebase";
 import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs } from "firebase/firestore";
 import clsx from "clsx";
@@ -692,8 +691,6 @@ const HiddenColumnsBar = ({ hiddenColumns, onUnhide }: { hiddenColumns: Column[]
 const FridayScreen: React.FC = () => {
     const { navigateTo } = useNavigation();
     const { user } = useAuth();
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    const [sidebarAbierto, setSidebarAbierto] = useState(false); 
     const [isLoadingData, setIsLoadingData] = useState(true);
     const [userRole, setUserRole] = useState<string>("admin"); 
     const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
@@ -708,12 +705,14 @@ const FridayScreen: React.FC = () => {
     const [metrologos, setMetrologos] = useState<any[]>([]); 
     const [clientes, setClientes] = useState<any[]>([]); 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [search, setSearch] = useState("");
     const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
     const dragItemRef = useRef<DragItem | null>(null); 
     const [isThinking, setIsThinking] = useState(false);
     
-    // UI States
+    // UI States (Búsqueda Optimizada con useDeferredValue)
+    const [search, setSearch] = useState("");
+    const deferredSearch = useDeferredValue(search); 
+
     const [permissionMenu, setPermissionMenu] = useState<{ x: number, y: number, colKey: string } | null>(null);
     const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
     const [activeCommentRow, setActiveCommentRow] = useState<WorksheetData | null>(null);
@@ -736,12 +735,6 @@ const FridayScreen: React.FC = () => {
             showToast("Error al guardar configuración de columnas", "info");
         }
     };
-
-    useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -789,40 +782,44 @@ const FridayScreen: React.FC = () => {
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
         const unsubRows = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
-            let newRows: WorksheetData[] = [];
-            
-            snapshot.forEach(doc => { 
-                const data = doc.data();
-                let recordYear = "";
-                if (data.createdAt) recordYear = String(data.createdAt).substring(0, 4);
-                else if (data.fechaEntrada) recordYear = String(data.fechaEntrada).substring(0, 4);
-                else if (data.fecha) recordYear = String(data.fecha).substring(0, 4);
-                else if (data.fecha_calib) recordYear = String(data.fecha_calib).substring(0, 4);
-                else recordYear = "2025"; 
+            // 🔥 startTransition evita que el procesamiento masivo congele la UI
+            startTransition(() => {
+                let newRows: WorksheetData[] = [];
+                const yearStr = currentYear.toString();
+                
+                snapshot.forEach(doc => { 
+                    const data = doc.data();
+                    let recordYear = "";
+                    if (data.createdAt) recordYear = String(data.createdAt).substring(0, 4);
+                    else if (data.fechaEntrada) recordYear = String(data.fechaEntrada).substring(0, 4);
+                    else if (data.fecha) recordYear = String(data.fecha).substring(0, 4);
+                    else if (data.fecha_calib) recordYear = String(data.fecha_calib).substring(0, 4);
+                    else recordYear = "2025"; 
 
-                if (recordYear === currentYear.toString()) {
-                    newRows.push({ 
-                        ...data, 
-                        docId: doc.id, 
-                        id: data.id || "", 
-                        nombre: data.nombre || data.assignedTo, 
-                        fecha: data.fecha || data.fecha_calib,
-                        cargado_drive: data.cargado_drive || "No",
-                        status_certificado: data.status_certificado || "Pendiente de Certificado",
-                        entregado: data.entregado === true,
-                        folioSalida: data.folioSalida 
-                    } as WorksheetData); 
-                }
+                    if (recordYear === yearStr) {
+                        newRows.push({ 
+                            ...data, 
+                            docId: doc.id, 
+                            id: data.id || "", 
+                            nombre: data.nombre || data.assignedTo, 
+                            fecha: data.fecha || data.fecha_calib,
+                            cargado_drive: data.cargado_drive || "No",
+                            status_certificado: data.status_certificado || "Pendiente de Certificado",
+                            entregado: data.entregado === true,
+                            folioSalida: data.folioSalida 
+                        } as WorksheetData); 
+                    }
+                });
+
+                newRows.sort((a, b) => {
+                    const dateA = a.createdAt || a.fechaEntrada || "0";
+                    const dateB = b.createdAt || b.fechaEntrada || "0";
+                    return dateB.localeCompare(dateA);
+                });
+
+                setRows(newRows);
+                setIsLoadingData(false);
             });
-
-            newRows.sort((a, b) => {
-                const dateA = a.createdAt || a.fechaEntrada || "0";
-                const dateB = b.createdAt || b.fechaEntrada || "0";
-                return dateB.localeCompare(dateA);
-            });
-
-            setRows(newRows);
-            setIsLoadingData(false);
         });
 
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
@@ -869,14 +866,11 @@ const FridayScreen: React.FC = () => {
                     newThoughts.push({ id: Date.now() + Math.random(), type: 'success', message: `Certificado autogenerado para ${row.folio || 'un equipo'}`, timestamp: new Date().toISOString() });
                 }
 
-                // --- 2. MÓDULO DE ANTICORRUPCIÓN Y CONSISTENCIA (¡NUEVO!) ---
-
-                // A. Consistencia de ubicación cruzada
+                // --- 2. MÓDULO DE ANTICORRUPCIÓN Y CONSISTENCIA ---
                 if (row.lugarCalibracion === 'sitio') {
                     if (row.status_equipo !== 'Calibrado') { updates.status_equipo = 'Calibrado'; needsUpdate = true; }
                     if (row.ubicacion_real !== 'Servicio en Sitio') { updates.ubicacion_real = 'Servicio en Sitio'; needsUpdate = true; }
                 } else if (row.lugarCalibracion === 'laboratorio') {
-                    // Si está en el grupo de laboratorio pero la ubicación dice Sitio (error humano o de arrastre)
                     if (row.ubicacion_real === 'Servicio en Sitio') {
                         updates.ubicacion_real = 'Laboratorio';
                         needsUpdate = true;
@@ -884,13 +878,11 @@ const FridayScreen: React.FC = () => {
                     }
                 }
 
-                // B. Sanitización de SLA (Días Promesa)
                 if (row.diasPromesa === undefined || row.diasPromesa === null || isNaN(Number(row.diasPromesa))) {
-                    updates.diasPromesa = 5; // Valor seguro por defecto
+                    updates.diasPromesa = 5; 
                     needsUpdate = true;
                 }
 
-                // C. Estatus huérfanos
                 if (!row.status_equipo || row.status_equipo === "") {
                     updates.status_equipo = 'Desconocido';
                     needsUpdate = true;
@@ -900,13 +892,11 @@ const FridayScreen: React.FC = () => {
                     needsUpdate = true;
                 }
 
-                // D. Limpieza de espacios en blanco extremos que rompen la UI
                 if (row.equipo && typeof row.equipo === 'string' && row.equipo !== row.equipo.trim()) {
                     updates.equipo = row.equipo.trim();
                     needsUpdate = true;
                 }
 
-                // Ejecutar actualización
                 if (needsUpdate) {
                     const rowRef = doc(db, "hojasDeTrabajo", row.docId);
                     updates.lastUpdated = new Date().toISOString(); 
@@ -929,7 +919,7 @@ const FridayScreen: React.FC = () => {
             }
         };
 
-        const timer = setTimeout(runAGBot, 2500); // 2.5 seg para no saturar al entrar
+        const timer = setTimeout(runAGBot, 2500); 
         return () => clearTimeout(timer);
 
     }, [rows, isLoadingData]); 
@@ -1173,10 +1163,11 @@ const FridayScreen: React.FC = () => {
         }
     }, [columns]); 
 
+    // 🔥 Uso de deferredSearch para evitar que se congele al escribir
     const groupedRows = useMemo(() => {
         let filtered = rows.filter(r => {
-            if (search) {
-                const s = search.toLowerCase();
+            if (deferredSearch) {
+                const s = deferredSearch.toLowerCase();
                 const matches = (
                     (r.cliente || "").toLowerCase().includes(s) || 
                     (r.folio || "").toLowerCase().includes(s) || 
@@ -1211,29 +1202,27 @@ const FridayScreen: React.FC = () => {
             ...group,
             rows: filtered.filter(r => (r.lugarCalibracion || "").toLowerCase() === group.id)
         }));
-    }, [rows, groupsConfig, search, sortConfig, activeFilters]);
+    }, [rows, groupsConfig, deferredSearch, sortConfig, activeFilters]);
 
     let headerStickyOffset = 40; 
     const hiddenColumns = columns.filter(c => c.hidden);
 
     return (
-        <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] overflow-hidden">
-             <div className={clsx("flex-shrink-0 bg-white h-full z-50 transition-all duration-300 ease-in-out overflow-hidden border-r border-[#d0d4e4]", sidebarAbierto ? "w-64 opacity-100" : "w-0 opacity-0 border-none")}>
-                <div className="w-64 h-full">
-                    <SidebarFriday onNavigate={navigateTo} isOpen={sidebarAbierto} />
-                </div>
-             </div>
-             {isMobile && sidebarAbierto && (<div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarAbierto(false)}></div>)}
-
-            <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all duration-300">
-                <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white sticky top-0 z-40 shadow-sm">
+        <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] w-full overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all w-full">
+                
+                {/* --- BARRA SUPERIOR (MODIFICADA) --- */}
+                <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white sticky top-0 z-40 shadow-sm w-full">
                     <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setSidebarAbierto(!sidebarAbierto)} className="p-2 hover:bg-gray-100 rounded-md text-gray-500 transition-colors"><Menu className="w-6 h-6"/></button>
-                            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors" title="Regresar al Menú"><ArrowLeft className="w-6 h-6"/></button>
-                        </div>
+                        <button 
+                            onClick={() => navigateTo('menu')} 
+                            className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shadow-sm border border-transparent hover:border-gray-200" 
+                            title="Regresar al Menú"
+                        >
+                            <ArrowLeft className="w-5 h-5"/>
+                        </button>
                         <div className="flex flex-col">
-                            <h1 className="text-2xl font-bold leading-tight flex items-center gap-2 text-gray-800">
+                            <h1 className="text-2xl font-bold leading-tight flex items-center gap-2 text-gray-800 tracking-tight">
                                 Tablero Principal 
                                 <div className="inline-flex bg-gray-100 rounded-lg p-1 ml-3 border border-gray-200">
                                     <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-0.5 rounded-md text-xs font-bold transition-all", currentYear === 2025 ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}>2025</button>
@@ -1242,8 +1231,16 @@ const FridayScreen: React.FC = () => {
                             </h1>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input placeholder="Buscar todo..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none hover:shadow-sm transition-shadow bg-gray-50 w-64" value={search} onChange={e => setSearch(e.target.value)} /></div>
+                    <div className="flex gap-3 items-center">
+                        <div className="relative">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                            <input 
+                                placeholder="Buscar todo..." 
+                                className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all bg-gray-50 w-72" 
+                                value={search} 
+                                onChange={e => setSearch(e.target.value)} 
+                            />
+                        </div>
                         
                         <div className={clsx("p-2 rounded-lg transition-all", isThinking ? "text-purple-600 bg-purple-50 animate-pulse" : "text-gray-400")} title="AG-Bot Activo">
                             <Brain size={18}/>
@@ -1251,12 +1248,18 @@ const FridayScreen: React.FC = () => {
 
                         <AGBotWidget thoughts={agBotThoughts} />
 
-                        <button onClick={handleExportCSV} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors flex items-center gap-2" title="Exportar a Excel"><Download size={18}/><span className="text-xs font-bold hidden md:inline">Exportar</span></button>
-                        <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-lg transition-colors" title="Restablecer vista original"><RotateCcw size={18}/></button>
+                        <button onClick={handleExportCSV} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors flex items-center gap-2 shadow-sm" title="Exportar a Excel">
+                            <Download size={18}/>
+                            <span className="text-xs font-bold hidden md:inline">Exportar</span>
+                        </button>
+                        
+                        <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-lg transition-colors shadow-sm border border-transparent hover:border-gray-200" title="Restablecer vista original">
+                            <RotateCcw size={18}/>
+                        </button>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-auto bg-white" id="main-board-scroll">
+                <div className="flex-1 overflow-auto bg-white w-full" id="main-board-scroll">
                     <div className="inline-block min-w-full pb-32">
                         <HiddenColumnsBar hiddenColumns={hiddenColumns} onUnhide={handleUnhide} />
 
@@ -1317,7 +1320,12 @@ const FridayScreen: React.FC = () => {
                         </div>
 
                         <div className="px-4 mt-6">
-                            {isLoadingData ? <div className="p-10 text-center text-gray-400">Cargando tablero...</div> : (
+                            {isLoadingData ? (
+                                <div className="p-10 flex flex-col items-center justify-center gap-3">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                    <p className="text-gray-400 text-sm font-medium">Cargando tablero...</p>
+                                </div>
+                            ) : (
                                 groupedRows.map((group) => (
                                     <div key={group.id} className="mb-10">
                                         <div className="flex items-center mb-2 group sticky left-0 z-10 p-2 rounded hover:bg-gray-50 transition-colors">
@@ -1332,7 +1340,7 @@ const FridayScreen: React.FC = () => {
                                                 }}
                                             />
                                             <h2 className="text-lg font-medium ml-2 px-1 text-gray-800" style={{ color: group.color }}>{group.name}</h2>
-                                            <span className="ml-3 text-xs text-gray-400 font-light border border-gray-200 px-2 py-0.5 rounded-full">{group.rows.length}</span>
+                                            <span className="ml-3 text-xs text-gray-400 font-light border border-gray-200 px-2 py-0.5 rounded-full shadow-sm bg-white">{group.rows.length}</span>
                                         </div>
                                         {!group.collapsed && (
                                             <div className="shadow-sm rounded-tr-md rounded-tl-md overflow-hidden border-l border-t border-r border-[#d0d4e4] min-h-[50px]">
@@ -1364,7 +1372,7 @@ const FridayScreen: React.FC = () => {
                                                         {columns.filter(c => c.sticky && !c.hidden).map(c => ( <div key={c.key} style={{width: c.width}} className="border-r border-[#d0d4e4] flex-shrink-0"></div> ))}
                                                     </div>
                                                     <div className="flex-1 flex items-center px-2 relative">
-                                                        <input type="text" placeholder="+ Nuevo Equipo" className="outline-none text-sm w-[200px] h-full placeholder-gray-400 bg-transparent absolute left-2" onKeyDown={(e) => { if (e.key === 'Enter') { handleAddRow(group.id); (e.target as HTMLInputElement).value = ''; } }} />
+                                                        <input type="text" placeholder="+ Nuevo Equipo" className="outline-none text-sm w-[200px] h-full placeholder-gray-400 bg-transparent absolute left-2 font-medium" onKeyDown={(e) => { if (e.key === 'Enter') { handleAddRow(group.id); (e.target as HTMLInputElement).value = ''; } }} />
                                                         <button onClick={() => handleAddRow(group.id)} className="ml-[200px] text-xs bg-blue-600 text-white px-3 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity font-medium shadow-sm">Agregar</button>
                                                     </div>
                                                 </div>

@@ -94,11 +94,15 @@ const generateSearchTokens = (text: string): string[] => {
 };
 
 const fuzzyMatch = (file: DriveFile, searchTerms: string[]) => {
+  // CORRECCIÓN: Se han removido 'uploadedBy' y 'parentFolder' para evitar 
+  // falsos positivos gigantescos (ej. buscar y que salgan todos los archivos de "Raíz")
   const textToSearch = [
-    file.name, file.rawName, file.uploadedBy,
-    file.parentFolder, file.notas || "",
+    file.name, 
+    file.rawName, 
+    file.notas || "",
     ...(file.keywords || [])
   ].join(' ').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  
   return searchTerms.every(term => textToSearch.includes(term));
 };
 
@@ -367,12 +371,10 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
         isReadyForReview && !isOverdue && !selected ? "border-blue-200 shadow-blue-50/50" : ""
       )}
     >
-      {/* Thumbnail area */}
       <div className={clsx(
         "h-28 flex items-center justify-center relative transition-colors",
         isOverdue ? "bg-red-50/60" : getFileColorBg(file.name)
       )}>
-        {/* Selection checkmark */}
         <div className={clsx(
           "absolute top-2 left-2 z-20 transition-all duration-200",
           selected ? "opacity-100 scale-100" : "opacity-0 group-hover:opacity-60 scale-90 group-hover:scale-100"
@@ -385,7 +387,6 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
           </div>
         </div>
 
-        {/* Star button */}
         <button
           onClick={(e) => { e.stopPropagation(); onStar?.(file); }}
           className={clsx(
@@ -398,7 +399,6 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
           <Star size={14} className={file.starred ? "fill-amber-500" : ""} />
         </button>
 
-        {/* Status badges */}
         <div className="absolute bottom-2 right-2 flex items-center gap-1">
           {file.reviewed && (
             <div className="bg-emerald-500 text-white p-1 rounded-full shadow-sm" title="Validado">
@@ -422,7 +422,6 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
         </div>
       </div>
 
-      {/* Info area */}
       <div className="p-3 flex flex-col gap-2 flex-1">
         <div>
           <p
@@ -473,7 +472,6 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
         isOverdue && !selected ? "bg-red-50/30" : ""
       )}
     >
-      {/* Name col */}
       <div className="col-span-12 md:col-span-5 flex items-center gap-3 min-w-0">
         <div className={clsx(
           "w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all cursor-pointer",
@@ -500,7 +498,6 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
         </button>
       </div>
 
-      {/* Deadline */}
       <div className="hidden md:block md:col-span-3 pr-4">
         {!isNoExpiration ? (
           <DeadlineBar createdDate={file.created} />
@@ -509,17 +506,14 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
         )}
       </div>
 
-      {/* Status */}
       <div className="hidden md:block md:col-span-2">
         <StatusChip file={file} />
       </div>
 
-      {/* Date */}
       <div className="hidden md:block md:col-span-1 text-right">
         <span className="text-xs text-slate-400">{formatDate(file.updated)}</span>
       </div>
 
-      {/* Size + actions */}
       <div className="hidden md:flex md:col-span-1 items-center justify-end gap-1">
         <span className="text-xs text-slate-400 font-mono">{formatFileSize(file.size)}</span>
         <button
@@ -565,7 +559,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
 
   return (
     <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-80 bg-white border-l border-slate-200 z-[60] flex flex-col h-full overflow-hidden animate-in slide-in-from-right duration-250">
-      {/* Header */}
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
         <span className="text-sm font-semibold text-slate-800">Información</span>
         <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
@@ -573,7 +566,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         </button>
       </div>
 
-      {/* File icon & name */}
       <div className="px-5 py-6 flex flex-col items-center border-b border-slate-100 flex-shrink-0">
         <div className={clsx("w-20 h-20 rounded-2xl flex items-center justify-center mb-4 border", getFileColorBg(file.name), "border-slate-100")}>
           {getFileIcon(file.name, 44)}
@@ -582,9 +574,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         <p className="text-xs text-slate-400 mt-1 font-mono">{formatFileSize(file.size)}</p>
       </div>
 
-      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-        {/* Metadata */}
         <div className="space-y-3">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Detalles</h4>
           {[
@@ -600,7 +590,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
           ))}
         </div>
 
-        {/* Status toggles */}
         <div className="space-y-3">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estado del Proceso</h4>
           <div className={clsx("flex items-center justify-between p-3 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-slate-50 border-slate-200")}>
@@ -619,7 +608,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
           </div>
         </div>
 
-        {/* Notes */}
         <div className="space-y-2">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notas</h4>
           <textarea
@@ -633,7 +621,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         </div>
       </div>
 
-      {/* Footer actions */}
       <div className="px-5 py-4 border-t border-slate-100 flex gap-2 flex-shrink-0">
         <button onClick={() => onDownload(file)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-all">
           <Eye size={14} /> Vista Previa
@@ -657,7 +644,6 @@ const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile; onCl
   return (
     <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-5xl h-[88vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className="h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-white flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             {getFileIcon(file.name, 18)}
@@ -674,7 +660,6 @@ const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile; onCl
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-hidden">
           {!file.url ? (
             <div className="flex flex-col items-center gap-3">
@@ -1002,13 +987,29 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     return () => window.removeEventListener('keydown', handle);
   }, [selectedIds, files, previewFile, isQuality]);
 
-  // ── Close menus on outside click ──
+  // ── Close menus on outside click / scroll ──
   useEffect(() => {
-    const handle = (e: MouseEvent) => {
+    const handleMouseDown = (e: MouseEvent) => {
       if (newFileMenuRef.current && !newFileMenuRef.current.contains(e.target as Node)) setNewFileMenuOpen(false);
     };
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
+
+    const handleScroll = (e: Event) => {
+      // No cerrar si el usuario está haciendo scroll dentro del propio menú
+      const target = e.target as HTMLElement;
+      if (target && target.closest && target.closest('.context-menu-container')) {
+        return;
+      }
+      setContextMenu(null);
+      setSortMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('scroll', handleScroll, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
   }, []);
 
   // ── Sorted/filtered files ──
@@ -1132,9 +1133,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const moveFolderRecursive = async (src: string, dest: string) => {
     const res = await listAll(ref(storage, src));
     for (const item of res.items) {
-      const blob = await (await fetch(await getDownloadURL(item))).blob();
+      const url = await getDownloadURL(item);
+      const blob = await (await fetch(url)).blob();
       const newPath = `${dest}/${item.name}`;
-      await uploadBytes(ref(storage, newPath), blob);
+      const newRef = ref(storage, newPath);
+      await uploadBytes(newRef, blob);
+      
+      const newPdfUrl = await getDownloadURL(newRef);
+
       if (item.name !== '.keep') {
         const oldId = item.fullPath.replace(/\//g, '_');
         const newId = newPath.replace(/\//g, '_');
@@ -1142,6 +1148,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const data = old.exists() ? old.data() : {};
         if (old.exists()) await deleteDoc(doc(db, 'fileMetadata', oldId));
         await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, updated: new Date().toISOString() }, { merge: true });
+        
+        try {
+          const possibleId = item.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
+          let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
+          if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
+          if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
+          
+          if (!snap.empty) {
+            await updateDoc(snap.docs[0].ref, { pdfURL: newPdfUrl });
+          }
+        } catch (syncErr) {
+          console.error("Error sincronizando link al mover carpeta:", syncErr);
+        }
       }
       await deleteObject(item);
     }
@@ -1160,20 +1179,40 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     finally { setIsMoving(false); }
   };
 
-  const executeMoveFile = async (file: DriveFile, dest: string) => {
-    const newPath = `${dest}/${file.name}`;
+  // ── Move file ──
+  const executeMoveFile = async (file: DriveFile, destFolder: string, explicitNewName?: string) => {
+    const targetName = explicitNewName || file.name;
+    const newPath = `${destFolder}/${targetName}`;
     if (newPath === file.fullPath) return false;
     setIsMoving(true);
     try {
       const url = file.url || await getDownloadURL(ref(storage, file.fullPath));
       const blob = await (await fetch(url)).blob();
-      await uploadBytes(ref(storage, newPath), blob);
+      const newRef = ref(storage, newPath);
+      await uploadBytes(newRef, blob);
+      
+      const newPdfUrl = await getDownloadURL(newRef);
+
       const oldId = file.fullPath.replace(/\//g, '_');
       const newId = newPath.replace(/\//g, '_');
       const old = await getDoc(doc(db, 'fileMetadata', oldId));
       const data = old.exists() ? old.data() : {};
       if (old.exists()) await deleteDoc(doc(db, 'fileMetadata', oldId));
-      await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, name: file.name, updated: new Date().toISOString() }, { merge: true });
+      await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, name: targetName, updated: new Date().toISOString() }, { merge: true });
+      
+      try {
+        const possibleId = targetName.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
+        let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
+        if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
+        if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
+        
+        if (!snap.empty) {
+          await updateDoc(snap.docs[0].ref, { pdfURL: newPdfUrl });
+        }
+      } catch (syncErr) {
+        console.error("Error sincronizando link al mover archivo:", syncErr);
+      }
+
       await deleteObject(ref(storage, file.fullPath));
       return true;
     } catch (e) { showToast("Error al mover el archivo", 'error'); return false; }
@@ -1344,7 +1383,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ─── RENDER CONTENT ───────────────────────
   const renderContent = () => {
-    // Completed groups view
     if (activeFilter === 'completed' && !completedGroupView) {
       const groups = Object.keys(completedGroups);
       if (groups.length === 0) return <EmptyState icon={FileCheck} title="No hay servicios completados" />;
@@ -1382,7 +1420,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     return (
       <div className="animate-in slide-in-from-bottom-1 duration-200 pb-24">
-        {/* Quick Access */}
         {path.length === 0 && !debouncedSearch && suggestedFiles.length > 0 && (
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
@@ -1408,7 +1445,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </section>
         )}
 
-        {/* Folders */}
         {showFolders && (
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
@@ -1433,7 +1469,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </section>
         )}
 
-        {/* Files */}
         {displayFiles.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-3 sticky top-0 bg-slate-50/90 backdrop-blur-sm py-2 z-10">
@@ -1443,7 +1478,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{displayFiles.length}</span>
               </h2>
 
-              {/* Batch actions */}
               {selectedIds.size > 0 && (
                 <div className="flex items-center gap-2 animate-in slide-in-from-right fade-in duration-150">
                   <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
@@ -1487,7 +1521,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </div>
             ) : (
               <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
-                {/* List header */}
                 <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider sticky top-0">
                   <div className="col-span-12 md:col-span-5 flex items-center gap-2">
                     <div className="w-5" />
@@ -1528,7 +1561,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     { key: 'sizeAsc', label: 'Más pequeños', icon: <SortAsc size={13} /> },
   ];
 
-  // ─── BREADCRUMB LABEL ──────────────────────
   const filterLabels: Record<FilterType, string> = {
     all: 'Mi Unidad', starred: 'Destacados', recent: 'Recientes',
     pending_review: 'Pendientes de revisión', completed: 'Historial completados'
@@ -1542,7 +1574,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       className="flex h-full w-full bg-[#f0f2f5] text-slate-800 font-sans overflow-hidden relative"
       onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}
     >
-      {/* Drag overlay */}
       {dragActive && !draggingItem && (
         <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-[3px] border-dashed border-blue-400 m-3 rounded-3xl flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center">
@@ -1553,19 +1584,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       )}
 
-      {/* Drop zone */}
       <div className="absolute inset-0 z-0" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} />
 
-      {/* Sidebar overlay (mobile) */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />}
 
-      {/* ── SIDEBAR ──────────────────────────── */}
       <aside className={clsx(
         "fixed inset-y-0 left-0 z-50 w-60 bg-white border-r border-slate-200/80 flex flex-col transition-transform duration-300 shadow-xl md:shadow-none",
         "md:relative md:translate-x-0",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        {/* Logo */}
         <div className="px-5 py-5 flex items-center gap-3 border-b border-slate-100">
           <img src={labLogo} alt="Logo" className="w-8 h-8 object-contain" />
           <div>
@@ -1574,7 +1601,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
 
-        {/* New / Upload button */}
         <div className="px-4 py-4 border-b border-slate-100">
           <div ref={newFileMenuRef} className="relative">
             <button
@@ -1605,7 +1631,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           <SidebarItem icon={<HardDrive size={16} />} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
           <SidebarItem icon={<Star size={16} />} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setCompletedGroupView(null); setSidebarOpen(false); }} />
@@ -1622,7 +1647,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           )}
         </nav>
 
-        {/* User info + logout */}
         <div className="px-4 py-4 border-t border-slate-100">
           {currentUserData && (
             <div className="flex items-center gap-3 mb-3 px-2">
@@ -1644,17 +1668,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       </aside>
 
-      {/* ── MAIN AREA ─────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
-
-        {/* Top header */}
         <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white/90 backdrop-blur-md sticky top-0 z-30 flex-shrink-0">
-          {/* Mobile menu */}
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
             <Menu size={18} />
           </button>
 
-          {/* Search */}
           <div className="relative flex-1 max-w-lg group">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
             <input
@@ -1671,7 +1690,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             )}
           </div>
 
-          {/* Right actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
             {isSyncing && (
               <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-blue-500 animate-pulse">
@@ -1679,7 +1697,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </div>
             )}
 
-            {/* Upload button */}
             <button
               onClick={() => fileInputRef.current?.click()}
               className="hidden md:flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95"
@@ -1689,7 +1706,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             </button>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
 
-            {/* View toggle */}
             <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-0.5">
               <button onClick={() => setView('list')} className={clsx("p-1.5 rounded-lg transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}>
                 <Rows3 size={15} />
@@ -1699,7 +1715,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </button>
             </div>
 
-            {/* Details panel toggle */}
             <button
               onClick={() => setDetailsOpen(v => !v)}
               className={clsx("p-2 rounded-xl border transition-all", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300")}
@@ -1710,9 +1725,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </header>
 
-        {/* Breadcrumb + sort bar */}
-        <div className="h-10 border-b border-slate-200/60 flex items-center justify-between px-4 md:px-6 bg-white/80 backdrop-blur-sm flex-shrink-0">
-          {/* Breadcrumb */}
+        {/* CORRECCIÓN: relative z-40 añadido aquí para que el menú de ordenar nunca quede por detrás del contenido */}
+        <div className="relative z-40 h-10 border-b border-slate-200/60 flex items-center justify-between px-4 md:px-6 bg-white/80 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-1 text-xs overflow-hidden min-w-0">
             {activeFilter !== 'all' ? (
               <span className="flex items-center gap-1.5 font-semibold text-blue-600">
@@ -1753,7 +1767,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             )}
           </div>
 
-          {/* Sort */}
           <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setSortMenuOpen(v => !v)}
@@ -1780,13 +1793,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto flex min-h-0">
           <div className={clsx("flex-1 p-4 md:p-6 min-w-0 transition-all duration-200")}>
             {loading ? <LoadingSkeleton /> : renderContent()}
           </div>
 
-          {/* Details panel */}
           {detailsOpen && selectedIds.size === 1 && (() => {
             const file = files.find(f => f.fullPath === Array.from(selectedIds)[0]);
             return file ? (
@@ -1804,70 +1815,86 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       </div>
 
-      {/* ── PREVIEW MODAL ─────────────────────── */}
       {previewFile && (
         <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} onDownload={() => handleDownload(previewFile)} />
       )}
 
-      {/* ── CONTEXT MENU ──────────────────────── */}
-      {contextMenu && (
-        <div
-          className="fixed bg-white/95 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-2xl py-2 w-56 z-[150] text-sm animate-in fade-in zoom-in-95 duration-100"
-          style={{ top: Math.min(contextMenu.y, window.innerHeight - 320), left: Math.min(contextMenu.x, window.innerWidth - 240) }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="px-3 py-2 border-b border-slate-100 mb-1">
-            <p className="text-xs font-semibold text-slate-700 truncate">{contextMenu.file?.name ?? contextMenu.folder?.name}</p>
-            {contextMenu.file && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatFileSize(contextMenu.file.size)}</p>}
-          </div>
+      {/* CORRECCIÓN: Lógica dinámica de posicionamiento del Context Menu para evitar recortes y permitir el Scroll */}
+      {contextMenu && (() => {
+        const isFolder = !!contextMenu.folder;
+        // Alturas estimadas del menú
+        const estimatedHeight = isFolder ? 200 : 380; 
+        
+        let topPos = contextMenu.y;
+        if (topPos + estimatedHeight > window.innerHeight) {
+          // Si el menú se sale de la pantalla por debajo, se acomoda o empuja hacia arriba
+          topPos = Math.max(10, window.innerHeight - estimatedHeight - 20);
+        }
+        
+        let leftPos = contextMenu.x;
+        // 224px es equivalente a w-56
+        if (leftPos + 224 > window.innerWidth) { 
+          leftPos = window.innerWidth - 240;
+        }
 
-          {contextMenu.file && (
-            <>
-              <MenuOption icon={<Eye size={14} />} label="Vista previa" shortcut="Esp" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
-              <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
-              <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
-              <MenuOption
-                icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />}
-                label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"}
-                onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }}
-              />
-              <div className="my-1 mx-2 border-t border-slate-100" />
-              <MenuOption
-                icon={<FileCheck size={14} />}
-                label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"}
-                onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }}
-              />
-              {isQuality && (
+        return (
+          <div
+            className="context-menu-container fixed bg-white/95 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-2xl py-2 w-56 z-[150] text-sm animate-in fade-in zoom-in-95 duration-100 max-h-[75vh] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full"
+            style={{ top: topPos, left: leftPos }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 border-b border-slate-100 mb-1">
+              <p className="text-xs font-semibold text-slate-700 truncate">{contextMenu.file?.name ?? contextMenu.folder?.name}</p>
+              {contextMenu.file && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatFileSize(contextMenu.file.size)}</p>}
+            </div>
+
+            {contextMenu.file && (
+              <>
+                <MenuOption icon={<Eye size={14} />} label="Vista previa" shortcut="Esp" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
+                <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
+                <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
                 <MenuOption
-                  icon={<CheckCircle2 size={14} />}
-                  label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"}
-                  onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }}
+                  icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />}
+                  label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"}
+                  onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }}
                 />
-              )}
-              {isQuality && (
-                <>
-                  <div className="my-1 mx-2 border-t border-slate-100" />
-                  <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                  <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
-                  <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} shortcut="Del" />
-                </>
-              )}
-            </>
-          )}
+                <div className="my-1 mx-2 border-t border-slate-100" />
+                <MenuOption
+                  icon={<FileCheck size={14} />}
+                  label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"}
+                  onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }}
+                />
+                {isQuality && (
+                  <MenuOption
+                    icon={<CheckCircle2 size={14} />}
+                    label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"}
+                    onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }}
+                  />
+                )}
+                {isQuality && (
+                  <>
+                    <div className="my-1 mx-2 border-t border-slate-100" />
+                    <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
+                    <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFile(contextMenu.file); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                    <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} shortcut="Del" />
+                  </>
+                )}
+              </>
+            )}
 
-          {contextMenu.folder && isQuality && (
-            <>
-              <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} />
-              <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-              <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
-              <div className="my-1 mx-2 border-t border-slate-100" />
-              <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} />
-            </>
-          )}
-        </div>
-      )}
+            {contextMenu.folder && isQuality && (
+              <>
+                <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} />
+                <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
+                <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFile(null); setMoveDialogOpen(true); setContextMenu(null); } }} />
+                <div className="my-1 mx-2 border-t border-slate-100" />
+                <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} />
+              </>
+            )}
+          </div>
+        );
+      })()}
 
-      {/* ── MOVE MODAL ────────────────────────── */}
       {moveDialogOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200">
@@ -1939,7 +1966,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       )}
 
-      {/* ── DIALOGS ───────────────────────────── */}
       {createFolderOpen && (
         <Dialog
           title="Nueva carpeta"
@@ -1971,7 +1997,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             setRenameDialogOpen(false);
             const dest = [ROOT_PATH, ...path].join('/');
             if (renameTargetFile) {
-              const ok = await executeMoveFile(renameTargetFile, dest + '/' + newName.trim());
+              const ok = await executeMoveFile(renameTargetFile, dest, newName.trim());
               if (ok) { showToast("Archivo renombrado", 'success'); loadContent(); }
             } else if (renameTargetFolder) {
               const ok = await executeMoveFolder(renameTargetFolder, dest + '/' + newName.trim());
@@ -1991,7 +2017,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </Dialog>
       )}
 
-      {/* ── TOAST NOTIFICATIONS ───────────────── */}
       <div className="fixed bottom-6 right-5 z-[300] flex flex-col gap-2 pointer-events-none">
         {toasts.map(toast => (
           <div key={toast.id} className="pointer-events-auto">

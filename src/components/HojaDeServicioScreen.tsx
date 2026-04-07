@@ -189,121 +189,147 @@ async function generarPDFFormal({
 
   function crearNuevaPagina() {
     doc.addPage();
-    doc.setFillColor(...grisClaro);
+    doc.setFillColor(255, 255, 255); // Fondo blanco limpio
     doc.rect(0, 0, 210, 20, 'F');
-    doc.setFillColor(...azulPrimario);
-    doc.rect(0, 0, 210, 2, 'F');
+    
     doc.setTextColor(...azulPrimario);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG', 15, 7);
+    doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG', 15, 10);
+    
     doc.setTextColor(...grisTexto);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(`FOLIO: ${campos.folio} | ${formatDate(campos.fecha)} | ${truncateText(campos.empresa, 25)}`, 15, 13);
+    doc.setFontSize(8);
+    doc.text(`FOLIO: ${campos.folio} | ${formatDate(campos.fecha)} | ${truncateText(campos.empresa, 25)}`, 15, 15);
     return 25;
   }
 
-  // ENCABEZADO PRINCIPAL
-  doc.setFillColor(...grisClaro);
-  doc.rect(0, 0, 210, 32, 'F');
-  doc.setFillColor(...azulPrimario);
-  doc.rect(0, 0, 210, 3, 'F');
+  // --- ENCABEZADO PRINCIPAL ---
+  doc.setFillColor(255, 255, 255); 
+  doc.rect(0, 0, 210, 35, 'F');
 
   try {
     const logoBase64 = await getLogoBase64();
     if (logoBase64) {
-      doc.addImage(logoBase64, 'PNG', 15, 6, 25, 20, undefined, 'FAST');
+      doc.addImage(logoBase64, 'PNG', 15, 8, 28, 22, undefined, 'FAST');
     }
   } catch {}
 
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.', 45, 11);
+  doc.setFontSize(14); // Nombre de empresa un poco más grande
+  doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.', 48, 16);
+  
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('Tlaquepaque No. 140, Col. Mitras Sur Monterrey, Nuevo Leon, México. C.P.64020', 45, 16);
-  doc.text('Teléfonos: 8127116538 / 8127116357', 45, 21);
+  doc.setFontSize(8.5);
+  doc.text('Tlaquepaque No. 140, Col. Mitras Sur Monterrey, N.L., México. C.P. 64020', 48, 22);
+  
+  // Detalle visual para los teléfonos
+  doc.setTextColor(...azulSecundario);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Teléfonos:', 48, 27);
+  doc.setTextColor(...grisTexto);
+  doc.setFont('helvetica', 'normal');
+  doc.text('8127116538 / 8127116357', 66, 27);
 
+  // Título del documento
   doc.setFillColor(...azulPrimario);
-  doc.rect(0, 34, 210, 12, 'F');
+  doc.rect(0, 35, 210, 12, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('HOJA DE SERVICIO TÉCNICO', 105, 42, { align: 'center' });
+  doc.setFontSize(15);
+  doc.text('HOJA DE SERVICIO TÉCNICO', 105, 43, { align: 'center' });
 
-  let currentY = 50;
+  let currentY = 53;
 
-  // CAJA DE FOLIO Y FECHA (Mejorada visualmente)
-  doc.setFillColor(250, 252, 255); 
-  doc.roundedRect(10, currentY, 190, 14, 2, 2, 'F');
+  // --- 1. FRANJA DE FOLIO Y FECHA ---
+  doc.setFillColor(245, 247, 250); 
+  doc.rect(10, currentY, 190, 10, 'F');
   doc.setDrawColor(...azulSecundario);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(10, currentY, 190, 14, 2, 2, 'S');
+  doc.setLineWidth(0.2);
+  doc.rect(10, currentY, 190, 10, 'S');
   
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('FOLIO:', 15, currentY + 9);
-  doc.text('FECHA:', 110, currentY + 9);
+  doc.text('FOLIO:', 15, currentY + 7);
   
+  doc.setTextColor(...azulSecundario); 
+  doc.text(campos.folio || '__________', 30, currentY + 7);
+  
+  doc.setTextColor(...azulPrimario);
+  doc.text('FECHA DEL SERVICIO:', 120, currentY + 7);
   doc.setTextColor(...grisTexto);
-  doc.setFont('helvetica', 'bold'); 
-  doc.text(campos.folio || '__________', 35, currentY + 9);
   doc.setFont('helvetica', 'normal');
-  doc.text(formatDate(campos.fecha), 128, currentY + 9);
+  doc.text(formatDate(campos.fecha), 162, currentY + 7);
   
   currentY += 18;
 
-  // CAJA DE INFORMACIÓN DEL CLIENTE (Alineación perfecta)
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(10, currentY, 190, 32, 2, 2, 'F'); 
-  doc.setDrawColor(...azulSecundario);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(10, currentY, 190, 32, 2, 2, 'S');
-  doc.setDrawColor(...azulSecundario);
-  doc.setLineWidth(0.2); 
-  doc.line(105, currentY, 105, currentY + 32);
+  // --- 2. SECCIÓN: DATOS DEL CLIENTE ---
+  doc.setTextColor(...azulPrimario);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('DATOS DEL CLIENTE', 10, currentY);
   
-  const labelCol1X = 15;
-  const valCol1X = 35;
-  const labelCol2X = 110;
-  const valCol2X = 128;
+  currentY += 2;
+  doc.setDrawColor(...azulSecundario);
+  doc.setLineWidth(0.4);
+  doc.line(10, currentY, 200, currentY);
+  currentY += 6;
+
+  const col1 = 12;
+  const val1 = 35;
+  const col2 = 110;
+  const val2 = 128;
+
+  doc.setFontSize(9);
+
+  // Fila 1
+  doc.setTextColor(...azulPrimario);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Planta:', col1, currentY);
+  doc.setTextColor(...grisTexto);
+  doc.setFont('helvetica', 'normal');
+  doc.text(truncateText(campos.empresa || 'Sin especificar', 45), val1, currentY);
 
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  
-  // Etiquetas Columna 1
-  doc.text('Planta:', labelCol1X, currentY + 8);
-  doc.text('Domicilio:', labelCol1X, currentY + 16);
-  doc.text('Contacto:', labelCol1X, currentY + 27);
-  
-  // Etiquetas Columna 2
-  doc.text('Teléfono:', labelCol2X, currentY + 8);
-  doc.text('Correo:', labelCol2X, currentY + 16);
-
+  doc.text('Teléfono:', col2, currentY);
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5); 
+  doc.text(truncateText(campos.telefono || 'Sin especificar', 40), val2, currentY);
   
-  // Valores Columna 1
-  doc.text(truncateText(campos.empresa || 'Sin especificar', 45), valCol1X, currentY + 8);
-  
-  const direccionLines = doc.splitTextToSize(campos.direccion || 'Sin especificar', 65); 
-  direccionLines.slice(0, 2).forEach((line: string, index: number) => {
-      doc.text(line, valCol1X, currentY + 16 + (index * 4.5)); 
-  });
-  
-  doc.text(truncateText(campos.contacto || 'Sin especificar', 45), valCol1X, currentY + 27);
-  
-  // Valores Columna 2
-  doc.text(truncateText(campos.telefono || 'Sin especificar', 40), valCol2X, currentY + 8);
-  doc.text(truncateText(campos.correo || 'Sin especificar', 40), valCol2X, currentY + 16);
+  currentY += 8;
 
-  currentY += 38; 
+  // Fila 2
+  doc.setTextColor(...azulPrimario);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Contacto:', col1, currentY);
+  doc.setTextColor(...grisTexto);
+  doc.setFont('helvetica', 'normal');
+  doc.text(truncateText(campos.contacto || 'Sin especificar', 45), val1, currentY);
+
+  doc.setTextColor(...azulPrimario);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Correo:', col2, currentY);
+  doc.setTextColor(...grisTexto);
+  doc.setFont('helvetica', 'normal');
+  doc.text(truncateText(campos.correo || 'Sin especificar', 40), val2, currentY);
+
+  currentY += 8;
+
+  // Fila 3
+  doc.setTextColor(...azulPrimario);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Domicilio:', col1, currentY);
+  doc.setTextColor(...grisTexto);
+  doc.setFont('helvetica', 'normal');
+  
+  const direccionLines = doc.splitTextToSize(campos.direccion || 'Sin especificar', 155); 
+  doc.text(direccionLines, val1, currentY);
+  
+  currentY += (direccionLines.length * 4.5) + 6; 
   
   const equiposUnificados = organizarEquiposUnificado(equiposCalibrados);
 
@@ -739,7 +765,6 @@ Gracias.`;
     loadDatosEmpresa();
   }, [campos.empresaId]);
 
-  // USE EFFECT REACTIVO CON ONSNAPSHOT
   useEffect(() => {
     if (!campos.empresa || !campos.fecha) {
       setEquiposCalibrados({});
@@ -779,18 +804,13 @@ Gracias.`;
       
       setEquiposCalibrados(equiposPorTecnico);
 
-      // --- NUEVO LOGICA: AUTOCOMPLETAR CAMPO DE TÉCNICOS ---
       const nombresTecnicos = Object.keys(equiposPorTecnico).filter(nombre => nombre !== 'Sin Técnico');
       if (nombresTecnicos.length > 0) {
-        // Une los nombres con comas y el último con "y"
         const nombresUnidos = nombresTecnicos.join(', ').replace(/, ([^,]*)$/, ' y $1');
         setCampos(prev => ({ ...prev, tecnicoResponsable: nombresUnidos }));
       } else {
-        // Si no hay equipos cargados, limpiamos el campo
         setCampos(prev => ({ ...prev, tecnicoResponsable: '' }));
       }
-      // ------------------------------------------------------
-
       setLoadingEquipos(false);
     }, (error) => {
       console.error("Error al cargar equipos en tiempo real:", error);

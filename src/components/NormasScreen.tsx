@@ -43,7 +43,7 @@ const styles = `
   
   .modern-table { width: 100%; border-collapse: separate; border-spacing: 0; }
   .modern-table th { text-align: left; padding: 12px 16px; background: #f8fafc; font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700; border-bottom: 1px solid #e2e8f0; letter-spacing: 0.05em; }
-  .modern-table td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 0.9rem; }
+  .modern-table td { padding: 10px 16px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 0.9rem; vertical-align: middle; }
   
   .status-badge { padding: 4px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
   .status-vencido { background: #fecaca; color: #991b1b; }
@@ -107,6 +107,7 @@ const BACKPACK_CATALOG = {
   mochila_Edgar: { nombre: 'Mochila 4 (Edgar)', items: [ { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' }, { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' } ] },
   mochila_Daniel: { nombre: 'Mochila 5 (Daniel)', items: [ { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' }, { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' } ] },
   mochila_Ricardo: { nombre: 'Mochila 6 (Ricardo)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017933' } ] },
+  mochila_Mario: { nombre: 'Mochila 7 (Mario)', items: [ { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' }, { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' } ] },
 };
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
@@ -140,7 +141,6 @@ function aggregateTools(backpackIds: string[]): ToolItem[] {
 
 const cleanToolNameForPdf = (name: string): string => {
   if (!name) return '';
-  // Elimina prefijos tipo AG-XXX o asteriscos iniciales
   return name.replace(/^AG-\d+\s+-\s+/, '').replace(/^\*+\s*-\s+/, '');
 };
 
@@ -156,33 +156,63 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     const existingPdfBytes = await response.arrayBuffer();
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const firstPage = pdfDoc.getPages()[0];
-    const { height } = firstPage.getSize();
     const fontSize = 9;
     const color = rgb(0, 0, 0);
 
-    // Mapeo de campos de cabecera
-    firstPage.drawText(data.fecha || '', { x: 60, y: height - 82, size: fontSize, font, color });
-    firstPage.drawText(data.usuario || '', { x: 320, y: height - 82, size: fontSize, font, color });
-    firstPage.drawText(data.gafeteContratista || '', { x: 490, y: height - 80, size: fontSize, font, color });
-    firstPage.drawText(data.companiaDepto || '', { x: 320, y: height - 114, size: fontSize, font, color });
-    firstPage.drawText(data.noEmpleado || '', { x: 500, y: height - 114, size: fontSize, font, color });
+    // Obtener la fecha actual para el parche de impresión
+    const now = new Date();
+    const currentDateStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
 
-    let yStartTable = height - 222; 
-    
     // Filtrar herramientas disponibles
     const availableTools = allTools.filter(tool => 
         !['fuera_servicio', 'en_mantenimiento'].includes(tool.estadoProceso || '')
     );
 
-    availableTools.slice(0, 30).forEach((tool, index) => {
-      const y = yStartTable - (index * 16.7);
-      firstPage.drawText(cleanToolNameForPdf(tool.herramienta), { x: 40, y, size: fontSize, font, color });
-      firstPage.drawText(String(tool.qty), { x: 270, y, size: fontSize, font, color });
-      firstPage.drawText(tool.marca, { x: 310, y, size: fontSize, font, color });
-      firstPage.drawText(tool.modelo, { x: 400, y, size: fontSize, font, color });
-      firstPage.drawText(tool.serie, { x: 480, y, size: fontSize, font, color });
-    });
+    // Agrupar en bloques de 30 para paginación
+    const toolChunks: ToolItem[][] = [];
+    for (let i = 0; i < availableTools.length; i += 30) {
+        toolChunks.push(availableTools.slice(i, i + 30));
+    }
+    
+    if (toolChunks.length === 0) toolChunks.push([]);
+
+    for (let i = 0; i < toolChunks.length; i++) {
+        let page;
+        if (i === 0) {
+            page = pdfDoc.getPages()[0];
+        } else {
+            const tempDoc = await PDFDocument.load(existingPdfBytes);
+            const [copiedPage] = await pdfDoc.copyPages(tempDoc, [0]);
+            page = pdfDoc.addPage(copiedPage);
+        }
+
+        const { height } = page.getSize();
+
+        // Mapeo de campos de cabecera
+        page.drawText(data.fecha || '', { x: 60, y: height - 82, size: fontSize, font, color });
+        page.drawText(data.usuario || '', { x: 320, y: height - 82, size: fontSize, font, color });
+        page.drawText(data.gafeteContratista || '', { x: 490, y: height - 80, size: fontSize, font, color });
+        page.drawText(data.companiaDepto || '', { x: 320, y: height - 114, size: fontSize, font, color });
+        page.drawText(data.noEmpleado || '', { x: 500, y: height - 114, size: fontSize, font, color });
+
+        // --- INICIO DEL PARCHE DE FECHA DE IMPRESIÓN ---
+        // Dibuja un rectángulo blanco para tapar la fecha vieja (ajusta x, y, width, height si es necesario)
+        page.drawRectangle({ x: 420, y: height - 55, width: 170, height: 15, color: rgb(1, 1, 1) }); 
+        // Dibuja la fecha nueva
+        page.drawText(`Fecha de Impresion ${currentDateStr}`, { x: 420, y: height - 50, size: fontSize, font, color });
+        // --- FIN DEL PARCHE ---
+
+        let yStartTable = height - 222; 
+        
+        toolChunks[i].forEach((tool, index) => {
+          const y = yStartTable - (index * 16.7);
+          page.drawText(cleanToolNameForPdf(tool.herramienta).substring(0, 42), { x: 40, y, size: fontSize, font, color });
+          page.drawText(String(tool.qty), { x: 270, y, size: fontSize, font, color });
+          page.drawText(tool.marca.substring(0, 15), { x: 310, y, size: fontSize, font, color });
+          page.drawText(tool.modelo.substring(0, 15), { x: 400, y, size: fontSize, font, color });
+          page.drawText(tool.serie.substring(0, 15), { x: 480, y, size: fontSize, font, color });
+        });
+    }
     
     const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Celestica_${data.usuario}.pdf`);
@@ -389,6 +419,19 @@ const NormasScreen = () => {
     <>
       <style>{styles}</style>
       
+      {/* DATALIST con filtro para ocultar los ya seleccionados */}
+      <datalist id="patrones-list">
+        {sortedPatronOptions.map(op => {
+            const isSelected = watchedManualTools.some(t => t.herramienta === op.nombre);
+            if (isSelected) return null; // Si ya lo tomó, desaparece de las opciones sugeridas
+            return (
+                <option key={op.id} value={op.nombre}>
+                    {op.status === 'vencido' ? '(VENCIDO)' : ''}
+                </option>
+            );
+        })}
+      </datalist>
+
       {isScannerOpen && (
         <div className="scanner-overlay" onClick={stopScan}>
           <div className="scanner-box" onClick={e => e.stopPropagation()}>
@@ -450,7 +493,7 @@ const NormasScreen = () => {
                 <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Briefcase size={24}/></div>
                 <h2 className="text-lg font-bold text-gray-800">Kits Rápidos</h2>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <Controller name="selectedBackpacks" control={control} render={({ field }) => (
                   <>
                     {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => (
@@ -460,7 +503,7 @@ const NormasScreen = () => {
                           <Package size={28} className={field.value.includes(id) ? 'text-blue-600' : 'text-gray-400'} />
                           <div>
                               <span className={`block font-semibold ${field.value.includes(id) ? 'text-blue-900' : 'text-gray-600'}`}>{backpack.nombre}</span>
-                              <span className="text-xs text-gray-400">{backpack.items.length} piezas</span>
+                              <span className="text-xs text-gray-400">{backpack.items.length} pzas</span>
                           </div>
                         </label>
                     ))}
@@ -493,7 +536,7 @@ const NormasScreen = () => {
             <div className="flex justify-between items-center mb-6 border-b pb-4">
                 <div className="flex items-center gap-3">
                     <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Camera size={24}/></div>
-                    <h2 className="text-lg font-bold text-gray-800">Patrones Individuales</h2>
+                    <h2 className="text-lg font-bold text-gray-800">Herramientas Extra / Patrones</h2>
                 </div>
                 <div className="flex gap-2">
                     <button type="button" className="btn btn-secondary" onClick={() => setIsScannerOpen(true)}><Camera size={18}/> Escanear</button>
@@ -509,23 +552,37 @@ const NormasScreen = () => {
             )}
 
             <div className="overflow-x-auto">
-                <table className="modern-table">
-                    <thead><tr><th className="w-12">#</th><th>Patrón / Equipo</th><th>Estado</th><th>Serie</th><th className="w-12"></th></tr></thead>
+                <table className="modern-table" style={{ minWidth: '800px' }}>
+                    <thead>
+                        <tr>
+                            <th className="w-8">#</th>
+                            <th>Patrón / Equipo (Busca o escribe)</th>
+                            <th style={{ width: '70px' }}>Cant</th>
+                            <th>Marca</th>
+                            <th>Modelo</th>
+                            <th>Serie</th>
+                            <th className="w-24">Estado</th>
+                            <th className="w-12"></th>
+                        </tr>
+                    </thead>
                     <tbody>
                         {fields.length === 0 && (
-                            <tr><td colSpan={5} className="text-center py-8 text-gray-400 italic">No has agregado patrones individuales.</td></tr>
+                            <tr><td colSpan={8} className="text-center py-8 text-gray-400 italic">No has agregado herramientas o patrones adicionales.</td></tr>
                         )}
                         {fields.map((item, index) => {
                              const selectedTool = watchedManualTools[index]?.herramienta;
                              const current = patronesMap.get(selectedTool);
                              return (
                                 <tr key={item.id} className={current?.status === 'vencido' ? 'bg-red-50' : ''}>
-                                    <td className="font-bold text-gray-400">{index + 1}</td>
-                                    <td style={{ minWidth: '350px' }}>
+                                    <td className="font-bold text-gray-400 text-center">{index + 1}</td>
+                                    <td>
                                         <Controller name={`manualTools.${index}.herramienta`} control={control} render={({ field }) => (
-                                            <select 
-                                                {...field} 
-                                                className="input-control text-sm" 
+                                            <input 
+                                                {...field}
+                                                list="patrones-list"
+                                                className="input-control text-sm px-2 py-1.5"
+                                                placeholder="Escribe o selecciona..."
+                                                autoComplete="off"
                                                 onChange={e => {
                                                     field.onChange(e.target.value);
                                                     const p = patronesMap.get(e.target.value);
@@ -535,25 +592,32 @@ const NormasScreen = () => {
                                                         setValue(`manualTools.${index}.serie`, p.serie);
                                                         setValue(`manualTools.${index}.isVencida`, p.status === 'vencido');
                                                         setValue(`manualTools.${index}.estadoProceso`, p.estadoProceso);
+                                                    } else {
+                                                        setValue(`manualTools.${index}.isVencida`, false);
+                                                        setValue(`manualTools.${index}.estadoProceso`, undefined);
                                                     }
                                                 }}
-                                            >
-                                                <option value="">-- Seleccionar Patrón --</option>
-                                                {sortedPatronOptions.map(op => (
-                                                    <option 
-                                                        key={op.id} 
-                                                        value={op.nombre} 
-                                                        className={op.status === 'vencido' ? 'opt-vencido' : ''}
-                                                    >
-                                                        {op.nombre} {op.status === 'vencido' ? '(VENCIDO)' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            />
                                         )} />
                                     </td>
-                                    <td>{current ? <span className={`status-badge status-${current.status}`}>{current.status}</span> : '-'}</td>
-                                    <td className="font-mono text-xs text-gray-500">{watchedManualTools[index]?.serie}</td>
-                                    <td><button type="button" onClick={() => remove(index)} className="text-red-500 hover:bg-red-50 p-2 rounded-full"><X size={20}/></button></td>
+                                    <td>
+                                        <input type="number" className="input-control text-sm px-2 py-1.5" {...register(`manualTools.${index}.qty`)} />
+                                    </td>
+                                    <td>
+                                        <input className="input-control text-sm px-2 py-1.5" placeholder="Marca" {...register(`manualTools.${index}.marca`)} />
+                                    </td>
+                                    <td>
+                                        <input className="input-control text-sm px-2 py-1.5" placeholder="Modelo" {...register(`manualTools.${index}.modelo`)} />
+                                    </td>
+                                    <td>
+                                        <input className="input-control text-sm px-2 py-1.5" placeholder="Serie" {...register(`manualTools.${index}.serie`)} />
+                                    </td>
+                                    <td className="text-center">
+                                        {current ? <span className={`status-badge status-${current.status}`}>{current.status}</span> : <span className="text-gray-300">-</span>}
+                                    </td>
+                                    <td>
+                                        <button type="button" onClick={() => remove(index)} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"><X size={18}/></button>
+                                    </td>
                                 </tr>
                              )
                         })}
@@ -565,7 +629,7 @@ const NormasScreen = () => {
         {/* BARRA DE ACCIONES */}
         <div className="floating-bar">
             <div className="hidden md:block text-sm font-medium">
-                Total en lista: <strong className="text-blue-600">{aggregatedTools.length + fields.length} piezas</strong>
+                Total en lista: <strong className="text-blue-600">{aggregatedTools.length + fields.length} registros</strong>
             </div>
             <div className="flex gap-3 w-full md:w-auto">
                 <button 

@@ -16,6 +16,24 @@ const PROCESOS = [
   { id: 'par', nombre: 'Proceso par torsional:', descripcion: 'Comparación directa en analizador torque e instrumento entre 90 lbin y 50 ftlb.' }
 ];
 
+// Función de ayuda para dividir texto largo en múltiples líneas sin cortar palabras
+const dividirTexto = (texto: string, longitudMaxima: number): string[] => {
+  const palabras = texto.split(' ');
+  const lineas: string[] = [];
+  let lineaActual = '';
+
+  palabras.forEach((palabra) => {
+    if ((lineaActual + palabra).length > longitudMaxima) {
+      lineas.push(lineaActual.trim());
+      lineaActual = palabra + ' ';
+    } else {
+      lineaActual += palabra + ' ';
+    }
+  });
+  if (lineaActual) lineas.push(lineaActual.trim());
+  return lineas;
+};
+
 export const PermisosTrabajoScreen: React.FC = () => {
   const { navigateTo } = useNavigation(); 
   
@@ -56,9 +74,6 @@ export const PermisosTrabajoScreen: React.FC = () => {
     setMetrologosSel(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
   };
 
-  // =========================================================================
-  // LÓGICA DEL PDF - INTACTA (NO SE MODIFICÓ NADA)
-  // =========================================================================
   const generarPDF = async () => {
     if (metrologosSel.length === 0 || procesosSel.length === 0) {
       alert("Por favor selecciona al menos un metrólogo y un proceso.");
@@ -76,25 +91,31 @@ export const PermisosTrabajoScreen: React.FC = () => {
 
       const metrologosActivos = metrologos.filter(m => metrologosSel.includes(m.id));
       const procesosActivos = PROCESOS.filter(p => procesosSel.includes(p.id));
-      const magnitudesNombres = procesosActivos.map(p => p.nombre.replace('Proceso ', '').replace(':', '').toUpperCase()).join(', ');
-
+      
       const dibujar = (pageIndex: number, texto: string, x: number, y: number, isBold = false, size = 9) => {
         const pagina = pages[pageIndex];
         const { height } = pagina.getSize();
         pagina.drawText(texto, { x, y: height - y, size, font: isBold ? fontBold : font, color });
       };
 
+      // --- DATOS GENERALES ---
       const p1_y_base = 265; 
       const row_spacing = 16; 
       
-      dibujar(0, compania, 110, p1_y_base); 
+      // Ajuste Compañia: Movido a la derecha
+      dibujar(0, compania, 115, p1_y_base); 
       dibujar(0, jefe, 355, p1_y_base); 
-      dibujar(0, lugar, 95, p1_y_base + row_spacing); 
+      
+      // Ajuste Lugar: Subido un poquito
+      dibujar(0, lugar, 95, p1_y_base + row_spacing - 1.5); 
       dibujar(0, 'Ver anexo', 355, p1_y_base + row_spacing); 
       
-      const horas_y = p1_y_base + (row_spacing * 2) - 6; 
-      dibujar(0, horaInicio, 140, horas_y); 
-      dibujar(0, horaFin, 440, horas_y); 
+      // Ajuste Horas: Bajadas 3 puntos para asentar en línea
+      const horas_y = p1_y_base + (row_spacing * 2) - 3; 
+      // Ajuste Hora Inicio: Movido a la derecha
+      dibujar(0, horaInicio, 155, horas_y); 
+      // Ajuste Hora Fin: Movido a la izquierda
+      dibujar(0, horaFin, 395, horas_y); 
       
       const fecha_y = p1_y_base + (row_spacing * 3) - 7; 
       const [dd, mm, yyyy] = fecha.split('/'); 
@@ -102,78 +123,96 @@ export const PermisosTrabajoScreen: React.FC = () => {
       dibujar(0, mm, 220, fecha_y);   
       dibujar(0, yyyy, 245, fecha_y); 
 
-      const desc_y = 352; 
+      // --- MAGNITUDES ---
+      const desc_y = 346; 
       dibujar(0, `Servicio de calibración en las magnitudes:`, 50, desc_y);
-      dibujar(0, magnitudesNombres, 50, desc_y + 15, true);
+      
+      const magnitudesNombres = procesosActivos.map(p => p.nombre.replace('Proceso ', '').replace(':', '')).join(', ').toUpperCase();
+      const lineasMagnitudes = dividirTexto(magnitudesNombres, 85); 
+      
+      lineasMagnitudes.forEach((linea, index) => {
+        dibujar(0, linea, 50, desc_y + 14 + (index * 12), true, 8); 
+      });
 
-      let startY = 415; 
-      const table1_spacing = 15.5; 
+      // --- ACTIVIDADES (PÁGINA 1) ---
+      let startY = 418; 
+      const table1_spacing = 13.8; 
 
-      dibujar(0, 'Revisión de equipo', 70, startY);
-      dibujar(0, 'Caída de equipo', 245, startY); 
-      dibujar(0, 'Uso de zapatones', 420, startY);
+      dibujar(0, 'Revisión de equipo', 75, startY, false, 8);
+      dibujar(0, 'Caída de equipo', 255, startY, false, 8); 
+      dibujar(0, 'Uso de zapatones', 425, startY, false, 8);
 
       procesosActivos.forEach((p, i) => {
         const y = startY + ((i + 1) * table1_spacing); 
-        dibujar(0, p.nombre, 70, y);
+        dibujar(0, p.nombre, 75, y, false, 7.5); 
         
-        const desc = p.descripcion;
-        const maxLen = 42; 
-        if (desc.length > maxLen) {
-          let splitIndex = desc.lastIndexOf(' ', maxLen);
-          if (splitIndex === -1) splitIndex = maxLen;
-          const line1 = desc.substring(0, splitIndex);
-          const line2 = desc.substring(splitIndex + 1);
-          
-          dibujar(0, line1, 245, y - 4, false, 7.5);
-          dibujar(0, line2, 245, y + 4, false, 7.5);
+        const lineasDesc = dividirTexto(p.descripcion, 50);
+        
+        if (lineasDesc.length === 1) {
+          dibujar(0, lineasDesc[0], 242, y - 2, false, 7);
+        } else if (lineasDesc.length === 2) {
+          dibujar(0, lineasDesc[0], 242, y - 5, false, 6);
+          dibujar(0, lineasDesc[1], 242, y + 2, false, 6);
         } else {
-          dibujar(0, desc, 245, y, false, 7.5);
+          dibujar(0, lineasDesc[0], 242, y - 7, false, 5.5);
+          dibujar(0, lineasDesc[1], 242, y - 2, false, 5.5);
+          dibujar(0, lineasDesc[2], 242, y + 3, false, 5.5);
         }
       });
 
-      const p2_metrologos_y = 157; 
-      const p2_row_gap = 15.5; 
+      // --- ASPECTOS E IMPACTOS AMBIENTALES (PÁGINA 1) ---
+      const p3_env_y = 588; 
+      dibujar(0, 'Residuos etiquetas', 100, p3_env_y, false, 8);
+      dibujar(0, 'Basura', 290, p3_env_y, false, 8);
+      dibujar(0, 'Depositar en contenedor', 430, p3_env_y, false, 8);
+
+      // --- METRÓLOGOS (PÁGINA 2) ---
+      // Ajuste Metrólogos: Bajados 4 puntos para centrar en fila
+      const p2_metrologos_y = 156; 
+      const p2_row_gap = 14.2; 
       
       metrologosActivos.forEach((m, i) => {
         const row_y = p2_metrologos_y + (i * p2_row_gap);
-        dibujar(1, m.nombre, 80, row_y);
-        dibujar(1, m.ocupacion, 395, row_y); 
+        dibujar(1, m.nombre, 80, row_y, false, 8);
+        dibujar(1, m.ocupacion, 395, row_y, false, 8); 
       });
 
-      const p2_herr_y = 336; 
+      // --- HERRAMIENTAS ---
+      const p2_herr_y = 343; 
       dibujar(1, 'Ver anexo', 50, p2_herr_y);
       dibujar(1, 'SI', 300, p2_herr_y);
       dibujar(1, 'N/A', 440, p2_herr_y);
 
-      const p2_epp_y = 570; 
-      dibujar(1, 'BATA ANTIESTATICA', 160, p2_epp_y + 70); 
+      // --- EPP: BATA ANTIESTÁTICA ---
+      const p2_bata_y = 612; 
+      dibujar(1, 'BATA ANTIESTATICA', 160, p2_bata_y); 
 
-      const p3_otro_y = 455; 
-      dibujar(2, 'Servicio de calibración', 150, p3_otro_y); 
+      // --- PÁGINA 3 - FIRMAS Y CHECKBOXES ---
+      const p3_otro_y = 416; 
+      dibujar(2, 'Servicio de calibración', 215, p3_otro_y); 
       
-      const p3_firma_y = 495;
-      dibujar(2, 'Metrólogo', 230, p3_firma_y);
+      const p3_firma_y = 464;
+      dibujar(2, 'Metrólogo', 340, p3_firma_y); 
 
-      const ehs_y = 585;
-      dibujar(2, 'X', 405, ehs_y, true, 10); 
-      dibujar(2, 'X', 405, ehs_y + 25, true, 10); 
-      dibujar(2, 'X', 405, ehs_y + 50, true, 10); 
+      const ehs_y = 514; 
+      const ehs_gap = 23; 
+      const ehs_x = 476; 
+      
+      dibujar(2, 'X', ehs_x, ehs_y, true, 10); 
+      dibujar(2, 'X', ehs_x, ehs_y + ehs_gap, true, 10); 
+      dibujar(2, 'X', ehs_x, ehs_y + (ehs_gap * 2), true, 10); 
 
       const pdfBytes = await pdfDoc.save();
       saveAs(new Blob([pdfBytes]), `Permiso_TR_${fecha.replace(/\//g, '-')}_${metrologosActivos[0]?.nombre.split(' ')[0]}.pdf`);
     } catch (e) {
       alert('Error al generar PDF. Revisa la consola.');
+      console.error(e);
     }
   };
 
-  // =========================================================================
-  // INTERFAZ DE USUARIO MEJORADA (100% RESPONSIVE Y FULL-WIDTH)
-  // =========================================================================
   return (
     <div className="min-h-screen w-full bg-slate-950 text-slate-200 selection:bg-blue-500/30 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 font-sans">
       
-      {/* HEADER CON BOTÓN DE REGRESO */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4 shrink-0">
         <div className="flex items-center gap-4">
           <button 
@@ -197,10 +236,8 @@ export const PermisosTrabajoScreen: React.FC = () => {
         </div>
       </header>
 
-      {/* CONTENIDO PRINCIPAL FLEXIBLE */}
       <main className="flex-1 flex flex-col gap-6 lg:gap-8">
         
-        {/* PUNTO 1: DATOS GENERALES (Múltiples columnas responsivas) */}
         <section className="bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800/60 shadow-xl relative overflow-hidden shrink-0">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500 opacity-40"></div>
           <h2 className="text-base font-bold text-slate-200 flex items-center gap-3 mb-6">
@@ -208,7 +245,6 @@ export const PermisosTrabajoScreen: React.FC = () => {
             1. Datos Generales del Servicio
           </h2>
           
-          {/* Grid adaptable: 1 en móvil, 2 en tablet, 5 en pantallas super anchas */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-6">
             <div>
               <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Fecha</label>
@@ -239,10 +275,8 @@ export const PermisosTrabajoScreen: React.FC = () => {
           </div>
         </section>
 
-        {/* CONTENEDOR DIVIDIDO PARA ACTIVIDADES Y PERSONAL */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 flex-1">
           
-          {/* PUNTO 2: ACTIVIDADES */}
           <section className="bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800/60 shadow-xl relative overflow-hidden flex flex-col">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-500 opacity-40"></div>
             <h2 className="text-base font-bold text-slate-200 flex items-center gap-3 mb-6 shrink-0">
@@ -273,7 +307,6 @@ export const PermisosTrabajoScreen: React.FC = () => {
             </div>
           </section>
 
-          {/* PUNTO 4: METRÓLOGOS Y EPP */}
           <section className="bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800/60 shadow-xl relative overflow-hidden flex flex-col justify-between">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500 opacity-40"></div>
             

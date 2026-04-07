@@ -6,12 +6,12 @@ import {
   Bell, TrendingUp, X, ChevronRight, Activity, Award, 
   ArrowRightLeft, FileOutput, LogOut, User, CheckCircle2,
   AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
-  FileText, Users 
+  FileText, Users, History
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
 import {
-  collection, onSnapshot, doc, setDoc, query, where, getDocs, orderBy, limit, serverTimestamp
+  collection, onSnapshot, doc, setDoc, query, where, getDocs, orderBy, serverTimestamp
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getAuth, updateProfile } from 'firebase/auth'; 
@@ -68,6 +68,7 @@ const MENU_ITEMS = [
   { id: 'friday', title: 'Friday Projects', icon: Activity, category: 'Gestión', color: 'indigo' },
   { id: 'friday-servicios', title: 'Servicios', icon: Briefcase, category: 'Operativo', color: 'emerald' },
   { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo', color: 'blue' },
+  { id: 'directorio-empresas', title: 'Historial Equipos', icon: History, category: 'Análisis', color: 'cyan' },
   { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo', color: 'amber' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión', color: 'blue' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico', color: 'emerald' },
@@ -91,6 +92,78 @@ const safeDateParse = (dateStr?: string): Date | null => {
 };
 
 // --- WIDGETS ---
+const PatronesWidget = ({ navigateTo }: { navigateTo: any }) => {
+  const [stats, setStats] = useState({ vigentes: 0, vencidos: 0, mantenimiento: 0, loading: true });
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPatrones = async () => {
+      try {
+        const q = query(collection(db, "patronesCalibracion"));
+        const snap = await getDocs(q);
+        if (!isMounted) return;
+
+        let vigentes = 0, vencidos = 0, mantenimiento = 0;
+        const hoy = new Date();
+
+        snap.forEach(doc => {
+          const data = doc.data();
+          if (['en_mantenimiento', 'fuera_servicio', 'con_falla'].includes(data.estadoProceso)) {
+            mantenimiento++;
+          } else {
+            const fecha = data.fechaVencimiento || data.fecha;
+            if (fecha) {
+              const parsedDate = parseISO(fecha);
+              if (isValid(parsedDate) && differenceInDays(parsedDate, hoy) < 0) {
+                vencidos++;
+              } else {
+                vigentes++;
+              }
+            } else {
+              vigentes++;
+            }
+          }
+        });
+        setStats({ vigentes, vencidos, mantenimiento, loading: false });
+      } catch (error) {
+        console.error(error);
+        if (isMounted) setStats(prev => ({ ...prev, loading: false }));
+      }
+    };
+    fetchPatrones();
+    return () => { isMounted = false; };
+  }, []);
+
+  if (stats.loading) return <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />;
+  const hasAlerts = stats.vencidos > 0 || stats.mantenimiento > 0;
+
+  return (
+    <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-200 text-sm flex items-center gap-2">
+          <Award className="text-emerald-500 w-4 h-4" />
+          Patrones Internos
+        </h3>
+        {!hasAlerts && <span className="text-[10px] text-emerald-500 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900">Al Día</span>}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <button onClick={() => navigateTo('programa-calibracion')} className="flex flex-col items-center justify-center p-2 rounded-lg bg-emerald-950/20 border border-emerald-900/30 hover:bg-emerald-950/40 transition-colors group">
+            <span className="text-2xl font-bold text-emerald-500 group-hover:scale-110 transition-transform">{stats.vigentes}</span>
+            <span className="text-[10px] text-emerald-400 uppercase font-semibold mt-1">Vigentes</span>
+        </button>
+        <button onClick={() => navigateTo('programa-calibracion')} className="flex flex-col items-center justify-center p-2 rounded-lg bg-red-950/20 border border-red-900/30 hover:bg-red-950/40 transition-colors group">
+            <span className="text-2xl font-bold text-red-500 group-hover:scale-110 transition-transform">{stats.vencidos}</span>
+            <span className="text-[10px] text-red-400 uppercase font-semibold mt-1">Vencidos</span>
+        </button>
+        <button onClick={() => navigateTo('programa-calibracion')} className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-colors group">
+            <span className="text-2xl font-bold text-slate-400 group-hover:scale-110 transition-transform">{stats.mantenimiento}</span>
+            <span className="text-[10px] text-slate-400 uppercase font-semibold mt-1">Taller</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const TechnicianStatusWidget = () => {
   const [techStatus, setTechStatus] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,24 +189,22 @@ const TechnicianStatusWidget = () => {
         const ahora = new Date();
         const horaActual = ahora.getHours();
         
-        // Asumimos horario laboral de 8:00 AM a 5:00 PM (17:00)
         const isFueraDeTurno = horaActual >= 17 || horaActual < 8;
 
         const statusArray = tecnicos.map(tech => {
-          // Lógica de Luz de Estado (Online / Offline)
           const lastActiveDate = tech.lastActive?.toDate ? tech.lastActive.toDate() : null;
           let isOnline = false;
           if (lastActiveDate) {
               isOnline = differenceInMinutes(ahora, lastActiveDate) <= 5;
           }
 
-          let dotColor = "bg-slate-500/50 border-slate-600"; // Transparente/Gris por defecto
+          let dotColor = "bg-slate-500/50 border-slate-600";
           if (isFueraDeTurno) {
-              dotColor = "bg-red-500 border-slate-800 shadow-[0_0_6px_rgba(239,68,68,0.6)]"; // Roja
+              dotColor = "bg-red-500 border-slate-800 shadow-[0_0_6px_rgba(239,68,68,0.6)]";
           } else if (isOnline) {
-              dotColor = "bg-emerald-500 border-slate-800 shadow-[0_0_6px_rgba(16,185,129,0.6)]"; // Verde
+              dotColor = "bg-emerald-500 border-slate-800 shadow-[0_0_6px_rgba(16,185,129,0.6)]";
           } else {
-              dotColor = "bg-amber-500 border-slate-800 shadow-[0_0_6px_rgba(245,158,11,0.6)]"; // Amarilla
+              dotColor = "bg-amber-500 border-slate-800 shadow-[0_0_6px_rgba(245,158,11,0.6)]";
           }
 
           if (isFueraDeTurno) {
@@ -142,23 +213,15 @@ const TechnicianStatusWidget = () => {
 
           const servicioActual = serviciosHoy.find(s => {
             if (!s.personas?.includes(tech.id) || !s.horaInicio) return false;
-            
             const horaInicio = parse(s.horaInicio, 'HH:mm', new Date());
             const horaFin = s.horaFin ? parse(s.horaFin, 'HH:mm', new Date()) : addHours(horaInicio, 2); 
-            
             return isWithinInterval(ahora, { start: horaInicio, end: horaFin }) && s.estado !== 'finalizado' && s.estado !== 'cancelado';
           });
 
           if (servicioActual) {
             return { 
-              ...tech, 
-              status: 'En Servicio', 
-              icon: MapPin, 
-              color: 'text-amber-500', 
-              bg: 'bg-amber-500/10', 
-              detail: servicioActual.cliente || 'Cliente sin nombre',
-              time: `${servicioActual.horaInicio} - ${servicioActual.horaFin || '?'}`,
-              dotColor
+              ...tech, status: 'En Servicio', icon: MapPin, color: 'text-amber-500', bg: 'bg-amber-500/10', 
+              detail: servicioActual.cliente || 'Cliente sin nombre', time: `${servicioActual.horaInicio} - ${servicioActual.horaFin || '?'}`, dotColor
             };
           }
 
@@ -176,7 +239,6 @@ const TechnicianStatusWidget = () => {
     };
 
     fetchStatus();
-    // Refrescar el widget cada 3 minutos para mantener actualizadas las luces
     const interval = setInterval(fetchStatus, 180000); 
     return () => {
       isMounted = false;
@@ -197,24 +259,19 @@ const TechnicianStatusWidget = () => {
       
       <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-2">
         {techStatus.length === 0 ? (
-           <div className="flex items-center justify-center p-4 text-xs text-slate-500">
-               No hay técnicos registrados
-           </div>
+           <div className="flex items-center justify-center p-4 text-xs text-slate-500">No hay técnicos registrados</div>
         ) : (
           techStatus.map((tech) => {
             const StatusIcon = tech.icon;
             return (
               <div key={tech.id} className="p-3 rounded-lg border border-slate-800 bg-slate-800/40 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                   {/* Contenedor relativo de la foto para poder ponerle el puntito encima */}
                    <div className="relative flex-shrink-0">
                        <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden flex items-center justify-center">
                           {tech.photoUrl ? <img src={tech.photoUrl} className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-slate-400" />}
                        </div>
-                       {/* LUZ INDICADORA DE ESTADO */}
                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 transition-colors duration-500 ${tech.dotColor}`}></span>
                    </div>
-                   
                    <div>
                       <h4 className="font-medium text-slate-200 text-sm">{tech.name || 'Técnico'}</h4>
                       <p className="text-[10px] text-slate-400 truncate max-w-[120px]" title={tech.detail}>{tech.detail}</p>
@@ -270,9 +327,7 @@ const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]
                 key={s.id}
                 onClick={() => navigateTo('friday-servicios')} 
                 className={`group relative p-3 rounded-lg border transition-all cursor-pointer hover:shadow-md ${
-                    esHoy 
-                    ? 'bg-blue-950/20 border-blue-900/50 hover:border-blue-700' 
-                    : 'bg-slate-800/40 border-slate-800 hover:border-slate-600 hover:bg-slate-800'
+                    esHoy ? 'bg-blue-950/20 border-blue-900/50 hover:border-blue-700' : 'bg-slate-800/40 border-slate-800 hover:border-slate-600 hover:bg-slate-800'
                 }`}
               >
                 <div className="flex justify-between items-start mb-1">
@@ -318,9 +373,27 @@ const KpiWidget = ({ navigateTo }: { navigateTo: any }) => {
 
   useEffect(() => {
     let isMounted = true;
+    
+    const calcularFechaVenc = (fechaStr: string, frecuenciaStr: string): Date | null => {
+      if (!fechaStr || !frecuenciaStr) return null;
+      try {
+        const fechaBase = parseISO(fechaStr);
+        if (!isValid(fechaBase)) return null;
+        const freqLower = frecuenciaStr.toLowerCase();
+        
+        if (freqLower.includes('1 año')) return addYears(fechaBase, 1);
+        if (freqLower.includes('2 años')) return addYears(fechaBase, 2);
+        if (freqLower.includes('3 años')) return addYears(fechaBase, 3);
+        if (freqLower.includes('3 meses')) return addMonths(fechaBase, 3);
+        if (freqLower.includes('6 meses')) return addMonths(fechaBase, 6);
+        
+        return addYears(fechaBase, 1);
+      } catch (e) { return null; }
+    };
+
     const checkVencimientos = async () => {
       try {
-        const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc"), limit(300)); 
+        const q = query(collection(db, "hojasDeTrabajo"), orderBy("fecha", "desc")); 
         const snap = await getDocs(q);
         if (!isMounted) return;
 
@@ -329,30 +402,28 @@ const KpiWidget = ({ navigateTo }: { navigateTo: any }) => {
         const equiposProcesados = new Set<string>();
 
         snap.forEach(doc => {
-          const d = doc.data() as WorkOrder;
-          if (!d.fecha || !d.frecuenciaCalibracion) return;
-          const idUnico = d.id ? d.id.trim() : (d.certificado || 'S/N');
-          if (idUnico && equiposProcesados.has(idUnico) && idUnico !== 'S/N') return;
-          if (idUnico) equiposProcesados.add(idUnico);
+          const data = doc.data();
+          const rawId = data.id || data.certificado;
+          const identificadorUnico = rawId ? String(rawId).trim() : null;
 
-          const base = safeDateParse(d.fecha);
-          if (base) {
-             let vencimiento: Date | null = null;
-             const freq = d.frecuenciaCalibracion.toLowerCase();
-             if (freq.includes('1 año')) vencimiento = addYears(base, 1);
-             else if (freq.includes('2 años')) vencimiento = addYears(base, 2);
-             else if (freq.includes('6 meses')) vencimiento = addMonths(base, 6);
-             else if (freq.includes('3 meses')) vencimiento = addMonths(base, 3);
-             else vencimiento = addYears(base, 1);
+          if (identificadorUnico && equiposProcesados.has(identificadorUnico)) return;
+          if (identificadorUnico) equiposProcesados.add(identificadorUnico);
 
-             if (vencimiento) {
-                const dias = differenceInDays(vencimiento, hoy);
-                if (dias < 0) v++; else if (dias <= 30) c++; else if (dias <= 60) p++;
-             }
+          const fechaVenc = calcularFechaVenc(data.fecha, data.frecuenciaCalibracion);
+
+          if (fechaVenc) {
+            const dias = differenceInDays(fechaVenc, hoy);
+            if (dias < 0) v++; 
+            else if (dias <= 30) c++; 
+            else if (dias <= 60) p++;
           }
         });
+        
         setStats({ vencidos: v, criticos: c, proximos: p, loading: false });
-      } catch (error) { console.error(error); if (isMounted) setStats(prev => ({ ...prev, loading: false })); }
+      } catch (error) { 
+          console.error(error); 
+          if (isMounted) setStats(prev => ({ ...prev, loading: false })); 
+      }
     };
     checkVencimientos();
     return () => { isMounted = false; };
@@ -519,24 +590,19 @@ export const MainMenu: React.FC = () => {
     }
   }, [user]);
 
-  // Lógica de latido (Heartbeat) para saber quién está en línea
   useEffect(() => {
     if (!localUser?.uid) return;
-    
     const updatePresence = async () => {
         try {
             await setDoc(doc(db, 'usuarios', localUser.uid), { 
                 lastActive: serverTimestamp() 
             }, { merge: true });
         } catch (error) {
-            console.log("No se pudo actualizar la presencia (ignorar si es por permisos)");
+            console.log("No se pudo actualizar la presencia");
         }
     };
-
-    // Actualizamos al entrar y luego cada 3 minutos
     updatePresence();
     const interval = setInterval(updatePresence, 3 * 60 * 1000); 
-    
     return () => clearInterval(interval);
   }, [localUser?.uid]);
 
@@ -568,23 +634,18 @@ export const MainMenu: React.FC = () => {
 
   useEffect(() => {
     if (!localUser?.uid) { setLoadingServices(false); return; }
-    
     const q = query(collection(db, 'servicios'), where('personas', 'array-contains', localUser.uid));
-    
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
-      
       const activos = docs.filter(s => {
           const st = (s.estado || '').toLowerCase();
           return st !== 'finalizado' && st !== 'cancelado';
       });
-
       activos.sort((a, b) => {
         const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
         const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
         return dateB - dateA; 
       });
-
       setAssignedServices(activos); 
       setLoadingServices(false);
     });
@@ -639,40 +700,33 @@ export const MainMenu: React.FC = () => {
                     </div>
                 </div>
                 
-                {/* --- GRID DE MENÚ CON LÓGICA DE BLOQUEO --- */}
+                {/* --- GRID DE MENÚ --- */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {filteredMenu.map((item, index) => {
                         const style = COLOR_VARIANTS[item.color] || COLOR_VARIANTS.blue;
                         const isAutoHighlighted = index === activeHighlightIndex;
-                        
-                        // --- 1. LÓGICA DE BLOQUEO (SOLO ADMINISTRATIVO / ADMIN) ---
                         const isAdmin = localUser.role.includes('admin') || localUser.role.includes('administrativo') || SUPER_ADMINS.includes(localUser.email);
                         const isDisabled = item.id === 'formatos' && !isAdmin;
 
                         return (
                             <motion.div
                                 key={item.id}
-                                // --- 2. DESACTIVAR ANIMACIONES ---
                                 whileHover={isDisabled ? {} : { y: -4 }} 
                                 whileTap={isDisabled ? {} : { scale: 0.98 }}
-                                // --- 3. BLOQUEAR CLICK ---
                                 onClick={() => !isDisabled && navigateTo(item.id)}
                                 className={`group relative bg-slate-900 border rounded-xl p-5 overflow-hidden transition-all duration-700
                                     ${isDisabled 
-                                        ? 'opacity-40 grayscale cursor-not-allowed border-slate-800' // Estilo Bloqueado
+                                        ? 'opacity-40 grayscale cursor-not-allowed border-slate-800' 
                                         : `cursor-pointer ${style.border} ${style.shadow} ${isAutoHighlighted ? style.borderActive : 'border-slate-800'} ${isAutoHighlighted ? style.shadowActive : ''}`
                                     }
                                 `}
                             >
-                                {/* Fondo y gradientes (Solo si NO está disabled) */}
                                 {!isDisabled && (
                                     <>
                                         <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} transition-opacity duration-1000 ease-in-out`} style={{ opacity: isAutoHighlighted ? 0.6 : undefined }} />
                                         <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
                                     </>
                                 )}
-
-                                {/* --- 4. BADGE DE CONSTRUCCIÓN --- */}
                                 {isDisabled && (
                                     <div className="absolute top-3 right-3 z-20">
                                         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
@@ -685,13 +739,12 @@ export const MainMenu: React.FC = () => {
                                     <div className="flex justify-between items-start">
                                         <div className={`p-2.5 rounded-lg transition-all duration-700 
                                             ${isDisabled 
-                                                ? 'bg-slate-800 text-slate-500' // Icono apagado
+                                                ? 'bg-slate-800 text-slate-500' 
                                                 : `${isAutoHighlighted ? style.iconBgActive : 'bg-slate-800'} ${isAutoHighlighted ? style.iconColorActive : 'text-slate-400'} ${style.iconBg} ${style.iconColor}`
                                             }
                                         `}>
                                             <item.icon className="w-6 h-6" />
                                         </div>
-                                        
                                         {!isDisabled && (
                                             <ChevronRight className={`w-4 h-4 text-slate-600 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 ${style.iconColor}`} />
                                         )}
@@ -712,10 +765,14 @@ export const MainMenu: React.FC = () => {
                     })}
                 </div>
             </div>
+
+            {/* --- COLUMNA DERECHA --- */}
             <div className="lg:w-80 flex flex-col gap-6">
                 {(localUser.role.includes('calidad') || localUser.role.includes('admin') || SUPER_ADMINS.includes(localUser.email)) && (
                     <>
                         <KpiWidget navigateTo={navigateTo} />
+                        {/* ESTE ES EL NUEVO WIDGET DE PATRONES */}
+                        <PatronesWidget navigateTo={navigateTo} />
                         <TechnicianStatusWidget />
                     </>
                 )}

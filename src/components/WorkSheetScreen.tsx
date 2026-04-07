@@ -3,7 +3,7 @@ import { useNavigation } from "../hooks/useNavigation";
 import {
   ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
   Loader2, NotebookPen, Search, Calculator, ArrowRightLeft, AlertTriangle,
-  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2, FileText, Info
+  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2, FileText, Info, Scale
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -22,20 +22,6 @@ import ToastNotification from "./ToastNotification";
 // --- IMPORTS DE CAPACITOR ---
 import { Capacitor } from '@capacitor/core';
 import EpsonLabel from '../utils/EpsonPlugin';
-
-
-// ====================================================================
-// FUNCIONES DE PROCESAMIENTO DE IMAGEN ELIMINADAS
-// Ya no se usan porque imprimimos directamente desde archivo .lemd
-// ====================================================================
-
-
-
-// ====================================================================
-// FUNCIÓN ELIMINADA: generateAndPrintLabel ya no es necesaria
-// El método printLabel() usa directamente el archivo .lemd
-// ====================================================================
-
 
 // ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
@@ -61,7 +47,6 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
 
   try {
     if (Capacitor.isNativePlatform()) {
-      // 🔥 USA EL NUEVO MÉTODO CON .lemd
       await EpsonLabel.printLabel({
         id: data.id.trim(),
         fechaCal: data.fechaCal,
@@ -71,7 +56,6 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         tapeSize: "24mm",
       });
     } else {
-      // En web, captura y descarga como antes
       await new Promise(resolve => setTimeout(resolve, 300));
       const originalCanvas = await html2canvas(labelRef.current, {
         scale: 3,
@@ -116,10 +100,6 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         </div>
       )}
 
-      {/* CORRECCIÓN IMPORTANTE: 
-          No usamos top: -10000px porque Android puede ignorarlo.
-          Usamos opacity: 0 y z-index negativo para que esté "ahí" pero invisible.
-      */}
       <div style={{ position: 'absolute', opacity: 0, zIndex: -100, pointerEvents: 'none', left: 0, top: 0 }}>
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif', border: '2px solid black', padding: '0' }}>
@@ -471,15 +451,14 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   // @ts-ignore
   const doc = new JsPDF({ orientation: "p", unit: "pt", format: "a4" });
 
-  const pageWidth = doc.internal.pageSize.width; // ~595 pts
+  const pageWidth = doc.internal.pageSize.width; 
   const pageHeight = doc.internal.pageSize.height; 
   const marginBottom = 40; 
   const marginLeft = 40;
   const marginRight = pageWidth - 40;
   
-  // CENTRADO DE TABLAS
   const tableWidth = 500; 
-  const tableX = (pageWidth - tableWidth) / 2; // Centrado automático
+  const tableX = (pageWidth - tableWidth) / 2; 
 
   const lineHeight = 20;
   const maxY = pageHeight - marginBottom; 
@@ -490,7 +469,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.setTextColor(0, 0, 139); 
-    // Centrar título
     doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
@@ -521,7 +499,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       doc.text("Mediciones (Continuación)", marginLeft, currentY);
       currentY += 25;
       
-      // Dibujar cabecera de tabla nuevamente en la nueva página
       doc.setDrawColor(200);
       doc.setFillColor(230, 235, 245); 
       doc.setLineWidth(0.5);
@@ -543,11 +520,9 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     return false;
   };
 
-  // --- INICIO DEL DOCUMENTO ---
   drawHeaderBase();
-  currentY = 80; // Bajamos un poco el inicio
+  currentY = 80; 
   
-  // Bloque superior (Datos generales)
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
   
@@ -564,7 +539,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   doc.line(marginLeft, currentY, marginRight, currentY);
   currentY += 20;
 
-  // Lista de datos
   const infoData = [
     { l: "Cliente:", v: formData.cliente, l2: "N. Certificado:", v2: formData.certificado },
     { l: "Equipo:", v: formData.equipo, l2: "ID:", v2: formData.id },
@@ -580,13 +554,11 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   
   infoData.forEach(row => {
     checkPageBreak(20);
-    // Columna 1
     doc.setFont("helvetica", "bold");
     doc.text(row.l, col1X, currentY);
     doc.setFont("helvetica", "normal");
     doc.text(String(row.v || "-").substring(0, 35), col1X + 65, currentY);
 
-    // Columna 2
     doc.setFont("helvetica", "bold");
     doc.text(row.l2, col2X, currentY);
     doc.setFont("helvetica", "normal");
@@ -597,54 +569,118 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
 
   currentY += 15;
 
-  // --- SECCIÓN MEDICIONES ---
   checkPageBreak(40); 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setFillColor(220, 220, 220);
-  doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F'); // Fondo título
+  doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F'); 
   doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
   currentY += 20;
 
   const isMasa = formData.magnitud === "Masa";
   
-  // Cabecera Tabla Principal
-  doc.setDrawColor(0);
-  doc.setFillColor(50, 80, 160); 
-  doc.setTextColor(255, 255, 255); 
-  doc.setLineWidth(0.1);
-
-  checkPageBreak(30);
-  doc.rect(tableX, currentY, tableWidth, 20, 'FD');
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  
   if (isMasa) {
-    doc.text("Parámetro", tableX + 20, currentY + 14);
-    doc.text("Valor", tableX + (tableWidth/2) + 20, currentY + 14);
-    currentY += 20;
-    doc.setTextColor(0,0,0); 
-    
-    const masaData = [
-        ["Excentricidad", formData.excentricidad || "-"],
-        ["Linealidad", formData.linealidad || "-"],
-        ["Repetibilidad", formData.repetibilidad || "-"]
-    ];
-    masaData.forEach(([param, val]) => {
-         doc.setFontSize(10);
-         doc.setDrawColor(200);
-         doc.rect(tableX, currentY, tableWidth/2, 20);
-         doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, 20);
-         
-         doc.setFont("helvetica", "bold");
-         doc.text(param, tableX + 10, currentY + 14);
-         doc.setFont("helvetica", "normal");
-         doc.text(val, tableX + tableWidth/2 + 10, currentY + 14);
-         currentY += 20;
-    });
+      // === DIBUJO DE LA EXCENTRICIDAD EN EL PDF ===
+      const excLines = (formData.excentricidad || "").split('\n');
+      let p1="-", p2="-", p3="-", p4="-", p5="-";
+      excLines.forEach(l => {
+           if (l.startsWith('1')) p1 = l.substring(l.indexOf(':')+1).trim() || "-";
+           else if (l.startsWith('2')) p2 = l.substring(l.indexOf(':')+1).trim() || "-";
+           else if (l.startsWith('3')) p3 = l.substring(l.indexOf(':')+1).trim() || "-";
+           else if (l.startsWith('4')) p4 = l.substring(l.indexOf(':')+1).trim() || "-";
+           else if (l.startsWith('5')) p5 = l.substring(l.indexOf(':')+1).trim() || "-";
+      });
+
+      checkPageBreak(130);
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0,0,0);
+      doc.text("Excentricidad:", tableX, currentY + 10);
+      currentY += 25;
+
+      const boxSize = 80;
+      const boxX = pageWidth / 2 - boxSize / 2;
+      const boxY = currentY;
+
+      // Dibujar rectángulo principal
+      doc.setDrawColor(150);
+      doc.setLineWidth(1);
+      doc.rect(boxX, boxY, boxSize, boxSize); 
+
+      // Líneas cruzadas
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(200);
+      doc.line(boxX + boxSize/2, boxY, boxX + boxSize/2, boxY + boxSize);
+      doc.line(boxX, boxY + boxSize/2, boxX + boxSize, boxY + boxSize/2);
+
+      // Textos de los puntos simulando la UI
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+
+      // 3 (Sup Izq)
+      doc.text(`3: ${p3}`, boxX - 35, boxY + 10);
+      // 4 (Sup Der)
+      doc.text(`4: ${p4}`, boxX + boxSize + 5, boxY + 10);
+      // 1 (Centro)
+      doc.setFont("helvetica", "bold");
+      doc.text(`1: ${p1}`, boxX + boxSize/2 - 12, boxY + boxSize/2 - 5);
+      doc.setFont("helvetica", "normal");
+      // 2 (Inf Izq)
+      doc.text(`2: ${p2}`, boxX - 35, boxY + boxSize - 5);
+      // 5 (Inf Der)
+      doc.text(`5: ${p5}`, boxX + boxSize + 5, boxY + boxSize - 5);
+
+      currentY += boxSize + 25;
+
+      // === TABLA DE LINEALIDAD Y REPETIBILIDAD ===
+      checkPageBreak(40);
+      doc.setFillColor(50, 80, 160); 
+      doc.setTextColor(255, 255, 255); 
+      doc.rect(tableX, currentY, tableWidth, 20, 'FD');
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      
+      doc.text("Parámetro", tableX + 20, currentY + 14);
+      doc.text("Valor", tableX + (tableWidth/2) + 20, currentY + 14);
+      currentY += 20;
+      doc.setTextColor(0,0,0); 
+
+      const masaData = [
+          ["Linealidad", formData.linealidad || "-"],
+          ["Repetibilidad", formData.repetibilidad || "-"]
+      ];
+      
+      masaData.forEach(([param, val]) => {
+           const paramLines = doc.splitTextToSize(val, tableWidth/2 - 20);
+           const rowHeight = Math.max(20, paramLines.length * 15 + 10);
+           checkPageBreak(rowHeight);
+
+           doc.setFontSize(10);
+           doc.setDrawColor(200);
+           doc.rect(tableX, currentY, tableWidth/2, rowHeight);
+           doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, rowHeight);
+           
+           doc.setFont("helvetica", "bold");
+           doc.text(param, tableX + 10, currentY + 14);
+           doc.setFont("helvetica", "normal");
+           doc.text(paramLines, tableX + tableWidth/2 + 10, currentY + 14);
+           currentY += rowHeight;
+      });
 
   } else {
-    // STANDARD (Presión, Torque, etc)
+    // === LÓGICA NORMAL PARA LAS DEMÁS MAGNITUDES ===
+    doc.setDrawColor(0);
+    doc.setFillColor(50, 80, 160); 
+    doc.setTextColor(255, 255, 255); 
+    doc.setLineWidth(0.1);
+
+    checkPageBreak(30);
+    doc.rect(tableX, currentY, tableWidth, 20, 'FD');
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+      
     doc.text("Medición Patrón", tableX + 20, currentY + 14);
     doc.text("Medición Instrumento", tableX + (tableWidth/2) + 20, currentY + 14);
     currentY += 20;
@@ -687,7 +723,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   }
 
   currentY += 20;
-  // Notas
   const notasLines = doc.splitTextToSize(formData.notas || "-", tableWidth);
   checkPageBreak(notasLines.length * 15 + 30);
 
@@ -746,11 +781,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
   
-  // 🆕 ESTADOS DE BÚSQUEDA DRIVE
   const [lastPdfUrl, setLastPdfUrl] = useState<string | null>(null);
   const [isSearchingPdf, setIsSearchingPdf] = useState(false);
   
-  // 🆕 ESTADOS PARA IMPRESIÓN AUTOMÁTICA
   const hiddenLabelRef = useRef<HTMLDivElement>(null);
   const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
   
@@ -761,7 +794,41 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const [electricalValues, setElectricalValues] = useState<Record<string, { patron: string, instrumento: string }>>({});
 
-  // ✅ MEMORIZAR NOTAS DE CLIENTE
+  // --- NUEVA LÓGICA DE DIAGRAMA DE EXCENTRICIDAD (Evita campos en blanco) ---
+  const [localExc, setLocalExc] = useState({ p1: '', p2: '', p3: '', p4: '', p5: '' });
+
+  // Sincronizar desde la base de datos o estado global SOLO cuando carga la app
+  useEffect(() => {
+      if (state.magnitud === 'Masa' && state.excentricidad) {
+          const next = { p1: '', p2: '', p3: '', p4: '', p5: '' };
+          const lines = state.excentricidad.split('\n');
+          lines.forEach(line => {
+               // Extraemos el valor sin trim() durante el tecleo activo, pero al cargar sí lo limpiamos
+               if (line.startsWith('1')) next.p1 = line.substring(line.indexOf(':')+1).trim() || '';
+               else if (line.startsWith('2')) next.p2 = line.substring(line.indexOf(':')+1).trim() || '';
+               else if (line.startsWith('3')) next.p3 = line.substring(line.indexOf(':')+1).trim() || '';
+               else if (line.startsWith('4')) next.p4 = line.substring(line.indexOf(':')+1).trim() || '';
+               else if (line.startsWith('5')) next.p5 = line.substring(line.indexOf(':')+1).trim() || '';
+          });
+          // Solo actualizamos si realmente es distinto para no sobreescribir lo que estés tecleando
+          setLocalExc(prev => (JSON.stringify(prev) !== JSON.stringify(next) ? next : prev));
+      }
+  }, [state.excentricidad, state.magnitud]);
+
+  const handleExcChangeLocal = (key: keyof typeof localExc, val: string) => {
+      setLocalExc(prev => ({ ...prev, [key]: val }));
+  };
+
+  // Esta función empuja lo que escribiste al estado global SOLAMENTE cuando quitas el foco (onBlur)
+  const syncMasaToGlobalState = useCallback(() => {
+      if (state.magnitud !== "Masa") return;
+      const str = `1 (Centro): ${localExc.p1}\n2 (Inf Izq): ${localExc.p2}\n3 (Sup Izq): ${localExc.p3}\n4 (Sup Der): ${localExc.p4}\n5 (Inf Der): ${localExc.p5}`;
+      if (state.excentricidad !== str) {
+          dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: str });
+      }
+  }, [localExc, state.magnitud, state.excentricidad]);
+  // -------------------------------------------
+
   const activeClientNotes = useMemo(() => {
     const found = listaClientes.find(c => c.nombre === state.cliente);
     return found?.requerimientos || "";
@@ -821,7 +888,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
   }, [state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]); 
 
-  useEffect(() => {
+  const syncElectricalToGlobalState = useCallback(() => {
     if (state.magnitud !== "Electrica") return;
     let textoPatron = "";
     let textoInstrumento = "";
@@ -836,7 +903,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     if (state.medicionInstrumento !== textoInstrumento.trim()) {
         dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: textoInstrumento.trim() });
     }
-  }, [electricalValues, state.magnitud, state.unidad]);
+  }, [electricalValues, state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]);
 
   const handleLocalElectricChange = (unit: string, type: 'patron' | 'instrumento', value: string) => {
     setElectricalValues(prev => ({
@@ -891,10 +958,14 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     
     docs.forEach(doc => {
       const data = doc.data(); 
-      const parts = data.fecha.split('-');
-      const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-      if (!isNaN(dateObj.getTime())) {
-        if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) { maxFecha = dateObj; frecuenciaAnterior = data.frecuenciaCalibracion; maxFechaString = data.fecha; }
+      if (data.fecha) {
+        const parts = data.fecha.split('-');
+        if (parts.length === 3) {
+          const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          if (!isNaN(dateObj.getTime())) {
+            if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) { maxFecha = dateObj; frecuenciaAnterior = data.frecuenciaCalibracion; maxFechaString = data.fecha; }
+          }
+        }
       }
     });
 
@@ -915,7 +986,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setListaClientes(qs.docs.map((d) => ({ 
           id: d.id, 
           nombre: d.data().nombre || "Sin nombre",
-          requerimientos: d.data().requerimientos || "" // <-- Cargamos requerimientos
+          requerimientos: d.data().requerimientos || "" 
       })));
     } catch { setListaClientes([{ id: "1", nombre: "ERROR AL CARGAR CLIENTES" }]); }
   };
@@ -948,12 +1019,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
     if (!masterFound) dispatch({ type: 'AUTOCOMPLETE_FAIL' });
 
-    // 🆕 --- BÚSQUEDA DE PDF EN DRIVE CON MANEJO DE ERRORES ---
     if (newId.startsWith("EP-")) {
       setIsSearchingPdf(true);
       setLastPdfUrl(null);
       try {
-        // URL PREPARADA PARA TU CLOUD FUNCTION: Reemplaza esto cuando tengas tu backend
         const cloudFunctionUrl = `https://us-central1-TU-PROYECTO.cloudfunctions.net/buscarPdfDrive?id=${newId}`;
         const response = await fetch(cloudFunctionUrl);
 
@@ -966,11 +1035,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
               setToast({ message: "Certificado anterior (Schedule) localizado en Drive.", type: 'success' });
             }
           }
-        } else {
-           console.warn("No se encontró archivo en Drive o la URL de la Cloud Function no está lista.");
         }
       } catch (error) {
-        console.error("Error buscando el PDF en Drive (Falta configurar el backend):", error);
+        console.error("Error buscando el PDF en Drive:", error);
       } finally {
         setIsSearchingPdf(false);
       }
@@ -995,7 +1062,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const sanitize = (str: string) => str.replace(/<script.*?>.*?<\/script>/gi, '').trim();
 
-  // --- VALIDACIÓN DE TEXTO Y CONTENIDO (Anti-Flojera) ---
   const validarContenidoMedicion = (texto: string): { valido: boolean, error?: string } => {
     if (!texto) return { valido: true }; 
     const lineas = texto.split('\n').filter(l => l.trim() !== '' && !l.trim().endsWith(':')); 
@@ -1013,9 +1079,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return { valido: true };
   };
 
-  // --- HANDLE SAVE MEJORADO Y ESTRICTO ---
   const handleSave = useCallback(async () => {
-    // 1. CAMPOS OBLIGATORIOS (Ahora incluye Alcance y Resolución)
+    syncElectricalToGlobalState();
+    syncMasaToGlobalState();
+
     const errors: Record<string, boolean> = {};
     const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad", "alcance", "resolucion"];
     let hasError = false;
@@ -1028,7 +1095,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
        }
     });
 
-    // 2. VALIDACIÓN DE CONTENIDO DE MEDICIONES
     const camposAValidar: { campo: string, valor: string, nombre: string }[] = [];
 
     if (state.magnitud === "Masa") {
@@ -1060,7 +1126,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         }
     }
 
-    // 3. VALIDACIÓN DE PUNTOS MÍNIMOS (NORMA ~3 Puntos)
     let advertenciaNorma = "";
     
     if (state.magnitud === "Masa") {
@@ -1116,13 +1181,17 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 let frecuenciaAnterior: string | undefined = undefined;
                 docs.forEach(doc => {
                   const data = doc.data(); 
-                  const parts = data.fecha.split('-');
-                  const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-                  if (!isNaN(dateObj.getTime())) {
-                    if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) { 
-                        maxFecha = dateObj; 
-                        frecuenciaAnterior = data.frecuenciaCalibracion; 
-                    }
+                  if (data.fecha) {
+                      const parts = data.fecha.split('-');
+                      if (parts.length === 3) {
+                          const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                          if (!isNaN(dateObj.getTime())) {
+                            if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) { 
+                                maxFecha = dateObj; 
+                                frecuenciaAnterior = data.frecuenciaCalibracion; 
+                            }
+                          }
+                      }
                   }
                 });
 
@@ -1151,6 +1220,31 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
          return;
       }
 
+      let finalDocId = worksheetId;
+      let existingData: any = null;
+
+      if (!finalDocId) {
+          const qDupe = query(
+              collection(db, "hojasDeTrabajo"),
+              where("id", "==", state.id.trim()),
+              where("cliente", "==", state.cliente)
+          );
+          const dupeDocs = await getDocs(qDupe);
+          
+          let bestMatchDate = -1;
+          dupeDocs.forEach(d => {
+              const data = d.data();
+              if (!data.pdfURL || data.status_certificado === 'Pendiente de Certificado' || data.status_equipo === 'Desconocido' || data.status_equipo === 'Recepción') {
+                  const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
+                  if (docTime > bestMatchDate) {
+                      bestMatchDate = docTime;
+                      finalDocId = d.id;
+                      existingData = data;
+                  }
+              }
+          });
+      }
+
       const { jsPDF } = await import("jspdf");
       const pdfDoc = generateTemplatePDF(state, jsPDF as any); 
       const blob = pdfDoc.output("blob");
@@ -1169,21 +1263,29 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
       const lugarNormalizado = sanitizedState.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
 
-      const fullData = { 
+      const fullData: any = { 
           ...sanitizedState, 
           lugarCalibracion: lugarNormalizado, 
           folio: sanitizedState.certificado, 
           serie: sanitizedState.numeroSerie, 
           status: "completed",
           priority: "medium",
+          status_equipo: "Calibrado",        
+          status_certificado: "Generado",    
+          cargado_drive: "Si",               
           pdfURL, 
           timestamp: Date.now(), 
-          createdAt: new Date().toISOString(),
+          createdAt: existingData?.createdAt || new Date().toISOString(), 
           userId: currentUser?.uid || user?.uid || "unknown" 
       };
       
-      if (worksheetId) {
-        await updateDoc(doc(db, "hojasDeTrabajo", worksheetId), fullData);
+      if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
+          fullData.fechaRecepcion = existingData.fechaEntrada;
+          fullData.fechaEntrada = existingData.fechaEntrada;
+      }
+
+      if (finalDocId) {
+        await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
       } else {
         await addDoc(collection(db, "hojasDeTrabajo"), fullData);
       }
@@ -1191,7 +1293,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setToast({ message: "Hoja de trabajo guardada correctamente.", type: 'success' });
       localStorage.removeItem('backup_worksheet_data');
       
-      // 🖨️ IMPRIMIR ETIQUETA AUTOMÁTICAMENTE DESPUÉS DE GUARDAR
       try {
         // @ts-ignore
         await generateAndPrintLabel(hiddenLabelRef, tapeSize);
@@ -1216,7 +1317,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     } finally {
       setIsSaving(false);
     }
-  }, [state, currentUser, user, goBack, worksheetId]);
+  }, [state, currentUser, user, goBack, worksheetId, electricalValues, syncElectricalToGlobalState, syncMasaToGlobalState]);
 
   const slaInfo = React.useMemo(() => {
     if (state.lugarCalibracion !== "Laboratorio" || !state.fechaRecepcion || !state.fecha) {
@@ -1289,10 +1390,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
       <div className="p-6">
         
-        {/* ✅ LAYOUT GRID CORREGIDO */}
         <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* COLUMNA PRINCIPAL (Formulario) */}
           <div className={activeClientNotes ? "lg:col-span-8 transition-all duration-300" : "lg:col-span-10 lg:col-start-2 transition-all duration-300"}>
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
               <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
@@ -1363,7 +1462,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
                   
-                  {/* 🆕 CAMPO ID CON BOTÓN DRIVE A LADO */}
                   <div>
                     <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
                     <div className="flex gap-2">
@@ -1506,7 +1604,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 </div>
 
-                {/* CAMPOS ALCANCE Y RESOLUCIÓN OBLIGATORIOS */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Alcance*</label>
                   <input 
@@ -1533,19 +1630,94 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 </div>
                 
                 {state.magnitud === "Masa" ? (
-                  <>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-400" /><span>Excentricidad</span></label><input type="text" value={state.excentricidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                      <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>Linealidad</span></label><input type="text" value={state.linealidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                    <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                       <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                           <Scale className="w-5 h-5 text-indigo-600"/> 
+                           Parámetros de Medición MASA
+                       </h3>
                     </div>
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-orange-400" /><span>Repetibilidad</span></label><input type="text" value={state.repetibilidad} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                  </>
+                    <div className="p-6 space-y-8">
+                      {/* --- DISEÑO VISUAL EXCENTRICIDAD --- */}
+                      <div>
+                        <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                          <NotebookPen className="w-4 h-4 text-purple-500" /><span>Excentricidad</span>
+                        </label>
+                        <div className="relative w-full max-w-xl mx-auto h-[320px] border-2 border-gray-300 rounded-xl bg-white shadow-sm flex items-center justify-center overflow-hidden">
+                           
+                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-full h-[2px] bg-gray-200"></div>
+                           </div>
+                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="h-full w-[2px] bg-gray-200"></div>
+                           </div>
+                           
+                           <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
+                             <line x1="0" y1="0" x2="100%" y2="100%" stroke="#d1d5db" strokeWidth="2" strokeDasharray="8" />
+                             <line x1="100%" y1="0" x2="0" y2="100%" stroke="#d1d5db" strokeWidth="2" strokeDasharray="8" />
+                           </svg>
+                           
+                           <div className="absolute top-8 left-8 flex flex-col items-center">
+                              <span className="text-xs font-bold text-gray-500 mb-1 bg-white px-2 rounded-full border">3 (Sup. Izq)</span>
+                              <input type="text" value={localExc.p3} onChange={e => handleExcChangeLocal('p3', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                           </div>
+
+                           <div className="absolute top-8 right-8 flex flex-col items-center">
+                              <span className="text-xs font-bold text-gray-500 mb-1 bg-white px-2 rounded-full border">4 (Sup. Der)</span>
+                              <input type="text" value={localExc.p4} onChange={e => handleExcChangeLocal('p4', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                           </div>
+
+                           <div className="absolute flex flex-col items-center z-10 bg-white p-2 rounded-full shadow-lg border border-blue-100">
+                              <span className="text-sm font-bold text-blue-700 mb-1">1 (Centro)</span>
+                              <input type="text" value={localExc.p1} onChange={e => handleExcChangeLocal('p1', e.target.value)} onBlur={syncMasaToGlobalState} className="w-28 text-center text-base p-2 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-600 bg-blue-50 font-bold" placeholder="0.000" />
+                           </div>
+
+                           <div className="absolute bottom-8 left-8 flex flex-col items-center">
+                              <input type="text" value={localExc.p2} onChange={e => handleExcChangeLocal('p2', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                              <span className="text-xs font-bold text-gray-500 mt-1 bg-white px-2 rounded-full border">2 (Inf. Izq)</span>
+                           </div>
+
+                           <div className="absolute bottom-8 right-8 flex flex-col items-center">
+                              <input type="text" value={localExc.p5} onChange={e => handleExcChangeLocal('p5', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                              <span className="text-xs font-bold text-gray-500 mt-1 bg-white px-2 rounded-full border">5 (Inf. Der)</span>
+                           </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                          <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                            <NotebookPen className="w-4 h-4 text-pink-500" /><span>Linealidad (Presiona Enter para nueva línea)</span>
+                          </label>
+                          <textarea 
+                            value={state.linealidad} 
+                            onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} 
+                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y" 
+                            rows={6} 
+                            placeholder="Punto 1: 10.000 g&#10;Punto 2: 20.000 g&#10;Punto 3: 30.000 g..." 
+                          />
+                        </div>
+                        <div>
+                          <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                            <NotebookPen className="w-4 h-4 text-orange-500" /><span>Repetibilidad (Presiona Enter para nueva línea)</span>
+                          </label>
+                          <textarea 
+                            value={state.repetibilidad} 
+                            onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} 
+                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y" 
+                            rows={6} 
+                            placeholder="Lectura 1: 5.001 g&#10;Lectura 2: 5.002 g&#10;Lectura 3: 5.001 g..." 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 ) : state.magnitud === "Electrica" && state.unidad.length > 0 ? (
                   <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                             <Calculator className="w-4 h-4 text-blue-500"/> 
-                            Mediciones por Unidad Eléctrica
+                            Mediciones por Unidad Eléctrica (Scroll ilimitado)
                         </h3>
                     </div>
                 
@@ -1569,8 +1741,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                   placeholder="Ej: 10.00&#10;10.01&#10;10.02" 
                                   value={electricalValues[u]?.patron || ""}
                                   onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
-                                  rows={4} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
+                                  onBlur={syncElectricalToGlobalState}
+                                  rows={6} 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed" 
                                 />
                             </div>
                 
@@ -1579,8 +1752,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                   placeholder="Ej: 9.99&#10;10.00&#10;10.01"
                                   value={electricalValues[u]?.instrumento || ""}
                                   onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
-                                  rows={4} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[100px] shadow-sm font-mono leading-relaxed" 
+                                  onBlur={syncElectricalToGlobalState}
+                                  rows={6} 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed" 
                                 />
                             </div>
                         </div>
@@ -1589,12 +1763,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={4} className="w-full p-2 border rounded resize-none overflow-y-auto max-h-40 focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                   </div>
                 )}
                 
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 border-gray-200" rows={2} /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas Técnicas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-y min-h-[100px] focus:ring-2 focus:ring-blue-500 border-gray-200" rows={4} placeholder="Notas y observaciones multilínea..." /></div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} /></div>
@@ -1614,7 +1788,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             </div>
           </div>
 
-          {/* ✅ SIDEBAR DERECHO: NOTAS DEL CLIENTE (STICKY) */}
           {activeClientNotes && (
             <div className="lg:col-span-4 sticky top-24 animate-in fade-in slide-in-from-right duration-500">
                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm ring-1 ring-yellow-200">
@@ -1642,7 +1815,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
         </div>
 
-        {/* Footer de botones */}
         <div className="bg-gray-50 px-8 py-6 border-t border-gray-200 mt-8 rounded-lg">
           <div className="flex justify-end space-x-4">
             <button onClick={() => goBack()} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2" disabled={isSaving}><X className="w-4 h-4" /><span>Cancelar</span></button>
@@ -1663,7 +1835,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
       {showConverter && <UnitConverterModal onClose={() => setShowConverter(false)} />}
       
-      {/* 🆕 ETIQUETA OCULTA PARA IMPRESIÓN AUTOMÁTICA */}
       <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
         <div 
           ref={hiddenLabelRef}
