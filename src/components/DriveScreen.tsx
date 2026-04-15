@@ -760,7 +760,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [completedGroupView, setCompletedGroupView] = useState<string | null>(null);
+  const [groupView, setGroupView] = useState<string | null>(null);
   const [newFileMenuOpen, setNewFileMenuOpen] = useState(false);
   const newFileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -860,23 +860,35 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLastSelectedId(null);
 
     try {
-      const isGlobalSearch = path.length === 0 && debouncedSearch !== "";
+      // CORRECCIÓN IMPORTANTE: Ahora evalúa si es una vista global (buscar, destacados, por revisar, completados, recientes)
+      const isGlobalView = activeFilter !== 'all' || debouncedSearch !== "";
 
-      if (isGlobalSearch) {
+      if (isGlobalView) {
         const q = query(collection(db, 'fileMetadata'), orderBy('created', 'desc'));
         const snap = await getDocs(q);
         const results: DriveFile[] = [];
         const myName = normalizeText(currentUserData?.name || "");
-        const searchTerms = normalizeText(debouncedSearch).split(/[\s\-]+/).filter(t => t.length > 0);
+        const searchTerms = debouncedSearch ? normalizeText(debouncedSearch).split(/[\s\-]+/).filter(t => t.length > 0) : [];
 
         snap.forEach((docSnap) => {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id;
           const fullPath = data.filePath || `worksheets/${rawName}`;
+          
           if (!isQuality) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
             if (!fullPath.toLowerCase().includes(myName) && !isUploader) return;
           }
+
+          // Aplicar Filtros Globales
+          if (activeFilter === 'starred' && data.starred !== true) return;
+          if (activeFilter === 'pending_review' && !(data.completed === true && data.reviewed !== true)) return;
+          if (activeFilter === 'completed' && data.reviewed !== true) return;
+          if (activeFilter === 'recent') {
+            const diff = Math.abs(new Date().getTime() - new Date(data.updated || data.created).getTime());
+            if (Math.ceil(diff / (1000 * 60 * 60 * 24)) > 7) return;
+          }
+
           const fileObj: DriveFile = {
             name: cleanFileName(rawName), rawName, url: "", fullPath,
             updated: data.updated || new Date().toISOString(),
@@ -889,11 +901,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             keywords: data.keywords, notas: data.notas,
             ubicacion: data.ubicacion, ubicacion_real: data.ubicacion_real
           };
-          if (fuzzyMatch(fileObj, searchTerms)) results.push(fileObj);
+
+          if (searchTerms.length > 0) {
+            if (fuzzyMatch(fileObj, searchTerms)) results.push(fileObj);
+          } else {
+            results.push(fileObj);
+          }
         });
         setFiles(results);
         setFolders([]);
       } else {
+        // Vista normal por carpetas (Mi Unidad)
         const pathStr = [ROOT_PATH, ...path].join('/');
         const res = await listAll(ref(storage, pathStr));
         const myName = normalizeText(currentUserData?.name || "");
@@ -927,7 +945,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           let storageMeta = { size: 0, updated: new Date().toISOString(), timeCreated: new Date().toISOString(), contentType: 'unknown' };
           try { storageMeta = await getMetadata(item) as any; } catch (e) { }
 
-          // --- MAGIA: Buscar automáticamente la ubicacion_real en la base de datos si falta ---
           let fetchedUbicacion = meta.ubicacion_real || meta.ubicacion || "";
           let linkedDoc = false;
           if (!fetchedUbicacion && item.name.toLowerCase().endsWith('.pdf')) {
@@ -956,16 +973,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             setDoc(doc(db, 'fileMetadata', metaId), newMeta, { merge: true })
               .finally(() => setIsSyncing(false));
             meta = newMeta;
-          }
-
-          if (!debouncedSearch) {
-            if (activeFilter === 'starred' && meta.starred !== true) return null;
-            if (activeFilter === 'pending_review' && !(meta.completed === true && meta.reviewed !== true)) return null;
-            if (activeFilter === 'completed' && meta.reviewed !== true) return null;
-            if (activeFilter === 'recent') {
-              const diff = Math.abs(new Date().getTime() - new Date(meta.updated || meta.created).getTime());
-              if (Math.ceil(diff / (1000 * 60 * 60 * 24)) > 7) return null;
-            }
           }
 
           return {
@@ -1048,8 +1055,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     return result;
   }, [files, sortBy]);
 
-  const completedGroups = useMemo(() => {
-    if (activeFilter !== 'completed') return {};
+  // ── ARCHIVOS AGRUPADOS POR TÉCNICO (Para Completados Y Por Revisar) ──
+  const groupedFiles = useMemo(() => {
+    if (activeFilter !== 'completed' && activeFilter !== 'pending_review') return {};
     const groups: Record<string, DriveFile[]> = {};
     processedFiles.forEach(f => {
       const k = f.parentFolder || getParentFolderName(f.fullPath);
@@ -1346,7 +1354,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const snap = await uploadBytes(ref(storage, fullPath), file);
         const meta = await getMetadata(snap.ref);
 
-        // Extraer ubicación de hojasDeTrabajo al instante de subir
         let fetchedUbicacion = "";
         try {
           const possibleId = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
@@ -1425,24 +1432,28 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ─── RENDER CONTENT ───────────────────────
   const renderContent = () => {
-    if (activeFilter === 'completed' && !completedGroupView) {
-      const groups = Object.keys(completedGroups);
-      if (groups.length === 0) return <EmptyState icon={FileCheck} title="No hay servicios completados" />;
+    // Renderizado de las tarjetas agrupadas por técnico para "Completados" Y "Por revisar"
+    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && !groupView) {
+      const groups = Object.keys(groupedFiles);
+      if (groups.length === 0) return <EmptyState icon={activeFilter === 'completed' ? FileCheck : Bell} title={activeFilter === 'completed' ? "No hay servicios completados" : "No hay archivos por revisar"} />;
       return (
         <div className="animate-in fade-in duration-300">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {groups.map(name => (
               <div
                 key={name}
-                onClick={() => setCompletedGroupView(name)}
-                className="group p-4 bg-white border border-emerald-100 hover:border-emerald-300 rounded-2xl cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col items-center gap-3"
+                onClick={() => setGroupView(name)}
+                className={clsx(
+                  "group p-4 bg-white border rounded-2xl cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col items-center gap-3",
+                  activeFilter === 'completed' ? "border-emerald-100 hover:border-emerald-300" : "border-blue-100 hover:border-blue-300"
+                )}
               >
-                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-                  <FileCheck size={22} className="text-emerald-600" />
+                <div className={clsx("w-12 h-12 rounded-2xl flex items-center justify-center transition-colors", activeFilter === 'completed' ? "bg-emerald-50 group-hover:bg-emerald-100" : "bg-blue-50 group-hover:bg-blue-100")}>
+                  {activeFilter === 'completed' ? <FileCheck size={22} className="text-emerald-600" /> : <Bell size={22} className="text-blue-600" />}
                 </div>
                 <p className="text-sm font-semibold text-slate-700 text-center truncate w-full">{name}</p>
-                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
-                  {completedGroups[name].length} archivos
+                <span className={clsx("text-[10px] px-2 py-0.5 rounded-full font-medium", activeFilter === 'completed' ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>
+                  {groupedFiles[name].length} archivos
                 </span>
               </div>
             ))}
@@ -1451,8 +1462,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       );
     }
 
+    // Filtrar los archivos a mostrar si entramos a un técnico en específico
     let displayFiles = processedFiles;
-    if (activeFilter === 'completed' && completedGroupView) displayFiles = completedGroups[completedGroupView] || [];
+    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView) displayFiles = groupedFiles[groupView] || [];
     const showFolders = activeFilter === 'all' && !debouncedSearch && folders.length > 0;
 
     if (displayFiles.length === 0 && !showFolders) {
@@ -1461,19 +1473,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
 
     // --- LÓGICA DE SEPARACIÓN (POR UBICACION_REAL O NOTAS) ---
-    const isMetrologistFolder = path.length > 0 && !path.some(p => ['hojas de trabajo', 'hojas de servicio'].some(ex => p.toLowerCase().includes(ex)));
+    // (Solo separa si estamos explorando carpetas y NO estamos en una vista global o buscando)
+    const isMetrologistFolder = activeFilter === 'all' && !debouncedSearch && path.length > 0 && !path.some(p => ['hojas de trabajo', 'hojas de servicio'].some(ex => p.toLowerCase().includes(ex)));
 
     const labFiles: DriveFile[] = [];
     const siteFiles: DriveFile[] = [];
     const otherFiles: DriveFile[] = [];
 
-    if (isMetrologistFolder && activeFilter === 'all' && !debouncedSearch) {
+    if (isMetrologistFolder) {
       displayFiles.forEach(f => {
-        // Obtenemos los campos y los pasamos a minúscula para la comparación
         const ubicacionAttr = (f.ubicacion_real || f.ubicacion || "").toLowerCase();
         const notasLower = (f.notas || "").toLowerCase();
         
-        // Verificamos estrictamente la palabra "sitio" o "laboratorio" en la db o en las notas
         const isSitio = ubicacionAttr.includes('sitio') || notasLower.includes('sitio');
         const isLab = ubicacionAttr.includes('laboratorio') || notasLower.includes('laboratorio') || ubicacionAttr.includes('lab');
 
@@ -1482,7 +1493,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         } else if (isLab) {
           labFiles.push(f);
         } else {
-          // Si no hay datos (ni sitio ni lab), lo mandamos a Laboratorio por defecto
           labFiles.push(f);
         }
       });
@@ -1506,7 +1516,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <FileCard
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
-                  searchActive={!!debouncedSearch}
+                  searchActive={!!debouncedSearch || activeFilter !== 'all'}
                   onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
                   onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
                   onDoubleClick={() => handlePreview(file)}
@@ -1530,7 +1540,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <FileListRow
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
-                  searchActive={!!debouncedSearch}
+                  searchActive={!!debouncedSearch || activeFilter !== 'all'}
                   onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
                   onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
                   onDoubleClick={() => handlePreview(file)}
@@ -1546,7 +1556,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     return (
       <div className="animate-in slide-in-from-bottom-1 duration-200 pb-24">
-        {path.length === 0 && !debouncedSearch && suggestedFiles.length > 0 && (
+        {path.length === 0 && activeFilter === 'all' && !debouncedSearch && suggestedFiles.length > 0 && (
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
               <Zap size={13} className="text-amber-500" /> Acceso Rápido
@@ -1644,7 +1654,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               )}
             </div>
 
-            {isMetrologistFolder && activeFilter === 'all' && !debouncedSearch ? (
+            {isMetrologistFolder ? (
               <>
                 {renderFilesBlock('Laboratorio', labFiles)}
                 {renderFilesBlock('Servicio en Sitio', siteFiles)}
@@ -1671,7 +1681,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const filterLabels: Record<FilterType, string> = {
     all: 'Mi Unidad', starred: 'Destacados', recent: 'Recientes',
-    pending_review: 'Pendientes de revisión', completed: 'Historial completados'
+    pending_review: 'Por revisar', completed: 'Historial completados'
   };
 
   // ─────────────────────────────────────────
@@ -1740,17 +1750,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          <SidebarItem icon={<HardDrive size={16} />} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setCompletedGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
-          <SidebarItem icon={<Star size={16} />} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setCompletedGroupView(null); setSidebarOpen(false); }} />
-          <SidebarItem icon={<Clock size={16} />} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setCompletedGroupView(null); setSidebarOpen(false); }} />
+          {/* CORRECCIÓN: Agregar setPath([]) al hacer clic para asegurar que las vistas globales reseteen la ruta */}
+          <SidebarItem icon={<HardDrive size={16} />} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
+          <SidebarItem icon={<Star size={16} />} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
+          <SidebarItem icon={<Clock size={16} />} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
 
           {isQuality && (
             <>
               <div className="pt-5 pb-2 px-3">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gestión</p>
               </div>
-              <SidebarItem icon={<Bell size={16} />} label="Por Revisar" active={activeFilter === 'pending_review'} badge onClick={() => { setActiveFilter('pending_review'); setCompletedGroupView(null); setSidebarOpen(false); }} />
-              <SidebarItem icon={<FileCheck size={16} />} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setCompletedGroupView(null); setSidebarOpen(false); }} />
+              <SidebarItem icon={<Bell size={16} />} label="Por Revisar" active={activeFilter === 'pending_review'} badge onClick={() => { setActiveFilter('pending_review'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
+              <SidebarItem icon={<FileCheck size={16} />} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
             </>
           )}
         </nav>
@@ -1839,11 +1850,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <span className="flex items-center gap-1.5 font-semibold text-blue-600">
                 <Filter size={11} />
                 {filterLabels[activeFilter]}
-                {completedGroupView && (
-                  <>
-                    <ChevronRight size={11} className="text-slate-300" />
-                    <span className="text-slate-700">{completedGroupView}</span>
-                  </>
+                {groupView && (
+                  <div className="flex items-center ml-1">
+                    <ChevronRight size={11} className="text-slate-400 mr-1" />
+                    <span className="text-slate-700 bg-white border border-blue-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      {groupView}
+                      <button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  </div>
                 )}
               </span>
             ) : debouncedSearch ? (

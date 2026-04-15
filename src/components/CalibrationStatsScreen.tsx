@@ -10,7 +10,7 @@ import {
   ArrowLeft, SortDesc, SortAsc, X, Calendar, 
   Trophy, Activity, ChevronLeft, ChevronRight,
   ShieldCheck, Briefcase, SearchX, Filter,
-  CalendarRange, CalendarDays
+  CalendarRange, CalendarDays, BarChart3
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import clsx from "clsx";
@@ -25,10 +25,11 @@ const COLORS = {
 const METROLOGOS_ORDER_COLOR = [
   { name: "Abraham Ginez", color: "#ef4444" },
   { name: "Dante Hernández", color: "#3b82f6" },
-  { name: "Edgar Amador", color: "#22c55e" },
+  { name: "Edgar Amador", color: "#007e2e" },
   { name: "Angel Amador", color: "#14b8a6" },
   { name: "Ricardo Domínguez", color: "#d946ef" },
-  { name: "Mario Medina", color: "#facc15" },
+  { name: "Mario Medina", color: "#ababab" },
+  { name: "Daniel Hernández", color: "#8f6a2c" },
 ];
 const FALLBACK_COLORS = ["#f59e0b", "#6366f1", "#8b5cf6", "#ec4899", "#64748b"];
 
@@ -36,7 +37,7 @@ const MAGNITUDES_COLORS: Record<string, string> = {
   "Acustica": "#b6cfcb", "Dimensional": "#001e78", "Electrica": "#ffee00",
   "Flujo": "#20cde0", "Fuerza": "#835700", "Humedad": "#6f888c",
   "Frecuencia": "#ff9100", "Optica Trazable": "#4a3419", "Par Torsional Trazable": "#00ff2f",
-  "Reporte Diagnostico": "#806c54", "Masa": "#028019", "Par Torsional": "#30306D",
+  "Reporte Diagnostico": "#9203ff", "Masa": "#06e52f", "Par Torsional": "#30306D",
   "Presión": "#6c6cfa", "Temperatura": "#bd0101", "Tiempo": "#f33220",
   "Vibracion Trazable": "#49ae9a", "Vacio": "#bebebe",
 };
@@ -47,7 +48,7 @@ interface HojaTrabajo { id: string; nombre: string; fecha: string; magnitud: str
 interface DriveMetadata { name: string; created: string | null; completedByName?: string; reviewedByName?: string; magnitud?: string; }
 
 type SortMode = "order" | "asc" | "desc";
-type TabMode = "metrologos" | "calidad";
+type TabMode = "metrologos" | "calidad" | "magnitudes"; // AGBOT: Nueva pestaña
 type ViewMode = "month" | "year";
 
 // --- AGBOT HELPERS & LOGIC ---
@@ -81,7 +82,6 @@ const isQualityRole = (user: Usuario) => {
 
 const isMetrologyRole = (user: Usuario) => {
     const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
-    // Incluye metrólogos, técnicos, o roles específicos de calibración. Excluye explícitamente calidad si es necesario.
     return text.includes('metrólogo') || text.includes('tecnico') || text.includes('técnico');
 };
 
@@ -172,13 +172,13 @@ const CalibrationStatsScreen: React.FC = () => {
     magnitudesPie, 
     mesesHistory, 
     qualityHistory, 
-    individualStats 
+    individualStats,
+    magnitudesGlobalData, // Nuevos datos
+    topMagnitud          // Nueva métrica
   } = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
-    // AGBOT: Crear Sets de Nombres Validados por Rol
-    // Esto asegura que "Juan Perez" solo aparezca en Metrólogos si su rol en BD es Metrólogo
     const validMetrologosNames = new Set(
         usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name))
     );
@@ -198,44 +198,38 @@ const CalibrationStatsScreen: React.FC = () => {
     const hojasFiltradas = hojasDeTrabajo.filter(h => isDateInRange(h.fecha));
     const driveFiltrados = driveFiles.filter(f => isDateInRange(f.created));
 
-    // --- TAB 1: METRÓLOGOS (Lógica Estricta) ---
-    // Solo contamos hojas si el nombre está en la lista blanca de metrólogos
+    // --- TAB 1: METRÓLOGOS ---
     const countsMet: Record<string, number> = {};
     let totalMetCount = 0;
 
     hojasFiltradas.forEach(h => { 
         const name = cleanName(h.nombre);
-        if (name && validMetrologosNames.has(name)) { // <--- AGBOT FILTER
+        if (name && validMetrologosNames.has(name)) {
             countsMet[name] = (countsMet[name] || 0) + 1;
             totalMetCount++;
         }
     });
 
-    // Construir datos de gráfica Metrólogos
     let statsMet = METROLOGOS_ORDER_COLOR.map(m => ({
         name: m.name, 
         total: countsMet[cleanName(m.name)] || 0, 
         color: m.color
-    })).filter(item => validMetrologosNames.has(cleanName(item.name))); // Solo mostrar si es metrólogo válido
+    })).filter(item => validMetrologosNames.has(cleanName(item.name)));
 
-    // Agregar metrólogos dinámicos que no están en la lista de colores fijos
     Object.keys(countsMet).forEach((name, i) => {
         if (!statsMet.find(s => cleanName(s.name) === name)) {
             statsMet.push({ name, total: countsMet[name], color: FALLBACK_COLORS[i % FALLBACK_COLORS.length] });
         }
     });
 
-    // Ordenamiento Metrólogos
     if (sortMode === "asc") statsMet.sort((a, b) => a.total - b.total);
     else if (sortMode === "desc") statsMet.sort((a, b) => b.total - a.total);
-    // Para el ranking siempre usamos el total descendente
+    
     const ranking = [...statsMet].sort((a, b) => b.total - a.total).slice(0, 3);
 
-
-    // --- TAB 2: CALIDAD (Lógica Estricta) ---
+    // --- TAB 2: CALIDAD ---
     const qualityMap = new Map<string, { realizado: number, revisado: number }>();
     
-    // Inicializar mapa solo con usuarios de calidad válidos
     validQualityNames.forEach(name => {
         qualityMap.set(name, { realizado: 0, revisado: 0 });
     });
@@ -244,7 +238,6 @@ const CalibrationStatsScreen: React.FC = () => {
         const reviewer = cleanName(f.reviewedByName);
         const completer = cleanName(f.completedByName);
 
-        // Solo sumar si el usuario es de calidad (Whitelist Check)
         if (reviewer && validQualityNames.has(reviewer)) {
              const current = qualityMap.get(reviewer) || { realizado: 0, revisado: 0 };
              qualityMap.set(reviewer, { ...current, revisado: current.revisado + 1 });
@@ -260,19 +253,31 @@ const CalibrationStatsScreen: React.FC = () => {
         .map(([name, val]) => ({ name, ...val }))
         .filter(item => item.realizado > 0 || item.revisado > 0); 
 
+    // --- TAB 3: MAGNITUDES (NUEVA LÓGICA) ---
+    const magGlobalMap: Record<string, number> = {};
+    hojasFiltradas.forEach(h => {
+        if (h.magnitud) {
+            magGlobalMap[h.magnitud] = (magGlobalMap[h.magnitud] || 0) + 1;
+        }
+    });
+    
+    const magnitudesGlobalStats = Object.entries(magGlobalMap)
+        .map(([name, total], i) => ({
+            name,
+            total,
+            color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
+        }))
+        .sort((a, b) => b.total - a.total); // Ordenamos de mayor a menor siempre
+
+    const bestMagnitud = magnitudesGlobalStats.length > 0 ? magnitudesGlobalStats[0] : null;
 
     // --- GENERACIÓN DE LISTA DROPDOWN ---
-    // Depende estrictamente del TAB activo y la whitelist correspondiente
     let dropdownList: string[] = [];
-    if (activeTab === 'metrologos') {
-        dropdownList = statsMet.map(s => s.name); // Solo los que tienen datos o son metrólogos
-    } else {
-        dropdownList = Array.from(validQualityNames); // Todos los de calidad
-    }
+    if (activeTab === 'metrologos') dropdownList = statsMet.map(s => s.name);
+    else if (activeTab === 'calidad') dropdownList = Array.from(validQualityNames);
     dropdownList.sort();
 
-
-    // --- ESTADÍSTICAS INDIVIDUALES (Drill Down) ---
+    // --- ESTADÍSTICAS INDIVIDUALES ---
     let hist = []; 
     let qHist = []; 
     let pies = [];
@@ -280,7 +285,6 @@ const CalibrationStatsScreen: React.FC = () => {
 
     if (selectedUserName) {
         if (activeTab === 'metrologos') {
-            // Filtrar hojas del año para historial
             const userHojas = hojasDeTrabajo.filter(h => {
                 const d = parseDateRobust(h.fecha);
                 return d && d.getFullYear() === year && cleanName(h.nombre) === selectedUserName;
@@ -297,7 +301,6 @@ const CalibrationStatsScreen: React.FC = () => {
                 mes: new Date(`${k}-02`).toLocaleString("es-MX", { month: "short" }), total: v
             }));
 
-            // Magnitudes (usamos filtered para respetar mes/año seleccionado)
             const userHojasFiltered = hojasFiltradas.filter(h => cleanName(h.nombre) === selectedUserName);
             const magMap: Record<string, number> = {};
             userHojasFiltered.forEach(h => { if(h.magnitud) magMap[h.magnitud] = (magMap[h.magnitud] || 0) + 1; });
@@ -310,7 +313,6 @@ const CalibrationStatsScreen: React.FC = () => {
             single.best = pies.length > 0 ? pies[0].name : "N/A";
 
         } else if (activeTab === 'calidad') {
-             // Historial Calidad
              const userDriveYear = driveFiles.filter(f => {
                  const d = parseDateRobust(f.created);
                  if (!d) return false;
@@ -335,13 +337,14 @@ const CalibrationStatsScreen: React.FC = () => {
         }
     }
 
-    // Calcular totales correctos según el tab
     const totalDisplay = activeTab === 'metrologos' ? totalMetCount : statsQual.reduce((acc, curr) => acc + curr.realizado + curr.revisado, 0);
 
     return {
         uniqueUserList: dropdownList,
         metrologosData: statsMet,
         qualityData: statsQual,
+        magnitudesGlobalData: magnitudesGlobalStats, // Nuevo
+        topMagnitud: bestMagnitud,                   // Nuevo
         top3: ranking,
         totalFiltered: totalDisplay,
         magnitudesPie: pies,
@@ -364,6 +367,7 @@ const CalibrationStatsScreen: React.FC = () => {
     setSelectedMagnitud({ ...data, position: { x: e.clientX, y: e.clientY } });
     setHologramVisible(true);
   };
+  
   const renderActiveShape = (props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
     return <g><Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 8} startAngle={startAngle} endAngle={endAngle} fill={fill} style={{ filter: `drop-shadow(0 0 10px ${fill})` }} /><Sector cx={cx} cy={cy} startAngle={startAngle} endAngle={endAngle} innerRadius={outerRadius + 10} outerRadius={outerRadius + 12} fill={fill} opacity={0.3} /></g>;
@@ -399,9 +403,11 @@ const CalibrationStatsScreen: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
         <div className="flex justify-center">
-            <div className="bg-slate-800/80 p-1.5 rounded-xl border border-white/10 flex gap-2">
+            {/* AGBOT: Se añadió la pestaña de Magnitudes */}
+            <div className="bg-slate-800/80 p-1.5 rounded-xl border border-white/10 flex flex-wrap justify-center gap-2">
                 <button onClick={() => setActiveTab('metrologos')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'metrologos' ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><Briefcase size={16} /> Metrología</button>
                 <button onClick={() => setActiveTab('calidad')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'calidad' ? "bg-emerald-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><ShieldCheck size={16} /> Calidad</button>
+                <button onClick={() => setActiveTab('magnitudes')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'magnitudes' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><BarChart3 size={16} /> Magnitudes</button>
             </div>
         </div>
 
@@ -512,8 +518,71 @@ const CalibrationStatsScreen: React.FC = () => {
                  </div>
             </motion.div>
         )}
+
+        {/* --- NUEVA PESTAÑA: MAGNITUDES --- */}
+        {activeTab === 'magnitudes' && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-purple-900/20 backdrop-blur-md relative overflow-hidden`}>
+                         <div className="relative z-10">
+                             <p className="text-sm text-purple-400">Magnitud Más Calibrada ({viewMode === 'year' ? 'Año' : 'Mes'})</p>
+                             <h3 className="text-2xl font-bold text-white truncate">{topMagnitud?.name || "N/A"}</h3>
+                         </div>
+                         <div className="absolute right-3 top-3 p-3 bg-purple-500/20 rounded-xl text-purple-400"><Trophy size={20}/></div>
+                     </div>
+                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-blue-900/20 backdrop-blur-md relative overflow-hidden`}>
+                         <div className="relative z-10">
+                             <p className="text-sm text-blue-400">Total en esta Magnitud</p>
+                             <h3 className="text-2xl font-bold text-white">{topMagnitud?.total || 0}</h3>
+                         </div>
+                         <div className="absolute right-3 top-3 p-3 bg-blue-500/20 rounded-xl text-blue-400"><Activity size={20}/></div>
+                     </div>
+                 </div>
+
+                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}>
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <BarChart3 className="text-purple-400"/> Distribución por Magnitudes {viewMode === 'year' ? '(Anual)' : '(Mensual)'}
+                            </h3>
+                            <p className="text-sm text-gray-400">
+                                Clasificación general de los servicios agrupados por disciplina.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    {magnitudesGlobalData.length > 0 ? (
+                        <div className="h-[600px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart 
+                                    data={magnitudesGlobalData} 
+                                    layout="vertical" 
+                                    margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false} />
+                                    <XAxis type="number" stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false} />
+                                    <YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} axisLine={false} tickLine={false} width={150} tick={{fill: '#E5E7EB', fontWeight: 500}} />
+                                    <Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} />
+                                    <Bar dataKey="total" name="Calibraciones" radius={[0, 4, 4, 0]} animationDuration={1000}>
+                                        {magnitudesGlobalData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="h-[400px] flex flex-col items-center justify-center text-gray-400 gap-2">
+                            <SearchX size={64} className="opacity-20 mb-2"/>
+                            <p className="font-medium text-lg">No se registraron magnitudes para este periodo.</p>
+                        </div>
+                    )}
+                 </div>
+            </motion.div>
+        )}
       </main>
 
+      {/* MODAL HOLOGRAMA */}
       {hologramVisible && selectedMagnitud && (
         <AnimatePresence>
             <motion.div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setHologramVisible(false)}>
@@ -524,7 +593,7 @@ const CalibrationStatsScreen: React.FC = () => {
                 <button onClick={() => setHologramVisible(false)} className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors"><X size={24} /></button>
                 <div className="flex flex-col items-center relative z-10">
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200, delay: 0.2 }} className="w-32 h-32 rounded-full border-4 border-double flex items-center justify-center mb-6 relative" style={{ borderColor: selectedMagnitud.color }}>
-                    <div className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ backgroundColor: selectedMagnitud.color }} /><span className="text-4xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">{selectedMagnitud.value}</span>
+                    <div className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ backgroundColor: selectedMagnitud.color }} /><span className="text-4xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">{selectedMagnitud.value || selectedMagnitud.total}</span>
                     </motion.div>
                     <h2 className="text-2xl font-bold text-center mb-2" style={{ color: selectedMagnitud.color, textShadow: `0 0 20px ${selectedMagnitud.color}` }}>{selectedMagnitud.name}</h2>
                     <div className="bg-white/5 px-4 py-1 rounded-full border border-white/10 text-xs text-gray-300 tracking-widest uppercase">Magnitud Analizada</div>

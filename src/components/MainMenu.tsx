@@ -314,32 +314,38 @@ const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]
         ) : services.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-slate-500 gap-2">
              <CheckCircle2 className="w-8 h-8 opacity-20" />
-             <span className="text-xs">Sin pendientes activos</span>
+             <span className="text-xs">Sin pendientes ni historial este mes</span>
           </div>
         ) : (
           services.map((s) => {
             const esUrgente = s.prioridad === 'alta' || s.prioridad === 'critica';
             const fechaDate = safeDateParse(s.fecha);
             const esHoy = fechaDate ? isToday(fechaDate) : false;
+            
+            // Lógica para identificar si es histórico
+            const st = (s.estado || '').toLowerCase();
+            const esTerminado = st === 'finalizado' || st === 'cancelado';
 
             return (
               <div 
                 key={s.id}
                 onClick={() => navigateTo('friday-servicios')} 
                 className={`group relative p-3 rounded-lg border transition-all cursor-pointer hover:shadow-md ${
+                    esTerminado ? 'bg-slate-900/40 border-slate-800/50 opacity-60 hover:opacity-100 hover:border-slate-700' :
                     esHoy ? 'bg-blue-950/20 border-blue-900/50 hover:border-blue-700' : 'bg-slate-800/40 border-slate-800 hover:border-slate-600 hover:bg-slate-800'
                 }`}
               >
                 <div className="flex justify-between items-start mb-1">
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      esTerminado ? (st === 'finalizado' ? 'bg-emerald-900/30 text-emerald-500' : 'bg-red-900/30 text-red-500') :
                       esHoy ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'
                   }`}>
-                      {esHoy ? "HOY" : (fechaDate ? format(fechaDate, 'dd MMM', { locale: es }) : 'PENDIENTE')}
+                      {esTerminado ? st : (esHoy ? "HOY" : (fechaDate ? format(fechaDate, 'dd MMM', { locale: es }) : 'PENDIENTE'))}
                   </span>
-                  {esUrgente && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                  {!esTerminado && esUrgente && <AlertTriangle className="w-3 h-3 text-amber-500" />}
                 </div>
                 
-                <h4 className="font-medium text-slate-200 text-sm truncate group-hover:text-white transition-colors">
+                <h4 className={`font-medium text-sm truncate transition-colors ${esTerminado ? 'text-slate-400 group-hover:text-slate-300' : 'text-slate-200 group-hover:text-white'}`}>
                     {s.cliente || 'Cliente sin asignar'}
                 </h4>
                 <p className="text-xs text-slate-500 truncate mt-0.5">
@@ -637,16 +643,35 @@ export const MainMenu: React.FC = () => {
     const q = query(collection(db, 'servicios'), where('personas', 'array-contains', localUser.uid));
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
-      const activos = docs.filter(s => {
+      
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      const filtrados = docs.filter(s => {
           const st = (s.estado || '').toLowerCase();
-          return st !== 'finalizado' && st !== 'cancelado';
+          const isActivo = st !== 'finalizado' && st !== 'cancelado';
+          
+          let isCurrentMonth = false;
+          if (s.fecha) {
+              const parsedDate = parseISO(s.fecha);
+              if (isValid(parsedDate)) {
+                  isCurrentMonth = parsedDate.getMonth() === currentMonth && parsedDate.getFullYear() === currentYear;
+              }
+          }
+
+          // Conservar si el servicio está activo, O si está terminado pero pertenece a este mes
+          return isActivo || isCurrentMonth;
       });
-      activos.sort((a, b) => {
+
+      // Ordenar por fecha descendente
+      filtrados.sort((a, b) => {
         const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
         const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
         return dateB - dateA; 
       });
-      setAssignedServices(activos); 
+      
+      setAssignedServices(filtrados); 
       setLoadingServices(false);
     });
     return () => unsub();
@@ -771,7 +796,6 @@ export const MainMenu: React.FC = () => {
                 {(localUser.role.includes('calidad') || localUser.role.includes('admin') || SUPER_ADMINS.includes(localUser.email)) && (
                     <>
                         <KpiWidget navigateTo={navigateTo} />
-                        {/* ESTE ES EL NUEVO WIDGET DE PATRONES */}
                         <PatronesWidget navigateTo={navigateTo} />
                         <TechnicianStatusWidget />
                     </>

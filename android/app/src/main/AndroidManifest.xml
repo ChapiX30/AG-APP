@@ -27,28 +27,10 @@
 	<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 	<uses-feature android:name="android.hardware.location.gps" />
 
-	<!-- ✅ FIX CRÍTICO: Permite detectar apps instaladas en Android 11+ -->
-	<uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-
-	<!-- ✅ FIX CRÍTICO: Declara explícitamente qué apps necesitas consultar -->
-	<!-- Sin esto, isEpsonAppInstalled() siempre retorna false en Android 11+ -->
-	<queries>
-		<package android:name="com.epson.labelmobile" />
-		<package android:name="jp.co.epson.labelworks.labeleditor" />
-		<package android:name="com.epson.labeleditor" />
-		<!-- Para abrir Play Store si no está instalada -->
-		<package android:name="com.android.vending" />
-		<!-- Para el Intent ACTION_VIEW con archivos -->
-		<intent>
-			<action android:name="android.intent.action.VIEW" />
-			<data android:mimeType="application/octet-stream" />
-		</intent>
-	</queries>
-
+	<!-- Bluetooth es requerido para imprimir etiquetas -->
 	<uses-feature
         android:name="android.hardware.bluetooth"
-        android:required="false" />
+        android:required="true" />
 
 	<application
         android:allowBackup="true"
