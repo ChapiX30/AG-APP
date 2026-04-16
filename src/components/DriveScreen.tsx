@@ -123,7 +123,7 @@ const getParentFolderName = (fullPath: string) => {
   const parts = fullPath.split('/');
   if (parts.length >= 2) {
     const parent = parts[parts.length - 2];
-    if (parent === 'worksheets') return "Raíz";
+    if (parent === 'worksheets' || parent === 'certificados') return "Raíz";
     return parent;
   }
   return "Raíz";
@@ -229,8 +229,6 @@ const getFileColorBg = (fileName?: string) => {
   if (['doc', 'docx'].includes(ext || '')) return 'bg-blue-50';
   return 'bg-slate-50';
 };
-
-const ROOT_PATH = "worksheets";
 
 // ─────────────────────────────────────────────
 // SUBCOMPONENTS
@@ -720,7 +718,7 @@ const MenuOption = ({ icon, label, onClick, shortcut, danger }: any) => (
 );
 
 // ─── SIDEBAR ITEM ─────────────────────────────
-const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
+const SidebarItem = ({ icon, label, active, onClick, badge, className }: any) => (
   <button
     onClick={onClick}
     className={clsx(
@@ -729,7 +727,7 @@ const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
     )}
   >
     <div className="flex items-center gap-3">
-      <span className={clsx("flex-shrink-0 transition-colors", active ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600")}>{icon}</span>
+      <span className={clsx("flex-shrink-0 transition-colors", className || (active ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"))}>{icon}</span>
       {label}
     </div>
     {badge && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />}
@@ -742,6 +740,9 @@ const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
 export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [user] = useAuthState(auth);
   const { goBack } = useNavigation();
+
+  // --- NUEVA LÓGICA DE CARPETA DINÁMICA ---
+  const [currentRoot, setCurrentRoot] = useState<"worksheets" | "certificados">("worksheets");
 
   // Data
   const [folders, setFolders] = useState<DriveFolder[]>([]);
@@ -840,6 +841,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           if (recents.length >= 6) break;
           const data = docSnap.data();
           const fullPath = data.filePath || `worksheets/${data.name || docSnap.id}`;
+          
+          if (!fullPath.startsWith(currentRoot)) continue;
+
           if (!isQuality) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
             if (!fullPath.toLowerCase().includes(myName) && !isUploader) continue;
@@ -850,7 +854,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       } catch (e) { console.error(e); }
     };
     load();
-  }, [currentUserData, path, debouncedSearch, isQuality]);
+  }, [currentUserData, path, debouncedSearch, isQuality, currentRoot]);
 
   // ── Load content ──
   const loadContent = useCallback(async () => {
@@ -860,7 +864,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setLastSelectedId(null);
 
     try {
-      // CORRECCIÓN IMPORTANTE: Ahora evalúa si es una vista global (buscar, destacados, por revisar, completados, recientes)
       const isGlobalView = activeFilter !== 'all' || debouncedSearch !== "";
 
       if (isGlobalView) {
@@ -873,14 +876,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         snap.forEach((docSnap) => {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id;
-          const fullPath = data.filePath || `worksheets/${rawName}`;
+          const fullPath = data.filePath || `${currentRoot}/${rawName}`;
           
+          if (!fullPath.startsWith(currentRoot)) return; 
+
           if (!isQuality) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
             if (!fullPath.toLowerCase().includes(myName) && !isUploader) return;
           }
 
-          // Aplicar Filtros Globales
           if (activeFilter === 'starred' && data.starred !== true) return;
           if (activeFilter === 'pending_review' && !(data.completed === true && data.reviewed !== true)) return;
           if (activeFilter === 'completed' && data.reviewed !== true) return;
@@ -911,8 +915,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         setFiles(results);
         setFolders([]);
       } else {
-        // Vista normal por carpetas (Mi Unidad)
-        const pathStr = [ROOT_PATH, ...path].join('/');
+        const pathStr = [currentRoot, ...path].join('/');
         const res = await listAll(ref(storage, pathStr));
         const myName = normalizeText(currentUserData?.name || "");
 
@@ -989,7 +992,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [path, activeFilter, currentUserData, debouncedSearch, isQuality]);
+  }, [path, activeFilter, currentUserData, debouncedSearch, isQuality, currentRoot]);
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
@@ -1247,7 +1250,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleModalMove = async () => {
-    const dest = [ROOT_PATH, ...moveToPath].join('/');
+    const dest = [currentRoot, ...moveToPath].join('/');
     if (moveTargetFolder) {
       const ok = await executeMoveFolder(moveTargetFolder, dest);
       if (ok) { showToast("Carpeta movida", 'success'); setMoveDialogOpen(false); setMoveTargetFolder(null); setMoveToPath([]); loadContent(); }
@@ -1272,11 +1275,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (!moveDialogOpen) return;
     (async () => {
       try {
-        const res = await listAll(ref(storage, [ROOT_PATH, ...moveToPath].join('/')));
+        const res = await listAll(ref(storage, [currentRoot, ...moveToPath].join('/')));
         setMoveFolderContent(res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath })));
       } catch (e) { console.error(e); }
     })();
-  }, [moveDialogOpen, moveToPath]);
+  }, [moveDialogOpen, moveToPath, currentRoot]);
 
   // ── File actions ──
   const handleDelete = async (file: DriveFile) => {
@@ -1340,28 +1343,47 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     showToast(newVal ? "Agregado a destacados" : "Quitado de destacados", 'info');
   };
 
-  // ── Upload ──
+  // ── Upload (MAGIA DE ENLACE PDF) ──
   const processFiles = async (fileList: FileList) => {
     if (!isQuality && path.length === 0) { showToast("Entra a tu carpeta personal primero", 'error'); return; }
     setIsUploading(true);
     let count = 0;
     try {
       for (const file of Array.from(fileList)) {
-        const fullPath = `${[ROOT_PATH, ...path].join('/')}/${file.name}`;
+        const fullPath = `${[currentRoot, ...path].join('/')}/${file.name}`;
         const docId = fullPath.replace(/\//g, '_');
         const existing = await getDoc(doc(db, 'fileMetadata', docId));
         const existingData = existing.exists() ? existing.data() : {};
+        
+        // Sube el archivo y obtén la URL pública
         const snap = await uploadBytes(ref(storage, fullPath), file);
         const meta = await getMetadata(snap.ref);
+        const downloadUrl = await getDownloadURL(snap.ref);
 
         let fetchedUbicacion = "";
         try {
+          // Extraemos el certificado del nombre del archivo (Ej. AGM-24-001)
           const possibleId = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
           let wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
           if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
           if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
-          if (!wsSnap.empty) fetchedUbicacion = wsSnap.docs[0].data().ubicacion_real || wsSnap.docs[0].data().ubicacion || "";
-        } catch(e) {}
+          
+          if (!wsSnap.empty) {
+            fetchedUbicacion = wsSnap.docs[0].data().ubicacion_real || wsSnap.docs[0].data().ubicacion || "";
+            
+            // --- AQUÍ ESTÁ EL ENLACE AUTOMÁTICO AL QR ---
+            if (currentRoot === "certificados") {
+              await updateDoc(wsSnap.docs[0].ref, {
+                pdfURL: downloadUrl,
+                status_certificado: "Finalizado",
+                cargado_drive: "Si"
+              });
+              showToast(`PDF enlazado al folio ${possibleId}`, 'success');
+            }
+          }
+        } catch(e) {
+          console.error("Error al enlazar PDF:", e);
+        }
 
         await setDoc(doc(db, 'fileMetadata', docId), {
           name: file.name, filePath: fullPath, size: meta.size, contentType: meta.contentType,
@@ -1750,8 +1772,26 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {/* CORRECCIÓN: Agregar setPath([]) al hacer clic para asegurar que las vistas globales reseteen la ruta */}
-          <SidebarItem icon={<HardDrive size={16} />} label="Mi Unidad" active={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
+          {/* --- MENÚ DE ALMACENAMIENTO DINÁMICO --- */}
+          <div className="pt-2 pb-2 px-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Almacenamiento</p>
+          </div>
+          <SidebarItem 
+            icon={<HardDrive size={16} />} 
+            label="Hojas de Trabajo" 
+            active={activeFilter === 'all' && currentRoot === 'worksheets'} 
+            onClick={() => { setCurrentRoot('worksheets'); setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} 
+          />
+          <SidebarItem 
+            icon={<FileText size={16} />} 
+            label="Certificados PDF" 
+            className={currentRoot === 'certificados' ? "text-emerald-500" : "text-emerald-600/60 group-hover:text-emerald-600"}
+            active={activeFilter === 'all' && currentRoot === 'certificados'} 
+            onClick={() => { setCurrentRoot('certificados'); setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} 
+          />
+          
+          <div className="my-3 border-t border-slate-100" />
+
           <SidebarItem icon={<Star size={16} />} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
           <SidebarItem icon={<Clock size={16} />} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
 
@@ -1873,7 +1913,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   onClick={() => setPath([])}
                   className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", path.length === 0 ? "text-slate-800 font-semibold" : "")}
                 >
-                  <Home size={11} /> Mi Unidad
+                  <Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}
                 </button>
                 {path.map((folder, i) => (
                   <React.Fragment key={folder}>
@@ -2102,7 +2142,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           onClose={() => { setCreateFolderOpen(false); setNewFolderName(""); }}
           onConfirm={() => {
             if (!newFolderName.trim()) return;
-            const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`);
+            const folderRef = ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`);
             uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); });
           }}
           confirmLabel="Crear"
@@ -2111,7 +2151,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             autoFocus
             value={newFolderName}
             onChange={e => setNewFolderName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) { const folderRef = ref(storage, `${[ROOT_PATH, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); } }}
+            onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) { const folderRef = ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); } }}
             className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm transition-all bg-white text-slate-800"
             placeholder="Nombre de la carpeta..."
           />
@@ -2125,7 +2165,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           onConfirm={async () => {
             if (!newName.trim()) return;
             setRenameDialogOpen(false);
-            const dest = [ROOT_PATH, ...path].join('/');
+            const dest = [currentRoot, ...path].join('/');
             if (renameTargetFile) {
               const ok = await executeMoveFile(renameTargetFile, dest, newName.trim());
               if (ok) { showToast("Archivo renombrado", 'success'); loadContent(); }

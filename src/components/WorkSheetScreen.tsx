@@ -18,6 +18,7 @@ import { es } from 'date-fns/locale';
 import { unit } from 'mathjs';
 import logoAg from '../assets/lab_logo.png'; 
 import ToastNotification from "./ToastNotification"; 
+import { QRCodeSVG } from 'qrcode.react';
 
 // --- IMPORTS DE CAPACITOR ---
 import { Capacitor } from '@capacitor/core';
@@ -100,6 +101,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         </div>
       )}
 
+      {/* RENDERIZADO VISUAL DE LA ETIQUETA WEB */}
       <div style={{ position: 'absolute', opacity: 0, zIndex: -100, pointerEvents: 'none', left: 0, top: 0 }}>
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{ width: '500px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif', border: '2px solid black', padding: '0' }}>
@@ -113,8 +115,21 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
                         <div style={{ textAlign: 'right' }}><div style={{ fontSize: '11px', fontWeight: 'bold', color: 'black' }}>VENCE</div><div style={{ fontSize: '18px', fontWeight: '900', color: 'black' }}>{data.fechaSug}</div></div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'black' }}>CERT: {data.certificado}</div>
-                        <div style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: 'black', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>TEC: {data.calibro.substring(0,4)}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'black' }}>CERT: {data.certificado}</div>
+                            <div>
+                              <span style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: 'black', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>
+                                TEC: {data.calibro.substring(0,4)}
+                              </span>
+                            </div>
+                        </div>
+                        <div style={{ padding: '2px', backgroundColor: 'white' }}>
+                            <QRCodeSVG 
+                                value={`https://ag-app-two.vercel.app/?share=${data.certificado}`} 
+                                size={45} 
+                                level="M" 
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -126,9 +141,15 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
                 </div>
                 <div style={{ flex: 1, paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9' }}>{data.id}</div>
-                    <div style={{ display: 'flex', gap: '15px' }}>
+                    <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                         <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'black' }}>CAL: {data.fechaCal}</div>
                         <div style={{ fontSize: '15px', fontWeight: '900', color: 'black' }}>VEN: {data.fechaSug}</div>
+                        <QRCodeSVG 
+                            value={`https://ag-app-two.vercel.app/?share=${data.certificado}`} 
+                            size={30} 
+                            level="M" 
+                            style={{ marginLeft: '10px' }}
+                        />
                     </div>
                 </div>
             </div>
@@ -1835,6 +1856,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
       {showConverter && <UnitConverterModal onClose={() => setShowConverter(false)} />}
       
+      {/* CAPACITOR HIDDEN LABEL REF */}
       <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
         <div 
           ref={hiddenLabelRef}
@@ -1845,6 +1867,17 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             fontFamily: "Arial, sans-serif"
           }}
         >
+          {/* AQUÍ TAMBIÉN ESTÁ EL LOGO PARA LA IMPRESIÓN NATIVA DE EPSON */}
+          <div style={{ 
+            borderBottom: '3px solid black', 
+            paddingBottom: '10px', 
+            marginBottom: '10px', 
+            display: 'flex', 
+            justifyContent: 'center' 
+          }}>
+             <img src={logoAg} alt="Logo" style={{ height: tapeSize === "24mm" ? '80px' : '40px', objectFit: 'contain' }} />
+          </div>
+          
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
@@ -1863,12 +1896,25 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             <div style={{ fontSize: tapeSize === "24mm" ? "16px" : "12px" }}>
               Prox: {labelData.fechaSug || "N/A"}
             </div>
-            <div style={{ fontSize: tapeSize === "24mm" ? "14px" : "10px" }}>
-              Cert: {state.certificado || "Pendiente"}
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: tapeSize === "24mm" ? "16px" : "12px", fontWeight: 'bold' }}>
+                      Cert: {state.certificado || "Pendiente"}
+                    </div>
+                    <div style={{ fontSize: tapeSize === "24mm" ? "14px" : "10px" }}>
+                      Tec: {labelData.calibro}
+                    </div>
+                </div>
+                <div style={{ padding: '2px', backgroundColor: 'white' }}>
+                    <QRCodeSVG 
+                        value={`https://ag-app-two.vercel.app/?share=${state.certificado || 'PENDIENTE'}`} 
+                        size={tapeSize === "24mm" ? 60 : 40} 
+                        level="M" 
+                    />
+                </div>
             </div>
-            <div style={{ fontSize: tapeSize === "24mm" ? "12px" : "8px" }}>
-              Tec: {labelData.calibro}
-            </div>
+
           </div>
         </div>
       </div>

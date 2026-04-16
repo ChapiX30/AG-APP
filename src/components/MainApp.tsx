@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -10,6 +10,10 @@ import { MainMenu } from './MainMenu';
 import { ConsecutivosScreen } from './ConsecutivosScreen';
 import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
 
+// --- IMPORT DE LA NUEVA PANTALLA PÚBLICA ---
+const ShareView = lazy(() => import('./ShareView').then(module => ({ default: module.ShareView })));
+
+// --- CARGA PEREZOSA DE PANTALLAS EXISTENTES ---
 const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
 const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen').then(module => ({ default: module.ProgramaCalibracionScreen })));
 const ControlPrestamosScreen = lazy(() => import('./ControlPrestamosScreen').then(module => ({ default: module.ControlPrestamosScreen })));
@@ -27,16 +31,14 @@ const CalendarScreen = lazy(() => import('./CalendarScreen'));
 const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
 const EntradaSalidaScreen = lazy(() => import('./EntradaSalidaScreen').then(module => ({ default: module.EntradaSalidaScreen })));
 
-// --- IMPORT PARA FORMATOS Y PERMISOS DE TRABAJO ---
+// --- FORMATOS Y PERMISOS DE TRABAJO ---
 const FormatosScreen = lazy(() => import('./FormatosScreen').then(module => ({ default: module.FormatosScreen })));
 const PermisosTrabajoScreen = lazy(() => import('./PermisosTrabajoScreen').then(module => ({ default: module.PermisosTrabajoScreen })));
-// --------------------------------------------------
 
-// --- IMPORT PARA HISTORIAL DE EQUIPOS (NUEVO) ---
+// --- HISTORIAL DE EQUIPOS ---
 const DirectorioEmpresasScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.DirectorioEmpresasScreen })));
 const EquiposPorEmpresaScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.EquiposPorEmpresaScreen })));
 const DetalleEquipoScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.DetalleEquipoScreen })));
-// --------------------------------------------------
 
 const Loader = () => (
   <div className="w-full h-full flex flex-col items-center justify-center min-h-screen bg-slate-950 z-50 fixed top-0 left-0">
@@ -49,11 +51,27 @@ export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { currentScreen, navigateTo } = useNavigation();
   
+  // --- ESTADO SÍNCRONO PARA DETECTAR CONSULTA PÚBLICA DE QR AL INSTANTE ---
+  // Leemos el parámetro directamente en la inicialización para evitar el parpadeo del Login
+  const [shareCertificado] = useState<string | null>(() => 
+    new URLSearchParams(window.location.search).get('share')
+  );
+
   usePushNotifications(
     user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
     user?.email || localStorage.getItem('usuario.email') || ''
   );
 
+  // --- PRIORIDAD 1: SI ES UNA CONSULTA DE QR, MOSTRAR VISTA PÚBLICA SIN LOGIN ---
+  if (shareCertificado) {
+    return (
+      <Suspense fallback={<Loader />}>
+        <ShareView certificado={shareCertificado} />
+      </Suspense>
+    );
+  }
+
+  // --- PRIORIDAD 2: SI NO ESTÁ AUTENTICADO, MOSTRAR LOGIN ---
   if (!isAuthenticated) {
     return (
       <div className="relative h-screen w-full overflow-hidden bg-slate-950">
@@ -89,6 +107,7 @@ export const MainApp: React.FC = () => {
     );
   }
 
+  // --- PRIORIDAD 3: APP PRINCIPAL (USUARIO LOGUEADO) ---
   return (
     <Layout>
       <Suspense fallback={<Loader />}>
@@ -99,7 +118,7 @@ export const MainApp: React.FC = () => {
 };
 
 const renderScreen = (screen: string, user: any) => {
-  // Limpiar el ID de edición si NO estamos en la hoja de trabajo (para evitar que se quede pegado)
+  // Limpiar el ID de edición si NO estamos en la hoja de trabajo
   if (screen !== 'work-sheet') {
     localStorage.removeItem('edit_worksheet_id');
   }
@@ -108,10 +127,7 @@ const renderScreen = (screen: string, user: any) => {
     case 'menu': return <MainMenu />;
     case 'consecutivos': return <ConsecutivosScreen />;
     case 'magnitude-detail': return <MagnitudeDetailScreen />;
-    
-    // Le pasamos el ID recuperado del historial para que edite
     case 'work-sheet': return <WorkSheetScreen worksheetId={localStorage.getItem('edit_worksheet_id') || undefined} />;
-    
     case 'empresas': return <EmpresasScreen />;
     case 'calendario': return <CalendarScreen />;
     case 'hoja-servicio': return <HojaDeServicioScreen />;
@@ -128,16 +144,11 @@ const renderScreen = (screen: string, user: any) => {
     case 'friday': return <FridayScreen />;
     case 'vencimientos': return <VencimientosScreen />;
     case 'entrada-salida': return <EntradaSalidaScreen />;
-    
-    // --- FORMATOS Y PERMISOS DE TRABAJO ---
     case 'formatos': return <FormatosScreen />;
     case 'permisos-trabajo': return <PermisosTrabajoScreen />;
-    
-    // --- NUEVAS PANTALLAS DE HISTORIAL DE EQUIPOS ---
     case 'directorio-empresas': return <DirectorioEmpresasScreen />;
     case 'equipos-empresa': return <EquiposPorEmpresaScreen />;
     case 'detalle-equipo': return <DetalleEquipoScreen />;
-    
     default: return <MainMenu />;
   }
 };
