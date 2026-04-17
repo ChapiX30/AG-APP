@@ -90,7 +90,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Certificado no encontrado</h2>
           <p className="text-slate-600 mb-6">
-            No pudimos localizar el certificado con el folio <span className="font-bold">{certificado}</span> en nuestro sistema.
+            No pudimos localizar el certificado con el certificado <span className="font-bold">{certificado}</span> en nuestro sistema.
           </p>
         </div>
       </div>
