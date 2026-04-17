@@ -33,26 +33,27 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
               fecha: docData.fecha || 'N/A'
           });
 
-          if (docData.pdfURL) {
-            // NUEVO: Hacemos un "ping" al archivo para ver si realmente sigue ahí
+          // NUEVO: Verificamos si el link pertenece a una hoja de trabajo
+          const isWorksheet = docData.pdfURL && (docData.pdfURL.includes('worksheets%2F') || docData.pdfURL.includes('/worksheets/'));
+
+          if (docData.pdfURL && !isWorksheet) {
+            // Es el certificado final, hacemos el "ping" para ver si existe
             try {
               const response = await fetch(docData.pdfURL, { method: 'HEAD' });
               
               if (response.ok) {
-                // El archivo existe y está sano, redirigimos
                 window.location.replace(docData.pdfURL);
               } else {
-                // El link existe en la base de datos, pero el archivo fue borrado o movido (404)
                 console.warn("El documento existe en BD, pero el PDF no se encontró en Storage.");
                 setStatus('not_found');
                 setLoading(false);
               }
             } catch (fetchError) {
-              // Si falla por reglas de seguridad del navegador (CORS), redirigimos como último recurso
               window.location.replace(docData.pdfURL);
             }
           } else {
-            // No hay PDF aún
+            // No hay PDF, O el PDF que hay es solo la Hoja de Trabajo.
+            // Mostramos la pantalla naranja de "En Proceso"
             setStatus('found_no_pdf');
             setLoading(false);
           }
@@ -90,7 +91,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Certificado no encontrado</h2>
           <p className="text-slate-600 mb-6">
-            No pudimos localizar el certificado con el certificado <span className="font-bold">{certificado}</span> en nuestro sistema.
+            No pudimos localizar el certificado con el folio <span className="font-bold">{certificado}</span> en nuestro sistema.
           </p>
         </div>
       </div>
