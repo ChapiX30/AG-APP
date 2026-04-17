@@ -34,8 +34,23 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
           });
 
           if (docData.pdfURL) {
-            // El PDF existe, redirigimos directamente al archivo
-            window.location.replace(docData.pdfURL);
+            // NUEVO: Hacemos un "ping" al archivo para ver si realmente sigue ahí
+            try {
+              const response = await fetch(docData.pdfURL, { method: 'HEAD' });
+              
+              if (response.ok) {
+                // El archivo existe y está sano, redirigimos
+                window.location.replace(docData.pdfURL);
+              } else {
+                // El link existe en la base de datos, pero el archivo fue borrado o movido (404)
+                console.warn("El documento existe en BD, pero el PDF no se encontró en Storage.");
+                setStatus('not_found');
+                setLoading(false);
+              }
+            } catch (fetchError) {
+              // Si falla por reglas de seguridad del navegador (CORS), redirigimos como último recurso
+              window.location.replace(docData.pdfURL);
+            }
           } else {
             // No hay PDF aún
             setStatus('found_no_pdf');
