@@ -35,7 +35,7 @@ const MAGNITUDES_COLORS: Record<string, string> = {
   "Vibracion Trazable": "#49ae9a", "Vacio": "#bebebe",
 };
 
-const SLIDE_DURATION = 12000; // 12 segundos por pantalla para dar tiempo de leer la tabla
+const SLIDE_DURATION = 12000; // 12 segundos por pantalla
 
 // --- HELPERS ---
 const cleanName = (name?: string) => name && name !== "null" && name !== "undefined" ? name.trim() : "";
@@ -96,7 +96,6 @@ const TVDashboardScreen: React.FC = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
-    // 1. FILTRADO DE PENDIENTES
     const equiposPendientes = hojasDeTrabajo.filter(r => 
         r.lugarCalibracion === 'laboratorio' && 
         r.status_equipo !== 'Calibrado' && r.status_equipo !== 'Entregado' && r.status_equipo !== 'Rechazado'
@@ -104,7 +103,6 @@ const TVDashboardScreen: React.FC = () => {
 
     const contadoresPendientes: Record<string, number> = { "Mecánica": 0, "Dimensional": 0, "Eléctrica": 0, "Sin Asignar": 0 };
     
-    // Procesamiento y SLAs
     const procesados = equiposPendientes.map(r => {
         const dep = r.departamento || "Sin Asignar";
         if (contadoresPendientes[dep] !== undefined) contadoresPendientes[dep]++;
@@ -129,9 +127,8 @@ const TVDashboardScreen: React.FC = () => {
     const deptChartData = Object.entries(contadoresPendientes)
         .filter(([name, total]) => total > 0)
         .map(([name, total]) => ({ name, total }))
-        .sort((a, b) => b.total - a.total); // Mayor a menor
+        .sort((a, b) => b.total - a.total); 
 
-    // 2. DATOS DEL MES ACTUAL
     const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name)));
     const hojasDelMes = hojasDeTrabajo.filter(h => {
         if (!h.fecha) return false;
@@ -155,11 +152,10 @@ const TVDashboardScreen: React.FC = () => {
 
     const magStats = Object.entries(magGlobalMap).map(([name, total], i) => ({ name, total, color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length] })).sort((a, b) => b.total - a.total);
 
-    // 3. CONSTRUCCIÓN DE LA SECUENCIA AUTOMÁTICA
     const sequence = [
-        ...deptChartData.map(d => ({ type: 'department', id: d.name })), // 1. Ciclo por Departamentos
-        ...statsMet.map(m => ({ type: 'user', id: m.name })),            // 2. Ciclo por Metrólogos
-        { type: 'global', id: 'magnitudes' }                             // 3. Panorama Global
+        ...deptChartData.map(d => ({ type: 'department', id: d.name })), 
+        ...statsMet.map(m => ({ type: 'user', id: m.name })),            
+        { type: 'global', id: 'magnitudes' }                             
     ];
 
     return { 
@@ -182,20 +178,35 @@ const TVDashboardScreen: React.FC = () => {
     return () => clearInterval(timer);
   }, [loading, presentationSequence.length]);
 
-  // --- SCROLL VERTICAL AUTOMÁTICO DE LA TABLA ---
+  // --- SCROLL VERTICAL AUTOMÁTICO DE LA TABLA (CORREGIDO) ---
   useEffect(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      el.scrollTop = 0; // Reiniciar scroll al cambiar de slide
-      let direction = 1;
-      const interval = setInterval(() => {
-          if (el.scrollHeight <= el.clientHeight) return;
-          el.scrollTop += direction;
-          if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) direction = -1; 
-          else if (el.scrollTop <= 0) direction = 1; 
-      }, 40); // Velocidad suave
-      return () => clearInterval(interval);
-  }, [presentationStep]); // Se resetea el efecto al cambiar el paso
+    let direction = 1;
+    
+    // El intervalo revisa continuamente el scroll sin importar si cambia el slide
+    const scrollInterval = setInterval(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        
+        // Si el contenido cabe en la caja, no hace falta scrollear
+        if (el.scrollHeight <= el.clientHeight) return;
+
+        el.scrollTop += direction;
+        
+        // Cambia de dirección si topa abajo o arriba
+        if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) {
+            direction = -1; // Sube
+        } else if (el.scrollTop <= 0) {
+            direction = 1; // Baja
+        }
+    }, 30); // 30ms asegura fluidez sin sobrecargar
+
+    return () => clearInterval(scrollInterval);
+  }, []);
+
+  // Resetear el scroll a 0 cuando cambie la diapositiva
+  useEffect(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [presentationStep]);
 
   const currentSlide = presentationSequence[presentationStep] || { type: 'global', id: 'magnitudes' };
 
@@ -204,7 +215,7 @@ const TVDashboardScreen: React.FC = () => {
   return (
     <div className={`h-screen ${COLORS.background} text-white font-sans overflow-hidden flex flex-col`}>
       
-      {/* HEADER TOP (Resumen permanente) */}
+      {/* HEADER TOP */}
       <header className="bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-6 py-4 flex justify-between items-center shadow-lg z-40 shrink-0 h-[80px]">
         <div className="flex items-center gap-4">
           <button onClick={() => navigateTo("mainmenu")} className="p-2 rounded-full hover:bg-white/10 transition-colors group">
@@ -232,7 +243,7 @@ const TVDashboardScreen: React.FC = () => {
         </div>
       </header>
 
-      {/* ÁREA PRINCIPAL (PRESENTACIÓN ANIMADA) */}
+      {/* ÁREA PRINCIPAL */}
       <main className="flex-1 relative overflow-hidden flex bg-slate-900">
          <div className="absolute bottom-0 left-0 h-1 bg-blue-500 animate-progress z-50" style={{ width: '100%', animationDuration: `${SLIDE_DURATION}ms`, animationTimingFunction: 'linear', animationIterationCount: 'infinite' }} />
 
@@ -260,7 +271,6 @@ const TVDashboardScreen: React.FC = () => {
                                         {activeDeptData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.name === currentSlide.id ? "#f97316" : "#334155"} className="transition-all duration-500" />
                                         ))}
-                                        {/* Etiqueta de número encima de la barra estilo monday */}
                                         <LabelList dataKey="total" position="top" fill="#ffffff" fontSize={18} fontWeight="bold" />
                                     </Bar>
                                 </BarChart>
@@ -273,8 +283,8 @@ const TVDashboardScreen: React.FC = () => {
                     </div>
 
                     {/* DERECHA: TABLA DE EQUIPOS DEL DEPARTAMENTO ACTIVO */}
-                    <div className="w-[55%] flex flex-col h-full bg-slate-800/40 rounded-3xl border border-white/5 shadow-xl overflow-hidden">
-                        <div className="bg-slate-800/80 px-6 py-4 border-b border-white/10 flex items-center justify-between shadow-sm">
+                    <div className="w-[55%] flex flex-col h-full bg-slate-800/40 rounded-3xl border border-white/5 shadow-xl overflow-hidden min-h-0">
+                        <div className="bg-slate-800/80 px-6 py-4 border-b border-white/10 flex items-center justify-between shadow-sm shrink-0">
                             <h3 className="text-lg font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
                                 <Activity size={18} /> Mostrando: {currentSlide.id}
                             </h3>
@@ -284,37 +294,29 @@ const TVDashboardScreen: React.FC = () => {
                         </div>
                         
                         {/* Cabecera de Tabla */}
-                        <div className="flex text-xs text-gray-400 uppercase font-black tracking-widest bg-slate-900/50 px-6 py-3 border-b border-white/5">
+                        <div className="flex text-xs text-gray-400 uppercase font-black tracking-widest bg-slate-900/50 px-6 py-3 border-b border-white/5 shrink-0">
                             <div className="w-[30%]">Cliente</div>
                             <div className="w-[30%]">Equipo / Folio</div>
                             <div className="w-[20%] text-center">Cronograma</div>
                             <div className="w-[20%] text-right">Asignado</div>
                         </div>
 
-                        {/* Cuerpo Auto-Scrolleable */}
-                        <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar scroll-smooth p-2">
+                        {/* Cuerpo Auto-Scrolleable (AQUÍ ESTÁ LA MAGIA) */}
+                        <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar p-2">
                             {flatPendientes.filter(eq => eq.dep === currentSlide.id).map((eq, idx) => (
                                 <div key={eq.docId || idx} className="flex items-center px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                    
-                                    {/* Cliente */}
                                     <div className="w-[30%] pr-2">
                                         <div className="text-sm font-bold text-blue-300 truncate" title={eq.cliente}>{eq.cliente || "Sin Cliente"}</div>
                                     </div>
-
-                                    {/* Equipo y Folio */}
                                     <div className="w-[30%] pr-2 flex flex-col justify-center">
                                         <div className="text-[13px] font-bold text-gray-200 truncate" title={eq.equipo}>{eq.equipo || "Sin Equipo"}</div>
                                         <div className="text-[10px] text-gray-500 font-mono tracking-widest uppercase mt-0.5">{eq.folio || "S/F"}</div>
                                     </div>
-
-                                    {/* SLA Cronograma */}
                                     <div className="w-[20%] flex justify-center">
                                         <div className={clsx("text-xs px-2.5 py-1 rounded shadow-sm bg-black/40 border border-white/5 truncate", eq.statusColor)}>
                                             {eq.daysLabel}
                                         </div>
                                     </div>
-
-                                    {/* Responsable */}
                                     <div className="w-[20%] flex items-center justify-end gap-2">
                                         <UserCircle size={16} className={eq.nombre ? "text-indigo-400" : "text-gray-600"} />
                                         <span className="text-xs font-medium text-gray-300 truncate" title={eq.nombre || eq.assignedTo}>
@@ -335,7 +337,7 @@ const TVDashboardScreen: React.FC = () => {
                 </motion.div>
             )}
 
-            {/* ===== SLIDE TIPO 2: METRÓLOGOS (Estilo Horizontal Original) ===== */}
+            {/* ===== SLIDE TIPO 2: METRÓLOGOS ===== */}
             {currentSlide.type === 'user' && (() => {
                 const currentUserObj = metrologosData.find(m => m.name === currentSlide.id);
                 if (!currentUserObj) return null;
