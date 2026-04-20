@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase'; 
 import { Loader2, AlertOctagon, FileText, CheckCircle2 } from 'lucide-react';
-// IMPORTAMOS EL LOGO CORRECTAMENTE DESDE TUS ASSETS
 import labLogo from '../assets/lab_logo.png';
 
 interface ShareViewProps {
@@ -47,9 +46,10 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
                 // El archivo existe y está sano, redirigimos
                 window.location.replace(docData.pdfURL);
               } else {
-                // El link existe en la base de datos, pero el archivo fue borrado o movido (404)
+                // EL CAMBIO: Si el PDF no se encuentra (404), pero la base de datos SÍ existe,
+                // mostramos la pantalla naranja con la información del equipo.
                 console.warn("El documento existe en BD, pero el PDF no se encontró en Storage.");
-                setStatus('not_found');
+                setStatus('found_no_pdf');
                 setLoading(false);
               }
             } catch (fetchError) {
@@ -92,7 +92,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     );
   }
 
-  // --- PANTALLA DE ERROR: CERTIFICADO NO ENCONTRADO ---
+  // --- PANTALLA DE ERROR: CERTIFICADO NO ENCONTRADO (Base de datos vacía) ---
   if (status === 'not_found') {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
@@ -111,7 +111,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     );
   }
 
-  // --- PANTALLA NARANJA: EN PROCESO DE VALIDACIÓN ---
+  // --- PANTALLA NARANJA: EN PROCESO DE VALIDACIÓN (Con información del equipo) ---
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
