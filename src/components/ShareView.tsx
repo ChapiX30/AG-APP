@@ -162,4 +162,4 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
   );
 };
 
-export default ShareView;s
+export default ShareView;
