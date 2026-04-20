@@ -10,7 +10,8 @@ import {
   ArrowLeft, SortDesc, SortAsc, X, Calendar, 
   Trophy, Activity, ChevronLeft, ChevronRight,
   ShieldCheck, Briefcase, SearchX, Filter,
-  CalendarRange, CalendarDays, BarChart3
+  CalendarRange, CalendarDays, BarChart3,
+  PlayCircle, StopCircle
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import clsx from "clsx";
@@ -48,7 +49,7 @@ interface HojaTrabajo { id: string; nombre: string; fecha: string; magnitud: str
 interface DriveMetadata { name: string; created: string | null; completedByName?: string; reviewedByName?: string; magnitud?: string; }
 
 type SortMode = "order" | "asc" | "desc";
-type TabMode = "metrologos" | "calidad" | "magnitudes"; // AGBOT: Nueva pestaña
+type TabMode = "metrologos" | "calidad" | "magnitudes";
 type ViewMode = "month" | "year";
 
 // --- AGBOT HELPERS & LOGIC ---
@@ -128,6 +129,11 @@ const CalibrationStatsScreen: React.FC = () => {
   const today = new Date();
   const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
 
+  // --- ESTADOS PARA LA PRESENTACIÓN ---
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [presentationStep, setPresentationStep] = useState(0);
+  const SLIDE_DURATION = 10000; // 5 segundos por pantalla
+
   // --- 1. CARGA DE DATOS ---
   useEffect(() => {
     setLoading(true);
@@ -159,8 +165,10 @@ const CalibrationStatsScreen: React.FC = () => {
     return () => { unsubUsuarios(); unsubHojas(); unsubDrive(); };
   }, []);
 
-  // Reset selección al cambiar tab
-  useEffect(() => { setSelectedUserName(""); }, [activeTab]);
+  // Reset selección al cambiar tab manualmente (si no estamos en presentación)
+  useEffect(() => { 
+      if (!isPlaying) setSelectedUserName(""); 
+  }, [activeTab, isPlaying]);
 
   // --- 2. CÁLCULOS PRINCIPALES (AGBOT LOGIC) ---
   const { 
@@ -173,8 +181,8 @@ const CalibrationStatsScreen: React.FC = () => {
     mesesHistory, 
     qualityHistory, 
     individualStats,
-    magnitudesGlobalData, // Nuevos datos
-    topMagnitud          // Nueva métrica
+    magnitudesGlobalData,
+    topMagnitud
   } = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
@@ -253,7 +261,7 @@ const CalibrationStatsScreen: React.FC = () => {
         .map(([name, val]) => ({ name, ...val }))
         .filter(item => item.realizado > 0 || item.revisado > 0); 
 
-    // --- TAB 3: MAGNITUDES (NUEVA LÓGICA) ---
+    // --- TAB 3: MAGNITUDES ---
     const magGlobalMap: Record<string, number> = {};
     hojasFiltradas.forEach(h => {
         if (h.magnitud) {
@@ -267,7 +275,7 @@ const CalibrationStatsScreen: React.FC = () => {
             total,
             color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
         }))
-        .sort((a, b) => b.total - a.total); // Ordenamos de mayor a menor siempre
+        .sort((a, b) => b.total - a.total); 
 
     const bestMagnitud = magnitudesGlobalStats.length > 0 ? magnitudesGlobalStats[0] : null;
 
@@ -343,8 +351,8 @@ const CalibrationStatsScreen: React.FC = () => {
         uniqueUserList: dropdownList,
         metrologosData: statsMet,
         qualityData: statsQual,
-        magnitudesGlobalData: magnitudesGlobalStats, // Nuevo
-        topMagnitud: bestMagnitud,                   // Nuevo
+        magnitudesGlobalData: magnitudesGlobalStats,
+        topMagnitud: bestMagnitud,
         top3: ranking,
         totalFiltered: totalDisplay,
         magnitudesPie: pies,
@@ -354,6 +362,36 @@ const CalibrationStatsScreen: React.FC = () => {
     };
 
   }, [hojasDeTrabajo, driveFiles, currentDate, sortMode, selectedUserName, activeTab, usuarios, viewMode]);
+
+  // --- LÓGICA DE LA PRESENTACIÓN (AGBOT) ---
+  const presentationUsers = useMemo(() => metrologosData.map(m => m.name), [metrologosData]);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setTimeout(() => {
+        setPresentationStep((prev) => {
+          const nextStep = prev + 1;
+          // +1 para incluir la pantalla final de magnitudes en el ciclo
+          return nextStep > presentationUsers.length ? 0 : nextStep;
+        });
+      }, SLIDE_DURATION);
+    }
+    return () => clearTimeout(timer);
+  }, [isPlaying, presentationStep, presentationUsers.length]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    if (presentationStep < presentationUsers.length) {
+      setActiveTab('metrologos');
+      setSelectedUserName(presentationUsers[presentationStep]);
+    } else if (presentationStep === presentationUsers.length) {
+      setActiveTab('magnitudes');
+      setSelectedUserName("");
+    }
+  }, [presentationStep, isPlaying, presentationUsers]);
+
 
   // --- HANDLERS ---
   const changeDate = (offset: number) => {
@@ -403,11 +441,28 @@ const CalibrationStatsScreen: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
         <div className="flex justify-center">
-            {/* AGBOT: Se añadió la pestaña de Magnitudes */}
+            {/* TABS CON BOTÓN DE PRESENTACIÓN INTEGRADO */}
             <div className="bg-slate-800/80 p-1.5 rounded-xl border border-white/10 flex flex-wrap justify-center gap-2">
-                <button onClick={() => setActiveTab('metrologos')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'metrologos' ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><Briefcase size={16} /> Metrología</button>
-                <button onClick={() => setActiveTab('calidad')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'calidad' ? "bg-emerald-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><ShieldCheck size={16} /> Calidad</button>
-                <button onClick={() => setActiveTab('magnitudes')} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'magnitudes' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><BarChart3 size={16} /> Magnitudes</button>
+                <button onClick={() => { setActiveTab('metrologos'); setIsPlaying(false); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'metrologos' ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><Briefcase size={16} /> Metrología</button>
+                <button onClick={() => { setActiveTab('calidad'); setIsPlaying(false); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'calidad' ? "bg-emerald-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><ShieldCheck size={16} /> Calidad</button>
+                <button onClick={() => { setActiveTab('magnitudes'); setIsPlaying(false); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'magnitudes' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><BarChart3 size={16} /> Magnitudes</button>
+                
+                <div className="w-px bg-white/10 mx-2 hidden sm:block" />
+                
+                <button 
+                    onClick={() => {
+                        if (!isPlaying) setPresentationStep(0);
+                        setIsPlaying(!isPlaying);
+                    }} 
+                    className={clsx(
+                        "px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border", 
+                        isPlaying 
+                            ? "bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)] hover:bg-red-500/30" 
+                            : "bg-indigo-500/20 text-indigo-400 border-indigo-500/50 hover:bg-indigo-500/30"
+                    )}
+                >
+                    {isPlaying ? <><StopCircle size={16} /> Detener</> : <><PlayCircle size={16} /> Presentación</>}
+                </button>
             </div>
         </div>
 
@@ -519,7 +574,7 @@ const CalibrationStatsScreen: React.FC = () => {
             </motion.div>
         )}
 
-        {/* --- NUEVA PESTAÑA: MAGNITUDES --- */}
+        {/* --- PESTAÑA: MAGNITUDES --- */}
         {activeTab === 'magnitudes' && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
