@@ -33,22 +33,25 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
               fecha: docData.fecha || 'N/A'
           });
 
-          // NUEVO: Verificamos si el link pertenece a una hoja de trabajo
+          // Verificamos si el link pertenece a una hoja de trabajo (carpeta worksheets)
           const isWorksheet = docData.pdfURL && (docData.pdfURL.includes('worksheets%2F') || docData.pdfURL.includes('/worksheets/'));
 
           if (docData.pdfURL && !isWorksheet) {
-            // Es el certificado final, hacemos el "ping" para ver si existe
+            // Es el certificado final, hacemos el "ping" para ver si existe el archivo físico
             try {
               const response = await fetch(docData.pdfURL, { method: 'HEAD' });
               
               if (response.ok) {
+                // El archivo existe y está sano, redirigimos
                 window.location.replace(docData.pdfURL);
               } else {
+                // El link existe en la base de datos, pero el archivo fue borrado o movido (404)
                 console.warn("El documento existe en BD, pero el PDF no se encontró en Storage.");
                 setStatus('not_found');
                 setLoading(false);
               }
             } catch (fetchError) {
+              // Si falla por reglas de seguridad del navegador (CORS), redirigimos como último recurso
               window.location.replace(docData.pdfURL);
             }
           } else {
@@ -58,7 +61,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
             setLoading(false);
           }
         } else {
-          // No existe la hoja de trabajo
+          // No existe la hoja de trabajo en la base de datos
           setStatus('not_found');
           setLoading(false);
         }
@@ -72,20 +75,30 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     buscarCertificado();
   }, [certificado]);
 
+  // --- PANTALLA DE CARGANDO (Con Logo) ---
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <h2 className="text-xl font-bold text-slate-800">Buscando Certificado...</h2>
-        <p className="text-slate-500 mt-2">Folio: {certificado}</p>
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
+            {/* AGREGAMOS EL LOGO AQUÍ */}
+            <img src="/logo.png" alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
+            
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4 mx-auto" />
+            <h2 className="text-xl font-bold text-slate-800">Buscando Certificado...</h2>
+            <p className="text-slate-500 mt-2">Folio: {certificado}</p>
+        </div>
       </div>
     );
   }
 
+  // --- PANTALLA DE ERROR: CERTIFICADO NO ENCONTRADO (Con Logo) ---
   if (status === 'not_found') {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
+          {/* AGREGAMOS EL LOGO AQUÍ */}
+          <img src="/logo.png" alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
+
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <AlertOctagon className="w-10 h-10 text-red-600" />
           </div>
@@ -98,13 +111,17 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     );
   }
 
+  // --- PANTALLA NARANJA: EN PROCESO DE VALIDACIÓN (Con Logo e Información del Equipo) ---
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
         
+        {/* AGREGAMOS EL LOGO AQUÍ */}
+        <img src="/logo.png" alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
+
         <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6 relative">
           <FileText className="w-10 h-10 text-orange-600" />
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center">
+          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center border border-orange-200 shadow">
              <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
           </div>
         </div>
@@ -114,6 +131,7 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
           El servicio para este equipo ya fue realizado, pero el certificado final aún está en revisión por el laboratorio.
         </p>
         
+        {/* INFORMACIÓN DEL EQUIPO RESCATADA DE LA BD */}
         {equipoInfo && (
             <div className="bg-slate-50 rounded-xl p-4 text-left border border-slate-200 mb-6">
                 <div className="grid grid-cols-2 gap-y-3 text-sm">
@@ -137,8 +155,8 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
             <span className="font-medium">El equipo está calibrado y funcional.</span>
         </div>
         
-        <p className="text-xs text-slate-400 mt-6">
-          Vuelve a escanear el código QR más tarde para descargar el PDF.
+        <p className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-100">
+          Vuelve a escanear el código QR más tarde para descargar el PDF firmado.
         </p>
       </div>
     </div>
