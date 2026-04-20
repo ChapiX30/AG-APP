@@ -11,7 +11,7 @@ import {
   Trophy, Activity, ChevronLeft, ChevronRight,
   ShieldCheck, Briefcase, SearchX, Filter,
   CalendarRange, CalendarDays, BarChart3,
-  PlayCircle, StopCircle
+  PlayCircle, StopCircle, Monitor
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import clsx from "clsx";
@@ -52,11 +52,8 @@ type SortMode = "order" | "asc" | "desc";
 type TabMode = "metrologos" | "calidad" | "magnitudes";
 type ViewMode = "month" | "year";
 
-// --- AGBOT HELPERS & LOGIC ---
-const cleanName = (name?: string) => {
-    if (!name || name === "null" || name === "undefined") return "";
-    return name.trim();
-};
+// --- HELPERS ---
+const cleanName = (name?: string) => name && name !== "null" && name !== "undefined" ? name.trim() : "";
 
 const parseDateRobust = (dateStr: string | null): Date | null => {
     if (!dateStr) return null;
@@ -75,7 +72,6 @@ const parseDateRobust = (dateStr: string | null): Date | null => {
     return null;
 };
 
-// AGBOT: Lógica estricta de roles
 const isQualityRole = (user: Usuario) => {
     const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
     return text.includes('calidad') || text.includes('quality') || text.includes('aseguramiento');
@@ -117,7 +113,6 @@ const CalibrationStatsScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabMode>('metrologos');
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [sortMode, setSortMode] = useState<SortMode>("order");
-  
   const [selectedUserName, setSelectedUserName] = useState<string>("");
   
   // Holograma
@@ -132,7 +127,7 @@ const CalibrationStatsScreen: React.FC = () => {
   // --- ESTADOS PARA LA PRESENTACIÓN ---
   const [isPlaying, setIsPlaying] = useState(false);
   const [presentationStep, setPresentationStep] = useState(0);
-  const SLIDE_DURATION = 10000; // 5 segundos por pantalla
+  const SLIDE_DURATION = 10000; // 10 segundos por pantalla
 
   // --- 1. CARGA DE DATOS ---
   useEffect(() => {
@@ -165,12 +160,12 @@ const CalibrationStatsScreen: React.FC = () => {
     return () => { unsubUsuarios(); unsubHojas(); unsubDrive(); };
   }, []);
 
-  // Reset selección al cambiar tab manualmente (si no estamos en presentación)
+  // Reset selección al cambiar tab manualmente
   useEffect(() => { 
       if (!isPlaying) setSelectedUserName(""); 
   }, [activeTab, isPlaying]);
 
-  // --- 2. CÁLCULOS PRINCIPALES (AGBOT LOGIC) ---
+  // --- 2. CÁLCULOS PRINCIPALES ---
   const { 
     uniqueUserList, 
     metrologosData, 
@@ -180,19 +175,14 @@ const CalibrationStatsScreen: React.FC = () => {
     magnitudesPie, 
     mesesHistory, 
     qualityHistory, 
-    individualStats,
     magnitudesGlobalData,
     topMagnitud
   } = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
-    const validMetrologosNames = new Set(
-        usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name))
-    );
-    const validQualityNames = new Set(
-        usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name))
-    );
+    const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name)));
+    const validQualityNames = new Set(usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name)));
 
     const isDateInRange = (dateStr: string | null) => {
         const d = parseDateRobust(dateStr);
@@ -202,14 +192,12 @@ const CalibrationStatsScreen: React.FC = () => {
         return true; 
     };
 
-    // --- FILTRADO DE DATOS CRUDOS ---
     const hojasFiltradas = hojasDeTrabajo.filter(h => isDateInRange(h.fecha));
     const driveFiltrados = driveFiles.filter(f => isDateInRange(f.created));
 
-    // --- TAB 1: METRÓLOGOS ---
+    // METRÓLOGOS
     const countsMet: Record<string, number> = {};
     let totalMetCount = 0;
-
     hojasFiltradas.forEach(h => { 
         const name = cleanName(h.nombre);
         if (name && validMetrologosNames.has(name)) {
@@ -219,133 +207,85 @@ const CalibrationStatsScreen: React.FC = () => {
     });
 
     let statsMet = METROLOGOS_ORDER_COLOR.map(m => ({
-        name: m.name, 
-        total: countsMet[cleanName(m.name)] || 0, 
-        color: m.color
+        name: m.name, total: countsMet[cleanName(m.name)] || 0, color: m.color
     })).filter(item => validMetrologosNames.has(cleanName(item.name)));
-
-    Object.keys(countsMet).forEach((name, i) => {
-        if (!statsMet.find(s => cleanName(s.name) === name)) {
-            statsMet.push({ name, total: countsMet[name], color: FALLBACK_COLORS[i % FALLBACK_COLORS.length] });
-        }
-    });
 
     if (sortMode === "asc") statsMet.sort((a, b) => a.total - b.total);
     else if (sortMode === "desc") statsMet.sort((a, b) => b.total - a.total);
     
     const ranking = [...statsMet].sort((a, b) => b.total - a.total).slice(0, 3);
 
-    // --- TAB 2: CALIDAD ---
+    // CALIDAD
     const qualityMap = new Map<string, { realizado: number, revisado: number }>();
-    
-    validQualityNames.forEach(name => {
-        qualityMap.set(name, { realizado: 0, revisado: 0 });
-    });
+    validQualityNames.forEach(name => qualityMap.set(name, { realizado: 0, revisado: 0 }));
 
     driveFiltrados.forEach(f => {
         const reviewer = cleanName(f.reviewedByName);
         const completer = cleanName(f.completedByName);
-
         if (reviewer && validQualityNames.has(reviewer)) {
-             const current = qualityMap.get(reviewer) || { realizado: 0, revisado: 0 };
+             const current = qualityMap.get(reviewer)!;
              qualityMap.set(reviewer, { ...current, revisado: current.revisado + 1 });
         }
-
         if (completer && validQualityNames.has(completer)) {
-             const current = qualityMap.get(completer) || { realizado: 0, revisado: 0 };
+             const current = qualityMap.get(completer)!;
              qualityMap.set(completer, { ...current, realizado: current.realizado + 1 });
         }
     });
+    const statsQual = Array.from(qualityMap.entries()).map(([name, val]) => ({ name, ...val })).filter(item => item.realizado > 0 || item.revisado > 0); 
 
-    const statsQual = Array.from(qualityMap.entries())
-        .map(([name, val]) => ({ name, ...val }))
-        .filter(item => item.realizado > 0 || item.revisado > 0); 
-
-    // --- TAB 3: MAGNITUDES ---
+    // MAGNITUDES
     const magGlobalMap: Record<string, number> = {};
-    hojasFiltradas.forEach(h => {
-        if (h.magnitud) {
-            magGlobalMap[h.magnitud] = (magGlobalMap[h.magnitud] || 0) + 1;
-        }
-    });
-    
-    const magnitudesGlobalStats = Object.entries(magGlobalMap)
-        .map(([name, total], i) => ({
-            name,
-            total,
-            color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
-        }))
-        .sort((a, b) => b.total - a.total); 
-
+    hojasFiltradas.forEach(h => { if (h.magnitud) magGlobalMap[h.magnitud] = (magGlobalMap[h.magnitud] || 0) + 1; });
+    const magnitudesGlobalStats = Object.entries(magGlobalMap).map(([name, total], i) => ({
+        name, total, color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
+    })).sort((a, b) => b.total - a.total); 
     const bestMagnitud = magnitudesGlobalStats.length > 0 ? magnitudesGlobalStats[0] : null;
 
-    // --- GENERACIÓN DE LISTA DROPDOWN ---
-    let dropdownList: string[] = [];
-    if (activeTab === 'metrologos') dropdownList = statsMet.map(s => s.name);
-    else if (activeTab === 'calidad') dropdownList = Array.from(validQualityNames);
+    let dropdownList: string[] = activeTab === 'metrologos' ? statsMet.map(s => s.name) : Array.from(validQualityNames);
     dropdownList.sort();
 
-    // --- ESTADÍSTICAS INDIVIDUALES ---
-    let hist = []; 
-    let qHist = []; 
-    let pies = [];
-    let single = { total: 0, best: "N/A" };
-
+    // INDIVIDUAL
+    let hist = [], qHist = [], pies = [];
     if (selectedUserName) {
         if (activeTab === 'metrologos') {
             const userHojas = hojasDeTrabajo.filter(h => {
                 const d = parseDateRobust(h.fecha);
                 return d && d.getFullYear() === year && cleanName(h.nombre) === selectedUserName;
             });
-            
             const historyMap: Record<string, number> = {};
             userHojas.forEach(h => {
                 const d = parseDateRobust(h.fecha)!;
                 const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                 historyMap[mKey] = (historyMap[mKey] || 0) + 1;
             });
-            
             hist = Object.entries(historyMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>({
                 mes: new Date(`${k}-02`).toLocaleString("es-MX", { month: "short" }), total: v
             }));
-
             const userHojasFiltered = hojasFiltradas.filter(h => cleanName(h.nombre) === selectedUserName);
             const magMap: Record<string, number> = {};
             userHojasFiltered.forEach(h => { if(h.magnitud) magMap[h.magnitud] = (magMap[h.magnitud] || 0) + 1; });
-            
             pies = Object.entries(magMap).map(([k,v], i) => ({
                 name: k, value: v, color: MAGNITUDES_COLORS[k] || FALLBACK_COLORS[i%5]
             })).sort((a,b)=>b.value - a.value);
-            
-            single.total = userHojasFiltered.length;
-            single.best = pies.length > 0 ? pies[0].name : "N/A";
-
         } else if (activeTab === 'calidad') {
              const userDriveYear = driveFiles.filter(f => {
                  const d = parseDateRobust(f.created);
-                 if (!d) return false;
-                 return d.getFullYear() === year && (cleanName(f.reviewedByName) === selectedUserName || cleanName(f.completedByName) === selectedUserName);
+                 return d && d.getFullYear() === year && (cleanName(f.reviewedByName) === selectedUserName || cleanName(f.completedByName) === selectedUserName);
              });
-             
              const qHistoryMap = new Map<string, { realizado: number, revisado: number }>();
              userDriveYear.forEach(f => {
                  const d = parseDateRobust(f.created)!; 
                  const sortKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; 
-                 
                  if (!qHistoryMap.has(sortKey)) qHistoryMap.set(sortKey, { realizado: 0, revisado: 0 });
                  const curr = qHistoryMap.get(sortKey)!;
-                 
                  if (cleanName(f.reviewedByName) === selectedUserName) curr.revisado++;
                  if (cleanName(f.completedByName) === selectedUserName) curr.realizado++;
              });
-             
              qHist = Array.from(qHistoryMap.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([key, val]) => ({
                     mes: new Date(`${key}-02`).toLocaleString("es-MX", { month: "short" }), ...val
              }));
         }
     }
-
-    const totalDisplay = activeTab === 'metrologos' ? totalMetCount : statsQual.reduce((acc, curr) => acc + curr.realizado + curr.revisado, 0);
 
     return {
         uniqueUserList: dropdownList,
@@ -354,27 +294,21 @@ const CalibrationStatsScreen: React.FC = () => {
         magnitudesGlobalData: magnitudesGlobalStats,
         topMagnitud: bestMagnitud,
         top3: ranking,
-        totalFiltered: totalDisplay,
+        totalFiltered: activeTab === 'metrologos' ? totalMetCount : statsQual.reduce((acc, curr) => acc + curr.realizado + curr.revisado, 0),
         magnitudesPie: pies,
         mesesHistory: hist,
-        qualityHistory: qHist,
-        individualStats: single
+        qualityHistory: qHist
     };
-
   }, [hojasDeTrabajo, driveFiles, currentDate, sortMode, selectedUserName, activeTab, usuarios, viewMode]);
 
-  // --- LÓGICA DE LA PRESENTACIÓN (AGBOT) ---
+  // --- LÓGICA DE LA PRESENTACIÓN ---
   const presentationUsers = useMemo(() => metrologosData.map(m => m.name), [metrologosData]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isPlaying) {
       timer = setTimeout(() => {
-        setPresentationStep((prev) => {
-          const nextStep = prev + 1;
-          // +1 para incluir la pantalla final de magnitudes en el ciclo
-          return nextStep > presentationUsers.length ? 0 : nextStep;
-        });
+        setPresentationStep((prev) => (prev + 1) > presentationUsers.length ? 0 : (prev + 1));
       }, SLIDE_DURATION);
     }
     return () => clearTimeout(timer);
@@ -382,16 +316,14 @@ const CalibrationStatsScreen: React.FC = () => {
 
   useEffect(() => {
     if (!isPlaying) return;
-
     if (presentationStep < presentationUsers.length) {
       setActiveTab('metrologos');
       setSelectedUserName(presentationUsers[presentationStep]);
-    } else if (presentationStep === presentationUsers.length) {
+    } else {
       setActiveTab('magnitudes');
       setSelectedUserName("");
     }
   }, [presentationStep, isPlaying, presentationUsers]);
-
 
   // --- HANDLERS ---
   const changeDate = (offset: number) => {
@@ -401,38 +333,32 @@ const CalibrationStatsScreen: React.FC = () => {
     setCurrentDate(newDate);
   };
 
-  const handlePieClick = (data: any, index: number, e: any) => {
-    setSelectedMagnitud({ ...data, position: { x: e.clientX, y: e.clientY } });
-    setHologramVisible(true);
-  };
-  
   const renderActiveShape = (props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
     return <g><Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 8} startAngle={startAngle} endAngle={endAngle} fill={fill} style={{ filter: `drop-shadow(0 0 10px ${fill})` }} /><Sector cx={cx} cy={cy} startAngle={startAngle} endAngle={endAngle} innerRadius={outerRadius + 10} outerRadius={outerRadius + 12} fill={fill} opacity={0.3} /></g>;
   };
 
-  const dateLabel = useMemo(() => {
-      if (viewMode === 'year') return `AÑO ${currentDate.getFullYear()}`;
-      return currentDate.toLocaleString("es-MX", { month: "long", year: "numeric" }).toUpperCase();
-  }, [currentDate, viewMode]);
+  const dateLabel = useMemo(() => viewMode === 'year' ? `AÑO ${currentDate.getFullYear()}` : currentDate.toLocaleString("es-MX", { month: "long", year: "numeric" }).toUpperCase(), [currentDate, viewMode]);
 
   return (
     <div className={`min-h-screen ${COLORS.background} text-white font-sans selection:bg-blue-500/30 pb-12`}>
       <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-6 py-4 flex flex-col md:flex-row justify-between items-center shadow-lg gap-4">
         <div className="flex items-center gap-4 w-full md:w-auto">
           <button onClick={() => navigateTo("mainmenu")} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ArrowLeft className="w-6 h-6 text-gray-300" /></button>
-          <h1 className="text-xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 hidden sm:block">SISTEMA DE CALIBRACIÓN</h1>
+          <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 hidden sm:block">SISTEMA DE CALIBRACIÓN</h1>
+              <button onClick={() => navigateTo("tvdashboard")} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400 hover:bg-indigo-500/20 transition-all text-xs font-bold" title="Abrir Modo TV"><Monitor size={14} /><span className="hidden lg:inline">MODO TV</span></button>
+          </div>
         </div>
         <div className="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-2xl border border-white/5">
              <div className="flex bg-slate-900 rounded-xl p-1">
-                <button onClick={() => setViewMode('month')} className={clsx("p-2 rounded-lg transition-all", viewMode === 'month' ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white")} title="Vista Mensual"><CalendarDays size={18}/></button>
-                <button onClick={() => setViewMode('year')} className={clsx("p-2 rounded-lg transition-all", viewMode === 'year' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:text-white")} title="Vista Anual"><CalendarRange size={18}/></button>
+                <button onClick={() => setViewMode('month')} className={clsx("p-2 rounded-lg transition-all", viewMode === 'month' ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white")}><CalendarDays size={18}/></button>
+                <button onClick={() => setViewMode('year')} className={clsx("p-2 rounded-lg transition-all", viewMode === 'year' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:text-white")}><CalendarRange size={18}/></button>
              </div>
              <div className="flex items-center">
                 <button onClick={() => changeDate(-1)} className="p-2 hover:bg-white/10 rounded-full transition"><ChevronLeft size={18}/></button>
                 <div className="px-4 font-mono font-bold text-sm min-w-[140px] flex justify-center gap-2 items-center">
-                    {viewMode === 'month' ? <Calendar size={14} className="text-blue-400"/> : <CalendarRange size={14} className="text-purple-400"/>} 
-                    {dateLabel}
+                    {viewMode === 'month' ? <Calendar size={14} className="text-blue-400"/> : <CalendarRange size={14} className="text-purple-400"/>} {dateLabel}
                 </div>
                 <button onClick={() => changeDate(1)} className="p-2 hover:bg-white/10 rounded-full transition"><ChevronRight size={18}/></button>
              </div>
@@ -441,26 +367,12 @@ const CalibrationStatsScreen: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
         <div className="flex justify-center">
-            {/* TABS CON BOTÓN DE PRESENTACIÓN INTEGRADO */}
             <div className="bg-slate-800/80 p-1.5 rounded-xl border border-white/10 flex flex-wrap justify-center gap-2">
                 <button onClick={() => { setActiveTab('metrologos'); setIsPlaying(false); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'metrologos' ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><Briefcase size={16} /> Metrología</button>
                 <button onClick={() => { setActiveTab('calidad'); setIsPlaying(false); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'calidad' ? "bg-emerald-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><ShieldCheck size={16} /> Calidad</button>
                 <button onClick={() => { setActiveTab('magnitudes'); setIsPlaying(false); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all", activeTab === 'magnitudes' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:text-white hover:bg-white/5")}><BarChart3 size={16} /> Magnitudes</button>
-                
                 <div className="w-px bg-white/10 mx-2 hidden sm:block" />
-                
-                <button 
-                    onClick={() => {
-                        if (!isPlaying) setPresentationStep(0);
-                        setIsPlaying(!isPlaying);
-                    }} 
-                    className={clsx(
-                        "px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border", 
-                        isPlaying 
-                            ? "bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)] hover:bg-red-500/30" 
-                            : "bg-indigo-500/20 text-indigo-400 border-indigo-500/50 hover:bg-indigo-500/30"
-                    )}
-                >
+                <button onClick={() => { if (!isPlaying) setPresentationStep(0); setIsPlaying(!isPlaying); }} className={clsx("px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border", isPlaying ? "bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)] hover:bg-red-500/30" : "bg-indigo-500/20 text-indigo-400 border-indigo-500/50 hover:bg-indigo-500/30")}>
                     {isPlaying ? <><StopCircle size={16} /> Detener</> : <><PlayCircle size={16} /> Presentación</>}
                 </button>
             </div>
@@ -472,38 +384,24 @@ const CalibrationStatsScreen: React.FC = () => {
                      <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-gray-400">Total {viewMode === 'year' ? 'Anual' : 'Mensual'}</p><h3 className="text-2xl font-bold text-white">{totalFiltered}</h3></div><div className="absolute right-3 top-3 p-3 bg-blue-500/20 rounded-xl text-blue-400"><Activity size={20}/></div></div>
                      <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-gray-400">Mejor Desempeño</p><h3 className="text-2xl font-bold text-white truncate pr-8">{top3[0]?.name || "-"}</h3></div><div className="absolute right-3 top-3 p-3 bg-yellow-500/20 rounded-xl text-yellow-400"><Trophy size={20}/></div></div>
                 </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     <div className="lg:col-span-4 space-y-6">
                         <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 backdrop-blur-md`}>
                             <label className="text-sm font-medium text-gray-400 mb-2 block flex items-center gap-2"><Filter size={14}/> Filtrar por Metrólogo</label>
                             <select value={selectedUserName} onChange={(e) => setSelectedUserName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none hover:bg-slate-750">
-                                <option value="">Vista General</option>
-                                {uniqueUserList.map(name => <option key={name} value={name}>{name}</option>)}
+                                <option value="">Vista General</option>{uniqueUserList.map(name => <option key={name} value={name}>{name}</option>)}
                             </select>
                         </div>
-                        <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 backdrop-blur-md`}>
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Trophy className="text-yellow-500" size={20}/> Top 3 ({viewMode === 'year' ? 'Año' : 'Mes'})</h3>
-                            <div className="space-y-4">{top3.map((m, i) => (<div key={m.name} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i===0?'bg-yellow-500/20 text-yellow-500':'bg-gray-700 text-gray-400'}`}>#{i+1}</div><span className="text-sm font-medium">{m.name}</span></div><span className="font-mono font-bold">{m.total}</span></div>))}</div>
-                        </div>
+                        <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 backdrop-blur-md`}><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Trophy className="text-yellow-500" size={20}/> Top 3</h3><div className="space-y-4">{top3.map((m, i) => (<div key={m.name} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i===0?'bg-yellow-500/20 text-yellow-500':'bg-gray-700 text-gray-400'}`}>#{i+1}</div><span className="text-sm font-medium">{m.name}</span></div><span className="font-mono font-bold">{m.total}</span></div>))}</div></div>
                     </div>
-
                     <div className="lg:col-span-8 space-y-6">
                         {selectedUserName ? (
                             <div className="grid grid-cols-1 gap-6">
-                                <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px]`}>
-                                    <h3 className="font-bold mb-4">Historial Anual: {selectedUserName}</h3>
-                                    <ResponsiveContainer width="100%" height="100%"><BarChart data={mesesHistory}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="mes" stroke="#94a3b8" fontSize={12} axisLine={false} tickLine={false}/><YAxis stroke="#94a3b8" fontSize={12} axisLine={false} tickLine={false}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" fill={METROLOGOS_ORDER_COLOR.find(m=>m.name===selectedUserName)?.color || COLORS.accent} radius={[4,4,0,0]} /></BarChart></ResponsiveContainer>
-                                </div>
-                                {viewMode === 'month' && (
-                                    <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px] flex items-center`}><ResponsiveContainer width="50%" height="100%"><PieChart><Pie activeIndex={activeIndex} activeShape={renderActiveShape} data={magnitudesPie} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onMouseEnter={(_, index) => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(-1)} onClick={handlePieClick}>{magnitudesPie.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>}/></PieChart></ResponsiveContainer><div className="w-1/2 h-full overflow-y-auto"><h4 className="font-bold mb-2">Magnitudes</h4>{magnitudesPie.map(m=><div key={m.name} className="flex justify-between text-sm p-1 border-b border-white/5"><span>{m.name}</span><span>{m.value}</span></div>)}</div></div>
-                                )}
+                                <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px]`}><h3 className="font-bold mb-4">Historial: {selectedUserName}</h3><ResponsiveContainer width="100%" height="100%"><BarChart data={mesesHistory}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="mes" stroke="#94a3b8" fontSize={12}/><YAxis stroke="#94a3b8" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" fill={METROLOGOS_ORDER_COLOR.find(m=>m.name===selectedUserName)?.color || "#3b82f6"} radius={[4,4,0,0]} /></BarChart></ResponsiveContainer></div>
+                                {viewMode === 'month' && (<div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px] flex items-center`}><ResponsiveContainer width="50%" height="100%"><PieChart><Pie activeIndex={activeIndex} activeShape={renderActiveShape} data={magnitudesPie} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onMouseEnter={(_, index) => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(-1)} onClick={(e, i) => {setSelectedMagnitud({...e, position:{x:0, y:0}}); setHologramVisible(true);}}>{magnitudesPie.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>}/></PieChart></ResponsiveContainer><div className="w-1/2 h-full overflow-y-auto"><h4 className="font-bold mb-2">Magnitudes</h4>{magnitudesPie.map(m=><div key={m.name} className="flex justify-between text-sm p-1 border-b border-white/5"><span>{m.name}</span><span>{m.value}</span></div>)}</div></div>)}
                             </div>
                         ) : (
-                            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}>
-                                <div className="flex justify-between items-center mb-6"><h3 className="font-bold">Comparativa Global {viewMode === 'year' ? '(Anual)' : '(Mensual)'}</h3><div className="flex bg-slate-800 p-1 rounded-lg">{(['order','desc','asc'] as SortMode[]).map(m=><button key={m} onClick={()=>setSortMode(m)} className={`p-2 rounded ${sortMode===m?'bg-blue-600':'text-gray-400'}`}>{m==='order'?<SortDesc className="rotate-90" size={16}/>:m==='desc'?<SortDesc size={16}/>:<SortAsc size={16}/>}</button>)}</div></div>
-                                <div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={metrologosData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false} tick={{fill: '#9CA3AF'}} interval={0} /><YAxis stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" radius={[4,4,0,0]}>{metrologosData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar></BarChart></ResponsiveContainer></div>
-                            </div>
+                            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="flex justify-between items-center mb-6"><h3 className="font-bold">Comparativa Global</h3><div className="flex bg-slate-800 p-1 rounded-lg">{(['order','desc','asc'] as SortMode[]).map(m=><button key={m} onClick={()=>setSortMode(m)} className={`p-2 rounded ${sortMode===m?'bg-blue-600':'text-gray-400'}`}>{m==='order'?<SortDesc className="rotate-90" size={16}/>:m==='desc'?<SortDesc size={16}/>:<SortAsc size={16}/>}</button>)}</div></div><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={metrologosData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} interval={0} /><YAxis stroke="#9CA3AF" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" radius={[4,4,0,0]}>{metrologosData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar></BarChart></ResponsiveContainer></div></div>
                         )}
                     </div>
                 </div>
@@ -513,150 +411,28 @@ const CalibrationStatsScreen: React.FC = () => {
         {activeTab === 'calidad' && (
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-emerald-900/20 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-emerald-400">Validaciones {viewMode === 'year' ? 'Anuales' : 'Mensuales'}</p><h3 className="text-2xl font-bold text-white">{qualityData.reduce((a,b)=>a+b.revisado,0)}</h3></div><div className="absolute right-3 top-3 p-3 bg-emerald-500/20 rounded-xl text-emerald-400"><ShieldCheck size={20}/></div></div>
-                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-blue-900/20 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-blue-400">Realizados {viewMode === 'year' ? 'Anuales' : 'Mensuales'}</p><h3 className="text-2xl font-bold text-white">{qualityData.reduce((a,b)=>a+b.realizado,0)}</h3></div><div className="absolute right-3 top-3 p-3 bg-blue-500/20 rounded-xl text-blue-400"><Briefcase size={20}/></div></div>
+                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-emerald-900/20 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-emerald-400">Validaciones</p><h3 className="text-2xl font-bold text-white">{qualityData.reduce((a,b)=>a+b.revisado,0)}</h3></div><div className="absolute right-3 top-3 p-3 bg-emerald-500/20 rounded-xl text-emerald-400"><ShieldCheck size={20}/></div></div>
                  </div>
-
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    <div className="lg:col-span-4 space-y-6">
-                        <div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 backdrop-blur-md`}>
-                            <label className="text-sm font-medium text-emerald-400 mb-2 block flex items-center gap-2"><Filter size={14}/> Filtrar por Usuario</label>
-                            <select value={selectedUserName} onChange={(e) => setSelectedUserName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none hover:bg-slate-750 focus:border-emerald-500 transition-colors">
-                                <option value="">Vista General del Equipo</option>
-                                {uniqueUserList.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                        </div>
-                        {selectedUserName && (
-                            <div className="p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 backdrop-blur-md">
-                                <h4 className="text-emerald-100 font-bold mb-1">Resumen Anual</h4>
-                                <p className="text-xs text-emerald-400/60 mb-4">{selectedUserName}</p>
-                                <div className="space-y-3">
-                                    <div className="flex justify-between text-sm"><span className="text-gray-400">Total Validaciones</span> <span className="text-white font-mono">{qualityHistory.reduce((acc, curr) => acc + curr.revisado, 0)}</span></div>
-                                    <div className="flex justify-between text-sm"><span className="text-gray-400">Total Realizados</span> <span className="text-white font-mono">{qualityHistory.reduce((acc, curr) => acc + curr.realizado, 0)}</span></div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="lg:col-span-8">
-                        <div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 backdrop-blur-md min-h-[500px]`}>
-                            <div className="flex justify-between items-center mb-6">
-                                <div>
-                                    <h3 className="text-xl font-bold text-emerald-100 flex items-center gap-2">
-                                        <ShieldCheck className="text-emerald-400"/> {selectedUserName ? `Historial: ${selectedUserName}` : `Desempeño Global ${viewMode === 'year' ? '(Anual)' : '(Mensual)'}`}
-                                    </h3>
-                                    <p className="text-sm text-emerald-400/60">
-                                        {selectedUserName ? "Evolución mensual de validaciones y servicios" : `Datos consolidados ${viewMode === 'year' ? 'de todo el año' : 'del mes actual'}`}
-                                    </p>
-                                </div>
-                                <div className="flex gap-4 text-xs font-bold uppercase">
-                                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500 rounded-full"></div> Realizados</div>
-                                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div> Validados</div>
-                                </div>
-                            </div>
-                            
-                            {selectedUserName ? (
-                                qualityHistory.length > 0 ? (
-                                    <div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={qualityHistory} barGap={8}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey="mes" stroke="#E5E7EB" fontSize={12} tickLine={false} axisLine={false} tick={{fill: '#E5E7EB', fontWeight: 600}} /><YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} /><Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} /><Bar dataKey="realizado" name="Realizados" fill="#3b82f6" radius={[4, 4, 0, 0]} animationDuration={1000} /><Bar dataKey="revisado" name="Validados" fill="#10b981" radius={[4, 4, 0, 0]} animationDuration={1000} /></BarChart></ResponsiveContainer></div>
-                                ) : (
-                                    <div className="h-[300px] flex flex-col items-center justify-center text-gray-400 gap-2"><SearchX size={64} className="opacity-20 mb-2"/><p>Este usuario no tiene actividad registrada este año.</p></div>
-                                )
-                            ) : (
-                                qualityData.length > 0 ? (
-                                    <div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={qualityData} barGap={8}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey="name" stroke="#E5E7EB" fontSize={12} tickLine={false} axisLine={false} tick={{fill: '#E5E7EB', fontWeight: 600}} /><YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} /><Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} /><Bar dataKey="realizado" name="Realizados" fill="#3b82f6" radius={[4, 4, 0, 0]} animationDuration={1000} /><Bar dataKey="revisado" name="Validados" fill="#10b981" radius={[4, 4, 0, 0]} animationDuration={1000} /></BarChart></ResponsiveContainer></div>
-                                ) : (
-                                    <div className="h-[300px] flex flex-col items-center justify-center text-gray-400 gap-2"><SearchX size={64} className="opacity-20 mb-2"/><p className="font-medium text-lg">No se encontró actividad de calidad {viewMode === 'year' ? 'en todo el año' : 'este mes'}</p></div>
-                                )
-                            )}
-                        </div>
-                    </div>
+                    <div className="lg:col-span-4"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10`}><label className="text-sm text-emerald-400 mb-2 block">Filtrar por Usuario</label><select value={selectedUserName} onChange={(e) => setSelectedUserName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none">{uniqueUserList.map(name => <option key={name} value={name}>{name}</option>)}</select></div></div>
+                    <div className="lg:col-span-8"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 min-h-[500px]`}><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={selectedUserName ? qualityHistory : qualityData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey={selectedUserName ? "mes" : "name"} stroke="#E5E7EB" fontSize={12} /><YAxis stroke="#9CA3AF" fontSize={12} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="realizado" fill="#3b82f6" radius={[4, 4, 0, 0]} /><Bar dataKey="revisado" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div></div>
                  </div>
             </motion.div>
         )}
 
-        {/* --- PESTAÑA: MAGNITUDES --- */}
         {activeTab === 'magnitudes' && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-purple-900/20 backdrop-blur-md relative overflow-hidden`}>
-                         <div className="relative z-10">
-                             <p className="text-sm text-purple-400">Magnitud Más Calibrada ({viewMode === 'year' ? 'Año' : 'Mes'})</p>
-                             <h3 className="text-2xl font-bold text-white truncate">{topMagnitud?.name || "N/A"}</h3>
-                         </div>
-                         <div className="absolute right-3 top-3 p-3 bg-purple-500/20 rounded-xl text-purple-400"><Trophy size={20}/></div>
-                     </div>
-                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-blue-900/20 backdrop-blur-md relative overflow-hidden`}>
-                         <div className="relative z-10">
-                             <p className="text-sm text-blue-400">Total en esta Magnitud</p>
-                             <h3 className="text-2xl font-bold text-white">{topMagnitud?.total || 0}</h3>
-                         </div>
-                         <div className="absolute right-3 top-3 p-3 bg-blue-500/20 rounded-xl text-blue-400"><Activity size={20}/></div>
-                     </div>
+                     <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-purple-900/20 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-purple-400">Magnitud Top</p><h3 className="text-2xl font-bold text-white truncate">{topMagnitud?.name || "N/A"}</h3></div><div className="absolute right-3 top-3 p-3 bg-purple-500/20 rounded-xl text-purple-400"><Trophy size={20}/></div></div>
                  </div>
-
-                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}>
-                    <div className="flex justify-between items-center mb-6">
-                        <div>
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <BarChart3 className="text-purple-400"/> Distribución por Magnitudes {viewMode === 'year' ? '(Anual)' : '(Mensual)'}
-                            </h3>
-                            <p className="text-sm text-gray-400">
-                                Clasificación general de los servicios agrupados por disciplina.
-                            </p>
-                        </div>
-                    </div>
-                    
-                    {magnitudesGlobalData.length > 0 ? (
-                        <div className="h-[600px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart 
-                                    data={magnitudesGlobalData} 
-                                    layout="vertical" 
-                                    margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
-                                >
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false} />
-                                    <XAxis type="number" stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false} />
-                                    <YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} axisLine={false} tickLine={false} width={150} tick={{fill: '#E5E7EB', fontWeight: 500}} />
-                                    <Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} />
-                                    <Bar dataKey="total" name="Calibraciones" radius={[0, 4, 4, 0]} animationDuration={1000}>
-                                        {magnitudesGlobalData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    ) : (
-                        <div className="h-[400px] flex flex-col items-center justify-center text-gray-400 gap-2">
-                            <SearchX size={64} className="opacity-20 mb-2"/>
-                            <p className="font-medium text-lg">No se registraron magnitudes para este periodo.</p>
-                        </div>
-                    )}
-                 </div>
+                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="h-[600px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={magnitudesGlobalData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis type="number" stroke="#9CA3AF" fontSize={12}/><YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} width={150}/><Tooltip content={<CustomTooltip />} /><Bar dataKey="total" radius={[0, 4, 4, 0]}>{magnitudesGlobalData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></div>
             </motion.div>
         )}
       </main>
 
       {/* MODAL HOLOGRAMA */}
       {hologramVisible && selectedMagnitud && (
-        <AnimatePresence>
-            <motion.div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setHologramVisible(false)}>
-            <motion.div className="relative perspective-1000" initial={{ scale: 0.8, opacity: 0, rotateX: 20 }} animate={{ scale: 1, opacity: 1, rotateX: 0 }} exit={{ scale: 0.8, opacity: 0, rotateX: -20 }} onClick={(e) => e.stopPropagation()}>
-                <div className="relative bg-black/80 border border-white/10 rounded-3xl p-8 w-[400px] overflow-hidden" style={{ boxShadow: `0 0 50px ${selectedMagnitud.color}30, inset 0 0 20px ${selectedMagnitud.color}10` }}>
-                <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent h-full w-full animate-scan" style={{ animationDuration: '3s' }} />
-                <button onClick={() => setHologramVisible(false)} className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors"><X size={24} /></button>
-                <div className="flex flex-col items-center relative z-10">
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200, delay: 0.2 }} className="w-32 h-32 rounded-full border-4 border-double flex items-center justify-center mb-6 relative" style={{ borderColor: selectedMagnitud.color }}>
-                    <div className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ backgroundColor: selectedMagnitud.color }} /><span className="text-4xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">{selectedMagnitud.value || selectedMagnitud.total}</span>
-                    </motion.div>
-                    <h2 className="text-2xl font-bold text-center mb-2" style={{ color: selectedMagnitud.color, textShadow: `0 0 20px ${selectedMagnitud.color}` }}>{selectedMagnitud.name}</h2>
-                    <div className="bg-white/5 px-4 py-1 rounded-full border border-white/10 text-xs text-gray-300 tracking-widest uppercase">Magnitud Analizada</div>
-                </div>
-                </div>
-            </motion.div>
-            </motion.div>
-        </AnimatePresence>
+        <AnimatePresence><motion.div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setHologramVisible(false)}><motion.div className="relative bg-black/80 border border-white/10 rounded-3xl p-8 w-[400px]" initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }} onClick={(e) => e.stopPropagation()} style={{ boxShadow: `0 0 50px ${selectedMagnitud.color}30` }}><button onClick={() => setHologramVisible(false)} className="absolute top-4 right-4 text-white/50"><X size={24} /></button><div className="flex flex-col items-center"><div className="w-32 h-32 rounded-full border-4 flex items-center justify-center mb-6" style={{ borderColor: selectedMagnitud.color }}><span className="text-4xl font-black text-white">{selectedMagnitud.value || selectedMagnitud.total}</span></div><h2 className="text-2xl font-bold" style={{ color: selectedMagnitud.color }}>{selectedMagnitud.name}</h2></div></motion.div></motion.div></AnimatePresence>
       )}
     </div>
   );

@@ -31,6 +31,9 @@ const CalendarScreen = lazy(() => import('./CalendarScreen'));
 const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
 const EntradaSalidaScreen = lazy(() => import('./EntradaSalidaScreen').then(module => ({ default: module.EntradaSalidaScreen })));
 
+// --- NUEVA PANTALLA MODO TV ---
+const TVDashboardScreen = lazy(() => import('./TVDashboardScreen'));
+
 // --- FORMATOS Y PERMISOS DE TRABAJO ---
 const FormatosScreen = lazy(() => import('./FormatosScreen').then(module => ({ default: module.FormatosScreen })));
 const PermisosTrabajoScreen = lazy(() => import('./PermisosTrabajoScreen').then(module => ({ default: module.PermisosTrabajoScreen })));
@@ -136,6 +139,7 @@ const renderScreen = (screen: string, user: any) => {
     case 'calibration-stats':
       const role = (user?.puesto || user?.position || user?.role || "").trim().toLowerCase();
       return role === "administrativo" ? <CalibrationStatsScreen /> : <MainMenu />;
+    case 'tvdashboard': return <TVDashboardScreen />; // <-- AQUÍ SE AGREGÓ EL MODO TV
     case 'programa-calibracion': return <ProgramaCalibracionScreen />;
     case 'control-prestamos': return <ControlPrestamosScreen />;
     case 'friday-servicios': return <FridayServiciosScreen />;
