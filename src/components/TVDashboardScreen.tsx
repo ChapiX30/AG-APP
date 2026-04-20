@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  ArrowLeft, Activity, Clock, BarChart3, UserCircle, Briefcase, Building2, CheckCircle, MonitorPlay
+  ArrowLeft, Activity, Clock, BarChart3, UserCircle, Briefcase, CheckCircle, MonitorPlay
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import clsx from "clsx";
@@ -35,7 +35,7 @@ const MAGNITUDES_COLORS: Record<string, string> = {
   "Vibracion Trazable": "#49ae9a", "Vacio": "#bebebe",
 };
 
-const SLIDE_DURATION = 12000; // 12 segundos por pantalla
+const SLIDE_DURATION = 12000;
 
 // --- HELPERS ---
 const cleanName = (name?: string) => name && name !== "null" && name !== "undefined" ? name.trim() : "";
@@ -178,32 +178,26 @@ const TVDashboardScreen: React.FC = () => {
     return () => clearInterval(timer);
   }, [loading, presentationSequence.length]);
 
-  // --- SCROLL VERTICAL AUTOMÁTICO DE LA TABLA (CORREGIDO) ---
+  // --- SCROLL VERTICAL AUTOMÁTICO ---
   useEffect(() => {
     let direction = 1;
-    
-    // El intervalo revisa continuamente el scroll sin importar si cambia el slide
     const scrollInterval = setInterval(() => {
         const el = scrollRef.current;
         if (!el) return;
-        
-        // Si el contenido cabe en la caja, no hace falta scrollear
         if (el.scrollHeight <= el.clientHeight) return;
 
         el.scrollTop += direction;
         
-        // Cambia de dirección si topa abajo o arriba
         if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) {
-            direction = -1; // Sube
+            direction = -1; 
         } else if (el.scrollTop <= 0) {
-            direction = 1; // Baja
+            direction = 1; 
         }
-    }, 30); // 30ms asegura fluidez sin sobrecargar
+    }, 30);
 
     return () => clearInterval(scrollInterval);
   }, []);
 
-  // Resetear el scroll a 0 cuando cambie la diapositiva
   useEffect(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [presentationStep]);
@@ -215,28 +209,32 @@ const TVDashboardScreen: React.FC = () => {
   return (
     <div className={`h-screen ${COLORS.background} text-white font-sans overflow-hidden flex flex-col`}>
       
-      {/* HEADER TOP */}
-      <header className="bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-6 py-4 flex justify-between items-center shadow-lg z-40 shrink-0 h-[80px]">
-        <div className="flex items-center gap-4">
+      {/* HEADER TOP RESPONSIVO */}
+      <header className="bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-4 lg:px-6 py-4 flex flex-col md:flex-row justify-between items-center shadow-lg z-40 shrink-0 gap-4 h-auto md:h-[80px]">
+        <div className="flex items-center gap-4 w-full md:w-auto">
           <button onClick={() => navigateTo("mainmenu")} className="p-2 rounded-full hover:bg-white/10 transition-colors group">
               <ArrowLeft className="w-6 h-6 text-gray-400 group-hover:text-white" />
           </button>
           <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
                   <MonitorPlay className="text-blue-500" /> DASHBOARD LIVE
               </h1>
-              <p className="text-xs text-gray-400 uppercase tracking-widest">{currentDate.toLocaleString("es-MX", { month: "long", year: "numeric" })}</p>
+              <p className="text-[10px] md:text-xs text-gray-400 uppercase tracking-widest">{currentDate.toLocaleString("es-MX", { month: "long", year: "numeric" })}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 bg-slate-800/50 p-2 rounded-2xl border border-white/10 shadow-inner">
-            <div className="flex items-center gap-2 text-sm font-bold text-gray-300 mr-2 px-2"><Clock className="w-4 h-4 text-orange-400" /> Resumen Lab:</div>
+        
+        {/* WIDGET RESUMEN: Permite envolverse (wrap) en celulares */}
+        <div className="flex items-center gap-2 lg:gap-3 bg-slate-800/50 p-2 rounded-2xl border border-white/10 shadow-inner flex-wrap justify-center w-full md:w-auto">
+            <div className="flex items-center gap-2 text-xs lg:text-sm font-bold text-gray-300 px-1 lg:px-2">
+                <Clock className="w-4 h-4 text-orange-400" /> <span className="hidden sm:inline">Resumen Lab:</span>
+            </div>
             {Object.entries(pendientesLaboratorio).map(([dep, count]) => {
                 if (count === 0 && dep === "Sin Asignar") return null;
                 return (
-                    <div key={dep} className="flex items-center gap-2 bg-slate-900 border border-white/5 px-3 py-1.5 rounded-xl shadow-sm">
+                    <div key={dep} className="flex items-center gap-1.5 lg:gap-2 bg-slate-900 border border-white/5 px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-xl shadow-sm">
                         <div className={clsx("w-2 h-2 rounded-full", count > 0 ? "bg-orange-500 animate-pulse" : "bg-emerald-500")} />
-                        <span className="text-xs font-semibold text-gray-400">{dep}</span>
-                        <span className={clsx("text-base font-black", count > 0 ? "text-orange-400" : "text-emerald-400")}>{count}</span>
+                        <span className="text-[10px] lg:text-xs font-semibold text-gray-400">{dep.substring(0,3)}</span>
+                        <span className={clsx("text-sm lg:text-base font-black", count > 0 ? "text-orange-400" : "text-emerald-400")}>{count}</span>
                     </div>
                 );
             })}
@@ -249,87 +247,82 @@ const TVDashboardScreen: React.FC = () => {
 
          <AnimatePresence mode="wait">
 
-            {/* ===== SLIDE TIPO 1: DEPARTAMENTOS MONDAY.COM (50/50) ===== */}
+            {/* ===== SLIDE TIPO 1: DEPARTAMENTOS MONDAY.COM ===== */}
             {currentSlide.type === 'department' && (
-                <motion.div key={`dept-${currentSlide.id}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.5 }} className="w-full h-full flex gap-8 p-8">
+                <motion.div key={`dept-${currentSlide.id}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.5 }} 
+                            className="w-full h-full flex flex-col lg:flex-row gap-4 lg:gap-8 p-4 lg:p-8 overflow-y-auto lg:overflow-hidden">
                     
                     {/* IZQUIERDA: GRÁFICO TIPO MONDAY */}
-                    <div className="w-[45%] flex flex-col h-full bg-slate-800/40 rounded-3xl border border-white/5 p-6 shadow-xl">
-                        <h2 className="text-2xl font-bold text-white mb-2 flex items-center gap-3">
-                            <BarChart3 className="text-orange-500"/> Equipos por Departamento
+                    <div className="w-full lg:w-[45%] flex flex-col h-[350px] lg:h-full bg-slate-800/40 rounded-3xl border border-white/5 p-4 lg:p-6 shadow-xl shrink-0">
+                        <h2 className="text-lg lg:text-2xl font-bold text-white mb-2 flex items-center gap-2 lg:gap-3">
+                            <BarChart3 className="text-orange-500 w-5 h-5 lg:w-6 lg:h-6"/> Equipos por Departamento
                         </h2>
-                        <p className="text-sm text-gray-400 mb-8">Mostrando estado actual de la carga de trabajo en laboratorio.</p>
+                        <p className="text-xs lg:text-sm text-gray-400 mb-4 lg:mb-8">Estado actual de carga de trabajo.</p>
                         
                         <div className="flex-1 min-h-0 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={activeDeptData} margin={{ top: 30, right: 10, left: -20, bottom: 20 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                                    <XAxis dataKey="name" stroke="#9CA3AF" fontSize={14} axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontWeight: 600}} />
+                                    <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontWeight: 600}} />
                                     <YAxis stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false} />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} />
                                     <Bar dataKey="total" radius={[8, 8, 0, 0]} maxBarSize={100}>
                                         {activeDeptData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.name === currentSlide.id ? "#f97316" : "#334155"} className="transition-all duration-500" />
                                         ))}
-                                        <LabelList dataKey="total" position="top" fill="#ffffff" fontSize={18} fontWeight="bold" />
+                                        <LabelList dataKey="total" position="top" fill="#ffffff" fontSize={16} fontWeight="bold" />
                                     </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
-                        <div className="flex justify-center mt-4 items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.8)]"></div>
-                            <span className="text-sm font-bold text-gray-300">Equipos en Laboratorio</span>
-                        </div>
                     </div>
 
-                    {/* DERECHA: TABLA DE EQUIPOS DEL DEPARTAMENTO ACTIVO */}
-                    <div className="w-[55%] flex flex-col h-full bg-slate-800/40 rounded-3xl border border-white/5 shadow-xl overflow-hidden min-h-0">
-                        <div className="bg-slate-800/80 px-6 py-4 border-b border-white/10 flex items-center justify-between shadow-sm shrink-0">
-                            <h3 className="text-lg font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
+                    {/* DERECHA: TABLA DE EQUIPOS */}
+                    <div className="w-full lg:w-[55%] flex flex-col h-[400px] lg:h-full bg-slate-800/40 rounded-3xl border border-white/5 shadow-xl overflow-hidden shrink-0">
+                        <div className="bg-slate-800/80 px-4 lg:px-6 py-3 lg:py-4 border-b border-white/10 flex items-center justify-between shadow-sm shrink-0">
+                            <h3 className="text-base lg:text-lg font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
                                 <Activity size={18} /> Mostrando: {currentSlide.id}
                             </h3>
-                            <span className="bg-white/10 text-white px-3 py-1 rounded-full text-xs font-bold border border-white/10">
+                            <span className="bg-white/10 text-white px-2 lg:px-3 py-1 rounded-full text-[10px] lg:text-xs font-bold border border-white/10">
                                 {flatPendientes.filter(eq => eq.dep === currentSlide.id).length} Equipos
                             </span>
                         </div>
                         
-                        {/* Cabecera de Tabla */}
-                        <div className="flex text-xs text-gray-400 uppercase font-black tracking-widest bg-slate-900/50 px-6 py-3 border-b border-white/5 shrink-0">
+                        <div className="flex text-[10px] lg:text-xs text-gray-400 uppercase font-black tracking-widest bg-slate-900/50 px-4 lg:px-6 py-2.5 lg:py-3 border-b border-white/5 shrink-0">
                             <div className="w-[30%]">Cliente</div>
-                            <div className="w-[30%]">Equipo / Folio</div>
+                            <div className="w-[35%] lg:w-[30%]">Equipo / Folio</div>
                             <div className="w-[20%] text-center">Cronograma</div>
-                            <div className="w-[20%] text-right">Asignado</div>
+                            <div className="w-[15%] lg:w-[20%] text-right">Técnico</div>
                         </div>
 
-                        {/* Cuerpo Auto-Scrolleable (AQUÍ ESTÁ LA MAGIA) */}
                         <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar p-2">
                             {flatPendientes.filter(eq => eq.dep === currentSlide.id).map((eq, idx) => (
-                                <div key={eq.docId || idx} className="flex items-center px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors group">
+                                <div key={eq.docId || idx} className="flex items-center px-2 lg:px-4 py-2.5 lg:py-3 border-b border-white/5 hover:bg-white/5 transition-colors group">
                                     <div className="w-[30%] pr-2">
-                                        <div className="text-sm font-bold text-blue-300 truncate" title={eq.cliente}>{eq.cliente || "Sin Cliente"}</div>
+                                        <div className="text-xs lg:text-sm font-bold text-blue-300 truncate" title={eq.cliente}>{eq.cliente || "Sin Cliente"}</div>
                                     </div>
-                                    <div className="w-[30%] pr-2 flex flex-col justify-center">
-                                        <div className="text-[13px] font-bold text-gray-200 truncate" title={eq.equipo}>{eq.equipo || "Sin Equipo"}</div>
-                                        <div className="text-[10px] text-gray-500 font-mono tracking-widest uppercase mt-0.5">{eq.folio || "S/F"}</div>
+                                    <div className="w-[35%] lg:w-[30%] pr-2 flex flex-col justify-center">
+                                        <div className="text-[11px] lg:text-[13px] font-bold text-gray-200 truncate" title={eq.equipo}>{eq.equipo || "Sin Equipo"}</div>
+                                        <div className="text-[9px] lg:text-[10px] text-gray-500 font-mono tracking-widest uppercase mt-0.5">{eq.folio || "S/F"}</div>
                                     </div>
                                     <div className="w-[20%] flex justify-center">
-                                        <div className={clsx("text-xs px-2.5 py-1 rounded shadow-sm bg-black/40 border border-white/5 truncate", eq.statusColor)}>
+                                        <div className={clsx("text-[10px] lg:text-xs px-1.5 lg:px-2.5 py-1 rounded shadow-sm bg-black/40 border border-white/5 truncate", eq.statusColor)}>
                                             {eq.daysLabel}
                                         </div>
                                     </div>
-                                    <div className="w-[20%] flex items-center justify-end gap-2">
-                                        <UserCircle size={16} className={eq.nombre ? "text-indigo-400" : "text-gray-600"} />
-                                        <span className="text-xs font-medium text-gray-300 truncate" title={eq.nombre || eq.assignedTo}>
-                                            {eq.nombre || eq.assignedTo ? (eq.nombre || eq.assignedTo).split(' ')[0] : "S/A"}
+                                    <div className="w-[15%] lg:w-[20%] flex items-center justify-end gap-1 lg:gap-2">
+                                        <UserCircle size={14} className={clsx("hidden sm:block", eq.nombre ? "text-indigo-400" : "text-gray-600")} />
+                                        <span className="text-[10px] lg:text-xs font-medium text-gray-300 truncate" title={eq.nombre || eq.assignedTo}>
+                                            {eq.nombre || eq.assignedTo ? (eq.nombre || eq.assignedTo).substring(0,4) : "S/A"}
                                         </span>
                                     </div>
                                 </div>
                             ))}
 
                             {flatPendientes.filter(eq => eq.dep === currentSlide.id).length === 0 && (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-80 gap-3 pt-20">
-                                    <CheckCircle size={40} className="text-emerald-500" />
-                                    <p className="font-bold">Departamento al día.</p>
+                                <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-80 gap-3 pt-10">
+                                    <CheckCircle size={32} className="text-emerald-500" />
+                                    <p className="font-bold text-sm">Departamento al día.</p>
                                 </div>
                             )}
                         </div>
@@ -347,23 +340,55 @@ const TVDashboardScreen: React.FC = () => {
                 const userMagnitudes = Object.entries(magMap).map(([k,v], i) => ({ name: k, value: v, color: MAGNITUDES_COLORS[k] || FALLBACK_COLORS[i%5] })).sort((a,b)=>b.value - a.value);
 
                 return (
-                    <motion.div key={`user-${currentSlide.id}`} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} transition={{ duration: 0.5 }} className="w-full h-full flex items-center gap-8 px-12 py-6">
-                        <div className="w-[30%] flex flex-col items-center justify-center shrink-0">
-                            <div className="w-40 h-40 rounded-full border-4 flex items-center justify-center shadow-[0_0_40px_rgba(0,0,0,0.4)] mb-8" style={{ borderColor: currentUserObj.color, backgroundColor: `${currentUserObj.color}20` }}><UserCircle size={80} style={{ color: currentUserObj.color }} /></div>
-                            <h2 className="text-5xl font-black tracking-tight text-center mb-6 leading-tight" style={{ color: currentUserObj.color, textShadow: `0 0 20px ${currentUserObj.color}40` }}>{currentUserObj.name}</h2>
-                            <div className="px-8 py-4 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center gap-2 shadow-lg"><span className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><Briefcase size={16}/> Equipos Calibrados</span><span className="text-6xl font-black" style={{ color: currentUserObj.color }}>{currentUserObj.total}</span></div>
-                        </div>
-                        <div className="w-[70%] grid grid-cols-2 gap-6 h-full pb-4">
-                            <div className={`p-6 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md flex flex-col h-full shadow-xl`}>
-                                <h3 className="text-lg font-bold text-gray-300 mb-4 flex items-center gap-2"><BarChart3 size={20} className="text-blue-400"/> Desempeño vs Equipo</h3>
-                                <div className="flex-1 min-h-0"><ResponsiveContainer width="100%" height="100%"><BarChart data={metrologosData} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false}/><XAxis type="number" stroke="#94a3b8" fontSize={12} axisLine={false} tickLine={false}/><YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={12} axisLine={false} tickLine={false} width={100} /><Bar dataKey="total" radius={[0, 4, 4, 0]}>{metrologosData.map((e,i) => <Cell key={i} fill={e.name === currentSlide.id ? e.color : '#334155'} />)}</Bar></BarChart></ResponsiveContainer></div>
+                    <motion.div key={`user-${currentSlide.id}`} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} transition={{ duration: 0.5 }} 
+                                className="w-full h-full flex flex-col lg:flex-row items-center gap-6 lg:gap-8 px-4 lg:px-12 py-4 lg:py-6 overflow-y-auto lg:overflow-hidden">
+                        
+                        <div className="w-full lg:w-[30%] flex flex-col items-center justify-center shrink-0 mt-4 lg:mt-0">
+                            <div className="w-24 h-24 lg:w-40 lg:h-40 rounded-full border-4 flex items-center justify-center shadow-[0_0_40px_rgba(0,0,0,0.4)] mb-4 lg:mb-8" style={{ borderColor: currentUserObj.color, backgroundColor: `${currentUserObj.color}20` }}>
+                                <UserCircle size={60} className="lg:w-20 lg:h-20" style={{ color: currentUserObj.color }} />
                             </div>
-                            <div className={`p-6 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md flex flex-col h-full shadow-xl`}>
-                                <h3 className="text-lg font-bold text-gray-300 mb-4 flex items-center gap-2"><Activity size={20} className="text-purple-400"/> Magnitudes Realizadas</h3>
+                            <h2 className="text-3xl lg:text-5xl font-black tracking-tight text-center mb-4 lg:mb-6 leading-tight" style={{ color: currentUserObj.color, textShadow: `0 0 20px ${currentUserObj.color}40` }}>{currentUserObj.name}</h2>
+                            <div className="px-6 py-3 lg:px-8 lg:py-4 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center gap-1 lg:gap-2 shadow-lg">
+                                <span className="text-xs lg:text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><Briefcase size={16}/> Equipos Calibrados</span>
+                                <span className="text-4xl lg:text-6xl font-black" style={{ color: currentUserObj.color }}>{currentUserObj.total}</span>
+                            </div>
+                        </div>
+                        
+                        <div className="w-full lg:w-[70%] grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 h-auto lg:h-full pb-4 shrink-0">
+                            <div className={`p-4 lg:p-6 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md flex flex-col h-[300px] lg:h-full shadow-xl`}>
+                                <h3 className="text-base lg:text-lg font-bold text-gray-300 mb-4 flex items-center gap-2"><BarChart3 size={20} className="text-blue-400"/> Desempeño vs Equipo</h3>
+                                <div className="flex-1 min-h-0">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={metrologosData} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false}/>
+                                            <XAxis type="number" stroke="#94a3b8" fontSize={10} axisLine={false} tickLine={false}/>
+                                            <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={10} axisLine={false} tickLine={false} width={80} />
+                                            <Bar dataKey="total" radius={[0, 4, 4, 0]}>{metrologosData.map((e,i) => <Cell key={i} fill={e.name === currentSlide.id ? e.color : '#334155'} />)}</Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                            
+                            <div className={`p-4 lg:p-6 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md flex flex-col h-[350px] lg:h-full shadow-xl`}>
+                                <h3 className="text-base lg:text-lg font-bold text-gray-300 mb-4 flex items-center gap-2"><Activity size={20} className="text-purple-400"/> Magnitudes Realizadas</h3>
                                 <div className="flex-1 flex flex-col min-h-0">
                                     {userMagnitudes.length > 0 ? (
-                                        <><div className="h-[55%] w-full"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={userMagnitudes} innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value">{userMagnitudes.map((e,i) => <Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>} /></PieChart></ResponsiveContainer></div><div className="h-[45%] overflow-y-auto pr-2 mt-2 space-y-2 hide-scrollbar">{userMagnitudes.map(m => (<div key={m.name} className="flex justify-between items-center p-2.5 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: m.color}}></div><span className="text-[13px] font-medium text-gray-200 truncate">{m.name}</span></div><span className="font-bold text-base text-white">{m.value}</span></div>))}</div></>
-                                    ) : (<div className="w-full h-full flex items-center justify-center text-gray-500 font-medium">Sin calibraciones este mes.</div>)}
+                                        <>
+                                            <div className="h-[55%] w-full">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <PieChart><Pie data={userMagnitudes} innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">{userMagnitudes.map((e,i) => <Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>} /></PieChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                            <div className="h-[45%] overflow-y-auto pr-1 lg:pr-2 mt-2 space-y-2 hide-scrollbar">
+                                                {userMagnitudes.map(m => (
+                                                    <div key={m.name} className="flex justify-between items-center p-2 lg:p-2.5 bg-white/5 rounded-xl border border-white/5">
+                                                        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: m.color}}></div><span className="text-xs lg:text-[13px] font-medium text-gray-200 truncate">{m.name}</span></div>
+                                                        <span className="font-bold text-sm lg:text-base text-white">{m.value}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : (<div className="w-full h-full flex items-center justify-center text-gray-500 text-sm lg:text-base font-medium">Sin calibraciones este mes.</div>)}
                                 </div>
                             </div>
                         </div>
@@ -373,23 +398,24 @@ const TVDashboardScreen: React.FC = () => {
 
             {/* ===== SLIDE TIPO 3: MAGNITUDES GLOBALES ===== */}
             {currentSlide.type === 'global' && (
-                <motion.div key="magnitudes-global" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} transition={{ duration: 0.5 }} className="w-full h-full flex flex-col items-center justify-center p-10">
-                    <div className="text-center mb-8 shrink-0">
-                        <h2 className="text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 mb-2">Panorama Global</h2>
-                        <p className="text-lg text-gray-400">Total de servicios agrupados por disciplina</p>
+                <motion.div key="magnitudes-global" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} transition={{ duration: 0.5 }} 
+                            className="w-full h-full flex flex-col items-center justify-center p-4 lg:p-10 overflow-y-auto lg:overflow-hidden">
+                    <div className="text-center mb-6 lg:mb-8 shrink-0 mt-6 lg:mt-0">
+                        <h2 className="text-3xl lg:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 mb-2">Panorama Global</h2>
+                        <p className="text-sm lg:text-lg text-gray-400">Total de servicios agrupados por disciplina</p>
                     </div>
-                    <div className={`w-full max-w-5xl flex-1 p-8 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md shadow-2xl`}>
+                    <div className={`w-full max-w-5xl h-[400px] lg:h-full lg:flex-1 p-4 lg:p-8 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md shadow-2xl shrink-0`}>
                         {magnitudesGlobalData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={magnitudesGlobalData} layout="vertical" margin={{ top: 0, right: 50, left: 150, bottom: 0 }}>
+                                <BarChart data={magnitudesGlobalData} layout="vertical" margin={{ top: 0, right: 20, left: 90, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={true} vertical={false} />
-                                    <XAxis type="number" stroke="#9CA3AF" fontSize={14} axisLine={false} tickLine={false} />
-                                    <YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={14} axisLine={false} tickLine={false} width={180} tick={{fill: '#E5E7EB', fontWeight: 600}} />
+                                    <XAxis type="number" stroke="#9CA3AF" fontSize={12} axisLine={false} tickLine={false} />
+                                    <YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={10} lg:fontSize={14} axisLine={false} tickLine={false} width={120} tick={{fill: '#E5E7EB', fontWeight: 600}} />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#ffffff05' }} />
                                     <Bar dataKey="total" name="Calibraciones" radius={[0, 8, 8, 0]}>{magnitudesGlobalData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Bar>
                                 </BarChart>
                             </ResponsiveContainer>
-                        ) : (<div className="w-full h-full flex items-center justify-center text-xl text-gray-500">No hay datos registrados aún.</div>)}
+                        ) : (<div className="w-full h-full flex items-center justify-center text-lg lg:text-xl text-gray-500">No hay datos registrados aún.</div>)}
                     </div>
                 </motion.div>
             )}

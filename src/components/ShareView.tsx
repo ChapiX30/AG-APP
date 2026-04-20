@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../utils/firebase'; // Asegúrate de que esta ruta sea correcta
+import { db } from '../utils/firebase'; 
 import { Loader2, AlertOctagon, FileText, CheckCircle2 } from 'lucide-react';
+// IMPORTAMOS EL LOGO CORRECTAMENTE DESDE TUS ASSETS
+import labLogo from '../assets/lab_logo.png';
 
 interface ShareViewProps {
   certificado: string;
@@ -75,13 +77,12 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     buscarCertificado();
   }, [certificado]);
 
-  // --- PANTALLA DE CARGANDO (Con Logo) ---
+  // --- PANTALLA DE CARGANDO ---
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
-            {/* AGREGAMOS EL LOGO AQUÍ */}
-            <img src="/logo.png" alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
+            <img src={labLogo} alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
             
             <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4 mx-auto" />
             <h2 className="text-xl font-bold text-slate-800">Buscando Certificado...</h2>
@@ -91,13 +92,12 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     );
   }
 
-  // --- PANTALLA DE ERROR: CERTIFICADO NO ENCONTRADO (Con Logo) ---
+  // --- PANTALLA DE ERROR: CERTIFICADO NO ENCONTRADO ---
   if (status === 'not_found') {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
-          {/* AGREGAMOS EL LOGO AQUÍ */}
-          <img src="/logo.png" alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
+          <img src={labLogo} alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
 
           <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <AlertOctagon className="w-10 h-10 text-red-600" />
@@ -111,13 +111,12 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
     );
   }
 
-  // --- PANTALLA NARANJA: EN PROCESO DE VALIDACIÓN (Con Logo e Información del Equipo) ---
+  // --- PANTALLA NARANJA: EN PROCESO DE VALIDACIÓN ---
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-200">
         
-        {/* AGREGAMOS EL LOGO AQUÍ */}
-        <img src="/logo.png" alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
+        <img src={labLogo} alt="Logo Laboratorio" className="h-16 mx-auto mb-6 object-contain" />
 
         <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6 relative">
           <FileText className="w-10 h-10 text-orange-600" />
@@ -163,4 +162,4 @@ export const ShareView: React.FC<ShareViewProps> = ({ certificado }) => {
   );
 };
 
-export default ShareView;
+export default ShareView;s
