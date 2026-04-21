@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Epson Vendor ID: 0x04B8 = 1208 en decimal
+        Android REQUIERE el valor en decimal aquí, no en hex.
+        Si conoces el Product ID exacto de tu LW-PX400, agrégalo también
+        con product-id="XXXX" para mayor precisión.
+    -->
+    <usb-device vendor-id="1208" />
+</resources>

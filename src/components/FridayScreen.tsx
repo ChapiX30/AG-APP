@@ -6,10 +6,10 @@ import {
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
   MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil,
-  RotateCcw, Brain, Download, Filter, History, CheckCircle
+  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info
 } from "lucide-react";
 import { db } from "../utils/firebase";
-import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs } from "firebase/firestore";
+import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs, updateDoc } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from "../hooks/useAuth"; 
@@ -133,6 +133,7 @@ interface WorksheetData {
   nombre?: string;     
   fecha?: string;
   fechaEntrada?: string;
+  fechaRecepcion?: string;
   diasPromesa?: number;
   cargado_drive?: string; 
   entregado?: boolean; 
@@ -273,10 +274,24 @@ const EditableSLACell = React.memo(({ days, startDate, onChange, isCompleted, di
 const TextCell = React.memo(({ value, onChange, placeholder, disabled }: any) => {
   const [localValue, setLocalValue] = useState(value || "");
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (document.activeElement !== inputRef.current) setLocalValue(value || ""); }, [value]);
-  const handleBlur = () => { if (!disabled && localValue !== value) onChange(localValue); };
+  
+  useEffect(() => { 
+      if (document.activeElement !== inputRef.current) setLocalValue(value || ""); 
+  }, [value]);
+  
+  const handleBlur = () => { 
+      if (!disabled && localValue !== value) onChange(localValue); 
+  };
+  
   return (
-    <input ref={inputRef} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} placeholder={placeholder} disabled={disabled}
+    <input 
+        ref={inputRef} 
+        value={localValue} 
+        onChange={(e) => setLocalValue(e.target.value)} 
+        onBlur={handleBlur} 
+        onKeyDown={(e) => { if(e.key === 'Enter') inputRef.current?.blur(); }}
+        placeholder={placeholder} 
+        disabled={disabled}
         className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#0073ea] focus:z-10 transition-all text-xs truncate placeholder-gray-300 font-medium text-gray-700 disabled:cursor-not-allowed" 
     />
   );
@@ -543,12 +558,30 @@ const AGBotWidget = ({ thoughts }: { thoughts: AGBotThought[] }) => {
 
 // --- BOARD ROW ---
 const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, userRole, onOpenComments, index, groupId, onOpenHistory }: any) => {
-    const handleCellChange = useCallback((key: string, value: any) => { 
-        if (key === "equipo") { const autoDept = detectDepartment(value); if (autoDept && (!row.departamento || row.departamento === "")) onUpdateRow(row.docId, "departamento", autoDept); }
-        onUpdateRow(row.docId, key, value); 
-    }, [row.docId, row.departamento, onUpdateRow]);
     
-    let currentStickyLeft = 40; const checkPermission = (col: Column) => (!col.permissions || col.permissions.length === 0 || col.permissions.includes(userRole));
+    // Optimización del cambio de celda (Mapping correcto de folioSalida vs folio)
+    const handleCellChange = useCallback((key: string, value: any) => { 
+        let finalKey = key;
+        
+        // Si editamos la columna 'folio' pero estamos en el grupo 'laboratorio', 
+        // internamente estamos editando 'folioSalida'.
+        if (key === 'folio' && groupId === 'laboratorio') {
+            finalKey = 'folioSalida';
+        }
+
+        // Auto departamento
+        if (finalKey === "equipo") { 
+            const autoDept = detectDepartment(value); 
+            if (autoDept && (!row.departamento || row.departamento === "")) {
+                onUpdateRow(row.docId, "departamento", autoDept); 
+            }
+        }
+        
+        onUpdateRow(row.docId, finalKey, value); 
+    }, [row.docId, row.departamento, onUpdateRow, groupId]);
+    
+    let currentStickyLeft = 40; 
+    const checkPermission = (col: Column) => (!col.permissions || col.permissions.length === 0 || col.permissions.includes(userRole));
     const responsibleName = row.nombre || row.assignedTo;
     
     const rowBackgroundColor = useMemo(() => { 
@@ -577,8 +610,13 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                 const style: React.CSSProperties = { width: col.width };
                 if (col.sticky) { style.position = 'sticky'; style.left = currentStickyLeft + 1.5; style.zIndex = 15; style.backgroundColor = rowBackgroundColor; currentStickyLeft += col.width; }
                 const canEdit = checkPermission(col);
+                
+                // Determinamos el valor a mostrar según el mapping real
                 let cellValue = row[col.key];
-                if (col.key === 'folio') { if (groupId === 'laboratorio') cellValue = row.folioSalida || ""; else cellValue = row.folio || ""; }
+                if (col.key === 'folio') { 
+                    if (groupId === 'laboratorio') cellValue = row.folioSalida || ""; 
+                    else cellValue = row.folio || ""; 
+                }
                 
                 let customClass = "";
                 if (col.key === 'fecha' && row.diasPromesa && row.fechaEntrada && cellValue) {
@@ -782,7 +820,6 @@ const FridayScreen: React.FC = () => {
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
         const unsubRows = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
-            // 🔥 startTransition evita que el procesamiento masivo congele la UI
             startTransition(() => {
                 let newRows: WorksheetData[] = [];
                 const yearStr = currentYear.toString();
@@ -825,7 +862,7 @@ const FridayScreen: React.FC = () => {
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
     }, [currentYear]); 
 
-    // --- EL CEREBRO DE AG-BOT CON MÓDULO ANTICORRUPCIÓN Y VIGILANCIA ---
+    // --- EL CEREBRO DE AG-BOT ACTUALIZADO ---
     useEffect(() => {
         if (isLoadingData || rows.length === 0) return;
 
@@ -838,7 +875,7 @@ const FridayScreen: React.FC = () => {
                 let needsUpdate = false;
                 const updates: any = {};
 
-                // --- 1. REGLAS ORIGINALES DE AUTOCOMPLETADO ---
+                // --- 1. REGLAS DE DEPARTAMENTOS Y MARCAS ---
                 if (!row.departamento || row.departamento === "") {
                     const detected = detectDepartment(row.equipo || "");
                     if (detected) { updates.departamento = detected; needsUpdate = true; }
@@ -849,6 +886,7 @@ const FridayScreen: React.FC = () => {
                     if (inferredBrand) { updates.marca = inferredBrand; needsUpdate = true; }
                 }
 
+                // --- 2. LIMPIEZA Y FORMATEO ---
                 if (row.folio && row.folio !== row.folio.trim().toUpperCase()) {
                     updates.folio = row.folio.trim().toUpperCase();
                     needsUpdate = true;
@@ -857,43 +895,66 @@ const FridayScreen: React.FC = () => {
                     updates.cliente = row.cliente.trim().toUpperCase();
                     needsUpdate = true;
                 }
-
-                const driveStatus = (row.cargado_drive || "").toLowerCase();
-                const isDriveDone = driveStatus === 'si' || driveStatus === 'realizado';
-                if (isDriveDone && (row.status_certificado === 'Pendiente de Certificado' || !row.status_certificado)) {
-                    updates.status_certificado = 'Generado';
+                if (row.id && row.id !== row.id.trim().toUpperCase()) {
+                    updates.id = row.id.trim().toUpperCase();
                     needsUpdate = true;
-                    newThoughts.push({ id: Date.now() + Math.random(), type: 'success', message: `Certificado autogenerado para ${row.folio || 'un equipo'}`, timestamp: new Date().toISOString() });
+                }
+                if (row.equipo && typeof row.equipo === 'string' && row.equipo !== row.equipo.trim()) {
+                    updates.equipo = row.equipo.trim();
+                    needsUpdate = true;
                 }
 
-                // --- 2. MÓDULO DE ANTICORRUPCIÓN Y CONSISTENCIA ---
-                if (row.lugarCalibracion === 'sitio') {
+                // --- 3. UBICACIÓN REAL (LABORATORIO -> ENTREGADO) ---
+                const isLab = row.lugarCalibracion?.toLowerCase() === 'laboratorio';
+                const isSitio = row.lugarCalibracion?.toLowerCase() === 'sitio';
+
+                if (isSitio) {
                     if (row.status_equipo !== 'Calibrado') { updates.status_equipo = 'Calibrado'; needsUpdate = true; }
                     if (row.ubicacion_real !== 'Servicio en Sitio') { updates.ubicacion_real = 'Servicio en Sitio'; needsUpdate = true; }
-                } else if (row.lugarCalibracion === 'laboratorio') {
-                    if (row.ubicacion_real === 'Servicio en Sitio') {
-                        updates.ubicacion_real = 'Laboratorio';
-                        needsUpdate = true;
-                        newThoughts.push({ id: Date.now() + Math.random(), type: 'warning', message: `Inconsistencia de ubicación reparada para ${row.folio || 'un equipo'}`, timestamp: new Date().toISOString() });
+                } else if (isLab) {
+                    // Si hay Folio Salida, entonces ya está Entregado
+                    if (row.folioSalida && row.folioSalida.trim() !== "") {
+                        if (row.ubicacion_real !== 'Entregado') {
+                            updates.ubicacion_real = 'Entregado';
+                            needsUpdate = true;
+                        }
+                    } else {
+                        // Mientras no haya Folio, se queda en Laboratorio (O recepción)
+                        if (row.ubicacion_real !== 'Laboratorio' && row.ubicacion_real !== 'Recepción') {
+                            updates.ubicacion_real = 'Laboratorio';
+                            needsUpdate = true;
+                            newThoughts.push({ id: Date.now() + Math.random(), type: 'warning', message: `Ubicación corregida a Laboratorio para ${row.id || 'equipo'}`, timestamp: new Date().toISOString() });
+                        }
                     }
                 }
 
+                // --- 4. NUEVA REGLA: SINCRONIZACIÓN DE F. ENTRADA Y F. RECEPCIÓN ---
+                // Si el tablero no tiene F. Entrada pero el técnico puso F. Recepción
+                if ((!row.fechaEntrada || row.fechaEntrada === "") && (row.fechaRecepcion && row.fechaRecepcion !== "")) {
+                    updates.fechaEntrada = row.fechaRecepcion;
+                    needsUpdate = true;
+                } 
+                // Si Calidad cambia la F. Entrada en el tablero, se le actualiza al técnico
+                else if (row.fechaEntrada && row.fechaEntrada !== row.fechaRecepcion) {
+                    updates.fechaRecepcion = row.fechaEntrada;
+                    needsUpdate = true;
+                } 
+                // Si nadie puso nada, forzamos la fecha de creación del registro
+                else if ((!row.fechaEntrada || row.fechaEntrada === "") && (!row.fechaRecepcion || row.fechaRecepcion === "")) {
+                    const fallbackDate = row.createdAt ? row.createdAt.split('T')[0] : new Date().toISOString().split('T')[0];
+                    updates.fechaEntrada = fallbackDate;
+                    updates.fechaRecepcion = fallbackDate;
+                    needsUpdate = true;
+                    newThoughts.push({ id: Date.now() + Math.random(), type: 'info', message: `Fecha de entrada auto-asignada para ${row.id || 'equipo'}`, timestamp: new Date().toISOString() });
+                }
+
+                // --- Fallbacks de seguridad ---
                 if (row.diasPromesa === undefined || row.diasPromesa === null || isNaN(Number(row.diasPromesa))) {
                     updates.diasPromesa = 5; 
                     needsUpdate = true;
                 }
-
                 if (!row.status_equipo || row.status_equipo === "") {
                     updates.status_equipo = 'Desconocido';
-                    needsUpdate = true;
-                }
-                if (!row.status_certificado || row.status_certificado === "") {
-                    updates.status_certificado = 'Pendiente de Certificado';
-                    needsUpdate = true;
-                }
-
-                if (row.equipo && typeof row.equipo === 'string' && row.equipo !== row.equipo.trim()) {
-                    updates.equipo = row.equipo.trim();
                     needsUpdate = true;
                 }
 
@@ -911,7 +972,7 @@ const FridayScreen: React.FC = () => {
                 setIsThinking(true);
                 try {
                     await batch.commit();
-                    showToast(`🤖 AG-Bot: ${updateCount} dato(s) corrupto(s) reparado(s) en segundo plano`, 'info');
+                    showToast(`🤖 AG-Bot: ${updateCount} dato(s) sincronizado(s)`, 'info');
                 } catch(error) {
                     console.error("Error del guardián AG-Bot:", error);
                 }
@@ -919,12 +980,13 @@ const FridayScreen: React.FC = () => {
             }
         };
 
-        const timer = setTimeout(runAGBot, 2500); 
+        // Tiempo aumentado a 3.5 segundos para no interrumpir al usuario mientras teclea.
+        const timer = setTimeout(runAGBot, 3500); 
         return () => clearTimeout(timer);
 
     }, [rows, isLoadingData]); 
 
-    const showToast = (message: string, type: 'success' | 'info') => {
+    const showToast = (message: string, type: 'success' | 'info' | 'error') => {
         const id = Date.now().toString();
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
@@ -1050,6 +1112,7 @@ const FridayScreen: React.FC = () => {
             nombre: currentUserName, assignedTo: currentUserName, 
             createdAt: now.toISOString(), 
             fechaEntrada: fechaEntradaStr,
+            fechaRecepcion: fechaEntradaStr,
             diasPromesa: 5,
             status_certificado: 'Pendiente de Certificado'
         };
@@ -1057,42 +1120,50 @@ const FridayScreen: React.FC = () => {
         showToast("Fila agregada correctamente", 'success');
     }, [currentUserName]);
 
+    // --- Optimistic UI UPDATE PARA MAYOR FLUIDEZ ---
     const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
+        // 1. Actualización Local Inmediata (Sin esperar a Firebase)
         setRows(prevRows => prevRows.map(r => {
             if (r.docId === rowId) {
                 const updated = { ...r, [key]: value };
                 if (key === "ubicacion_real") {
                     if (value === "Servicio en Sitio") updated.lugarCalibracion = "sitio";
-                    if (value === "Laboratorio") updated.lugarCalibracion = "laboratorio";
-                    if (value === "Recepción") updated.lugarCalibracion = "laboratorio";
+                    if (value === "Laboratorio" || value === "Recepción") updated.lugarCalibracion = "laboratorio";
                 }
                 return updated;
             }
             return r;
         }));
         
-        const batch = writeBatch(db);
-        const rowRef = doc(db, "hojasDeTrabajo", rowId);
-        let updates: any = { [key]: value, lastUpdated: new Date().toISOString() };
-        if (key === "ubicacion_real") {
-            if (value === "Servicio en Sitio") updates.lugarCalibracion = "sitio";
-            else if (value === "Laboratorio" || value === "Recepción") updates.lugarCalibracion = "laboratorio";
-        }
-        batch.update(rowRef, updates);
-        
-        const oldValue = rows.find(r => r.docId === rowId)?.[key];
-        const historyRef = collection(db, `hojasDeTrabajo/${rowId}/history`);
-        const historyDoc = doc(historyRef);
-        batch.set(historyDoc, {
-            field: key,
-            oldValue: oldValue || "",
-            newValue: value,
-            user: currentUserName,
-            timestamp: new Date().toISOString()
-        });
+        // 2. Sincronización con Firebase en Background
+        try {
+            const batch = writeBatch(db);
+            const rowRef = doc(db, "hojasDeTrabajo", rowId);
+            let updates: any = { [key]: value, lastUpdated: new Date().toISOString() };
+            
+            if (key === "ubicacion_real") {
+                if (value === "Servicio en Sitio") updates.lugarCalibracion = "sitio";
+                else if (value === "Laboratorio" || value === "Recepción") updates.lugarCalibracion = "laboratorio";
+            }
+            batch.update(rowRef, updates);
+            
+            // Historial
+            const oldValue = rows.find(r => r.docId === rowId)?.[key];
+            const historyRef = collection(db, `hojasDeTrabajo/${rowId}/history`);
+            const historyDoc = doc(historyRef);
+            batch.set(historyDoc, {
+                field: key,
+                oldValue: oldValue || "",
+                newValue: value,
+                user: currentUserName,
+                timestamp: new Date().toISOString()
+            });
 
-        await batch.commit();
-        showToast("Cambio guardado", 'success');
+            await batch.commit();
+        } catch (error) {
+            console.error("Error sincronizando celda", error);
+            showToast("Error de conexión al guardar", 'error');
+        }
     }, [rows, currentUserName]);
 
     const handleDeleteSelected = async () => {
@@ -1163,7 +1234,7 @@ const FridayScreen: React.FC = () => {
         }
     }, [columns]); 
 
-    // 🔥 Uso de deferredSearch para evitar que se congele al escribir
+    // Uso de deferredSearch para evitar que se congele al escribir
     const groupedRows = useMemo(() => {
         let filtered = rows.filter(r => {
             if (deferredSearch) {
@@ -1211,7 +1282,7 @@ const FridayScreen: React.FC = () => {
         <div className="flex h-screen bg-[#eceff8] font-sans text-[#323338] w-full overflow-hidden">
             <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all w-full">
                 
-                {/* --- BARRA SUPERIOR (MODIFICADA) --- */}
+                {/* --- BARRA SUPERIOR --- */}
                 <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white sticky top-0 z-40 shadow-sm w-full">
                     <div className="flex items-center gap-4">
                         <button 

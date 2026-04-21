@@ -96,21 +96,38 @@ const TVDashboardScreen: React.FC = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
-    const equiposPendientes = hojasDeTrabajo.filter(r => 
-        r.lugarCalibracion === 'laboratorio' && 
-        r.status_equipo !== 'Calibrado' && r.status_equipo !== 'Entregado' && r.status_equipo !== 'Rechazado'
-    );
+    // 1. FILTRO ROBUSTO: Mostrar TODO lo que siga en el laboratorio HASTA que se marque Realizado en Drive
+    const equiposPendientes = hojasDeTrabajo.filter(r => {
+        const isLab = (r.lugarCalibracion || '').toLowerCase() === 'laboratorio';
+        const isNotRejected = r.status_equipo !== 'Rechazado';
+        const isNotDelivered = r.status_equipo !== 'Entregado' && r.ubicacion_real !== 'Entregado';
+        
+        // REGLA CRÍTICA NUEVA: Si el archivo ya se validó en DriveScreen, desaparece de la TV.
+        const isNotRealizado = r.cargado_drive !== 'Realizado';
+
+        return isLab && isNotRejected && isNotDelivered && isNotRealizado;
+    });
 
     const contadoresPendientes: Record<string, number> = { "Mecánica": 0, "Dimensional": 0, "Eléctrica": 0, "Sin Asignar": 0 };
     
     const procesados = equiposPendientes.map(r => {
-        const dep = r.departamento || "Sin Asignar";
+        let dep = r.departamento || "Sin Asignar";
+        
+        // Normalización de acentos para evitar que las gráficas se dividan o no cuenten
+        if (dep.toLowerCase() === 'mecanica' || dep.toLowerCase() === 'mecánica') dep = 'Mecánica';
+        if (dep.toLowerCase() === 'electrica' || dep.toLowerCase() === 'eléctrica') dep = 'Eléctrica';
+
         if (contadoresPendientes[dep] !== undefined) contadoresPendientes[dep]++;
         else contadoresPendientes[dep] = 1;
 
         let diffDays = 0, daysLabel = "-", statusColor = "text-gray-400";
 
-        if (r.fechaEntrada && r.diasPromesa) {
+        // Si ya está calibrado (pero aún no "Realizado" en Drive), lo mostramos en azul
+        if (r.status_equipo === 'Calibrado') {
+            statusColor = "text-blue-400 font-bold";
+            daysLabel = "Calibrado";
+            diffDays = 999; // Mandarlo al final de las urgencias
+        } else if (r.fechaEntrada && r.diasPromesa) {
             const start = new Date(r.fechaEntrada + 'T00:00:00');
             const deadline = addBusinessDays(start, Number(r.diasPromesa));
             const now = new Date(); now.setHours(0,0,0,0);
@@ -129,7 +146,6 @@ const TVDashboardScreen: React.FC = () => {
         .map(([name, total]) => ({ name, total }))
         .sort((a, b) => b.total - a.total); 
 
-    const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name)));
     const hojasDelMes = hojasDeTrabajo.filter(h => {
         if (!h.fecha) return false;
         const d = new Date(h.fecha + 'T00:00:00');
@@ -142,13 +158,32 @@ const TVDashboardScreen: React.FC = () => {
 
     hojasDelMes.forEach(h => { 
         const name = cleanName(h.nombre);
-        if (name && validMetrologosNames.has(name)) countsMet[name] = (countsMet[name] || 0) + 1;
+        if (name) countsMet[name] = (countsMet[name] || 0) + 1;
         if (h.magnitud) magGlobalMap[h.magnitud] = (magGlobalMap[h.magnitud] || 0) + 1;
     });
 
-    let statsMet = METROLOGOS_ORDER_COLOR.map(m => ({
-        name: m.name, total: countsMet[cleanName(m.name)] || 0, color: m.color
-    })).filter(item => validMetrologosNames.has(cleanName(item.name)));
+    // 2. METRÓLOGOS DINÁMICOS
+    const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name || u.nombre)));
+    let statsMet: any[] = [];
+    
+    METROLOGOS_ORDER_COLOR.forEach(m => {
+        if (validMetrologosNames.has(cleanName(m.name))) {
+            statsMet.push({ name: m.name, total: countsMet[cleanName(m.name)] || 0, color: m.color });
+        }
+    });
+
+    Object.entries(countsMet).forEach(([cName, total]) => {
+        if (total > 0 && !statsMet.find(s => cleanName(s.name) === cName)) {
+            const dbUser = usuarios.find(u => cleanName(u.name || u.nombre) === cName);
+            statsMet.push({
+                name: dbUser?.name || dbUser?.nombre || cName,
+                total: total,
+                color: dbUser?.color || FALLBACK_COLORS[statsMet.length % FALLBACK_COLORS.length]
+            });
+        }
+    });
+
+    statsMet.sort((a, b) => b.total - a.total);
 
     const magStats = Object.entries(magGlobalMap).map(([name, total], i) => ({ name, total, color: MAGNITUDES_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length] })).sort((a, b) => b.total - a.total);
 
