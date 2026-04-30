@@ -1,4 +1,4 @@
-package com.example.app; // ← Verifica que coincida con tu package name real
+package com.example.app;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -28,7 +28,9 @@ import com.getcapacitor.annotation.PermissionCallback;
 import com.epson.lwprint.sdk.LWPrint;
 import com.epson.lwprint.sdk.LWPrintCallback;
 import com.epson.lwprint.sdk.LWPrintParameterKey;
-import com.epson.lwprint.sdk.LWPrintPrintingPhase;
+import com.epson.lwprint.sdk.LWPrintPrintSpeed;
+import com.epson.lwprint.sdk.LWPrintStatusError;
+import com.epson.lwprint.sdk.LWPrintTapeCut;
 import com.epson.lwprint.sdk.LWPrintTapeWidth;
 
 import java.util.HashMap;
@@ -39,213 +41,162 @@ import java.util.concurrent.Executors;
 
 @SuppressLint("MissingPermission")
 @CapacitorPlugin(name = "EpsonLabel", permissions = {
-        @Permission(alias = "bluetooth", strings = {
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN
-        }),
-        @Permission(alias = "bluetoothConnect", strings = {
-                "android.permission.BLUETOOTH_CONNECT",
-                "android.permission.BLUETOOTH_SCAN"
-        })
+        @Permission(alias = "bluetooth", strings = { Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN }),
+        @Permission(alias = "bluetoothConnect", strings = { "android.permission.BLUETOOTH_CONNECT", "android.permission.BLUETOOTH_SCAN" })
 })
 public class EpsonLabelPlugin extends Plugin {
 
     private static final String TAG = "EpsonLabel";
-
     private LWPrint lwprint;
     private boolean isPrinting = false;
-    private LWPrintCallback myPrintCallback;
 
     @Override
     public void load() {
-        lwprint = new LWPrint(getContext());
-        Log.d(TAG, "Plugin cargado (Bluetooth Mode Directo).");
+        new Handler(Looper.getMainLooper()).post(() -> {
+            lwprint = new LWPrint(getContext());
+            Log.d(TAG, "Motor Epson V1.7.0 inicializado.");
+        });
     }
 
     @PluginMethod
     public void printLabel(final PluginCall call) {
         if (isPrinting) {
-            call.reject("BUSY", "La impresora está ocupada. Intenta en unos segundos.");
+            call.reject("BUSY", "Impresora ocupada.");
             return;
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissionForAlias("bluetoothConnect", call, "bluetoothPermissionCallback");
-                return;
-            }
-        }
-
         executePrint(call);
-    }
-
-    @PermissionCallback
-    private void bluetoothPermissionCallback(PluginCall call) {
-        if (ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-            executePrint(call);
-        } else {
-            call.reject("PERMISSION_DENIED", "Permiso Bluetooth denegado.");
-        }
     }
 
     private void executePrint(final PluginCall call) {
         isPrinting = true;
         call.setKeepAlive(true);
 
-        // Temporizador de seguridad (15 seg)
+        // Timeout de seguridad: Si en 35s no termina, liberamos el plugin.
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (isPrinting) {
-                Log.w(TAG, "Liberando bloqueo por timeout de 15s.");
                 isPrinting = false;
+                if (lwprint != null) lwprint.cancelPrint();
+                call.reject("TIMEOUT", "La impresora no respondió la Fase 4.");
             }
-        }, 15000);
+        }, 35000);
 
-        // Extracción blindada
-        String rawId = call.getString("id");
-        final String id = rawId != null ? rawId : "SIN-ID";
-        String rawFCal = call.getString("fechaCal");
-        final String fCal = rawFCal != null ? rawFCal : "N/A";
-        String rawFSug = call.getString("fechaSug");
-        final String fSug = rawFSug != null ? rawFSug : "N/A";
-        String rawCert = call.getString("certificado");
-        final String cert = rawCert != null ? rawCert : "PEND";
-        String rawTec = call.getString("calibro");
-        final String tec = rawTec != null ? rawTec : "AG";
-        String rawSize = call.getString("tapeSize");
-        final String size = rawSize != null ? rawSize : "24mm";
+        // Datos del equipo de metrología
+        final String id = call.getString("id", "PENDIENTE");
+        final String fCal = call.getString("fechaCal", "N/A");
+        final String fSug = call.getString("fechaSug", "N/A");
+        final String cert = call.getString("certificado", "N/A");
+        final String tec = call.getString("calibro", "A.G");
+        final String tapeReq = call.getString("tapeSize", "24mm");
 
         BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
-        if (btAdapter == null || !btAdapter.isEnabled()) {
-            failOnMainThread(call, "BT_DISABLED", "Enciende el Bluetooth de la tablet.");
-            return;
-        }
-
-        BluetoothDevice targetDevice = null;
-        Set<BluetoothDevice> bonded = btAdapter.getBondedDevices();
-        if (bonded != null) {
-            for (BluetoothDevice d : bonded) {
-                String name = d.getName();
-                if (name != null && (name.toUpperCase().contains("EPSON") || name.toUpperCase().contains("LW-600P") || name.toUpperCase().contains("PX400") || name.toUpperCase().contains("LW"))) {
-                    targetDevice = d;
-                    break;
-                }
+        BluetoothDevice device = null;
+        Set<BluetoothDevice> paired = btAdapter.getBondedDevices();
+        for (BluetoothDevice d : paired) {
+            String name = d.getName();
+            if (name != null && (name.contains("PX400") || name.contains("600P") || name.contains("EPSON"))) {
+                device = d;
+                break;
             }
         }
 
-        if (targetDevice == null) {
-            failOnMainThread(call, "PRINTER_NOT_FOUND", "No se encontró la etiquetadora vinculada.");
+        if (device == null) {
+            failOnMainThread(call, "NOT_FOUND", "No se encontró la PX400 vinculada.");
             return;
         }
 
-        this.myPrintCallback = new LWPrintCallback() {
+        final BluetoothDevice finalDevice = device;
+        lwprint.setCallback(new LWPrintCallback() {
             @Override
             public void onChangePrintOperationPhase(LWPrint lw, int phase) {
-                Log.d(TAG, "📡 FASE EPSON: " + phase);
-                if (phase == LWPrintPrintingPhase.Complete) {
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        isPrinting = false;
-                        JSObject res = new JSObject();
-                        res.put("success", true);
-                        call.resolve(res);
-                        call.setKeepAlive(false);
-                    });
+                Log.d(TAG, "Fase: " + phase);
+                if (phase == 4) { // Complete
+                    isPrinting = false;
+                    JSObject res = new JSObject();
+                    res.put("success", true);
+                    call.resolve(res);
                 }
             }
-            @Override
-            public void onChangeTapeFeedOperationPhase(LWPrint lw, int phase) {}
-            @Override
-            public void onAbortPrintOperation(LWPrint lw, int errorStatus, int deviceStatus) {
-                Log.e(TAG, "❌ ABORTADA. Código: " + deviceStatus);
-                failOnMainThread(call, "PRINT_ABORTED", "Abortada. Revisa la cinta. Código: " + deviceStatus);
+            @Override public void onAbortPrintOperation(LWPrint lw, int err, int stat) {
+                failOnMainThread(call, "ABORTED", "Error: " + err + " Status: " + stat);
             }
-            @Override
-            public void onSuspendPrintOperation(LWPrint l, int err, int status) {
-                l.cancelPrint();
-                failOnMainThread(call, "PRINT_SUSPENDED", "Impresión suspendida.");
+            @Override public void onSuspendPrintOperation(LWPrint lw, int err, int stat) {
+                lw.cancelPrint();
+                failOnMainThread(call, "SUSPENDED", "Suspendida.");
             }
-            @Override
-            public void onAbortTapeFeedOperation(LWPrint l, int err, int status) {}
-        };
+            @Override public void onChangeTapeFeedOperationPhase(LWPrint lw, int p) {}
+            @Override public void onAbortTapeFeedOperation(LWPrint lw, int e, int s) {}
+        });
 
-        lwprint.setCallback(this.myPrintCallback);
-
-        final BluetoothDevice finalDevice = targetDevice;
         ExecutorService executor = Executors.newSingleThreadExecutor();
         executor.execute(() -> {
             try {
-                Log.d(TAG, "1. Hilo de fondo iniciado. Configurando printerInfo...");
-                Map<String, String> printerInfo = new HashMap<>();
-                printerInfo.put("name", "LW-600P"); // El nombre verdadero
-                printerInfo.put("product", "LW-600P");
-                printerInfo.put("mac_address", finalDevice.getAddress());
-                printerInfo.put("address", finalDevice.getAddress());
-                printerInfo.put("type", "bluetooth");
+                // Mapa de dispositivo blindado (Identity Bypass)
+                Map<String, String> info = new HashMap<>();
+                info.put("name", finalDevice.getName()); // Nombre real Bluetooth (PX400)
+                info.put("product", "LW-600P");          // Driver interno
+                info.put("host", finalDevice.getAddress());
+                info.put("type", "2");                   // Bluetooth
+                info.put("macaddress", finalDevice.getAddress());
+                // Keys vacías obligatorias para evitar NullPointerException en el SDK
+                info.put("usbmdl", ""); info.put("port", ""); info.put("domain", "");
+                info.put("deviceclass", ""); info.put("devicestatus", "");
 
-                lwprint.setPrinterInformation(printerInfo);
-                Log.d(TAG, "2. Información inyectada. Creando Bitmap...");
+                lwprint.setPrinterInformation(info);
 
-                // BYPASS GIGANTE: Nos saltamos fetchPrinterStatus() y vamos directo al tamaño
-                int tapeWidth = "12mm".equals(size) ? LWPrintTapeWidth.Normal_12mm : LWPrintTapeWidth.Normal_24mm;
-                int printableHeight = lwprint.getPrintableSizeFromTape(tapeWidth);
-                int resolution = lwprint.getResolution();
+                // Detección de hardware
+                Map<String, Integer> status = lwprint.fetchPrinterStatus();
+                int hWidth = lwprint.getTapeWidthFromStatus(status);
+                int tapeWidth = (hWidth != 0) ? hWidth : 
+                               ("12mm".equals(tapeReq) ? LWPrintTapeWidth.Normal_12mm : LWPrintTapeWidth.Normal_24mm);
+
+                int height = lwprint.getPrintableSizeFromTape(tapeWidth);
+                int res = lwprint.getResolution();
                 
-                Bitmap bmp = createLabelBitmap(id, fCal, fSug, cert, tec, printableHeight, resolution);
-                Log.d(TAG, "3. Bitmap generado. Configurando parámetros de impresión...");
+                // Imagen RGB_565 sólida para asegurar impresión térmica
+                Bitmap bmp = createLabel(id, fCal, fSug, cert, tec, height, res);
 
                 Map<String, Object> params = new HashMap<>();
                 params.put(LWPrintParameterKey.Copies, 1);
+                params.put(LWPrintParameterKey.TapeCut, LWPrintTapeCut.EachLabel);
+                params.put(LWPrintParameterKey.PrintSpeed, LWPrintPrintSpeed.PrintSpeedHigh);
                 params.put(LWPrintParameterKey.TapeWidth, tapeWidth);
 
-                Log.d(TAG, "4. ¡FUEGO! Disparando doPrint()...");
                 lwprint.doPrint(bmp, params);
-                Log.d(TAG, "5. Comando enviado a la cola del Bluetooth.");
-
             } catch (Exception e) {
-                Log.e(TAG, "CRASH en hilo de fondo: " + e.getMessage());
-                failOnMainThread(call, "PRINT_CRASH", e.getMessage());
+                failOnMainThread(call, "CRASH", e.getMessage());
             }
         });
     }
 
-    private Bitmap createLabelBitmap(String id, String fCal, String fSug, String cert, String tec, int printableHeight, int resolution) {
-        float mmToPixel = resolution / 25.4f;
-        int width  = (int)(60f * mmToPixel); // 60mm de largo para seguridad del cabezal
-        int height = printableHeight;
-
-        // ARGB_8888 obligatorio para que la Epson no aborte en silencio
-        Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bmp);
-        canvas.drawColor(Color.WHITE);
-
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(Color.BLACK);
-        float margin = 1f * mmToPixel;
-
-        paint.setTypeface(Typeface.DEFAULT_BOLD);
-        paint.setTextSize(height * 0.38f);
-        canvas.drawText(id, margin, height * 0.42f, paint);
-
-        paint.setStrokeWidth(2f);
-        canvas.drawLine(margin, height * 0.47f, width - margin, height * 0.47f, paint);
-
-        paint.setTypeface(Typeface.DEFAULT);
-        paint.setTextSize(height * 0.20f);
-        canvas.drawText("Cal: "   + fCal, margin, height * 0.66f, paint);
-        canvas.drawText("Vence: " + fSug, margin, height * 0.87f, paint);
-
-        paint.setTextSize(height * 0.17f);
-        float col2 = width * 0.52f;
-        canvas.drawText("C:" + cert, col2, height * 0.66f, paint);
-        canvas.drawText("T:" + (tec.length() > 4 ? tec.substring(0, 4) : tec), col2, height * 0.87f, paint);
-
+    private Bitmap createLabel(String id, String cal, String ven, String cert, String tec, int h, int res) {
+        float px = res / 25.4f;
+        Bitmap bmp = Bitmap.createBitmap((int)(60 * px), h, Bitmap.Config.RGB_565);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(Color.WHITE);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.BLACK);
+        
+        p.setTypeface(Typeface.DEFAULT_BOLD);
+        p.setTextSize(h * 0.4f);
+        c.drawText(id, 5, h * 0.42f, p);
+        
+        p.setStrokeWidth(2f);
+        c.drawLine(5, h * 0.48f, (60 * px) - 5, h * 0.48f, p);
+        
+        p.setTypeface(Typeface.DEFAULT);
+        p.setTextSize(h * 0.18f);
+        c.drawText("Cal: " + cal, 5, h * 0.7f, p);
+        c.drawText("Vence: " + ven, 5, h * 0.9f, p);
+        c.drawText("Cert: " + cert, (60 * px) * 0.55f, h * 0.7f, p);
+        c.drawText("Tec: " + tec, (60 * px) * 0.55f, h * 0.9f, p);
+        
         return bmp;
     }
 
-    private void failOnMainThread(PluginCall call, String code, String message) {
+    private void failOnMainThread(PluginCall call, String code, String msg) {
         new Handler(Looper.getMainLooper()).post(() -> {
             isPrinting = false;
-            call.reject(code, message);
-            call.setKeepAlive(false);
+            call.reject(code, msg);
         });
     }
 }

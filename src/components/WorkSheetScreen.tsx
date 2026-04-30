@@ -3,7 +3,8 @@ import { useNavigation } from "../hooks/useNavigation";
 import {
   ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
   Loader2, NotebookPen, Search, Calculator, ArrowRightLeft, AlertTriangle,
-  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2, FileText, Info, Scale
+  CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2, FileText, Info, Scale,
+  Camera, ShieldCheck, ShieldAlert, CloudOff, CloudUpload, CheckSquare, XCircle, Upload
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -283,6 +284,10 @@ interface WorksheetState {
   permitirExcepcion: boolean;
   isMasterData: boolean;
   fieldsLocked: boolean;
+  condicionEquipo: "buenas" | "dano" | "";
+  descripcionDano: string;
+  fotoEquipoBase64: string;
+  fotoEquipoURL: string;
 }
 
 type WorksheetAction =
@@ -296,7 +301,39 @@ type WorksheetAction =
   | { type: 'SET_ID_BLOCKED'; message: string }
   | { type: 'CLEAR_ID_BLOCK' }
   | { type: 'SET_EXCEPCION'; payload: boolean }
-  | { type: 'RESTORE_BACKUP'; payload: WorksheetState };
+  | { type: 'RESTORE_BACKUP'; payload: WorksheetState }
+  | { type: 'CHANGE_CONDICION'; condicion: "buenas" | "dano" | "" };
+
+// ====================================================================
+// OFFLINE QUEUE HELPERS
+// ====================================================================
+const OFFLINE_QUEUE_KEY = 'ag_offline_save_queue';
+
+interface OfflineQueueItem {
+  id: string;
+  timestamp: number;
+  data: any;
+  pdfBlob: string;
+  nombreArchivo: string;
+  finalDocId: string | null;
+  worksheetId: string | undefined;
+}
+
+const getOfflineQueue = (): OfflineQueueItem[] => {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]'); } catch { return []; }
+};
+const saveOfflineQueue = (q: OfflineQueueItem[]) => {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
+};
+const addToOfflineQueue = (item: OfflineQueueItem) => {
+  const q = getOfflineQueue();
+  q.push(item);
+  saveOfflineQueue(q);
+};
+const removeFromOfflineQueue = (id: string) => {
+  const q = getOfflineQueue().filter(i => i.id !== id);
+  saveOfflineQueue(q);
+};
 
 // ====================================================================
 // COMPONENTE SEARCH SELECT
@@ -407,12 +444,25 @@ const getLocalISODate = () => {
 
 const getUserName = (user: any) => user ? (user.displayName || user.name || user.email?.split("@")[0] || "Sin Usuario") : "Sin Usuario";
 
+// CORRECCIÓN APLICADA: Ahora lee AGPT correctamente sin confundirse con AGP
 const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   if (!consecutivo) return "";
-  const m: Record<string, string> = { AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional", AGH: "Humedad" };
+  const m: Record<string, string> = { 
+    AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", 
+    AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", 
+    AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", 
+    AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional", AGH: "Humedad" 
+  };
+  
   const parts = consecutivo.split("-");
+  if (parts.length > 0 && m[parts[0]]) return m[parts[0]];
   if (parts.length >= 2 && m[parts[1]]) return m[parts[1]];
-  for (const [code, mag] of Object.entries(m)) { if (consecutivo.includes(code)) return mag; }
+
+  const keys = Object.keys(m).sort((a, b) => b.length - a.length);
+  for (const code of keys) {
+    if (consecutivo.includes(code)) return m[code];
+  }
+  
   return "";
 };
 
@@ -481,16 +531,22 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   const tableWidth = 500; 
   const tableX = (pageWidth - tableWidth) / 2; 
 
-  const lineHeight = 20;
-  const maxY = pageHeight - marginBottom; 
   let currentY = 60; 
 
   const drawHeaderBase = () => {
-    doc.addImage(logoAg, 'PNG', marginLeft, 20, 100, 50);
+    // Logo ancho x alto proporcional para que no se vea comprimido
+    doc.addImage(logoAg, 'PNG', marginLeft, 25, 100, 45);
+    
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.setTextColor(0, 0, 139); 
-    doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
+    doc.setFontSize(16);
+    doc.setTextColor(0, 51, 153); 
+    doc.text("Equipos y Servicios Especializados AG", marginLeft + 110, 50, { align: "left" });
+    
+    // Línea divisoria superior
+    doc.setDrawColor(0, 51, 153);
+    doc.setLineWidth(1);
+    doc.line(marginLeft, 80, marginRight, 80);
+
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
     doc.setFont("helvetica", "normal");
@@ -509,10 +565,10 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   };
 
   const checkPageBreak = (heightNeeded: number) => {
-    if (currentY + heightNeeded > maxY) {
+    if (currentY + heightNeeded > pageHeight - marginBottom) {
       doc.addPage();
       drawHeaderBase(); 
-      currentY = 85; 
+      currentY = 100; 
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
@@ -542,24 +598,29 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   };
 
   drawHeaderBase();
-  currentY = 80; 
-  
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
+  currentY = 100; 
   
   const col1X = marginLeft;
-  const col2X = pageWidth / 2 + 20;
+  const col2X = pageWidth / 2 + 10;
 
-  doc.text(`Fecha: ${formData.fecha || "-"}`, col2X, currentY);
+  // Recuadro tenue para Nombre y Fecha
+  doc.setFillColor(245, 247, 250); 
+  doc.rect(marginLeft, currentY - 12, pageWidth - 80, 25, 'F');
+
+  doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.text(`Nombre: ${formData.nombre || "-"}`, marginLeft, currentY); 
-  currentY += lineHeight + 5;
+  doc.text("Nombre:", marginLeft + 10, currentY + 5);
+  doc.setFont("helvetica", "normal");
+  doc.text(formData.nombre || "-", marginLeft + 65, currentY + 5);
 
-  doc.setDrawColor(100);
-  doc.setLineWidth(1);
-  doc.line(marginLeft, currentY, marginRight, currentY);
-  currentY += 20;
+  doc.setFont("helvetica", "bold");
+  doc.text("Fecha:", col2X, currentY + 5);
+  doc.setFont("helvetica", "normal");
+  doc.text(formData.fecha || "-", col2X + 45, currentY + 5);
+  
+  currentY += 35; 
 
+  // RETIRAMOS LA PRÓXIMA CALIBRACIÓN DEL PDF (Solo queda en la interfaz como pediste)
   const infoData = [
     { l: "Cliente:", v: formData.cliente, l2: "N. Certificado:", v2: formData.certificado },
     { l: "Equipo:", v: formData.equipo, l2: "ID:", v2: formData.id },
@@ -569,39 +630,47 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     { l: "Alcance:", v: formData.alcance, l2: "Resolución:", v2: formData.resolucion },
     { l: "Frecuencia:", v: formData.frecuenciaCalibracion, l2: "Recepción:", v2: formData.fechaRecepcion || "N/A" },
     { l: "Temp. Amb:", v: `${formData.tempAmbiente || "-"} °C`, l2: "Humedad:", v2: `${formData.humedadRelativa || "-"} %` },
+    { l: "Condición:", v: formData.condicionEquipo === "buenas" ? "Buenas condiciones" : formData.condicionEquipo === "dano" ? "Presenta daño/anomalía" : "-", l2: "", v2: "" },
   ];
 
   doc.setFontSize(10);
   
-  infoData.forEach(row => {
+  // Tabla de información con estilo Zebra (intercalado sutil)
+  infoData.forEach((row, index) => {
     checkPageBreak(20);
-    doc.setFont("helvetica", "bold");
-    doc.text(row.l, col1X, currentY);
-    doc.setFont("helvetica", "normal");
-    doc.text(String(row.v || "-").substring(0, 35), col1X + 65, currentY);
+    
+    if (index % 2 === 0) {
+       doc.setFillColor(252, 252, 252);
+       doc.rect(marginLeft, currentY - 11, pageWidth - 80, 16, 'F');
+    }
 
     doc.setFont("helvetica", "bold");
-    doc.text(row.l2, col2X, currentY);
+    doc.text(row.l, col1X + 5, currentY + 1);
     doc.setFont("helvetica", "normal");
-    doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY);
+    doc.text(String(row.v || "-").substring(0, 35), col1X + 75, currentY + 1);
+
+    doc.setFont("helvetica", "bold");
+    doc.text(row.l2, col2X, currentY + 1);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY + 1);
     
     currentY += 16;
   });
 
-  currentY += 15;
+  currentY += 20;
 
+  // --- CABECERA DE MEDICIONES ---
   checkPageBreak(40); 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setFillColor(220, 220, 220);
+  doc.setFontSize(12);
+  doc.setFillColor(230, 235, 245); 
   doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F'); 
   doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
-  currentY += 20;
+  currentY += 25;
 
   const isMasa = formData.magnitud === "Masa";
   
   if (isMasa) {
-      // === DIBUJO DE LA EXCENTRICIDAD EN EL PDF ===
       const excLines = (formData.excentricidad || "").split('\n');
       let p1="-", p2="-", p3="-", p4="-", p5="-";
       excLines.forEach(l => {
@@ -624,38 +693,29 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       const boxX = pageWidth / 2 - boxSize / 2;
       const boxY = currentY;
 
-      // Dibujar rectángulo principal
       doc.setDrawColor(150);
       doc.setLineWidth(1);
       doc.rect(boxX, boxY, boxSize, boxSize); 
 
-      // Líneas cruzadas
       doc.setLineWidth(0.5);
       doc.setDrawColor(200);
       doc.line(boxX + boxSize/2, boxY, boxX + boxSize/2, boxY + boxSize);
       doc.line(boxX, boxY + boxSize/2, boxX + boxSize, boxY + boxSize/2);
 
-      // Textos de los puntos simulando la UI
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
 
-      // 3 (Sup Izq)
       doc.text(`3: ${p3}`, boxX - 35, boxY + 10);
-      // 4 (Sup Der)
       doc.text(`4: ${p4}`, boxX + boxSize + 5, boxY + 10);
-      // 1 (Centro)
       doc.setFont("helvetica", "bold");
       doc.text(`1: ${p1}`, boxX + boxSize/2 - 12, boxY + boxSize/2 - 5);
       doc.setFont("helvetica", "normal");
-      // 2 (Inf Izq)
       doc.text(`2: ${p2}`, boxX - 35, boxY + boxSize - 5);
-      // 5 (Inf Der)
       doc.text(`5: ${p5}`, boxX + boxSize + 5, boxY + boxSize - 5);
 
       currentY += boxSize + 25;
 
-      // === TABLA DE LINEALIDAD Y REPETIBILIDAD ===
       checkPageBreak(40);
       doc.setFillColor(50, 80, 160); 
       doc.setTextColor(255, 255, 255); 
@@ -691,7 +751,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       });
 
   } else {
-    // === LÓGICA NORMAL PARA LAS DEMÁS MAGNITUDES ===
     doc.setDrawColor(0);
     doc.setFillColor(50, 80, 160); 
     doc.setTextColor(255, 255, 255); 
@@ -744,17 +803,78 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   }
 
   currentY += 20;
-  const notasLines = doc.splitTextToSize(formData.notas || "-", tableWidth);
-  checkPageBreak(notasLines.length * 15 + 30);
+
+  if (formData.condicionEquipo === "dano" && formData.descripcionDano) {
+    checkPageBreak(60);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setFillColor(255, 240, 240);
+    doc.setDrawColor(200, 50, 50);
+    doc.setLineWidth(0.5);
+    doc.rect(marginLeft, currentY, pageWidth - 80, 20, 'FD');
+    doc.setTextColor(180, 0, 0);
+    doc.text("⚠ Daño / Anomalía Detectada:", marginLeft + 8, currentY + 14);
+    doc.setTextColor(0, 0, 0);
+    currentY += 24;
+    const danoLines = doc.splitTextToSize(formData.descripcionDano, tableWidth - 20);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(danoLines, marginLeft + 8, currentY);
+    currentY += danoLines.length * 14 + 16;
+  }
+
+  if (formData.fotoEquipoBase64) {
+    checkPageBreak(220);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Evidencia Fotográfica del Equipo:", marginLeft, currentY);
+    currentY += 14;
+    try {
+      const imgData = formData.fotoEquipoBase64.startsWith('data:') 
+        ? formData.fotoEquipoBase64 
+        : `data:image/jpeg;base64,${formData.fotoEquipoBase64}`;
+      const maxImgWidth = 300;
+      const maxImgHeight = 200;
+      doc.addImage(imgData, 'JPEG', marginLeft, currentY, maxImgWidth, maxImgHeight, undefined, 'MEDIUM');
+      currentY += maxImgHeight + 16;
+    } catch(imgErr) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text("(No se pudo incrustar la imagen)", marginLeft, currentY);
+      currentY += 20;
+      doc.setTextColor(0, 0, 0);
+    }
+  }
+
+  const notasText = formData.notas ? formData.notas.trim() : "Sin observaciones adicionales.";
+  const notasLines = doc.splitTextToSize(notasText, tableWidth - 20);
+  const notasHeight = notasLines.length * 14 + 30;
+
+  let notesY = currentY + 20;
+  const spaceLeftOnPage = pageHeight - marginBottom - currentY;
+
+  if (spaceLeftOnPage > notasHeight + 20) {
+      notesY = pageHeight - marginBottom - notasHeight - 10;
+  } else {
+      checkPageBreak(notasHeight + 20);
+      notesY = currentY + 20;
+  }
+
+  doc.setFillColor(250, 250, 250);
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.5);
+  doc.rect(marginLeft, notesY - 15, pageWidth - 80, notasHeight, 'FD');
 
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.text("Observaciones / Notas:", marginLeft, currentY);
-  currentY += 15;
-  
+  doc.setTextColor(0, 0, 0);
+  doc.text("Observaciones / Notas:", marginLeft + 10, notesY + 2);
+
   doc.setFont("helvetica", "italic");
   doc.setFontSize(10);
-  doc.text(notasLines, marginLeft, currentY);
+  doc.text(notasLines, marginLeft + 10, notesY + 18);
 
   drawFooter();
   return doc;
@@ -766,6 +886,7 @@ const initialState: WorksheetState = {
   alcance: "", resolucion: "", medicionPatron: "", medicionInstrumento: "", excentricidad: "", linealidad: "",
   repetibilidad: "", notas: "", tempAmbiente: "", humedadRelativa: "", idBlocked: false, idErrorMessage: "",
   permitirExcepcion: false, isMasterData: false, fieldsLocked: false,
+  condicionEquipo: "", descripcionDano: "", fotoEquipoBase64: "", fotoEquipoURL: "",
 };
 
 function worksheetReducer(state: WorksheetState, action: WorksheetAction): WorksheetState {
@@ -785,6 +906,9 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
     case 'CLEAR_ID_BLOCK': return { ...state, idBlocked: false, idErrorMessage: "" };
     case 'SET_EXCEPCION': return { ...state, permitirExcepcion: action.payload };
     case 'RESTORE_BACKUP': return { ...action.payload };
+    case 'CHANGE_CONDICION': {
+      return { ...state, condicionEquipo: action.condicion };
+    }
     default: return state;
   }
 }
@@ -812,26 +936,25 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [metrologyWarning, setMetrologyWarning] = useState<string | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
+  const [pendingUploads, setPendingUploads] = useState<number>(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const processingQueueRef = useRef(false);
 
   const [electricalValues, setElectricalValues] = useState<Record<string, { patron: string, instrumento: string }>>({});
 
-  // --- NUEVA LÓGICA DE DIAGRAMA DE EXCENTRICIDAD (Evita campos en blanco) ---
   const [localExc, setLocalExc] = useState({ p1: '', p2: '', p3: '', p4: '', p5: '' });
 
-  // Sincronizar desde la base de datos o estado global SOLO cuando carga la app
   useEffect(() => {
       if (state.magnitud === 'Masa' && state.excentricidad) {
           const next = { p1: '', p2: '', p3: '', p4: '', p5: '' };
           const lines = state.excentricidad.split('\n');
           lines.forEach(line => {
-               // Extraemos el valor sin trim() durante el tecleo activo, pero al cargar sí lo limpiamos
                if (line.startsWith('1')) next.p1 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('2')) next.p2 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('3')) next.p3 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('4')) next.p4 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('5')) next.p5 = line.substring(line.indexOf(':')+1).trim() || '';
           });
-          // Solo actualizamos si realmente es distinto para no sobreescribir lo que estés tecleando
           setLocalExc(prev => (JSON.stringify(prev) !== JSON.stringify(next) ? next : prev));
       }
   }, [state.excentricidad, state.magnitud]);
@@ -840,7 +963,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setLocalExc(prev => ({ ...prev, [key]: val }));
   };
 
-  // Esta función empuja lo que escribiste al estado global SOLAMENTE cuando quitas el foco (onBlur)
   const syncMasaToGlobalState = useCallback(() => {
       if (state.magnitud !== "Masa") return;
       const str = `1 (Centro): ${localExc.p1}\n2 (Inf Izq): ${localExc.p2}\n3 (Sup Izq): ${localExc.p3}\n4 (Sup Der): ${localExc.p4}\n5 (Inf Der): ${localExc.p5}`;
@@ -848,18 +970,73 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: str });
       }
   }, [localExc, state.magnitud, state.excentricidad]);
-  // -------------------------------------------
 
   const activeClientNotes = useMemo(() => {
     const found = listaClientes.find(c => c.nombre === state.cliente);
     return found?.requerimientos || "";
   }, [state.cliente, listaClientes]);
 
+  // === UI: FECHA DE PRÓXIMA CALIBRACIÓN CALCULADA ===
+  const nextCalibrationStr = useMemo(() => {
+      if (!state.fecha || !state.frecuenciaCalibracion) return null;
+      const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
+      if (!nextDate) return null;
+      return format(nextDate, "dd/MM/yyyy");
+  }, [state.fecha, state.frecuenciaCalibracion]);
+
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const updatePendingCount = () => {
+      setPendingUploads(getOfflineQueue().length);
+    };
+
+    const processOfflineQueue = async () => {
+      if (processingQueueRef.current) return;
+      const queue = getOfflineQueue();
+      if (queue.length === 0) return;
+      processingQueueRef.current = true;
+      let uploaded = 0;
+      for (const item of queue) {
+        try {
+          const { jsPDF: JsPDF } = await import("jspdf");
+          const binaryStr = atob(item.pdfBlob);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const pdfRef = ref(storage, item.nombreArchivo);
+          await uploadBytes(pdfRef, blob);
+          const pdfURL = await getDownloadURL(pdfRef);
+          const fullData = { ...item.data, pdfURL, cargado_drive: "Si", status: "completed" };
+          if (item.finalDocId) {
+            await updateDoc(doc(db, "hojasDeTrabajo", item.finalDocId), fullData);
+          } else {
+            await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+          }
+          removeFromOfflineQueue(item.id);
+          uploaded++;
+        } catch (err) {
+          console.error("Error procesando cola offline:", err);
+        }
+      }
+      processingQueueRef.current = false;
+      updatePendingCount();
+      if (uploaded > 0) {
+        setToast({ message: `☁️ ${uploaded} hoja${uploaded > 1 ? 's' : ''} de trabajo subida${uploaded > 1 ? 's' : ''} correctamente al reconectarse.`, type: 'success' });
+      }
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      setTimeout(processOfflineQueue, 1500);
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    updatePendingCount();
+    if (navigator.onLine) {
+      setTimeout(processOfflineQueue, 2000);
+    }
+
     return () => {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
@@ -1232,48 +1409,43 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
     setIsSaving(true);
     try {
-      if (!navigator.onLine) throw new Error("offline");
-
-      const q = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
-      if (!(await getDocs(q)).empty && !worksheetId) {
-         setIsSaving(false);
-         setToast({ message: "El número de certificado ya existe.", type: 'error' });
-         return;
-      }
-
-      let finalDocId = worksheetId;
-      let existingData: any = null;
-
-      if (!finalDocId) {
-          const qDupe = query(
-              collection(db, "hojasDeTrabajo"),
-              where("id", "==", state.id.trim()),
-              where("cliente", "==", state.cliente)
-          );
-          const dupeDocs = await getDocs(qDupe);
-          
-          let bestMatchDate = -1;
-          dupeDocs.forEach(d => {
-              const data = d.data();
-              if (!data.pdfURL || data.status_certificado === 'Pendiente de Certificado' || data.status_equipo === 'Desconocido' || data.status_equipo === 'Recepción') {
-                  const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
-                  if (docTime > bestMatchDate) {
-                      bestMatchDate = docTime;
-                      finalDocId = d.id;
-                      existingData = data;
-                  }
-              }
-          });
-      }
-
       const { jsPDF } = await import("jspdf");
       const pdfDoc = generateTemplatePDF(state, jsPDF as any); 
       const blob = pdfDoc.output("blob");
       const nombreArchivo = `worksheets/${getUserName(currentUser || user)}/${state.certificado}_${state.id || "SINID"}.pdf`;
-      const pdfRef = ref(storage, nombreArchivo);
 
-      await uploadBytes(pdfRef, blob);
-      const pdfURL = await getDownloadURL(pdfRef);
+      let finalDocId = worksheetId || null;
+      let existingData: any = null;
+
+      if (!finalDocId) {
+          if (navigator.onLine) {
+            const q = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
+            if (!(await getDocs(q)).empty && !worksheetId) {
+              setIsSaving(false);
+              setToast({ message: "El número de certificado ya existe.", type: 'error' });
+              return;
+            }
+
+            const qDupe = query(
+                collection(db, "hojasDeTrabajo"),
+                where("id", "==", state.id.trim()),
+                where("cliente", "==", state.cliente)
+            );
+            const dupeDocs = await getDocs(qDupe);
+            let bestMatchDate = -1;
+            dupeDocs.forEach(d => {
+                const data = d.data();
+                if (!data.pdfURL || data.status_certificado === 'Pendiente de Certificado' || data.status_equipo === 'Desconocido' || data.status_equipo === 'Recepción') {
+                    const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
+                    if (docTime > bestMatchDate) {
+                        bestMatchDate = docTime;
+                        finalDocId = d.id;
+                        existingData = data;
+                    }
+                }
+            });
+          }
+      }
 
       const sanitizedState: WorksheetState = { ...state };
       for (const key in sanitizedState) {
@@ -1293,8 +1465,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           priority: "medium",
           status_equipo: "Calibrado",        
           status_certificado: "Generado",    
-          cargado_drive: "Si",               
-          pdfURL, 
+          cargado_drive: "Pendiente",               
           timestamp: Date.now(), 
           createdAt: existingData?.createdAt || new Date().toISOString(), 
           userId: currentUser?.uid || user?.uid || "unknown" 
@@ -1305,36 +1476,83 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           fullData.fechaEntrada = existingData.fechaEntrada;
       }
 
-      if (finalDocId) {
-        await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
-      } else {
-        await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+      if (state.fotoEquipoBase64 && navigator.onLine) {
+        try {
+          const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
+          const imgBlob = await fetch(imgData).then(r => r.blob());
+          const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
+          await uploadBytes(fotoRef, imgBlob);
+          fullData.fotoEquipoURL = await getDownloadURL(fotoRef);
+        } catch (fotoErr) {
+          console.error("Error subiendo foto:", fotoErr);
+        }
       }
 
-      setToast({ message: "Hoja de trabajo guardada correctamente.", type: 'success' });
-      localStorage.removeItem('backup_worksheet_data');
-      
-      try {
-        // @ts-ignore
-        await generateAndPrintLabel(hiddenLabelRef, tapeSize);
+      if (navigator.onLine) {
+        const pdfRef = ref(storage, nombreArchivo);
+        await uploadBytes(pdfRef, blob);
+        const pdfURL = await getDownloadURL(pdfRef);
+        fullData.pdfURL = pdfURL;
+        fullData.cargado_drive = "Si";
+
+        if (finalDocId) {
+          await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
+        } else {
+          await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+        }
+
         setToast({ message: "✅ Guardado e impreso correctamente.", type: 'success' });
-      } catch (printError) {
-        console.error("Error al imprimir:", printError);
-        setToast({ message: "⚠️ Guardado OK, pero falló la impresión.", type: 'warning' });
+        localStorage.removeItem('backup_worksheet_data');
+
+        try {
+          // @ts-ignore
+          await generateAndPrintLabel(hiddenLabelRef, tapeSize);
+        } catch (printError) {
+          console.error("Error al imprimir:", printError);
+          setToast({ message: "⚠️ Guardado OK, pero falló la impresión.", type: 'warning' });
+        }
+
+        setTimeout(() => goBack(), 1500);
+
+      } else {
+        const pdfBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        const queueItem: OfflineQueueItem = {
+          id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          timestamp: Date.now(),
+          data: fullData,
+          pdfBlob: pdfBase64,
+          nombreArchivo,
+          finalDocId,
+          worksheetId,
+        };
+
+        addToOfflineQueue(queueItem);
+        setPendingUploads(getOfflineQueue().length);
+        localStorage.removeItem('backup_worksheet_data');
+
+        setToast({ 
+          message: "📵 Sin conexión. Hoja guardada localmente. Se subirá automáticamente cuando haya internet.", 
+          type: 'warning' 
+        });
+
+        try {
+          // @ts-ignore
+          await generateAndPrintLabel(hiddenLabelRef, tapeSize);
+        } catch {}
+
+        setTimeout(() => goBack(), 2000);
       }
-      
-      setTimeout(() => goBack(), 1500);
 
     } catch (e: any) {
       console.error("Error al guardar:", e);
       localStorage.setItem('backup_worksheet_data', JSON.stringify(state));
-      let msg = "Error desconocido.";
-      if (e.message === "offline" || e.code === "unavailable" || e.message.includes("network")) {
-         msg = "Sin conexión. Se guardó una copia local. No cierres sesión.";
-      } else {
-         msg = `Error: ${e.message || e}`;
-      }
-      setToast({ message: msg, type: 'warning' });
+      setToast({ message: `Error inesperado: ${e.message || e}. Se guardó copia local.`, type: 'warning' });
     } finally {
       setIsSaving(false);
     }
@@ -1358,6 +1576,17 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   }, [state.lugarCalibracion, state.fechaRecepcion, state.fecha]);
 
   const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200"}`;
+
+  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      dispatch({ type: 'SET_FIELD', field: 'fotoEquipoBase64', payload: base64 });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const labelData: LabelData = React.useMemo(() => {
     const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
@@ -1394,6 +1623,16 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 <p className="text-blue-100 text-sm flex items-center gap-2">
                   Consecutivo: {state.certificado || "SIN CERTIFICADO"}
                   {!isOnline && <span className="text-xs bg-orange-500/80 px-2 py-0.5 rounded text-white flex items-center gap-1"><WifiOff className="w-3 h-3"/> Offline</span>}
+                  {pendingUploads > 0 && isOnline && (
+                    <span className="text-xs bg-yellow-500/90 px-2 py-0.5 rounded text-white flex items-center gap-1 animate-pulse">
+                      <CloudUpload className="w-3 h-3"/> Subiendo {pendingUploads} pendiente{pendingUploads > 1 ? 's' : ''}…
+                    </span>
+                  )}
+                  {pendingUploads > 0 && !isOnline && (
+                    <span className="text-xs bg-orange-600/90 px-2 py-0.5 rounded text-white flex items-center gap-1">
+                      <CloudOff className="w-3 h-3"/> {pendingUploads} en cola offline
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -1450,6 +1689,17 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
                     <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
                     
+                    {/* UI: RECUADRO DE PRÓXIMA CALIBRACIÓN */}
+                    {nextCalibrationStr && (
+                      <div className="mt-2 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-800 text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                        <Calendar className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">Próxima Calibración: {nextCalibrationStr}</p>
+                          <p className="text-xs opacity-90 mt-0.5">Calculada según la fecha y frecuencia indicada.</p>
+                        </div>
+                      </div>
+                    )}
+
                     {slaInfo && (
                       <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
                         slaInfo.esTardio 
@@ -1648,6 +1898,135 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                            if(validationErrors.resolucion) setValidationErrors({...validationErrors, resolucion: false});
                       }} 
                   />
+                </div>
+
+                {/* ============================================================ */}
+                {/* SECCIÓN: CONDICIÓN DEL EQUIPO + FOTO                         */}
+                {/* ============================================================ */}
+                <div className="rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm">
+                  <div className="bg-gradient-to-r from-gray-800 to-slate-700 px-6 py-4 flex items-center gap-3">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                    <div>
+                      <h3 className="text-white font-bold text-sm">Inspección Visual del Equipo</h3>
+                      <p className="text-gray-300 text-xs mt-0.5">¿El equipo presenta daños, golpes o anomalías visibles?</p>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-white space-y-5">
+                    {/* Botones de condición */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => dispatch({ type: 'CHANGE_CONDICION', condicion: 'buenas' })}
+                        className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all font-semibold text-sm ${
+                          state.condicionEquipo === 'buenas'
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-md'
+                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-emerald-300'
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${state.condicionEquipo === 'buenas' ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                          <CheckSquare className={`w-5 h-5 ${state.condicionEquipo === 'buenas' ? 'text-emerald-600' : 'text-gray-400'}`} />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-bold">Buenas condiciones</div>
+                          <div className="text-xs font-normal opacity-70">Sin daños aparentes</div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => dispatch({ type: 'CHANGE_CONDICION', condicion: 'dano' })}
+                        className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all font-semibold text-sm ${
+                          state.condicionEquipo === 'dano'
+                            ? 'border-red-500 bg-red-50 text-red-800 shadow-md'
+                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-red-300'
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${state.condicionEquipo === 'dano' ? 'bg-red-100' : 'bg-gray-100'}`}>
+                          <ShieldAlert className={`w-5 h-5 ${state.condicionEquipo === 'dano' ? 'text-red-600' : 'text-gray-400'}`} />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-bold">Presenta daño / anomalía</div>
+                          <div className="text-xs font-normal opacity-70">Requiere diagnóstico</div>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Descripción del daño */}
+                    {state.condicionEquipo === 'dano' && (
+                      <div className="animate-in fade-in slide-in-from-top-2">
+                        <label className="flex items-center gap-2 text-sm font-semibold text-red-700 mb-2">
+                          <AlertOctagon className="w-4 h-4" />
+                          Descripción del daño o anomalía*
+                        </label>
+                        <textarea
+                          value={state.descripcionDano}
+                          onChange={e => dispatch({ type: 'SET_FIELD', field: 'descripcionDano', payload: e.target.value })}
+                          rows={3}
+                          placeholder="Ej: Golpe visible en la parte frontal, dial dañado, fuga de aceite..."
+                          className="w-full p-3 border-2 border-red-200 rounded-xl resize-y focus:ring-2 focus:ring-red-400 text-sm bg-red-50 placeholder-red-300"
+                        />
+                      </div>
+                    )}
+
+                    {/* SECCIÓN FOTO */}
+                    <div className="border-t border-gray-100 pt-5">
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                        <Camera className="w-4 h-4 text-blue-500" />
+                        Foto del equipo
+                        <span className="text-xs font-normal text-gray-400">(evidencia visual — opcional)</span>
+                      </label>
+
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleFotoChange}
+                      />
+
+                      {!state.fotoEquipoBase64 ? (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full flex flex-col items-center justify-center gap-2 py-8 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 hover:bg-blue-100 transition-all text-blue-600 hover:border-blue-400"
+                        >
+                          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                            <Upload className="w-6 h-6 text-blue-500" />
+                          </div>
+                          <div className="text-sm font-semibold">Tomar foto o subir imagen</div>
+                          <div className="text-xs text-blue-400">Se incrustará en el PDF final</div>
+                        </button>
+                      ) : (
+                        <div className="relative rounded-xl overflow-hidden border-2 border-emerald-300 shadow-md">
+                          <img
+                            src={state.fotoEquipoBase64}
+                            alt="Foto del equipo"
+                            className="w-full max-h-64 object-contain bg-gray-100"
+                          />
+                          <div className="absolute top-2 right-2 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="bg-white/90 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-white flex items-center gap-1"
+                            >
+                              <Camera className="w-3 h-3" /> Cambiar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => dispatch({ type: 'SET_FIELD', field: 'fotoEquipoBase64', payload: '' })}
+                              className="bg-white/90 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-white flex items-center gap-1"
+                            >
+                              <XCircle className="w-3 h-3" /> Quitar
+                            </button>
+                          </div>
+                          <div className="bg-emerald-600 text-white text-xs px-3 py-1 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Foto cargada · Se incluirá en el PDF
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 
                 {state.magnitud === "Masa" ? (

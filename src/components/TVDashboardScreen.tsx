@@ -96,16 +96,28 @@ const TVDashboardScreen: React.FC = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
-    // 1. FILTRO ROBUSTO: Mostrar TODO lo que siga en el laboratorio HASTA que se marque Realizado en Drive
+    // 1. FILTRO ULTRA ROBUSTO: Identifica la realidad cruzando columnas para evitar equipos fantasmas
     const equiposPendientes = hojasDeTrabajo.filter(r => {
-        const isLab = (r.lugarCalibracion || '').toLowerCase() === 'laboratorio';
-        const isNotRejected = r.status_equipo !== 'Rechazado';
-        const isNotDelivered = r.status_equipo !== 'Entregado' && r.ubicacion_real !== 'Entregado';
+        // ¿El equipo está físicamente en Laboratorio o Recepción?
+        const isLab = (r.lugarCalibracion || '').toLowerCase() === 'laboratorio' || 
+                      (r.ubicacion_real || '').toLowerCase() === 'laboratorio' || 
+                      (r.ubicacion_real || '').toLowerCase() === 'recepción';
         
-        // REGLA CRÍTICA NUEVA: Si el archivo ya se validó en DriveScreen, desaparece de la TV.
-        const isNotRealizado = r.cargado_drive !== 'Realizado';
+        // ¿Está rechazado?
+        const isRejected = (r.status_equipo || '').toLowerCase() === 'rechazado';
+        
+        // ¿Ya se entregó físicamente? (Si dice Entregado o ya le pusieron Folio de Salida)
+        const isDelivered = (r.ubicacion_real || '').toLowerCase() === 'entregado' || 
+                            (r.status_equipo || '').toLowerCase() === 'entregado' || 
+                            (r.folioSalida && r.folioSalida.trim() !== "");
+        
+        // ¿Ya terminó todo su proceso documental? (En Drive dice Realizado, O el certificado ya se Firmó/Finalizó)
+        const isRealizado = (r.cargado_drive || '').toLowerCase() === 'realizado' || 
+                            (r.status_certificado || '').toLowerCase() === 'firmado' || 
+                            (r.status_certificado || '').toLowerCase() === 'finalizado';
 
-        return isLab && isNotRejected && isNotDelivered && isNotRealizado;
+        // Solo mostramos los que SÍ están en el laboratorio y NO han sido finalizados, entregados o rechazados
+        return isLab && !isRejected && !isDelivered && !isRealizado;
     });
 
     const contadoresPendientes: Record<string, number> = { "Mecánica": 0, "Dimensional": 0, "Eléctrica": 0, "Sin Asignar": 0 };
@@ -113,7 +125,7 @@ const TVDashboardScreen: React.FC = () => {
     const procesados = equiposPendientes.map(r => {
         let dep = r.departamento || "Sin Asignar";
         
-        // Normalización de acentos para evitar que las gráficas se dividan o no cuenten
+        // Normalizamos acentos para que no se dividan las gráficas
         if (dep.toLowerCase() === 'mecanica' || dep.toLowerCase() === 'mecánica') dep = 'Mecánica';
         if (dep.toLowerCase() === 'electrica' || dep.toLowerCase() === 'eléctrica') dep = 'Eléctrica';
 
@@ -122,11 +134,11 @@ const TVDashboardScreen: React.FC = () => {
 
         let diffDays = 0, daysLabel = "-", statusColor = "text-gray-400";
 
-        // Si ya está calibrado (pero aún no "Realizado" en Drive), lo mostramos en azul
+        // Si ya está calibrado por el técnico, se pinta en azul y baja en prioridad
         if (r.status_equipo === 'Calibrado') {
             statusColor = "text-blue-400 font-bold";
             daysLabel = "Calibrado";
-            diffDays = 999; // Mandarlo al final de las urgencias
+            diffDays = 999; 
         } else if (r.fechaEntrada && r.diasPromesa) {
             const start = new Date(r.fechaEntrada + 'T00:00:00');
             const deadline = addBusinessDays(start, Number(r.diasPromesa));
@@ -258,7 +270,7 @@ const TVDashboardScreen: React.FC = () => {
           </div>
         </div>
         
-        {/* WIDGET RESUMEN: Permite envolverse (wrap) en celulares */}
+        {/* WIDGET RESUMEN */}
         <div className="flex items-center gap-2 lg:gap-3 bg-slate-800/50 p-2 rounded-2xl border border-white/10 shadow-inner flex-wrap justify-center w-full md:w-auto">
             <div className="flex items-center gap-2 text-xs lg:text-sm font-bold text-gray-300 px-1 lg:px-2">
                 <Clock className="w-4 h-4 text-orange-400" /> <span className="hidden sm:inline">Resumen Lab:</span>
@@ -282,17 +294,17 @@ const TVDashboardScreen: React.FC = () => {
 
          <AnimatePresence mode="wait">
 
-            {/* ===== SLIDE TIPO 1: DEPARTAMENTOS MONDAY.COM ===== */}
+            {/* ===== SLIDE TIPO 1: DEPARTAMENTOS ===== */}
             {currentSlide.type === 'department' && (
                 <motion.div key={`dept-${currentSlide.id}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.5 }} 
                             className="w-full h-full flex flex-col lg:flex-row gap-4 lg:gap-8 p-4 lg:p-8 overflow-y-auto lg:overflow-hidden">
                     
-                    {/* IZQUIERDA: GRÁFICO TIPO MONDAY */}
+                    {/* IZQUIERDA: GRÁFICO */}
                     <div className="w-full lg:w-[45%] flex flex-col h-[350px] lg:h-full bg-slate-800/40 rounded-3xl border border-white/5 p-4 lg:p-6 shadow-xl shrink-0">
                         <h2 className="text-lg lg:text-2xl font-bold text-white mb-2 flex items-center gap-2 lg:gap-3">
                             <BarChart3 className="text-orange-500 w-5 h-5 lg:w-6 lg:h-6"/> Equipos por Departamento
                         </h2>
-                        <p className="text-xs lg:text-sm text-gray-400 mb-4 lg:mb-8">Estado actual de carga de trabajo.</p>
+                        <p className="text-xs lg:text-sm text-gray-400 mb-4 lg:mb-8">Estado actual de carga de trabajo en laboratorio.</p>
                         
                         <div className="flex-1 min-h-0 w-full">
                             <ResponsiveContainer width="100%" height="100%">
@@ -437,7 +449,7 @@ const TVDashboardScreen: React.FC = () => {
                             className="w-full h-full flex flex-col items-center justify-center p-4 lg:p-10 overflow-y-auto lg:overflow-hidden">
                     <div className="text-center mb-6 lg:mb-8 shrink-0 mt-6 lg:mt-0">
                         <h2 className="text-3xl lg:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 mb-2">Panorama Global</h2>
-                        <p className="text-sm lg:text-lg text-gray-400">Total de servicios agrupados por disciplina</p>
+                        <p className="text-sm lg:text-lg text-gray-400">Total de servicios agrupados por disciplina (Mes actual)</p>
                     </div>
                     <div className={`w-full max-w-5xl h-[400px] lg:h-full lg:flex-1 p-4 lg:p-8 rounded-3xl border ${COLORS.cardBorder} bg-gray-900/80 backdrop-blur-md shadow-2xl shrink-0`}>
                         {magnitudesGlobalData.length > 0 ? (
@@ -450,7 +462,7 @@ const TVDashboardScreen: React.FC = () => {
                                     <Bar dataKey="total" name="Calibraciones" radius={[0, 8, 8, 0]}>{magnitudesGlobalData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Bar>
                                 </BarChart>
                             </ResponsiveContainer>
-                        ) : (<div className="w-full h-full flex items-center justify-center text-lg lg:text-xl text-gray-500">No hay datos registrados aún.</div>)}
+                        ) : (<div className="w-full h-full flex items-center justify-center text-lg lg:text-xl text-gray-500">No hay datos registrados aún este mes.</div>)}
                     </div>
                 </motion.div>
             )}
