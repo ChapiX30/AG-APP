@@ -231,14 +231,14 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-6 rounded-xl border border-gray-200">
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">De:</label>
-              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg text-gray-900" placeholder="0" />
-              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
+              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg" placeholder="0" />
+              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
             <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0"><button onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full"><ArrowRightLeft className="w-5 h-5" /></button></div>
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">A:</label>
               <div className="w-full p-3 text-lg font-mono font-bold bg-blue-50 text-blue-900 border border-blue-100 rounded-lg flex items-center min-h-[54px]">{result || "-"}</div>
-              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
+              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
           </div>
         </div>
@@ -284,6 +284,7 @@ interface WorksheetState {
   permitirExcepcion: boolean;
   isMasterData: boolean;
   fieldsLocked: boolean;
+  // Nuevos campos
   condicionEquipo: "buenas" | "dano" | "";
   descripcionDano: string;
   fotoEquipoBase64: string;
@@ -310,10 +311,10 @@ type WorksheetAction =
 const OFFLINE_QUEUE_KEY = 'ag_offline_save_queue';
 
 interface OfflineQueueItem {
-  id: string;
+  id: string; // uuid
   timestamp: number;
   data: any;
-  pdfBlob: string;
+  pdfBlob: string; // base64
   nombreArchivo: string;
   finalDocId: string | null;
   worksheetId: string | undefined;
@@ -336,7 +337,7 @@ const removeFromOfflineQueue = (id: string) => {
 };
 
 // ====================================================================
-// COMPONENTE SEARCH SELECT (Rediseñado: Más Pro, con Botón de Borrar)
+// COMPONENTE SEARCH SELECT
 // ====================================================================
 
 interface ClienteSearchSelectProps {
@@ -350,7 +351,6 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     const [localSearch, setLocalSearch] = useState(currentValue);
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => { setLocalSearch(currentValue); }, [currentValue]);
 
@@ -392,61 +392,31 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
         setIsOpen(false);
     };
 
-    // Novedad: Botón para limpiar rápidamente la selección
-    const handleClear = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setLocalSearch("");
-        onSelect("");
-        setIsOpen(true);
-        inputRef.current?.focus();
-    };
-
     const sortedLetters = Object.keys(filteredAndGroupedClientes).sort();
 
     return (
         <div className="relative" ref={wrapperRef}>
-            <div className="relative flex items-center">
+            <div className="relative">
                 <input 
-                    ref={inputRef}
                     type="text" 
                     value={localSearch} 
                     onChange={handleChange} 
                     onFocus={() => setIsOpen(true)} 
                     placeholder="Buscar o seleccionar cliente..."
-                    className={`w-full p-4 border rounded-xl pr-12 outline-none transition-all duration-200 bg-white text-gray-900 font-medium ${
-                        isOpen 
-                            ? 'rounded-b-none border-b-0 shadow-lg border-blue-400 ring-1 ring-blue-400' 
-                            : 'shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                    } ${hasError ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} 
+                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${isOpen ? 'rounded-b-none border-b-0' : ''} ${hasError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-gray-200'}`} 
                 />
-                
-                {/* Lógica condicional: Si hay texto, muestra la "X" para borrar. Si no, la Lupa. */}
-                {localSearch ? (
-                    <button 
-                        type="button" 
-                        onClick={handleClear}
-                        className="absolute right-3 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                        title="Borrar selección"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
-                ) : (
-                    <Search className="absolute right-4 w-5 h-5 text-gray-400 pointer-events-none" />
-                )}
+                <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             </div>
-            
             {isOpen && (
-                <div className="absolute z-50 w-full bg-white border border-gray-200 max-h-72 overflow-y-auto rounded-b-xl shadow-2xl custom-scrollbar">
+                <div className="absolute z-20 w-full bg-white border border-gray-300 max-h-80 overflow-y-auto rounded-b-lg shadow-xl">
                     {sortedLetters.length > 0 ? (
                         sortedLetters.map(letter => (
                             <div key={letter}>
-                                <div className="sticky top-0 bg-slate-100 px-4 py-2 text-sm font-bold text-blue-800 border-b border-gray-200 shadow-sm z-10 backdrop-blur-sm bg-opacity-90">
-                                    {letter}
-                                </div>
+                                <div className="sticky top-0 bg-gray-100 px-3 py-2 text-sm font-bold text-blue-700 border-b border-gray-200 shadow-sm">{letter}</div>
                                 <ul>
                                     {filteredAndGroupedClientes[letter].map(cliente => (
                                         <li key={cliente.id} 
-                                            className="px-5 py-3 cursor-pointer hover:bg-blue-50 text-gray-700 hover:text-blue-900 text-sm truncate transition-colors duration-150 font-medium border-b border-gray-50 last:border-0" 
+                                            className="px-4 py-3 cursor-pointer hover:bg-blue-50 text-gray-800 text-sm truncate transition-colors duration-150" 
                                             onClick={() => handleSelectCliente(cliente.nombre)}>
                                             {cliente.nombre}
                                         </li>
@@ -455,10 +425,7 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                             </div>
                         ))
                     ) : (
-                        <div className="p-6 text-center text-gray-500 text-sm font-medium flex flex-col items-center gap-2">
-                            <Search className="w-6 h-6 text-gray-300" />
-                            No se encontraron clientes.
-                        </div>
+                        <div className="p-4 text-gray-500 text-sm">No se encontraron clientes.</div>
                     )}
                 </div>
             )}
@@ -480,22 +447,10 @@ const getUserName = (user: any) => user ? (user.displayName || user.name || user
 
 const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   if (!consecutivo) return "";
-  const m: Record<string, string> = { 
-    AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", 
-    AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", 
-    AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", 
-    AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional", AGH: "Humedad" 
-  };
-  
+  const m: Record<string, string> = { AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional", AGH: "Humedad" };
   const parts = consecutivo.split("-");
-  if (parts.length > 0 && m[parts[0]]) return m[parts[0]];
   if (parts.length >= 2 && m[parts[1]]) return m[parts[1]];
-
-  const keys = Object.keys(m).sort((a, b) => b.length - a.length);
-  for (const code of keys) {
-    if (consecutivo.includes(code)) return m[code];
-  }
-  
+  for (const [code, mag] of Object.entries(m)) { if (consecutivo.includes(code)) return mag; }
   return "";
 };
 
@@ -564,20 +519,16 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   const tableWidth = 500; 
   const tableX = (pageWidth - tableWidth) / 2; 
 
+  const lineHeight = 20;
+  const maxY = pageHeight - marginBottom; 
   let currentY = 60; 
 
   const drawHeaderBase = () => {
-    doc.addImage(logoAg, 'PNG', marginLeft, 25, 100, 45);
-    
+    doc.addImage(logoAg, 'PNG', marginLeft, 20, 100, 50);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(0, 51, 153); 
-    doc.text("Equipos y Servicios Especializados AG", marginLeft + 110, 50, { align: "left" });
-    
-    doc.setDrawColor(0, 51, 153);
-    doc.setLineWidth(1);
-    doc.line(marginLeft, 80, marginRight, 80);
-
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 139); 
+    doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
     doc.setFont("helvetica", "normal");
@@ -596,10 +547,10 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   };
 
   const checkPageBreak = (heightNeeded: number) => {
-    if (currentY + heightNeeded > pageHeight - marginBottom) {
+    if (currentY + heightNeeded > maxY) {
       doc.addPage();
       drawHeaderBase(); 
-      currentY = 100; 
+      currentY = 85; 
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
@@ -629,27 +580,23 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   };
 
   drawHeaderBase();
-  currentY = 100; 
+  currentY = 80; 
+  
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
   
   const col1X = marginLeft;
-  // CORRECCIÓN PDF: Damos más espacio a la columna 1 (35pt más a la derecha)
-  const col2X = pageWidth / 2 + 35; 
+  const col2X = pageWidth / 2 + 20;
 
-  doc.setFillColor(245, 247, 250); 
-  doc.rect(marginLeft, currentY - 12, pageWidth - 80, 25, 'F');
-
-  doc.setFontSize(11);
+  doc.text(`Fecha: ${formData.fecha || "-"}`, col2X, currentY);
   doc.setFont("helvetica", "bold");
-  doc.text("Nombre:", marginLeft + 10, currentY + 5);
-  doc.setFont("helvetica", "normal");
-  doc.text(formData.nombre || "-", marginLeft + 65, currentY + 5);
+  doc.text(`Nombre: ${formData.nombre || "-"}`, marginLeft, currentY); 
+  currentY += lineHeight + 5;
 
-  doc.setFont("helvetica", "bold");
-  doc.text("Fecha:", col2X, currentY + 5);
-  doc.setFont("helvetica", "normal");
-  doc.text(formData.fecha || "-", col2X + 45, currentY + 5);
-  
-  currentY += 35; 
+  doc.setDrawColor(100);
+  doc.setLineWidth(1);
+  doc.line(marginLeft, currentY, marginRight, currentY);
+  currentY += 20;
 
   const infoData = [
     { l: "Cliente:", v: formData.cliente, l2: "N. Certificado:", v2: formData.certificado },
@@ -665,48 +612,35 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
 
   doc.setFontSize(10);
   
-  // Función para truncar el texto si sigue siendo inmenso (para no empalmar)
-  const formatText = (text: any, maxLength: number) => {
-    const str = String(text || "-");
-    return str.length > maxLength ? str.substring(0, maxLength) + "..." : str;
-  };
-
-  infoData.forEach((row, index) => {
+  infoData.forEach(row => {
     checkPageBreak(20);
-    
-    if (index % 2 === 0) {
-       doc.setFillColor(252, 252, 252);
-       doc.rect(marginLeft, currentY - 11, pageWidth - 80, 16, 'F');
-    }
+    doc.setFont("helvetica", "bold");
+    doc.text(row.l, col1X, currentY);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(row.v || "-").substring(0, 35), col1X + 65, currentY);
 
     doc.setFont("helvetica", "bold");
-    doc.text(row.l, col1X + 5, currentY + 1);
+    doc.text(row.l2, col2X, currentY);
     doc.setFont("helvetica", "normal");
-    // Ahora la columna 1 soporta hasta 45 caracteres antes de recortarse
-    doc.text(formatText(row.v, 45), col1X + 75, currentY + 1);
-
-    doc.setFont("helvetica", "bold");
-    doc.text(row.l2, col2X, currentY + 1);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatText(row.v2, 40), col2X + 80, currentY + 1);
+    doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY);
     
     currentY += 16;
   });
 
-  currentY += 20;
+  currentY += 15;
 
-  // --- CABECERA DE MEDICIONES ---
   checkPageBreak(40); 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setFillColor(230, 235, 245); 
+  doc.setFontSize(13);
+  doc.setFillColor(220, 220, 220);
   doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F'); 
   doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
-  currentY += 25;
+  currentY += 20;
 
   const isMasa = formData.magnitud === "Masa";
   
   if (isMasa) {
+      // === DIBUJO DE LA EXCENTRICIDAD EN EL PDF ===
       const excLines = (formData.excentricidad || "").split('\n');
       let p1="-", p2="-", p3="-", p4="-", p5="-";
       excLines.forEach(l => {
@@ -729,29 +663,38 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       const boxX = pageWidth / 2 - boxSize / 2;
       const boxY = currentY;
 
+      // Dibujar rectángulo principal
       doc.setDrawColor(150);
       doc.setLineWidth(1);
       doc.rect(boxX, boxY, boxSize, boxSize); 
 
+      // Líneas cruzadas
       doc.setLineWidth(0.5);
       doc.setDrawColor(200);
       doc.line(boxX + boxSize/2, boxY, boxX + boxSize/2, boxY + boxSize);
       doc.line(boxX, boxY + boxSize/2, boxX + boxSize, boxY + boxSize/2);
 
+      // Textos de los puntos simulando la UI
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
 
+      // 3 (Sup Izq)
       doc.text(`3: ${p3}`, boxX - 35, boxY + 10);
+      // 4 (Sup Der)
       doc.text(`4: ${p4}`, boxX + boxSize + 5, boxY + 10);
+      // 1 (Centro)
       doc.setFont("helvetica", "bold");
       doc.text(`1: ${p1}`, boxX + boxSize/2 - 12, boxY + boxSize/2 - 5);
       doc.setFont("helvetica", "normal");
+      // 2 (Inf Izq)
       doc.text(`2: ${p2}`, boxX - 35, boxY + boxSize - 5);
+      // 5 (Inf Der)
       doc.text(`5: ${p5}`, boxX + boxSize + 5, boxY + boxSize - 5);
 
       currentY += boxSize + 25;
 
+      // === TABLA DE LINEALIDAD Y REPETIBILIDAD ===
       checkPageBreak(40);
       doc.setFillColor(50, 80, 160); 
       doc.setTextColor(255, 255, 255); 
@@ -787,6 +730,7 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       });
 
   } else {
+    // === LÓGICA NORMAL PARA LAS DEMÁS MAGNITUDES ===
     doc.setDrawColor(0);
     doc.setFillColor(50, 80, 160); 
     doc.setTextColor(255, 255, 255); 
@@ -839,7 +783,20 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   }
 
   currentY += 20;
+  const notasLines = doc.splitTextToSize(formData.notas || "-", tableWidth);
+  checkPageBreak(notasLines.length * 15 + 30);
 
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Observaciones / Notas:", marginLeft, currentY);
+  currentY += 15;
+  
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(10);
+  doc.text(notasLines, marginLeft, currentY);
+  currentY += notasLines.length * 13 + 10;
+
+  // === SECCIÓN CONDICIÓN DEL EQUIPO ===
   if (formData.condicionEquipo === "dano" && formData.descripcionDano) {
     checkPageBreak(60);
     doc.setFont("helvetica", "bold");
@@ -859,6 +816,7 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     currentY += danoLines.length * 14 + 16;
   }
 
+  // === FOTO DEL EQUIPO EN EL PDF ===
   if (formData.fotoEquipoBase64) {
     checkPageBreak(220);
     doc.setFont("helvetica", "bold");
@@ -867,6 +825,7 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     doc.text("Evidencia Fotográfica del Equipo:", marginLeft, currentY);
     currentY += 14;
     try {
+      // fotoEquipoBase64 puede ser "data:image/jpeg;base64,..." o solo base64
       const imgData = formData.fotoEquipoBase64.startsWith('data:') 
         ? formData.fotoEquipoBase64 
         : `data:image/jpeg;base64,${formData.fotoEquipoBase64}`;
@@ -883,34 +842,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
       doc.setTextColor(0, 0, 0);
     }
   }
-
-  const notasText = formData.notas ? formData.notas.trim() : "Sin observaciones adicionales.";
-  const notasLines = doc.splitTextToSize(notasText, tableWidth - 20);
-  const notasHeight = notasLines.length * 14 + 30;
-
-  let notesY = currentY + 20;
-  const spaceLeftOnPage = pageHeight - marginBottom - currentY;
-
-  if (spaceLeftOnPage > notasHeight + 20) {
-      notesY = pageHeight - marginBottom - notasHeight - 10;
-  } else {
-      checkPageBreak(notasHeight + 20);
-      notesY = currentY + 20;
-  }
-
-  doc.setFillColor(250, 250, 250);
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.5);
-  doc.rect(marginLeft, notesY - 15, pageWidth - 80, notasHeight, 'FD');
-
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text("Observaciones / Notas:", marginLeft + 10, notesY + 2);
-
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(10);
-  doc.text(notasLines, marginLeft + 10, notesY + 18);
 
   drawFooter();
   return doc;
@@ -943,7 +874,24 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
     case 'SET_EXCEPCION': return { ...state, permitirExcepcion: action.payload };
     case 'RESTORE_BACKUP': return { ...action.payload };
     case 'CHANGE_CONDICION': {
-      return { ...state, condicionEquipo: action.condicion };
+      const newState = { ...state, condicionEquipo: action.condicion };
+      // Si el equipo tiene daño Y el certificado actual es de Presión (AGP), cambiar a AGRD
+      if (action.condicion === "dano" && state.certificado) {
+        const cert = state.certificado;
+        // Detectar si es tipo presión (contiene AGP) y cambiar a AGRD
+        if (cert.includes("-AGP-") || cert.startsWith("AGP-")) {
+          newState.certificado = cert.replace(/AGP/g, "AGRD");
+          newState.magnitud = "Reporte de Diagnostico";
+        }
+        // También si ya viene del extractMagnitudFromConsecutivo como Presión en otras formas
+        else if (state.magnitud === "Presión") {
+          // Transformar cualquier consecutivo de Presión → AGRD
+          const newCert = cert.replace(/[-]?(AGP)[-]?/g, (m) => m.replace("AGP", "AGRD"));
+          newState.certificado = newCert !== cert ? newCert : cert;
+          newState.magnitud = "Reporte de Diagnostico";
+        }
+      }
+      return newState;
     }
     default: return state;
   }
@@ -978,19 +926,23 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const [electricalValues, setElectricalValues] = useState<Record<string, { patron: string, instrumento: string }>>({});
 
+  // --- NUEVA LÓGICA DE DIAGRAMA DE EXCENTRICIDAD (Evita campos en blanco) ---
   const [localExc, setLocalExc] = useState({ p1: '', p2: '', p3: '', p4: '', p5: '' });
 
+  // Sincronizar desde la base de datos o estado global SOLO cuando carga la app
   useEffect(() => {
       if (state.magnitud === 'Masa' && state.excentricidad) {
           const next = { p1: '', p2: '', p3: '', p4: '', p5: '' };
           const lines = state.excentricidad.split('\n');
           lines.forEach(line => {
+               // Extraemos el valor sin trim() durante el tecleo activo, pero al cargar sí lo limpiamos
                if (line.startsWith('1')) next.p1 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('2')) next.p2 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('3')) next.p3 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('4')) next.p4 = line.substring(line.indexOf(':')+1).trim() || '';
                else if (line.startsWith('5')) next.p5 = line.substring(line.indexOf(':')+1).trim() || '';
           });
+          // Solo actualizamos si realmente es distinto para no sobreescribir lo que estés tecleando
           setLocalExc(prev => (JSON.stringify(prev) !== JSON.stringify(next) ? next : prev));
       }
   }, [state.excentricidad, state.magnitud]);
@@ -999,6 +951,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setLocalExc(prev => ({ ...prev, [key]: val }));
   };
 
+  // Esta función empuja lo que escribiste al estado global SOLAMENTE cuando quitas el foco (onBlur)
   const syncMasaToGlobalState = useCallback(() => {
       if (state.magnitud !== "Masa") return;
       const str = `1 (Centro): ${localExc.p1}\n2 (Inf Izq): ${localExc.p2}\n3 (Sup Izq): ${localExc.p3}\n4 (Sup Der): ${localExc.p4}\n5 (Inf Der): ${localExc.p5}`;
@@ -1006,18 +959,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           dispatch({ type: 'SET_FIELD', field: 'excentricidad', payload: str });
       }
   }, [localExc, state.magnitud, state.excentricidad]);
+  // -------------------------------------------
 
   const activeClientNotes = useMemo(() => {
     const found = listaClientes.find(c => c.nombre === state.cliente);
     return found?.requerimientos || "";
   }, [state.cliente, listaClientes]);
-
-  const nextCalibrationStr = useMemo(() => {
-      if (!state.fecha || !state.frecuenciaCalibracion) return null;
-      const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
-      if (!nextDate) return null;
-      return format(nextDate, "dd/MM/yyyy");
-  }, [state.fecha, state.frecuenciaCalibracion]);
 
   useEffect(() => {
     const updatePendingCount = () => {
@@ -1033,6 +980,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       for (const item of queue) {
         try {
           const { jsPDF: JsPDF } = await import("jspdf");
+          // Re-upload PDF from base64 blob
           const binaryStr = atob(item.pdfBlob);
           const bytes = new Uint8Array(binaryStr.length);
           for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
@@ -1067,6 +1015,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Check on mount
     updatePendingCount();
     if (navigator.onLine) {
       setTimeout(processOfflineQueue, 2000);
@@ -1444,11 +1393,13 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
     setIsSaving(true);
     try {
+      // ---------- GENERAR PDF ----------
       const { jsPDF } = await import("jspdf");
       const pdfDoc = generateTemplatePDF(state, jsPDF as any); 
       const blob = pdfDoc.output("blob");
       const nombreArchivo = `worksheets/${getUserName(currentUser || user)}/${state.certificado}_${state.id || "SINID"}.pdf`;
 
+      // ---------- RESOLVER DOC ID ----------
       let finalDocId = worksheetId || null;
       let existingData: any = null;
 
@@ -1511,6 +1462,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           fullData.fechaEntrada = existingData.fechaEntrada;
       }
 
+      // ---- SUBIR FOTO SI HAY ----
       if (state.fotoEquipoBase64 && navigator.onLine) {
         try {
           const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
@@ -1523,6 +1475,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         }
       }
 
+      // ---- MODO ONLINE ----
       if (navigator.onLine) {
         const pdfRef = ref(storage, nombreArchivo);
         await uploadBytes(pdfRef, blob);
@@ -1550,6 +1503,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         setTimeout(() => goBack(), 1500);
 
       } else {
+        // ---- MODO OFFLINE: guardar en cola ----
         const pdfBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve((reader.result as string).split(',')[1]);
@@ -1610,7 +1564,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     };
   }, [state.lugarCalibracion, state.fechaRecepcion, state.fecha]);
 
-  const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 text-gray-900 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200 bg-white"}`;
+  const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200"}`;
 
   const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1709,32 +1663,21 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 {state.lugarCalibracion === "Laboratorio" && (
                   <div className="mt-4 animate-in fade-in slide-in-from-top-2">
                     <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
-                    <input type="date" className={`w-full border rounded px-3 py-2 text-sm text-gray-900 bg-white ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : ''}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
+                    <input type="date" className={`w-full border rounded px-3 py-2 text-sm ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : ''}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
                   </div>
                 )}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
-                    <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white">
+                    <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500">
                       <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
                     </select>
                   </div>
                   
                   <div>
                     <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
-                    <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
+                    <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
                     
-                    {/* UI: RECUADRO DE PRÓXIMA CALIBRACIÓN */}
-                    {nextCalibrationStr && (
-                      <div className="mt-2 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-800 text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
-                        <Calendar className="w-4 h-4 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold">Próxima Calibración: {nextCalibrationStr}</p>
-                          <p className="text-xs opacity-90 mt-0.5">Calculada según la fecha y frecuencia indicada.</p>
-                        </div>
-                      </div>
-                    )}
-
                     {slaInfo && (
                       <div className={`mt-2 p-3 rounded-lg border text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1 ${
                         slaInfo.esTardio 
@@ -1776,7 +1719,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           value={state.id} 
                           onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
                           onBlur={handleIdBlur} 
-                          className={`flex-1 p-4 border-2 rounded-lg transition-all text-gray-900 bg-white ${
+                          className={`flex-1 p-4 border-2 rounded-lg transition-all ${
                               state.idBlocked 
                                   ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
                                   : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
@@ -1830,8 +1773,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label><input type="text" value={state.marca} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value }); if(validationErrors.marca) setValidationErrors({...validationErrors, marca: false}); }} readOnly={state.fieldsLocked} className={inputClass('marca')} /></div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label><input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200 text-gray-900 bg-white" /></div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200 text-gray-900 bg-white" /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label><input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1986,6 +1929,19 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                       </button>
                     </div>
 
+                    {/* Alerta de cambio automático a AGRD */}
+                    {state.condicionEquipo === 'dano' && (
+                      <div className="animate-in fade-in slide-in-from-top-2 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-amber-900 text-sm">Reporte de Diagnóstico activado</p>
+                          <p className="text-xs text-amber-700 mt-0.5">
+                            Si el consecutivo era de Presión (AGP), se cambió automáticamente a <strong>AGRD</strong>. Verifica el consecutivo en la parte superior.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Descripción del daño */}
                     {state.condicionEquipo === 'dano' && (
                       <div className="animate-in fade-in slide-in-from-top-2">
@@ -1998,7 +1954,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           onChange={e => dispatch({ type: 'SET_FIELD', field: 'descripcionDano', payload: e.target.value })}
                           rows={3}
                           placeholder="Ej: Golpe visible en la parte frontal, dial dañado, fuga de aceite..."
-                          className="w-full p-3 border-2 border-red-200 rounded-xl resize-y focus:ring-2 focus:ring-red-400 text-sm bg-red-50 text-red-900 placeholder-red-300"
+                          className="w-full p-3 border-2 border-red-200 rounded-xl resize-y focus:ring-2 focus:ring-red-400 text-sm bg-red-50 placeholder-red-300"
                         />
                       </div>
                     )}
@@ -2094,26 +2050,26 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                            
                            <div className="absolute top-8 left-8 flex flex-col items-center">
                               <span className="text-xs font-bold text-gray-500 mb-1 bg-white px-2 rounded-full border">3 (Sup. Izq)</span>
-                              <input type="text" value={localExc.p3} onChange={e => handleExcChangeLocal('p3', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
+                              <input type="text" value={localExc.p3} onChange={e => handleExcChangeLocal('p3', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
                            </div>
 
                            <div className="absolute top-8 right-8 flex flex-col items-center">
                               <span className="text-xs font-bold text-gray-500 mb-1 bg-white px-2 rounded-full border">4 (Sup. Der)</span>
-                              <input type="text" value={localExc.p4} onChange={e => handleExcChangeLocal('p4', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
+                              <input type="text" value={localExc.p4} onChange={e => handleExcChangeLocal('p4', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
                            </div>
 
                            <div className="absolute flex flex-col items-center z-10 bg-white p-2 rounded-full shadow-lg border border-blue-100">
                               <span className="text-sm font-bold text-blue-700 mb-1">1 (Centro)</span>
-                              <input type="text" value={localExc.p1} onChange={e => handleExcChangeLocal('p1', e.target.value)} onBlur={syncMasaToGlobalState} className="w-28 text-center text-base p-2 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-600 bg-blue-50 text-gray-900 font-bold" placeholder="0.000" />
+                              <input type="text" value={localExc.p1} onChange={e => handleExcChangeLocal('p1', e.target.value)} onBlur={syncMasaToGlobalState} className="w-28 text-center text-base p-2 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-600 bg-blue-50 font-bold" placeholder="0.000" />
                            </div>
 
                            <div className="absolute bottom-8 left-8 flex flex-col items-center">
-                              <input type="text" value={localExc.p2} onChange={e => handleExcChangeLocal('p2', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
+                              <input type="text" value={localExc.p2} onChange={e => handleExcChangeLocal('p2', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
                               <span className="text-xs font-bold text-gray-500 mt-1 bg-white px-2 rounded-full border">2 (Inf. Izq)</span>
                            </div>
 
                            <div className="absolute bottom-8 right-8 flex flex-col items-center">
-                              <input type="text" value={localExc.p5} onChange={e => handleExcChangeLocal('p5', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
+                              <input type="text" value={localExc.p5} onChange={e => handleExcChangeLocal('p5', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
                               <span className="text-xs font-bold text-gray-500 mt-1 bg-white px-2 rounded-full border">5 (Inf. Der)</span>
                            </div>
                         </div>
@@ -2127,7 +2083,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           <textarea 
                             value={state.linealidad} 
                             onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} 
-                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y text-gray-900 bg-white" 
+                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y" 
                             rows={6} 
                             placeholder="Punto 1: 10.000 g&#10;Punto 2: 20.000 g&#10;Punto 3: 30.000 g..." 
                           />
@@ -2139,7 +2095,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           <textarea 
                             value={state.repetibilidad} 
                             onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} 
-                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y text-gray-900 bg-white" 
+                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y" 
                             rows={6} 
                             placeholder="Lectura 1: 5.001 g&#10;Lectura 2: 5.002 g&#10;Lectura 3: 5.001 g..." 
                           />
@@ -2178,7 +2134,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                   onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed text-gray-900 bg-white" 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed" 
                                 />
                             </div>
                 
@@ -2189,7 +2145,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                   onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed text-gray-900 bg-white" 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed" 
                                 />
                             </div>
                         </div>
@@ -2198,12 +2154,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200 text-gray-900 bg-white" /></div>
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200 text-gray-900 bg-white" /></div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
                   </div>
                 )}
                 
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas Técnicas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-y min-h-[100px] focus:ring-2 focus:ring-blue-500 border-gray-200 text-gray-900 bg-white" rows={4} placeholder="Notas y observaciones multilínea..." /></div>
+                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas Técnicas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-y min-h-[100px] focus:ring-2 focus:ring-blue-500 border-gray-200" rows={4} placeholder="Notas y observaciones multilínea..." /></div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
                   <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} /></div>
