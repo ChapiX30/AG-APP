@@ -416,7 +416,7 @@ const EmpresasScreen = () => {
   useEffect(() => { loadData(); }, []);
 
   const filteredEmpresas = useMemo(() => {
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.toLowerCase().trim();
     return empresas.filter(e => 
       (e.nombre?.toLowerCase().includes(term)) || (e.contacto?.toLowerCase().includes(term))
     );
@@ -438,9 +438,16 @@ const EmpresasScreen = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // AQUÍ ESTÁ LA MAGIA: Forzamos el nombre a MAYÚSCULAS antes de guardarlo
+    const dataToSave = {
+      ...formData,
+      nombre: formData.nombre.trim().toUpperCase()
+    };
+
     const actionPromise = editingEmpresa
-      ? updateDoc(doc(db, "clientes", editingEmpresa.id), { ...formData, fechaActualizacion: new Date() })
-      : addDoc(collection(db, "clientes"), { ...formData, fechaCreacion: new Date() });
+      ? updateDoc(doc(db, "clientes", editingEmpresa.id), { ...dataToSave, fechaActualizacion: new Date() })
+      : addDoc(collection(db, "clientes"), { ...dataToSave, fechaCreacion: new Date() });
 
     toast.promise(actionPromise, {
       loading: 'Procesando...',
