@@ -12,15 +12,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   Activity,
-  Trash2
+  Trash2,
+  ShieldCheck,
 } from 'lucide-react';
-import { generarConsecutivo } from '../utils/firebaseConsecutivos';
+import { generarConsecutivo, auditarHuerfanos } from '../utils/firebaseConsecutivos';
 import { 
   collection, query, where, orderBy, limit, onSnapshot, 
   doc, deleteDoc, getDocs, getDoc, updateDoc, increment, arrayUnion 
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { getPrefijo } from '../utils/prefijos'; 
+import { getPrefijo } from '../utils/prefijos';
 
 // Extended Image Map to handle variations (with and without spaces)
 const magnitudImages: Record<string, string> = {
@@ -39,55 +40,62 @@ const magnitudImages: Record<string, string> = {
   Optica: "/images/optica.png",
   Quimica: "/images/quimica.png",
   Tiempo: "/images/tiempo.png",
-
-  // Trazables (Normalized)
   ParTorsionalTrazable: "/images/par-torsional-trazable.png",
   "Par Torsional Trazable": "/images/par-torsional-trazable.png",
-  
   AcusticaTrazable: "/images/acustica.png",
   "Acustica Trazable": "/images/acustica.png",
-  
   DimensionalTrazable: "/images/dimensional.png",
   "Dimensional Trazable": "/images/dimensional.png",
-  
   TemperaturaTrazable: "/images/temperatura-trazable.png",
   "Temperatura Trazable": "/images/temperatura-trazable.png",
-  
   HumedadTrazable: "/images/humedad-trazable.png",
   "Humedad Trazable": "/images/humedad-trazable.png",
-  
   FlujoTrazable: "/images/flujo-trazable.png",
   "Flujo Trazable": "/images/flujo-trazable.png",
-  
   PresionTrazable: "/images/presion-trazable.png",
   "Presion Trazable": "/images/presion-trazable.png",
-  
   FuerzaTrazable: "/images/fuerza-trazable.png",
   "Fuerza Trazable": "/images/fuerza-trazable.png",
-  
   ElectricaTrazable: "/images/electrica.png",
   "Electrica Trazable": "/images/electrica.png",
-  
   FrecuenciaTrazable: "/images/frecuencia-trazable.png",
   "Frecuencia Trazable": "/images/frecuencia-trazable.png",
-  
   DurezaTrazable: "/images/dureza-trazable.png",
   "Dureza Trazable": "/images/dureza-trazable.png",
-  
   MasaTrazable: "/images/masa.png",
   "Masa Trazable": "/images/masa.png",
-  
   VolumenTrazable: "/images/volumen-trazable.png",
   "Volumen Trazable": "/images/volumen-trazable.png",
-  
   OpticaTrazable: "/images/optica-trazable.png",
   "Optica Trazable": "/images/optica-trazable.png",
-  
   Masa: "/images/masa.png",
   ParTorsional: "/images/par-torsional.png",
   VibracionTrazable: "/images/vibracion-trazable.png",
   "Vibracion Trazable": "/images/vibracion-trazable.png",
 };
+
+// ─── Inline styles constants ───────────────────────────────────────────────
+const COLORS = {
+  bg: '#F4F5F7',
+  surface: '#FFFFFF',
+  border: '#DDE1E7',
+  text: '#1A1D23',
+  muted: '#5C6370',
+  subtle: '#8C92A0',
+  accent: '#1B5BBE',
+  accentLight: '#EBF2FF',
+  amber: '#B45309',
+  amberLight: '#FFF7E6',
+  green: '#166534',
+  greenLight: '#DCFCE7',
+  red: '#991B1B',
+  redLight: '#FEF2F2',
+  redBorder: '#FCA5A5',
+};
+
+const Divider = () => (
+  <div style={{ height: '1px', backgroundColor: COLORS.border }} />
+);
 
 export const MagnitudeDetailScreen: React.FC = () => {
   const { selectedMagnitude, goBack, navigateTo } = useNavigation();
@@ -102,10 +110,15 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Audit state — huérfanos limpiados automáticamente
+  const [huerfanosLimpiados, setHuerfanosLimpiados] = useState<string[]>([]);
+
   // Derived State
   const isTrazable = selectedMagnitude?.toLowerCase().includes('trazable');
-  // Safe Image Lookup (Try direct match, then remove spaces)
   const imageSrc = magnitudImages[selectedMagnitude] || magnitudImages[selectedMagnitude?.replace(/\s/g, '')] || "/images/default.png";
+  
+  const accentColor = isTrazable ? COLORS.amber : COLORS.accent;
+  const accentLightColor = isTrazable ? COLORS.amberLight : COLORS.accentLight;
 
   useEffect(() => {
     if (!selectedMagnitude) return;
@@ -129,6 +142,23 @@ export const MagnitudeDetailScreen: React.FC = () => {
     });
 
     return () => unsubscribe();
+  }, [selectedMagnitude]);
+
+  // Auditoría de huérfanos: al abrir la pantalla, busca consecutivos sin
+  // worksheet confirmada que lleven más de 10 minutos y los convierte en huecos.
+  useEffect(() => {
+    if (!selectedMagnitude) return;
+    const anio = new Date().getFullYear().toString().slice(-2);
+
+    auditarHuerfanos(selectedMagnitude, anio, 10)
+      .then((limpiados) => {
+        if (limpiados.length > 0) {
+          setHuerfanosLimpiados(limpiados);
+          // Ocultar el aviso después de 8 segundos
+          setTimeout(() => setHuerfanosLimpiados([]), 8000);
+        }
+      })
+      .catch((err) => console.error('Auditoría de huérfanos fallida:', err));
   }, [selectedMagnitude]);
 
   const handleGenerarConsecutivo = async () => {
@@ -212,232 +242,385 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const anterior = isCurrentYear(consecutivos[1]) ? consecutivos[1] : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen font-sans" style={{ backgroundColor: COLORS.bg, color: COLORS.text }}>
       
-      {/* Header Fijo */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
-          <button onClick={goBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
-            <ArrowLeft className="w-5 h-5" />
+      {/* Header */}
+      <header style={{ backgroundColor: COLORS.surface, borderBottom: `1px solid ${COLORS.border}` }} className="sticky top-0 z-30">
+        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center gap-3">
+          <button 
+            onClick={goBack} 
+            className="flex items-center justify-center w-8 h-8 rounded transition-colors flex-shrink-0"
+            style={{ color: COLORS.muted }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = COLORS.bg)}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <ArrowLeft className="w-4 h-4" />
           </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">{selectedMagnitude}</h1>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mt-0.5">
-              <span className={`px-2 py-0.5 rounded-full ${isTrazable ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
-                {isTrazable ? 'Servicio Trazable' : 'Servicio Acreditado'}
-              </span>
+          
+          <div style={{ width: '1px', height: '20px', backgroundColor: COLORS.border }} className="flex-shrink-0" />
+          
+          <div className="flex items-center gap-3 min-w-0">
+            <div>
+              <h1 className="text-sm font-semibold leading-tight truncate" style={{ color: COLORS.text, letterSpacing: '-0.01em' }}>
+                {selectedMagnitude}
+              </h1>
+              <p className="text-xs" style={{ color: COLORS.subtle }}>Gestión de Consecutivos</p>
+            </div>
+          </div>
+
+          <div className="ml-auto flex-shrink-0">
+            <span 
+              className="text-xs font-semibold px-2.5 py-1 rounded"
+              style={{
+                backgroundColor: accentLightColor,
+                color: accentColor,
+              }}
+            >
+              {isTrazable ? 'Trazable' : 'Acreditado'}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Banner: huérfanos limpiados automáticamente ── */}
+      {huerfanosLimpiados.length > 0 && (
+        <div 
+          className="max-w-5xl mx-auto px-6 pt-4"
+        >
+          <div 
+            className="flex items-start gap-3 px-4 py-3 rounded"
+            style={{ 
+              backgroundColor: '#F0FDF4', 
+              border: '1px solid #86EFAC',
+            }}
+          >
+            <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#166534' }} />
+            <div>
+              <p className="text-xs font-semibold" style={{ color: '#166534' }}>
+                Limpieza automática completada
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: '#15803D' }}>
+                {huerfanosLimpiados.length === 1
+                  ? `El consecutivo ${huerfanosLimpiados[0]} no tenía hoja de trabajo asociada y fue registrado como hueco.`
+                  : `${huerfanosLimpiados.length} consecutivos sin hoja de trabajo fueron registrados como huecos: ${huerfanosLimpiados.join(', ')}.`
+                }
+              </p>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="max-w-4xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
-        
-        {/* Left Col: Info & Actions */}
-        <div className="md:col-span-2 space-y-6">
-          
-          {/* Main Dashboard Card */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative group">
-            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none">
-              <img src={imageSrc} alt="" className="w-32 h-32 object-contain grayscale" />
-            </div>
+      {/* Main layout */}
+      <div className="max-w-5xl mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-3 gap-5">
 
-            <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                <Activity className="w-4 h-4" />
-                Estado Actual
-              </span>
-              {actual ? (
-                <span className="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Activo
+        {/* ── Left column ── */}
+        <div className="md:col-span-2 space-y-4">
+
+          {/* Current consecutive card */}
+          <div style={{ backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+            
+            {/* Card header */}
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: `1px solid ${COLORS.border}`, backgroundColor: '#FAFBFC' }}>
+              <div className="flex items-center gap-2">
+                <Activity className="w-3.5 h-3.5" style={{ color: COLORS.subtle }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: COLORS.subtle }}>
+                  Estado Actual
                 </span>
+              </div>
+              {actual ? (
+                <div className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: COLORS.greenLight, color: COLORS.green }}>
+                  <CheckCircle2 className="w-3 h-3" />
+                  Activo
+                </div>
               ) : (
-                <span className="text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-bold">Inactivo</span>
+                <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: COLORS.bg, color: COLORS.subtle }}>
+                  Inactivo
+                </span>
               )}
             </div>
 
-            <div className="p-8 flex flex-col items-center justify-center text-center relative z-10">
-               {actual ? (
-                 <>
-                   <span className="text-sm text-slate-400 font-medium mb-3 uppercase tracking-wider">Último Consecutivo</span>
-                   <div className={`font-mono text-5xl sm:text-6xl font-bold tracking-tight mb-8 tabular-nums ${isTrazable ? 'text-amber-600' : 'text-blue-600'}`}>
-                     {actual.consecutivo}
-                   </div>
-                   
-                   <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
-                     <div className="flex flex-col items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                       <Calendar className="w-4 h-4 text-slate-400 mb-1" />
-                       <span className="text-xs text-slate-400 font-medium uppercase">Fecha</span>
-                       <span className="text-sm font-semibold text-slate-700">
-                         {actual.fecha?.toDate ? actual.fecha.toDate().toLocaleDateString() : 'N/A'}
-                       </span>
-                     </div>
-                     <div className="flex flex-col items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                       <User className="w-4 h-4 text-slate-400 mb-1" />
-                       <span className="text-xs text-slate-400 font-medium uppercase">Usuario</span>
-                       <span className="text-sm font-semibold text-slate-700 truncate w-full text-center">
-                         {actual.usuario}
-                       </span>
-                     </div>
-                   </div>
-                 </>
-               ) : (
-                 <div className="py-12 text-slate-400 flex flex-col items-center">
-                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                      <Hash className="w-8 h-8 text-slate-300" />
+            {/* Card body */}
+            <div className="px-5 py-8 flex flex-col items-center justify-center text-center relative overflow-hidden">
+              {/* Ghost image watermark */}
+              <div className="absolute top-0 right-0 p-4 opacity-[0.04] pointer-events-none select-none">
+                <img src={imageSrc} alt="" className="w-28 h-28 object-contain" />
+              </div>
+
+              {actual ? (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: COLORS.subtle }}>
+                    Último Consecutivo Generado
+                  </p>
+                  <div 
+                    className="font-mono font-bold tabular-nums mb-6 px-6 py-3 rounded"
+                    style={{ 
+                      fontSize: 'clamp(1.75rem, 5vw, 3rem)',
+                      letterSpacing: '0.04em',
+                      color: accentColor,
+                      backgroundColor: accentLightColor,
+                      border: `1px solid ${isTrazable ? '#FDE68A' : '#BFDBFE'}`,
+                    }}
+                  >
+                    {actual.consecutivo}
+                  </div>
+                  
+                  {/* Meta row */}
+                  <div className="flex items-center gap-5 w-full justify-center">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5" style={{ color: COLORS.subtle }} />
+                      <span className="text-xs" style={{ color: COLORS.muted }}>
+                        {actual.fecha?.toDate ? actual.fecha.toDate().toLocaleDateString('es-MX') : 'N/A'}
+                      </span>
                     </div>
-                    <p className="font-medium text-slate-500">Sin registros este año</p>
-                    <p className="text-sm mt-1">Genera un nuevo consecutivo para comenzar.</p>
-                 </div>
-               )}
+                    <div style={{ width: '1px', height: '12px', backgroundColor: COLORS.border }} />
+                    <div className="flex items-center gap-2">
+                      <User className="w-3.5 h-3.5" style={{ color: COLORS.subtle }} />
+                      <span className="text-xs font-medium truncate max-w-[120px]" style={{ color: COLORS.muted }}>
+                        {actual.usuario}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center py-4">
+                  <div 
+                    className="flex items-center justify-center w-10 h-10 rounded-full mb-3"
+                    style={{ backgroundColor: COLORS.bg }}
+                  >
+                    <Hash className="w-5 h-5" style={{ color: COLORS.subtle }} />
+                  </div>
+                  <p className="text-sm font-medium" style={{ color: COLORS.muted }}>Sin registros este año</p>
+                  <p className="text-xs mt-1" style={{ color: COLORS.subtle }}>Genera un nuevo consecutivo para comenzar.</p>
+                </div>
+              )}
             </div>
 
-            {/* Action Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-               <button
-                  onClick={handleGenerarConsecutivo}
-                  disabled={loading || generando}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-bold text-white transition-all shadow-sm hover:shadow active:scale-[0.99] ${
-                    isTrazable 
-                      ? 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 disabled:opacity-50' 
-                      : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 disabled:opacity-50'
-                  }`}
-               >
-                  {loading || generando ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <Plus className="w-5 h-5" />}
-                  <span>Generar Nuevo</span>
-               </button>
+            {/* Card footer — action */}
+            <div 
+              className="px-5 py-4 flex gap-3"
+              style={{ borderTop: `1px solid ${COLORS.border}`, backgroundColor: '#FAFBFC' }}
+            >
+              <button
+                onClick={handleGenerarConsecutivo}
+                disabled={loading || generando}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-sm font-semibold text-white rounded transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: accentColor }}
+                onMouseEnter={e => !loading && !generando && (e.currentTarget.style.opacity = '0.88')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+              >
+                {loading || generando 
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <Plus className="w-4 h-4" />
+                }
+                Generar Nuevo Consecutivo
+              </button>
             </div>
           </div>
 
-          {/* History Snippet */}
+          {/* History row */}
           {anterior && (
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <History className="w-4 h-4" />
-                Historial Reciente
-              </h3>
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                 <div className="flex items-center gap-3">
-                   <div className="bg-white p-2 rounded-md shadow-sm border border-slate-200">
-                      <Hash className="w-4 h-4 text-slate-400" />
-                   </div>
-                   <div>
-                      <p className="font-mono font-bold text-slate-700">{anterior.consecutivo}</p>
-                      <p className="text-xs text-slate-500">{anterior.usuario}</p>
-                   </div>
-                 </div>
-                 <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">ANTERIOR</span>
+            <div style={{ backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: `1px solid ${COLORS.border}`, backgroundColor: '#FAFBFC' }}>
+                <History className="w-3.5 h-3.5" style={{ color: COLORS.subtle }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: COLORS.subtle }}>
+                  Registro Anterior
+                </span>
+              </div>
+              <div className="px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="flex items-center justify-center w-7 h-7 rounded"
+                    style={{ backgroundColor: COLORS.bg, border: `1px solid ${COLORS.border}` }}
+                  >
+                    <Hash className="w-3.5 h-3.5" style={{ color: COLORS.subtle }} />
+                  </div>
+                  <div>
+                    <p className="font-mono font-bold text-sm" style={{ color: COLORS.text }}>{anterior.consecutivo}</p>
+                    <p className="text-xs" style={{ color: COLORS.subtle }}>{anterior.usuario}</p>
+                  </div>
+                </div>
+                <span 
+                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded"
+                  style={{ backgroundColor: COLORS.bg, color: COLORS.subtle, border: `1px solid ${COLORS.border}` }}
+                >
+                  Anterior
+                </span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Right Col: Admin/Tools */}
-        <div className="space-y-6">
-           {/* Visual Aid Card */}
-           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center text-center">
-              <div className="w-24 h-24 mb-4 relative">
-                <div className={`absolute inset-0 bg-gradient-to-tr ${isTrazable ? 'from-amber-100 to-orange-50' : 'from-blue-100 to-indigo-50'} rounded-full blur-xl opacity-60`}></div>
-                <img src={imageSrc} alt={selectedMagnitude} className="w-full h-full object-contain relative z-10 drop-shadow-sm" />
-              </div>
-              <h3 className="font-semibold text-slate-800">{selectedMagnitude}</h3>
-              <p className="text-sm text-slate-500 mt-1">
-                {isTrazable ? "Trazabilidad verificada" : "Acreditación vigente"}
-              </p>
-           </div>
+        {/* ── Right column ── */}
+        <div className="space-y-4">
 
-           {/* Danger Zone */}
-           <div className="bg-red-50/50 rounded-xl border border-red-100 p-5">
-              <h3 className="text-xs font-bold text-red-800 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" />
+          {/* Visual aid */}
+          <div 
+            style={{ backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '8px', overflow: 'hidden' }}
+          >
+            <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: `1px solid ${COLORS.border}`, backgroundColor: '#FAFBFC' }}>
+              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: COLORS.subtle }}>
+                Magnitud
+              </span>
+            </div>
+            <div className="p-5 flex flex-col items-center text-center">
+              <div 
+                className="flex items-center justify-center w-16 h-16 rounded-lg mb-3"
+                style={{ backgroundColor: accentLightColor }}
+              >
+                <img src={imageSrc} alt={selectedMagnitude} className="w-12 h-12 object-contain" />
+              </div>
+              <p className="text-sm font-semibold" style={{ color: COLORS.text }}>{selectedMagnitude}</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.subtle }}>
+                {isTrazable ? 'Trazabilidad verificada' : 'Acreditación vigente'}
+              </p>
+            </div>
+          </div>
+
+          {/* Correction zone */}
+          <div 
+            style={{ 
+              backgroundColor: '#FFFBFB', 
+              border: `1px solid ${COLORS.redBorder}`, 
+              borderRadius: '8px', 
+              overflow: 'hidden' 
+            }}
+          >
+            <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: `1px solid ${COLORS.redBorder}`, backgroundColor: COLORS.redLight }}>
+              <AlertTriangle className="w-3.5 h-3.5" style={{ color: COLORS.red }} />
+              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: COLORS.red }}>
                 Zona de Corrección
-              </h3>
-              <p className="text-xs text-red-600/80 mb-4 leading-relaxed">
+              </span>
+            </div>
+            <div className="p-4">
+              <p className="text-xs leading-relaxed mb-4" style={{ color: '#7F1D1D' }}>
                 Si generaste un consecutivo por error, puedes deshacerlo aquí. Solo se pueden eliminar registros creados por tu usuario.
               </p>
               <button
                 onClick={() => { setDeshacerModalOpen(true); setError(null); setConsecutivoAEliminar(null); }}
-                className="w-full py-2.5 bg-white border border-red-200 text-red-700 font-semibold rounded-lg hover:bg-red-50 hover:border-red-300 transition-all shadow-sm text-sm flex items-center justify-center gap-2"
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded transition-colors"
+                style={{ 
+                  backgroundColor: COLORS.surface, 
+                  border: `1px solid ${COLORS.redBorder}`, 
+                  color: COLORS.red 
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = COLORS.redLight)}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = COLORS.surface)}
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-3.5 h-3.5" />
                 Deshacer Último
               </button>
-           </div>
+            </div>
+          </div>
         </div>
-
       </div>
 
-      {/* MODAL DESHACER */}
+      {/* ── Modal Deshacer ── */}
       {deshacerModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-red-50 p-6 border-b border-red-100">
-              <div className="flex items-center gap-3 text-red-800 mb-1">
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <Trash2 className="w-5 h-5" />
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(26, 29, 35, 0.5)', backdropFilter: 'blur(2px)' }}
+        >
+          <div 
+            className="w-full max-w-md overflow-hidden"
+            style={{ backgroundColor: COLORS.surface, borderRadius: '10px', border: `1px solid ${COLORS.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}
+          >
+            {/* Modal header */}
+            <div style={{ backgroundColor: COLORS.redLight, borderBottom: `1px solid ${COLORS.redBorder}` }} className="px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div 
+                  className="flex items-center justify-center w-8 h-8 rounded"
+                  style={{ backgroundColor: '#FCA5A5' }}
+                >
+                  <Trash2 className="w-4 h-4" style={{ color: COLORS.red }} />
                 </div>
-                <h3 className="text-lg font-bold">Deshacer Consecutivo</h3>
+                <div>
+                  <h3 className="text-sm font-bold" style={{ color: COLORS.red }}>Deshacer Consecutivo</h3>
+                  <p className="text-xs mt-0.5" style={{ color: '#7F1D1D' }}>
+                    Selecciona el registro que deseas eliminar.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-red-600 pl-12">
-                Selecciona el registro que deseas eliminar permanentemente.
-              </p>
             </div>
 
-            <div className="p-6">
-               <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-                 {consecutivos.filter(cons => cons.usuario === user.name).length > 0 ? (
-                   consecutivos
+            {/* Modal body */}
+            <div className="p-5">
+              <div className="space-y-2 max-h-52 overflow-y-auto">
+                {consecutivos.filter(cons => cons.usuario === user.name).length > 0 ? (
+                  consecutivos
                     .filter(cons => cons.usuario === user.name)
-                    .map((cons) => (
-                      <button
-                        key={cons.consecutivo}
-                        onClick={() => setConsecutivoAEliminar(cons)}
-                        className={`w-full flex items-center justify-between p-4 rounded-xl border text-left transition-all ${
-                          consecutivoAEliminar?.consecutivo === cons.consecutivo
-                            ? 'bg-red-50 border-red-500 ring-1 ring-red-500 shadow-sm'
-                            : 'bg-white border-slate-200 hover:border-red-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-mono font-bold text-slate-800 text-lg">{cons.consecutivo}</span>
-                          <span className="text-xs text-slate-500">Creado por ti</span>
-                        </div>
-                        {consecutivoAEliminar?.consecutivo === cons.consecutivo && (
-                          <div className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center">
-                            <CheckCircle2 className="w-4 h-4" />
+                    .map((cons) => {
+                      const isSelected = consecutivoAEliminar?.consecutivo === cons.consecutivo;
+                      return (
+                        <button
+                          key={cons.consecutivo}
+                          onClick={() => setConsecutivoAEliminar(cons)}
+                          className="w-full flex items-center justify-between px-4 py-3 rounded text-left transition-colors"
+                          style={{
+                            border: isSelected ? `1px solid ${COLORS.red}` : `1px solid ${COLORS.border}`,
+                            backgroundColor: isSelected ? COLORS.redLight : COLORS.surface,
+                          }}
+                          onMouseEnter={e => !isSelected && (e.currentTarget.style.backgroundColor = COLORS.bg)}
+                          onMouseLeave={e => !isSelected && (e.currentTarget.style.backgroundColor = COLORS.surface)}
+                        >
+                          <div>
+                            <p className="font-mono font-bold text-base" style={{ color: COLORS.text }}>{cons.consecutivo}</p>
+                            <p className="text-xs mt-0.5" style={{ color: COLORS.subtle }}>Creado por ti</p>
                           </div>
-                        )}
-                      </button>
-                    ))
-                 ) : (
-                   <div className="text-center p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                     <p className="text-slate-500 font-medium">No tienes registros recientes</p>
-                     <p className="text-xs text-slate-400 mt-1">Solo puedes eliminar consecutivos creados por ti.</p>
-                   </div>
-                 )}
-               </div>
+                          {isSelected && (
+                            <CheckCircle2 className="w-4 h-4" style={{ color: COLORS.red }} />
+                          )}
+                        </button>
+                      );
+                    })
+                ) : (
+                  <div 
+                    className="text-center py-8 rounded"
+                    style={{ backgroundColor: COLORS.bg, border: `1px dashed ${COLORS.border}` }}
+                  >
+                    <p className="text-sm font-medium" style={{ color: COLORS.muted }}>No tienes registros recientes</p>
+                    <p className="text-xs mt-1" style={{ color: COLORS.subtle }}>Solo puedes eliminar consecutivos creados por ti.</p>
+                  </div>
+                )}
+              </div>
 
-               {error && (
-                 <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
-                   <AlertTriangle className="w-4 h-4" /> {error}
-                 </div>
-               )}
+              {error && (
+                <div 
+                  className="mt-4 flex items-center gap-2 px-3 py-2.5 rounded text-xs"
+                  style={{ backgroundColor: COLORS.redLight, color: COLORS.red, border: `1px solid ${COLORS.redBorder}` }}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
             </div>
 
-            <div className="p-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-100">
+            {/* Modal footer */}
+            <div 
+              className="px-5 py-4 flex justify-end gap-2"
+              style={{ borderTop: `1px solid ${COLORS.border}`, backgroundColor: COLORS.bg }}
+            >
               <button
                 onClick={() => setDeshacerModalOpen(false)}
-                className="px-4 py-2.5 text-slate-600 font-semibold hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors text-sm"
                 disabled={eliminando}
+                className="px-4 py-2 text-sm font-medium rounded transition-colors disabled:opacity-50"
+                style={{ color: COLORS.muted, border: `1px solid ${COLORS.border}`, backgroundColor: COLORS.surface }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = COLORS.bg)}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = COLORS.surface)}
               >
                 Cancelar
               </button>
               <button
                 onClick={handleEliminarConsecutivo}
                 disabled={!consecutivoAEliminar || eliminando}
-                className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-red-500/20 transition-all text-sm flex items-center gap-2"
+                className="px-5 py-2 text-sm font-semibold text-white rounded transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: COLORS.red }}
+                onMouseEnter={e => !(!consecutivoAEliminar || eliminando) && (e.currentTarget.style.opacity = '0.88')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
               >
-                {eliminando ? "Eliminando..." : "Confirmar Eliminación"}
+                {eliminando 
+                  ? <span className="flex items-center gap-2"><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Eliminando...</span>
+                  : 'Confirmar Eliminación'
+                }
               </button>
             </div>
           </div>

@@ -8,7 +8,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
   collection, getDocs, query, where, doc, getDoc,
   setDoc, addDoc, Timestamp, writeBatch,
-  onSnapshot, deleteDoc
+  onSnapshot, deleteDoc, serverTimestamp
 } from "firebase/firestore";
 import logoImage from '../assets/lab_logo.png';
 
@@ -189,7 +189,7 @@ async function generarPDFFormal({
 
   function crearNuevaPagina() {
     doc.addPage();
-    doc.setFillColor(255, 255, 255); // Fondo blanco limpio
+    doc.setFillColor(255, 255, 255);
     doc.rect(0, 0, 210, 20, 'F');
     
     doc.setTextColor(...azulPrimario);
@@ -217,7 +217,7 @@ async function generarPDFFormal({
 
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14); // Nombre de empresa un poco más grande
+  doc.setFontSize(14);
   doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.', 48, 16);
   
   doc.setTextColor(...grisTexto);
@@ -225,7 +225,6 @@ async function generarPDFFormal({
   doc.setFontSize(8.5);
   doc.text('Tlaquepaque No. 140, Col. Mitras Sur Monterrey, N.L., México. C.P. 64020', 48, 22);
   
-  // Detalle visual para los teléfonos
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
   doc.text('Teléfonos:', 48, 27);
@@ -233,7 +232,6 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'normal');
   doc.text('8127116538 / 8127116357', 66, 27);
 
-  // Título del documento
   doc.setFillColor(...azulPrimario);
   doc.rect(0, 35, 210, 12, 'F');
   doc.setTextColor(255, 255, 255);
@@ -663,6 +661,55 @@ export default function HojaDeServicioScreen() {
       } catch (error) {
         console.error("Error etiquetando archivos:", error);
       }
+
+      // =====================================================================
+      // NOTIFICACIÓN AUTOMÁTICA A CALIDAD/ADMINISTRACIÓN
+      // =====================================================================
+      try {
+        const usersSnap = await getDocs(collection(db, 'usuarios'));
+        
+        let destinatarios = usersSnap.docs
+            .filter(d => {
+                const rol = (d.data().role || d.data().puesto || '').toLowerCase();
+                return rol.includes('calidad') || rol.includes('admin') || rol.includes('gerente');
+            })
+            .map(d => d.id);
+        
+        if (destinatarios.length === 0) {
+            destinatarios = usersSnap.docs.map(d => d.id);
+        }
+
+        // Título y cuerpo claros y concretos
+        const notifTitle = 'Servicio Finalizado';
+        const notifBody  = `${campos.tecnicoResponsable || 'Técnico'} completó el servicio de ${campos.empresa} — Folio ${campos.folio}`;
+
+        await addDoc(collection(db, 'notificaciones'), {
+          type:        'success',
+          title:       notifTitle,
+          body:        notifBody,
+          autorNombre: 'Sistema AG',
+          readBy:      [],
+          destinatarios,
+          timestamp:   serverTimestamp(),
+          global:      true,
+          // ─── Campos extra para FCM / Service Worker ───────────────────────
+          // El SW lee payload.data para construir la notificación nativa.
+          // Todos los valores deben ser strings (restricción de FCM data messages).
+          fcmData: {
+            title:   notifTitle,
+            body:    notifBody,
+            type:    'success',
+            folio:   campos.folio,
+            empresa: campos.empresa,
+            url:     '/hoja-servicio',
+          },
+        });
+        
+        console.log("Notificación enviada a Calidad/Admin.");
+      } catch (err) {
+        console.error("Error enviando notificación automática:", err);
+      }
+      // =====================================================================
 
       const confirmManual = window.confirm(
         `✅ Servicio guardado correctamente.\n\n¿Deseas descargar el PDF y abrir el correo para adjuntarlo manualmente?`

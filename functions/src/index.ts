@@ -5,8 +5,15 @@ import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fn
 import { es } from "date-fns/locale";
 import { jsPDF } from "jspdf";
 
+// NUEVAS IMPORTACIONES PARA GOOGLE DRIVE Y CORS
+import { google } from "googleapis";
+import * as corsLib from "cors";
+
 admin.initializeApp();
 const db = admin.firestore();
+
+// Configuración de CORS para la API de Drive
+const cors = corsLib({ origin: true });
 
 // ==================================================================
 // 1. CONFIGURACIÓN DEL CORREO
@@ -157,7 +164,7 @@ export const agbotRegenerarPDF = functions.firestore
         const data = change.after.data();
         const dataAnterior = change.before.data();
 
-        // 1. Solo regenerar si cambiaron datos críticos (cliente, equipo, fechas, mediciones, etc.)
+        // Solo regenerar si cambiaron datos críticos
         if (data.cliente === dataAnterior.cliente &&
             data.equipo === dataAnterior.equipo &&
             data.medicionPatron === dataAnterior.medicionPatron &&
@@ -168,7 +175,6 @@ export const agbotRegenerarPDF = functions.firestore
         console.log(`Regenerando PDF PROFESIONAL en Storage para el folio: ${data.certificado}`);
 
         try {
-            // Inicializar el documento con las mismas medidas de tu frontend
             const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
             const pageWidth = doc.internal.pageSize.width;
             const pageHeight = doc.internal.pageSize.height;
@@ -176,10 +182,9 @@ export const agbotRegenerarPDF = functions.firestore
             const marginRight = pageWidth - 40;
             let currentY = 80;
 
-            // --- CABECERA ---
             doc.setFont("helvetica", "bold");
             doc.setFontSize(18);
-            doc.setTextColor(0, 0, 139); // Azul Fuerte
+            doc.setTextColor(0, 0, 139);
             doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
 
             doc.setTextColor(0, 0, 0);
@@ -195,13 +200,11 @@ export const agbotRegenerarPDF = functions.firestore
             doc.text(`Fecha: ${data.fecha || "-"}`, col2X, currentY);
             currentY += 25;
 
-            // Línea separadora
             doc.setDrawColor(100);
             doc.setLineWidth(1);
             doc.line(marginLeft, currentY, marginRight, currentY);
             currentY += 20;
 
-            // --- BLOQUE DE DATOS (2 COLUMNAS) ---
             const infoData = [
                 { l: "Cliente:", v: data.cliente, l2: "N. Certificado:", v2: data.certificado },
                 { l: "Equipo:", v: data.equipo, l2: "ID:", v2: data.id },
@@ -229,19 +232,16 @@ export const agbotRegenerarPDF = functions.firestore
 
             currentY += 15;
 
-            // --- TÍTULO DE MEDICIONES ---
             doc.setFont("helvetica", "bold");
             doc.setFontSize(13);
-            doc.setFillColor(220, 220, 220); // Gris claro
+            doc.setFillColor(220, 220, 220);
             doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F');
             doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
             currentY += 20;
 
-            // --- TABLA DE MEDICIONES ---
             const tableWidth = 500;
             const tableX = (pageWidth - tableWidth) / 2;
 
-            // Encabezado Azul de la tabla
             doc.setFillColor(50, 80, 160);
             doc.setDrawColor(0);
             doc.setLineWidth(0.1);
@@ -289,13 +289,11 @@ export const agbotRegenerarPDF = functions.firestore
                 currentY += rowHeight;
             }
 
-            // Pie de página
             doc.setFontSize(9);
             doc.setFont("helvetica", "italic");
             doc.setTextColor(100);
             doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
 
-            // --- SUBIDA A FIREBASE STORAGE ---
             const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
             const rutaStorage = `worksheets/${data.nombre || "Sistema"}/${data.certificado}_${data.id}.pdf`;
             const bucket = admin.storage().bucket();
@@ -307,7 +305,6 @@ export const agbotRegenerarPDF = functions.firestore
 
             console.log("PDF profesional sobrescrito exitosamente en Storage.");
 
-            // Sincronizar metadata para DriveScreen.tsx
             const metaId = rutaStorage.replace(/\//g, "_");
             await db.collection("fileMetadata").doc(metaId).set({
                 updated: admin.firestore.FieldValue.serverTimestamp(),
@@ -320,3 +317,118 @@ export const agbotRegenerarPDF = functions.firestore
             return null;
         }
     });
+
+// ==================================================================
+// 7. DISPARADOR PUSH NOTIFICATIONS (DATA-ONLY PAYLOAD)
+// ==================================================================
+export const onNewNotificacion = functions.firestore
+    .document("notificaciones/{docId}")
+    .onCreate(async (snap, context) => {
+        const data = snap.data();
+        if (!data) return null;
+
+        const { title, body, type, destinatarios } = data;
+        
+        if (!destinatarios || !Array.isArray(destinatarios) || destinatarios.length === 0) {
+            console.log("No hay destinatarios para esta notificación.");
+            return null;
+        }
+
+        const tokens: string[] = [];
+
+        try {
+            const userPromises = destinatarios.map(uid => db.collection("usuarios").doc(uid).get());
+            const userDocs = await Promise.all(userPromises);
+
+            userDocs.forEach(doc => {
+                if (doc.exists) {
+                    const userData = doc.data();
+                    if (userData?.fcmTokens) {
+                        Object.keys(userData.fcmTokens).forEach(token => tokens.push(token));
+                    } else if (userData?.fcmToken) {
+                        tokens.push(userData.fcmToken);
+                    }
+                }
+            });
+
+            const uniqueTokens = Array.from(new Set(tokens));
+
+            if (uniqueTokens.length === 0) {
+                console.log("No se encontraron tokens FCM válidos para los destinatarios.");
+                return null;
+            }
+
+            const payload = {
+                data: {
+                    title: title || "AG Solutions",
+                    body: body || "Tienes un nuevo aviso en el sistema",
+                    type: type || "info",
+                    notifId: context.params.docId, 
+                },
+                tokens: uniqueTokens
+            };
+
+            const response = await admin.messaging().sendEachForMulticast(payload);
+            console.log(`Notificación Push enviada: ${response.successCount} exitosas, ${response.failureCount} fallidas.`);
+
+        } catch (error) {
+            console.error("Error al enviar notificaciones Push FCM:", error);
+        }
+
+        return null;
+    });
+
+// ==================================================================
+// 8. BUSCADOR DE PDF EN GOOGLE DRIVE
+// ==================================================================
+export const buscarPdfDrive = functions.https.onRequest((req, res) => {
+    // Usamos CORS para evitar bloqueos desde el frontend (tablet/web)
+    cors(req, res, async () => {
+        const idEquipo = req.query.id as string;
+
+        if (!idEquipo) {
+            res.status(400).json({ error: "Falta el ID del equipo" });
+            return;
+        }
+
+        try {
+            // Importamos las credenciales localmente para evitar errores de compilación global
+            const credentials = require("./service-account.json");
+
+            // 1. Autenticar con Google Drive usando la cuenta de servicio
+            const auth = new google.auth.GoogleAuth({
+                credentials,
+                scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+            });
+
+            const drive = google.drive({ version: "v3", auth });
+
+            // 2. Ejecutar la búsqueda.
+            // Esto buscará cualquier archivo PDF que contenga el ID (ej: EP-53425) en su nombre.
+            const response = await drive.files.list({
+                q: `name contains '${idEquipo}' and mimeType = 'application/pdf' and trashed = false`,
+                fields: "files(id, name, webViewLink)",
+                spaces: "drive",
+                pageSize: 1, // Traemos solo el primero que encuentre para agilizar
+            });
+
+            const files = response.data.files;
+
+            if (files && files.length > 0) {
+                // Se encontró el documento en Drive
+                res.status(200).json({ 
+                    encontrado: true, 
+                    fileUrl: files[0].webViewLink,
+                    fileName: files[0].name
+                });
+            } else {
+                // No se encontró ningún PDF con ese ID
+                res.status(404).json({ encontrado: false, fileUrl: null });
+            }
+            
+        } catch (error) {
+            console.error("Error al buscar el PDF en Drive:", error);
+            res.status(500).json({ error: "Error interno del servidor al consultar Google Drive." });
+        }
+    });
+});

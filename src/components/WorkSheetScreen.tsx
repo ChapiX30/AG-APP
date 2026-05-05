@@ -231,14 +231,14 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-6 rounded-xl border border-gray-200">
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">De:</label>
-              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg" placeholder="0" />
-              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
+              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg text-gray-900" placeholder="0" />
+              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
             <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0"><button onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full"><ArrowRightLeft className="w-5 h-5" /></button></div>
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">A:</label>
               <div className="w-full p-3 text-lg font-mono font-bold bg-blue-50 text-blue-900 border border-blue-100 rounded-lg flex items-center min-h-[54px]">{result || "-"}</div>
-              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
+              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
           </div>
         </div>
@@ -336,7 +336,7 @@ const removeFromOfflineQueue = (id: string) => {
 };
 
 // ====================================================================
-// COMPONENTE SEARCH SELECT
+// COMPONENTE SEARCH SELECT 
 // ====================================================================
 
 interface ClienteSearchSelectProps {
@@ -350,6 +350,7 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
     const [localSearch, setLocalSearch] = useState(currentValue);
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => { setLocalSearch(currentValue); }, [currentValue]);
 
@@ -391,31 +392,59 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
         setIsOpen(false);
     };
 
+    const handleClear = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setLocalSearch("");
+        onSelect("");
+        setIsOpen(true);
+        inputRef.current?.focus();
+    };
+
     const sortedLetters = Object.keys(filteredAndGroupedClientes).sort();
 
     return (
         <div className="relative" ref={wrapperRef}>
-            <div className="relative">
+            <div className="relative flex items-center">
                 <input 
+                    ref={inputRef}
                     type="text" 
                     value={localSearch} 
                     onChange={handleChange} 
                     onFocus={() => setIsOpen(true)} 
                     placeholder="Buscar o seleccionar cliente..."
-                    className={`w-full p-4 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${isOpen ? 'rounded-b-none border-b-0' : ''} ${hasError ? 'border-red-500 bg-red-50 focus:ring-red-500' : 'border-gray-200'}`} 
+                    className={`w-full p-4 border rounded-lg pr-12 outline-none transition-all duration-200 bg-white text-gray-900 font-semibold shadow-inner ${
+                        isOpen 
+                            ? 'rounded-b-none border-b-0 shadow-lg border-blue-400 ring-1 ring-blue-400' 
+                            : 'focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                    } ${hasError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`} 
                 />
-                <Search className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
+                
+                {localSearch ? (
+                    <button 
+                        type="button" 
+                        onClick={handleClear}
+                        className="absolute right-3 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                        title="Borrar selección"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                ) : (
+                    <Search className="absolute right-4 w-5 h-5 text-gray-400 pointer-events-none" />
+                )}
             </div>
+            
             {isOpen && (
-                <div className="absolute z-20 w-full bg-white border border-gray-300 max-h-80 overflow-y-auto rounded-b-lg shadow-xl">
+                <div className="absolute z-50 w-full bg-white border border-gray-200 max-h-72 overflow-y-auto rounded-b-xl shadow-2xl custom-scrollbar">
                     {sortedLetters.length > 0 ? (
                         sortedLetters.map(letter => (
                             <div key={letter}>
-                                <div className="sticky top-0 bg-gray-100 px-3 py-2 text-sm font-bold text-blue-700 border-b border-gray-200 shadow-sm">{letter}</div>
+                                <div className="sticky top-0 bg-slate-100 px-4 py-2 text-sm font-bold text-blue-800 border-b border-gray-200 shadow-sm z-10 backdrop-blur-sm bg-opacity-90">
+                                    {letter}
+                                </div>
                                 <ul>
                                     {filteredAndGroupedClientes[letter].map(cliente => (
                                         <li key={cliente.id} 
-                                            className="px-4 py-3 cursor-pointer hover:bg-blue-50 text-gray-800 text-sm truncate transition-colors duration-150" 
+                                            className="px-5 py-3 cursor-pointer hover:bg-blue-50 text-gray-700 hover:text-blue-900 text-sm truncate transition-colors duration-150 font-medium border-b border-gray-50 last:border-0" 
                                             onClick={() => handleSelectCliente(cliente.nombre)}>
                                             {cliente.nombre}
                                         </li>
@@ -424,7 +453,10 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                             </div>
                         ))
                     ) : (
-                        <div className="p-4 text-gray-500 text-sm">No se encontraron clientes.</div>
+                        <div className="p-6 text-center text-gray-500 text-sm font-medium flex flex-col items-center gap-2">
+                            <Search className="w-6 h-6 text-gray-300" />
+                            No se encontraron clientes.
+                        </div>
                     )}
                 </div>
             )}
@@ -444,7 +476,6 @@ const getLocalISODate = () => {
 
 const getUserName = (user: any) => user ? (user.displayName || user.name || user.email?.split("@")[0] || "Sin Usuario") : "Sin Usuario";
 
-// CORRECCIÓN APLICADA: Ahora lee AGPT correctamente sin confundirse con AGP
 const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
   if (!consecutivo) return "";
   const m: Record<string, string> = { 
@@ -534,7 +565,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   let currentY = 60; 
 
   const drawHeaderBase = () => {
-    // Logo ancho x alto proporcional para que no se vea comprimido
     doc.addImage(logoAg, 'PNG', marginLeft, 25, 100, 45);
     
     doc.setFont("helvetica", "bold");
@@ -542,7 +572,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     doc.setTextColor(0, 51, 153); 
     doc.text("Equipos y Servicios Especializados AG", marginLeft + 110, 50, { align: "left" });
     
-    // Línea divisoria superior
     doc.setDrawColor(0, 51, 153);
     doc.setLineWidth(1);
     doc.line(marginLeft, 80, marginRight, 80);
@@ -601,9 +630,8 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   currentY = 100; 
   
   const col1X = marginLeft;
-  const col2X = pageWidth / 2 + 10;
+  const col2X = pageWidth / 2 + 35; 
 
-  // Recuadro tenue para Nombre y Fecha
   doc.setFillColor(245, 247, 250); 
   doc.rect(marginLeft, currentY - 12, pageWidth - 80, 25, 'F');
 
@@ -620,7 +648,6 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   
   currentY += 35; 
 
-  // RETIRAMOS LA PRÓXIMA CALIBRACIÓN DEL PDF (Solo queda en la interfaz como pediste)
   const infoData = [
     { l: "Cliente:", v: formData.cliente, l2: "N. Certificado:", v2: formData.certificado },
     { l: "Equipo:", v: formData.equipo, l2: "ID:", v2: formData.id },
@@ -635,7 +662,11 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
 
   doc.setFontSize(10);
   
-  // Tabla de información con estilo Zebra (intercalado sutil)
+  const formatText = (text: any, maxLength: number) => {
+    const str = String(text || "-");
+    return str.length > maxLength ? str.substring(0, maxLength) + "..." : str;
+  };
+
   infoData.forEach((row, index) => {
     checkPageBreak(20);
     
@@ -647,12 +678,12 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
     doc.setFont("helvetica", "bold");
     doc.text(row.l, col1X + 5, currentY + 1);
     doc.setFont("helvetica", "normal");
-    doc.text(String(row.v || "-").substring(0, 35), col1X + 75, currentY + 1);
+    doc.text(formatText(row.v, 45), col1X + 75, currentY + 1);
 
     doc.setFont("helvetica", "bold");
     doc.text(row.l2, col2X, currentY + 1);
     doc.setFont("helvetica", "normal");
-    doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY + 1);
+    doc.text(formatText(row.v2, 40), col2X + 80, currentY + 1);
     
     currentY += 16;
   });
@@ -789,10 +820,12 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
         doc.rect(tableX, currentY, tableWidth, rowHeight, 'FD'); 
         doc.setTextColor(0, 0, 100); 
       } else {
-        doc.setFillColor(255, 255, 255);
         doc.setFont("helvetica", "normal");
-        doc.rect(tableX, currentY, tableWidth/2, rowHeight); 
-        doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, rowHeight);
+        // Colores de fondo alternados para el PDF
+        doc.setFillColor(245, 250, 255);
+        doc.rect(tableX, currentY, tableWidth/2, rowHeight, 'FD'); 
+        doc.setFillColor(255, 252, 245);
+        doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, rowHeight, 'FD');
         doc.setTextColor(0, 0, 0);
       }
       
@@ -880,13 +913,19 @@ const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
   return doc;
 };
 
+// Quitamos la inicialización de la fecha aquí
 const initialState: WorksheetState = {
-  lugarCalibracion: "", frecuenciaCalibracion: "", fecha: getLocalISODate(), fechaRecepcion: "", certificado: "",
+  lugarCalibracion: "", frecuenciaCalibracion: "", fecha: "", fechaRecepcion: "", certificado: "",
   nombre: "", cliente: "", id: "", equipo: "", marca: "", modelo: "", numeroSerie: "", magnitud: "", unidad: [],
   alcance: "", resolucion: "", medicionPatron: "", medicionInstrumento: "", excentricidad: "", linealidad: "",
   repetibilidad: "", notas: "", tempAmbiente: "", humedadRelativa: "", idBlocked: false, idErrorMessage: "",
   permitirExcepcion: false, isMasterData: false, fieldsLocked: false,
   condicionEquipo: "", descripcionDano: "", fotoEquipoBase64: "", fotoEquipoURL: "",
+};
+
+// Función para inicializar el estado incluyendo la fecha actual si no existe
+const initWorksheet = (initial: WorksheetState): WorksheetState => {
+  return { ...initial, fecha: initial.fecha || getLocalISODate() };
 };
 
 function worksheetReducer(state: WorksheetState, action: WorksheetAction): WorksheetState {
@@ -920,7 +959,10 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
 export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetId }) => {
   const { currentConsecutive, goBack, currentUser, currentMagnitude } = useNavigation();
   const { user } = useAuth();
-  const [state, dispatch] = useReducer(worksheetReducer, initialState);
+  
+  // Usamos el initWorksheet
+  const [state, dispatch] = useReducer(worksheetReducer, initialState, initWorksheet);
+  
   const [isSaving, setIsSaving] = useState(false);
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
@@ -976,7 +1018,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return found?.requerimientos || "";
   }, [state.cliente, listaClientes]);
 
-  // === UI: FECHA DE PRÓXIMA CALIBRACIÓN CALCULADA ===
   const nextCalibrationStr = useMemo(() => {
       if (!state.fecha || !state.frecuenciaCalibracion) return null;
       const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
@@ -1194,8 +1235,14 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   }, [currentUser, user]);
 
   useEffect(() => {
-    const cert = currentConsecutive || ""; dispatch({ type: 'SET_CONSECUTIVE', consecutive: cert, magnitud: extractMagnitudFromConsecutivo(cert) });
-  }, [currentConsecutive]);
+    const cert = currentConsecutive || ""; 
+    dispatch({ type: 'SET_CONSECUTIVE', consecutive: cert, magnitud: extractMagnitudFromConsecutivo(cert) });
+    
+    // Aquí inyectamos la fecha correcta cuando se pide un consecutivo nuevo
+    if (!worksheetId && cert) {
+       dispatch({ type: 'SET_FIELD', field: 'fecha', payload: getLocalISODate() });
+    }
+  }, [currentConsecutive, worksheetId]);
 
   useEffect(() => { if (currentMagnitude) dispatch({ type: 'SET_MAGNITUD', payload: currentMagnitude }); }, [currentMagnitude]);
 
@@ -1575,7 +1622,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     };
   }, [state.lugarCalibracion, state.fechaRecepcion, state.fecha]);
 
-  const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200"}`;
+  // Modificado inputClass para mayor legibilidad
+  const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200 bg-white"}`;
 
   const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1674,22 +1722,23 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 {state.lugarCalibracion === "Laboratorio" && (
                   <div className="mt-4 animate-in fade-in slide-in-from-top-2">
                     <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
-                    <input type="date" className={`w-full border rounded px-3 py-2 text-sm ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : ''}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
+                    <input type="date" className={`w-full border rounded px-3 py-2 text-sm text-gray-900 font-semibold shadow-inner bg-white ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
                   </div>
                 )}
+                
+                {/* --- SECCIÓN FRECUENCIA / FECHA --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
-                    <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
+                    <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner bg-white border-slate-300">
                       <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
                     </select>
                   </div>
                   
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
-                    <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 ${validationErrors.fecha ? 'border-red-500 bg-red-50' : ''}`} />
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
+                    <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner bg-white ${validationErrors.fecha ? 'border-red-500 bg-red-50' : 'border-indigo-200'}`} />
                     
-                    {/* UI: RECUADRO DE PRÓXIMA CALIBRACIÓN */}
                     {nextCalibrationStr && (
                       <div className="mt-2 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-800 text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
                         <Calendar className="w-4 h-4 shrink-0 mt-0.5" />
@@ -1726,25 +1775,37 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 </div>
 
+                {/* --- SECCIÓN CERTIFICADO / NOMBRE --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label><input type="text" value={state.certificado} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.certificado ? 'border-red-500 ring-1 ring-red-500' : ''}`} placeholder="Automático" /></div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Mail className="w-4 h-4 text-red-500" /><span>Nombre*</span></label><input type="text" value={state.nombre} readOnly className={`w-full p-4 border rounded-lg bg-gray-50 text-gray-800 ${validationErrors.nombre ? 'border-red-500 ring-1 ring-red-500' : ''}`} /></div>
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label>
+                    <input type="text" value={state.certificado} readOnly className={`w-full p-4 border rounded-lg bg-white text-gray-900 font-semibold shadow-inner ${validationErrors.certificado ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`} placeholder="Automático" />
+                  </div>
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Mail className="w-4 h-4 text-red-500" /><span>Nombre Técnico*</span></label>
+                    <input type="text" value={state.nombre} readOnly className={`w-full p-4 border rounded-lg bg-white text-gray-900 font-semibold shadow-inner ${validationErrors.nombre ? 'border-red-500 ring-1 ring-red-500' : 'border-indigo-200'}`} />
+                  </div>
                 </div>
+
+                {/* --- SECCIÓN CLIENTE / ID --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label><ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} /></div>
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label>
+                    <ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} />
+                  </div>
                   
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
                     <div className="flex gap-2">
                         <input 
                           type="text" 
                           value={state.id} 
                           onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
                           onBlur={handleIdBlur} 
-                          className={`flex-1 p-4 border-2 rounded-lg transition-all ${
+                          className={`flex-1 p-4 border rounded-lg transition-all text-gray-900 font-semibold shadow-inner bg-white ${
                               state.idBlocked 
                                   ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
-                                  : (validationErrors.id ? "border-red-500 bg-red-50" : "border-gray-200 focus:ring-blue-500")
+                                  : (validationErrors.id ? "border-red-500 bg-red-50" : "border-indigo-200 focus:ring-blue-500")
                           }`} 
                           placeholder="ID" 
                         />
@@ -1755,7 +1816,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           className={`px-4 rounded-lg border flex items-center justify-center transition-all shadow-sm ${
                             lastPdfUrl 
                               ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 hover:scale-105 active:scale-95" 
-                              : "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                              : "bg-white border-indigo-200 text-gray-400 cursor-not-allowed"
                           }`}
                           title={lastPdfUrl ? "Ver Schedule en Drive" : "No se encontró PDF"}
                         >
@@ -1782,7 +1843,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                               className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" 
                               disabled={!state.idBlocked} 
                              />
-                            <span className={`text-sm ${state.idBlocked ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
+                            <span className={`text-sm ${state.idBlocked ? 'text-indigo-900 font-bold' : 'text-gray-400'}`}>
                               Permitir excepción de fecha
                             </span>
                         </label>
@@ -1790,24 +1851,40 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 </div>
 
+                {/* --- SECCIÓN EQUIPO / MARCA --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label><input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} readOnly={state.fieldsLocked} className={inputClass('equipo')} /></div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label><input type="text" value={state.marca} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value }); if(validationErrors.marca) setValidationErrors({...validationErrors, marca: false}); }} readOnly={state.fieldsLocked} className={inputClass('marca')} /></div>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label><input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label><input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label>
+                    <input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} readOnly={state.fieldsLocked} className={inputClass('equipo')} />
+                  </div>
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label>
+                    <input type="text" value={state.marca} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'marca', payload: e.target.value }); if(validationErrors.marca) setValidationErrors({...validationErrors, marca: false}); }} readOnly={state.fieldsLocked} className={inputClass('marca')} />
+                  </div>
                 </div>
 
+                {/* --- SECCIÓN MODELO / SERIE --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Hash className="w-4 h-4 text-teal-500" /><span>Modelo</span></label>
+                    <input type="text" value={state.modelo} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'modelo', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-slate-300 text-gray-900 font-semibold shadow-inner bg-white" />
+                  </div>
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><NotebookPen className="w-4 h-4 text-purple-500" /><span>Nº Serie</span></label>
+                    <input type="text" value={state.numeroSerie} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'numeroSerie', payload: e.target.value })} readOnly={state.fieldsLocked} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-indigo-200 text-gray-900 font-semibold shadow-inner bg-white" />
+                  </div>
+                </div>
+
+                {/* --- SECCIÓN MAGNITUD / UNIDAD --- */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3">
                       <Tag className="w-4 h-4 text-blue-500" /><span>Magnitud*</span>
                     </label>
                     {currentMagnitude ? (
                       <div className="relative">
                         <input type="text" value={state.magnitud} readOnly 
-                          className="w-full p-4 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 font-bold" />
+                          className="w-full p-4 border border-slate-300 rounded-lg bg-gray-100 text-gray-900 font-bold shadow-inner" />
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">Auto</div>
                       </div>
                     ) : (
@@ -1816,19 +1893,19 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           dispatch({ type: 'SET_MAGNITUD', payload: e.target.value }); 
                           if(validationErrors.magnitud) setValidationErrors({...validationErrors, magnitud: false}); 
                         }} 
-                        className={`w-full p-4 border rounded-lg outline-none bg-white text-gray-900 appearance-none cursor-pointer ${validationErrors.magnitud ? "border-red-500 ring-1 ring-red-500" : "border-gray-300 focus:ring-2 focus:ring-blue-500"}`}>
+                        className={`w-full p-4 border rounded-lg outline-none bg-white text-gray-900 font-semibold shadow-inner appearance-none cursor-pointer ${validationErrors.magnitud ? "border-red-500 ring-1 ring-red-500" : "border-slate-300 focus:ring-2 focus:ring-blue-500"}`}>
                         <option value="" className="text-gray-400">Seleccionar...</option>
                         {magnitudesDisponibles.map(m => <option key={m} value={m} className="text-gray-900">{m}</option>)}
                       </select>
                     )}
                   </div>
 
-                  <div>
-                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3">
                       <Tag className="w-4 h-4 text-violet-500" /><span>Unidad*</span>
                     </label>
                     {state.magnitud === "Electrica" ? (
-                      <div className={`p-4 border rounded-lg bg-white ${validationErrors.unidad ? "border-red-500 bg-red-50" : "border-gray-200"}`}>
+                      <div className={`p-4 border rounded-lg bg-white shadow-inner ${validationErrors.unidad ? "border-red-500 bg-red-50" : "border-indigo-200"}`}>
                         <div className="font-bold text-gray-800 mb-3 text-sm">Tipo Eléctrico</div>
                         <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg mb-4">
                           {(["DC", "AC", "Otros"] as const).map((tipo) => (
@@ -1867,7 +1944,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           if(validationErrors.unidad) setValidationErrors({...validationErrors, unidad: false}); 
                         }} 
                         disabled={!state.magnitud} 
-                        className={`w-full p-4 border rounded-lg bg-white text-gray-900 outline-none h-[150px] ${validationErrors.unidad ? "border-red-500" : "border-gray-300 focus:ring-2 focus:ring-blue-500"}`}>
+                        className={`w-full p-4 border rounded-lg bg-white text-gray-900 font-semibold shadow-inner outline-none h-[150px] ${validationErrors.unidad ? "border-red-500" : "border-indigo-200 focus:ring-2 focus:ring-blue-500"}`}>
                         {!state.magnitud && <option value="" disabled>Seleccione magnitud primero</option>}
                         {unidadesDisponibles.map(u => <option key={u} value={u} className="p-1">{u}</option>)}
                       </select>
@@ -1875,29 +1952,32 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Alcance*</label>
-                  <input 
-                      type="text" 
-                      className={inputClass('alcance')} 
-                      value={state.alcance} 
-                      onChange={e => {
-                           dispatch({ type: 'SET_FIELD', field: 'alcance', payload: e.target.value });
-                           if(validationErrors.alcance) setValidationErrors({...validationErrors, alcance: false});
-                      }} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Resolución*</label>
-                  <input 
-                      type="text" 
-                      className={inputClass('resolucion')} 
-                      value={state.resolucion} 
-                      onChange={e => {
-                           dispatch({ type: 'SET_FIELD', field: 'resolucion', payload: e.target.value });
-                           if(validationErrors.resolucion) setValidationErrors({...validationErrors, resolucion: false});
-                      }} 
-                  />
+                {/* --- SECCIÓN ALCANCE / RESOLUCIÓN --- */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Tag className="w-4 h-4 text-gray-500"/><span>Alcance*</span></label>
+                    <input 
+                        type="text" 
+                        className={inputClass('alcance')} 
+                        value={state.alcance} 
+                        onChange={e => {
+                             dispatch({ type: 'SET_FIELD', field: 'alcance', payload: e.target.value });
+                             if(validationErrors.alcance) setValidationErrors({...validationErrors, alcance: false});
+                        }} 
+                    />
+                  </div>
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Tag className="w-4 h-4 text-gray-500"/><span>Resolución*</span></label>
+                    <input 
+                        type="text" 
+                        className={inputClass('resolucion')} 
+                        value={state.resolucion} 
+                        onChange={e => {
+                             dispatch({ type: 'SET_FIELD', field: 'resolucion', payload: e.target.value });
+                             if(validationErrors.resolucion) setValidationErrors({...validationErrors, resolucion: false});
+                        }} 
+                    />
+                  </div>
                 </div>
 
                 {/* ============================================================ */}
@@ -1963,7 +2043,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           onChange={e => dispatch({ type: 'SET_FIELD', field: 'descripcionDano', payload: e.target.value })}
                           rows={3}
                           placeholder="Ej: Golpe visible en la parte frontal, dial dañado, fuga de aceite..."
-                          className="w-full p-3 border-2 border-red-200 rounded-xl resize-y focus:ring-2 focus:ring-red-400 text-sm bg-red-50 placeholder-red-300"
+                          className="w-full p-3 border-2 border-red-200 rounded-xl resize-y focus:ring-2 focus:ring-red-400 text-sm bg-red-50 text-red-900 placeholder-red-300"
                         />
                       </div>
                     )}
@@ -2059,52 +2139,52 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                            
                            <div className="absolute top-8 left-8 flex flex-col items-center">
                               <span className="text-xs font-bold text-gray-500 mb-1 bg-white px-2 rounded-full border">3 (Sup. Izq)</span>
-                              <input type="text" value={localExc.p3} onChange={e => handleExcChangeLocal('p3', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                              <input type="text" value={localExc.p3} onChange={e => handleExcChangeLocal('p3', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
                            </div>
 
                            <div className="absolute top-8 right-8 flex flex-col items-center">
                               <span className="text-xs font-bold text-gray-500 mb-1 bg-white px-2 rounded-full border">4 (Sup. Der)</span>
-                              <input type="text" value={localExc.p4} onChange={e => handleExcChangeLocal('p4', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                              <input type="text" value={localExc.p4} onChange={e => handleExcChangeLocal('p4', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
                            </div>
 
                            <div className="absolute flex flex-col items-center z-10 bg-white p-2 rounded-full shadow-lg border border-blue-100">
                               <span className="text-sm font-bold text-blue-700 mb-1">1 (Centro)</span>
-                              <input type="text" value={localExc.p1} onChange={e => handleExcChangeLocal('p1', e.target.value)} onBlur={syncMasaToGlobalState} className="w-28 text-center text-base p-2 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-600 bg-blue-50 font-bold" placeholder="0.000" />
+                              <input type="text" value={localExc.p1} onChange={e => handleExcChangeLocal('p1', e.target.value)} onBlur={syncMasaToGlobalState} className="w-28 text-center text-base p-2 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-600 bg-blue-50 text-gray-900 font-bold" placeholder="0.000" />
                            </div>
 
                            <div className="absolute bottom-8 left-8 flex flex-col items-center">
-                              <input type="text" value={localExc.p2} onChange={e => handleExcChangeLocal('p2', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                              <input type="text" value={localExc.p2} onChange={e => handleExcChangeLocal('p2', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
                               <span className="text-xs font-bold text-gray-500 mt-1 bg-white px-2 rounded-full border">2 (Inf. Izq)</span>
                            </div>
 
                            <div className="absolute bottom-8 right-8 flex flex-col items-center">
-                              <input type="text" value={localExc.p5} onChange={e => handleExcChangeLocal('p5', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm" placeholder="0.000" />
+                              <input type="text" value={localExc.p5} onChange={e => handleExcChangeLocal('p5', e.target.value)} onBlur={syncMasaToGlobalState} className="w-24 text-center text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white/90 shadow-sm text-gray-900 font-medium" placeholder="0.000" />
                               <span className="text-xs font-bold text-gray-500 mt-1 bg-white px-2 rounded-full border">5 (Inf. Der)</span>
                            </div>
                         </div>
                       </div>
                       
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div>
-                          <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                        <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                          <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3">
                             <NotebookPen className="w-4 h-4 text-pink-500" /><span>Linealidad (Presiona Enter para nueva línea)</span>
                           </label>
                           <textarea 
                             value={state.linealidad} 
                             onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'linealidad', payload: e.target.value })} 
-                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y" 
+                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-slate-300 min-h-[140px] font-mono text-sm shadow-inner resize-y text-gray-900 font-semibold bg-white" 
                             rows={6} 
                             placeholder="Punto 1: 10.000 g&#10;Punto 2: 20.000 g&#10;Punto 3: 30.000 g..." 
                           />
                         </div>
-                        <div>
-                          <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3">
+                        <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                          <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3">
                             <NotebookPen className="w-4 h-4 text-orange-500" /><span>Repetibilidad (Presiona Enter para nueva línea)</span>
                           </label>
                           <textarea 
                             value={state.repetibilidad} 
                             onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'repetibilidad', payload: e.target.value })} 
-                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-gray-300 min-h-[140px] font-mono text-sm shadow-inner resize-y" 
+                            className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 border-indigo-200 min-h-[140px] font-mono text-sm shadow-inner resize-y text-gray-900 font-semibold bg-white" 
                             rows={6} 
                             placeholder="Lectura 1: 5.001 g&#10;Lectura 2: 5.002 g&#10;Lectura 3: 5.001 g..." 
                           />
@@ -2143,7 +2223,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                   onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed" 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono font-semibold leading-relaxed text-gray-900 bg-white" 
                                 />
                             </div>
                 
@@ -2154,7 +2234,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                   onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono leading-relaxed" 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono font-semibold leading-relaxed text-gray-900 bg-white" 
                                 />
                             </div>
                         </div>
@@ -2163,16 +2243,32 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label><textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
-                    <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label><textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={6} className="w-full p-2 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-gray-200" /></div>
+                    <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                      <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><NotebookPen className="w-4 h-4 text-teal-400" /><span>Medición Patrón</span></label>
+                      <textarea value={state.medicionPatron} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: e.target.value })} rows={6} className="w-full p-3 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-slate-300 text-gray-900 font-semibold shadow-inner bg-white" />
+                    </div>
+                    <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                      <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><NotebookPen className="w-4 h-4 text-blue-400" /><span>Medición Instrumento</span></label>
+                      <textarea value={state.medicionInstrumento} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: e.target.value })} rows={6} className="w-full p-3 border rounded resize-y min-h-[150px] focus:ring-2 focus:ring-blue-500 border-indigo-200 text-gray-900 font-semibold shadow-inner bg-white" />
+                    </div>
                   </div>
                 )}
                 
-                <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas Técnicas</span></label><textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-y min-h-[100px] focus:ring-2 focus:ring-blue-500 border-gray-200" rows={4} placeholder="Notas y observaciones multilínea..." /></div>
+                <div>
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-gray-400" /><span>Notas Técnicas</span></label>
+                  <textarea value={state.notas} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'notas', payload: e.target.value })} className="w-full p-4 border rounded-lg resize-y min-h-[100px] focus:ring-2 focus:ring-blue-500 border-gray-200 text-gray-900 font-medium bg-white shadow-inner" rows={4} placeholder="Notas y observaciones multilínea..." />
+                </div>
                 
+                {/* --- SECCIÓN TEMPERATURA / HR --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label><input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} /></div>
-                  <div><label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label><input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa')} /></div>
+                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label>
+                    <input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} />
+                  </div>
+                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                    <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label>
+                    <input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa')} />
+                  </div>
                   
                   {metrologyWarning && (
                     <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
