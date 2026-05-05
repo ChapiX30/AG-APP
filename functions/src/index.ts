@@ -1,18 +1,18 @@
 ﻿import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 
-// 1. Intentamos leer la variable que configuraste en Vercel
+// Intentamos leer la variable de entorno de Vercel
 const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
 if (!admin.apps.length) {
   if (serviceAccountVar) {
-    // 2. Si la variable existe (Producción), la usamos para autenticar
+    // Si estamos en Vercel, usamos la variable (JSON puro)
     admin.initializeApp({
       credential: admin.credential.cert(JSON.parse(serviceAccountVar))
     });
   } else {
-    // 3. Si no hay variable (Local), inicializamos con credenciales por defecto
-    // Esto requiere que hayas hecho 'firebase login' en tu terminal
+    // Si estás trabajando local, inicializa con las credenciales por defecto 
+    // (Asegúrate de haber corrido 'firebase login' en tu terminal)
     admin.initializeApp();
   }
 }
