@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import * as nodemailer from "nodemailer";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
+import { jsPDF } from "jspdf";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -125,10 +126,8 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
         const historial = historialSnapshot.docs.map(doc => {
             const d = doc.data();
             return {
-                // 1. Certificado: Solo d.certificado. Si no hay, guion. (No HSDG)
                 certificado: d.certificado || "-",
                 cliente: d.clienteNombre || d.cliente || "Sin Cliente",
-                // 2. Equipo: Directamente del campo 'equipo' para que no salga null
                 equipo: d.equipo || "Equipo",
                 marca: d.marca || d.equipoMarca || "",
                 modelo: d.modelo || d.equipoModelo || "",
@@ -136,7 +135,6 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
                 id: d.id || "",
                 fecha: d.fecha || "",
                 tecnico: d.nombre || "",
-                // 👇 AQUÍ AGREGAMOS LA NUEVA COLUMNA 👇
                 lugarCalibracion: d.lugarCalibracion || "S/M",
                 frecuenciaCalibracion: d.frecuenciaCalibracion || "12 meses",
             };
@@ -149,3 +147,176 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
         res.status(500).send("Error interno.");
     }
 });
+
+// ==================================================================
+// 6. REGENERADOR AUTOMÁTICO DE PDF (DISEÑO PROFESIONAL AG)
+// ==================================================================
+export const agbotRegenerarPDF = functions.firestore
+    .document("hojasDeTrabajo/{docId}")
+    .onUpdate(async (change: any, context: any) => {
+        const data = change.after.data();
+        const dataAnterior = change.before.data();
+
+        // 1. Solo regenerar si cambiaron datos críticos (cliente, equipo, fechas, mediciones, etc.)
+        if (data.cliente === dataAnterior.cliente &&
+            data.equipo === dataAnterior.equipo &&
+            data.medicionPatron === dataAnterior.medicionPatron &&
+            data.medicionInstrumento === dataAnterior.medicionInstrumento) {
+            return null;
+        }
+
+        console.log(`Regenerando PDF PROFESIONAL en Storage para el folio: ${data.certificado}`);
+
+        try {
+            // Inicializar el documento con las mismas medidas de tu frontend
+            const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+            const pageWidth = doc.internal.pageSize.width;
+            const pageHeight = doc.internal.pageSize.height;
+            const marginLeft = 40;
+            const marginRight = pageWidth - 40;
+            let currentY = 80;
+
+            // --- CABECERA ---
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(18);
+            doc.setTextColor(0, 0, 139); // Azul Fuerte
+            doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
+
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "normal");
+
+            const col1X = marginLeft;
+            const col2X = pageWidth / 2 + 20;
+
+            doc.setFont("helvetica", "bold");
+            doc.text(`Nombre: ${data.nombre || "-"}`, marginLeft, currentY);
+            doc.setFont("helvetica", "normal");
+            doc.text(`Fecha: ${data.fecha || "-"}`, col2X, currentY);
+            currentY += 25;
+
+            // Línea separadora
+            doc.setDrawColor(100);
+            doc.setLineWidth(1);
+            doc.line(marginLeft, currentY, marginRight, currentY);
+            currentY += 20;
+
+            // --- BLOQUE DE DATOS (2 COLUMNAS) ---
+            const infoData = [
+                { l: "Cliente:", v: data.cliente, l2: "N. Certificado:", v2: data.certificado },
+                { l: "Equipo:", v: data.equipo, l2: "ID:", v2: data.id },
+                { l: "Marca:", v: data.marca, l2: "Modelo:", v2: data.modelo },
+                { l: "N. Serie:", v: data.serie || data.numeroSerie, l2: "Ubicación:", v2: data.lugarCalibracion },
+                { l: "Magnitud:", v: data.magnitud, l2: "Unidad:", v2: Array.isArray(data.unidad) ? data.unidad.join(', ') : data.unidad },
+                { l: "Alcance:", v: data.alcance, l2: "Resolución:", v2: data.resolucion },
+                { l: "Frecuencia:", v: data.frecuenciaCalibracion, l2: "Recepción:", v2: data.fechaRecepcion || "N/A" },
+                { l: "Temp. Amb:", v: `${data.tempAmbiente || "-"} °C`, l2: "Humedad:", v2: `${data.humedadRelativa || "-"} %` },
+            ];
+
+            doc.setFontSize(10);
+            infoData.forEach(row => {
+                doc.setFont("helvetica", "bold");
+                doc.text(row.l, col1X, currentY);
+                doc.setFont("helvetica", "normal");
+                doc.text(String(row.v || "-").substring(0, 35), col1X + 65, currentY);
+
+                doc.setFont("helvetica", "bold");
+                doc.text(row.l2, col2X, currentY);
+                doc.setFont("helvetica", "normal");
+                doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY);
+                currentY += 16;
+            });
+
+            currentY += 15;
+
+            // --- TÍTULO DE MEDICIONES ---
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(13);
+            doc.setFillColor(220, 220, 220); // Gris claro
+            doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F');
+            doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
+            currentY += 20;
+
+            // --- TABLA DE MEDICIONES ---
+            const tableWidth = 500;
+            const tableX = (pageWidth - tableWidth) / 2;
+
+            // Encabezado Azul de la tabla
+            doc.setFillColor(50, 80, 160);
+            doc.setDrawColor(0);
+            doc.setLineWidth(0.1);
+            doc.rect(tableX, currentY, tableWidth, 20, 'FD');
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "bold");
+            doc.text("Medición Patrón", tableX + 20, currentY + 14);
+            doc.text("Medición Instrumento", tableX + (tableWidth / 2) + 20, currentY + 14);
+            currentY += 20;
+
+            doc.setTextColor(0, 0, 0);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+
+            const patronRaw = (data.medicionPatron || "").split('\n');
+            const instrumentoRaw = (data.medicionInstrumento || "").split('\n');
+            const maxLines = Math.max(patronRaw.length, instrumentoRaw.length);
+            const loopLimit = maxLines > 0 ? maxLines : 1;
+
+            for (let i = 0; i < loopLimit; i++) {
+                const pLine = patronRaw[i] || "";
+                const iLine = instrumentoRaw[i] || "";
+
+                const isHeaderLine = (pLine.trim().endsWith(':') || iLine.trim().endsWith(':'));
+                const rowHeight = 18;
+
+                doc.setDrawColor(200);
+                if (isHeaderLine) {
+                    doc.setFillColor(240, 240, 240);
+                    doc.setFont("helvetica", "bold");
+                    doc.rect(tableX, currentY, tableWidth, rowHeight, 'FD');
+                    doc.setTextColor(0, 0, 100);
+                } else {
+                    doc.setFillColor(255, 255, 255);
+                    doc.setFont("helvetica", "normal");
+                    doc.rect(tableX, currentY, tableWidth / 2, rowHeight);
+                    doc.rect(tableX + tableWidth / 2, currentY, tableWidth / 2, rowHeight);
+                    doc.setTextColor(0, 0, 0);
+                }
+
+                doc.text(pLine, tableX + 10, currentY + 12);
+                doc.text(iLine, tableX + (tableWidth / 2) + 10, currentY + 12);
+                currentY += rowHeight;
+            }
+
+            // Pie de página
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "italic");
+            doc.setTextColor(100);
+            doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
+
+            // --- SUBIDA A FIREBASE STORAGE ---
+            const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
+            const rutaStorage = `worksheets/${data.nombre || "Sistema"}/${data.certificado}_${data.id}.pdf`;
+            const bucket = admin.storage().bucket();
+
+            await bucket.file(rutaStorage).save(pdfBuffer, {
+                contentType: "application/pdf",
+                metadata: { cacheControl: "no-cache, max-age=0" }
+            });
+
+            console.log("PDF profesional sobrescrito exitosamente en Storage.");
+
+            // Sincronizar metadata para DriveScreen.tsx
+            const metaId = rutaStorage.replace(/\//g, "_");
+            await db.collection("fileMetadata").doc(metaId).set({
+                updated: admin.firestore.FieldValue.serverTimestamp(),
+                size: pdfBuffer.length
+            }, { merge: true });
+
+            return { success: true };
+        } catch (error) {
+            console.error("Error regenerando PDF:", error);
+            return null;
+        }
+    });
