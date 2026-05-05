@@ -4,18 +4,7 @@ import * as nodemailer from "nodemailer";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
 
-// ==================================================================
-// INICIALIZACIÓN CON LLAVE FÍSICA (Evita error 403 en Vercel)
-// ==================================================================
-const path = require("path");
-const serviceAccount = require("../service-account.json");
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
-
+admin.initializeApp();
 const db = admin.firestore();
 
 // ==================================================================
@@ -112,7 +101,7 @@ export const agbotMonitorDiario = functions.pubsub
     });
 
 // ==================================================================
-// 5. PUENTE API PARA EXCEL
+// 5. PUENTE API PARA EXCEL (Corregido Equipo y Certificado)
 // ==================================================================
 export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
     const secretKey = req.query.key;
@@ -136,8 +125,10 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
         const historial = historialSnapshot.docs.map(doc => {
             const d = doc.data();
             return {
+                // 1. Certificado: Solo d.certificado. Si no hay, guion. (No HSDG)
                 certificado: d.certificado || "-",
                 cliente: d.clienteNombre || d.cliente || "Sin Cliente",
+                // 2. Equipo: Directamente del campo 'equipo' para que no salga null
                 equipo: d.equipo || "Equipo",
                 marca: d.marca || d.equipoMarca || "",
                 modelo: d.modelo || d.equipoModelo || "",
@@ -145,6 +136,7 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
                 id: d.id || "",
                 fecha: d.fecha || "",
                 tecnico: d.nombre || "",
+                // 👇 AQUÍ AGREGAMOS LA NUEVA COLUMNA 👇
                 lugarCalibracion: d.lugarCalibracion || "S/M",
                 frecuenciaCalibracion: d.frecuenciaCalibracion || "12 meses",
             };
