@@ -6,24 +6,16 @@ import { es } from "date-fns/locale";
 import { jsPDF } from "jspdf";
 
 // ==================================================================
-// INICIALIZACIÓN SEGURA (Variable de Entorno o Default)
+// INICIALIZACIÓN DIRECTA (Backend Firebase)
 // ==================================================================
-const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+// Leemos el archivo físico que ya protegimos con el .gitignore
+const serviceAccount = require("../service-account.json");
 
 if (!admin.apps.length) {
-  if (serviceAccountVar) {
-    try {
-      admin.initializeApp({
-        credential: admin.credential.cert(JSON.parse(serviceAccountVar))
-      });
-      console.log("AG-APP: Conectado mediante Variable de Entorno.");
-    } catch (error) {
-      console.error("AG-APP: Error al parsear FIREBASE_SERVICE_ACCOUNT_KEY:", error);
-      admin.initializeApp();
-    }
-  } else {
-    admin.initializeApp();
-  }
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log("AG-APP: Backend conectado exitosamente a Firebase.");
 }
 
 const db = admin.firestore();
@@ -122,7 +114,7 @@ export const agbotMonitorDiario = functions.pubsub
     });
 
 // ==================================================================
-// 5. PUENTE API PARA EXCEL (Corregido Equipo y Certificado)
+// 5. PUENTE API PARA EXCEL
 // ==================================================================
 export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
     const secretKey = req.query.key;
@@ -169,7 +161,7 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
 });
 
 // ==================================================================
-// 6. REGENERADOR AUTOMÁTICO DE PDF (DISEÑO PROFESIONAL AG)
+// 6. REGENERADOR AUTOMÁTICO DE PDF
 // ==================================================================
 export const agbotRegenerarPDF = functions.firestore
     .document("hojasDeTrabajo/{docId}")
