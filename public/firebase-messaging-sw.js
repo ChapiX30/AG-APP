@@ -1,5 +1,4 @@
-﻿// public/firebase-messaging-sw.js
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+﻿importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
 firebase.initializeApp({
@@ -14,11 +13,34 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage(function (payload) {
-    console.log('[firebase-messaging-sw.js] Mensaje en segundo plano recibido ', payload);
-    const notificationTitle = payload?.notification?.title || "Notificación de AG-APP";
-    const notificationOptions = {
+    console.log('[SW] Recibido:', payload);
+    
+    const title = payload?.notification?.title || "Notificación de AG-APP";
+    const options = {
         body: payload?.notification?.body || "",
         icon: '/bell.png',
+        badge: '/bell.png', // Icono pequeño para la barra de estado
+        vibrate: [200, 100, 200],
+        data: payload.data, // Guardamos los datos para abrirlos al hacer click
+        actions: [
+            { action: 'open', title: 'Ver Detalles' }
+        ]
     };
-    self.registration.showNotification(notificationTitle, notificationOptions);
+
+    self.registration.showNotification(title, options);
+});
+
+// Al hacer click en la notificación
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
+    const urlToOpen = event.notification.data?.url || '/';
+    
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            if (clientList.length > 0) {
+                return clientList[0].focus().then(client => client.navigate(urlToOpen));
+            }
+            return clients.openWindow(urlToOpen);
+        })
+    );
 });

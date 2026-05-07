@@ -1,4 +1,3 @@
-// src/hooks/usePushNotifications.ts
 import { useEffect } from 'react';
 import { getFcmToken, onForegroundMessage } from '../utils/firebase';
 import { setDoc, doc } from 'firebase/firestore';
@@ -6,23 +5,22 @@ import { db } from '../utils/firebase';
 
 export function usePushNotifications(uid: string, email: string) {
     useEffect(() => {
-        if (!uid && !email) return;
+        if (!uid) return;
 
         if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission().catch(() => { });
+            Notification.requestPermission();
         }
 
         (async () => {
             const vapidKey = 'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
-            if (!vapidKey) return;
-
             const token = await getFcmToken(vapidKey);
             if (token) {
-                // Guardamos el token en el perfil del usuario.
-                // La Cloud Function detectar� esto y lo suscribir� al t�pico.
+                // Guardamos el token en un MAPA para soportar múltiples dispositivos (PC, Celular, etc)
                 await setDoc(doc(db, 'usuarios', uid), {
-                    fcmToken: token,
-                    email: email || null
+                    fcmTokens: { [token]: true }, // Usamos objeto para merge automático
+                    fcmToken: token, // Retrocompatibilidad
+                    email: email || null,
+                    lastTokenUpdate: new Date().toISOString()
                 }, { merge: true });
 
                 localStorage.setItem('fcmToken', token);
@@ -30,9 +28,9 @@ export function usePushNotifications(uid: string, email: string) {
         })();
 
         onForegroundMessage((payload) => {
-            console.log("Mensaje recibido en primer plano:", payload);
-            if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification(payload?.notification?.title || 'Notificaci�n', {
+            console.log("Primer plano:", payload);
+            if (Notification.permission === 'granted') {
+                new Notification(payload?.notification?.title || 'Aviso AG', {
                     body: payload?.notification?.body,
                     icon: '/bell.png',
                 });
