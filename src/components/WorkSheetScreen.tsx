@@ -444,7 +444,7 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                                 <ul>
                                     {filteredAndGroupedClientes[letter].map(cliente => (
                                         <li key={cliente.id} 
-                                            className="px-5 py-3 cursor-pointer hover:bg-blue-50 text-gray-700 hover:text-blue-900 text-sm truncate transition-colors duration-150 font-medium border-b border-gray-50 last:border-0" 
+                                            className="px-5 py-3 cursor-pointer hover:bg-blue-50 text-gray-700 hover:text-blue-900 text-sm break-words whitespace-normal transition-colors duration-150 font-medium border-b border-gray-50 last:border-0" 
                                             onClick={() => handleSelectCliente(cliente.nombre)}>
                                             {cliente.nombre}
                                         </li>
@@ -1523,84 +1523,92 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           fullData.fechaEntrada = existingData.fechaEntrada;
       }
 
-      if (state.fotoEquipoBase64 && navigator.onLine) {
-        try {
-          const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
-          const imgBlob = await fetch(imgData).then(r => r.blob());
-          const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
-          await uploadBytes(fotoRef, imgBlob);
-          fullData.fotoEquipoURL = await getDownloadURL(fotoRef);
-        } catch (fotoErr) {
-          console.error("Error subiendo foto:", fotoErr);
-        }
-      }
-
-      if (navigator.onLine) {
-        const pdfRef = ref(storage, nombreArchivo);
-        await uploadBytes(pdfRef, blob);
-        const pdfURL = await getDownloadURL(pdfRef);
-        fullData.pdfURL = pdfURL;
-        fullData.cargado_drive = "Si";
-
-        if (finalDocId) {
-          await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
-        } else {
-          await addDoc(collection(db, "hojasDeTrabajo"), fullData);
-        }
-
-        setToast({ message: "✅ Guardado e impreso correctamente.", type: 'success' });
-        localStorage.removeItem('backup_worksheet_data');
-
-        try {
-          // @ts-ignore
-          await generateAndPrintLabel(hiddenLabelRef, tapeSize);
-        } catch (printError) {
-          console.error("Error al imprimir:", printError);
-          setToast({ message: "⚠️ Guardado OK, pero falló la impresión.", type: 'warning' });
-        }
-
-        setTimeout(() => goBack(), 1500);
-
-      } else {
-        const pdfBase64 = await new Promise<string>((resolve, reject) => {
+      // Convertir PDF a Base64 AHORA por si necesitamos guardarlo offline más adelante
+      const pdfBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve((reader.result as string).split(',')[1]);
           reader.onerror = reject;
           reader.readAsDataURL(blob);
-        });
+      });
 
-        const queueItem: OfflineQueueItem = {
-          id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          timestamp: Date.now(),
-          data: fullData,
-          pdfBlob: pdfBase64,
-          nombreArchivo,
-          finalDocId,
-          worksheetId,
-        };
-
-        addToOfflineQueue(queueItem);
-        setPendingUploads(getOfflineQueue().length);
-        localStorage.removeItem('backup_worksheet_data');
-
-        setToast({ 
-          message: "📵 Sin conexión. Hoja guardada localmente. Se subirá automáticamente cuando haya internet.", 
-          type: 'warning' 
-        });
-
-        try {
-          // @ts-ignore
-          await generateAndPrintLabel(hiddenLabelRef, tapeSize);
-        } catch {}
-
-        setTimeout(() => goBack(), 2000);
+      // Imprimir etiqueta MIENTRAS la pantalla sigue abierta
+      try {
+        // @ts-ignore
+        await generateAndPrintLabel(hiddenLabelRef, tapeSize);
+      } catch (printError) {
+        console.error("Error al imprimir:", printError);
       }
 
+      // ==========================================================
+      // MAGIA DEL SEGUNDO PLANO
+      // ==========================================================
+      // Avisamos al usuario, limpiamos el backup y nos salimos ¡YA!
+      setToast({ message: "⏳ Guardando en segundo plano...", type: 'success' });
+      localStorage.removeItem('backup_worksheet_data');
+      
+      setTimeout(() => {
+          goBack();
+      }, 500);
+
+      // Tarea asíncrona "huérfana" (Se ejecuta aunque salgamos de la pantalla)
+      (async () => {
+          if (navigator.onLine) {
+              try {
+                  // Subir Foto (Si existe)
+                  if (state.fotoEquipoBase64) {
+                      const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
+                      const imgBlob = await fetch(imgData).then(r => r.blob());
+                      const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
+                      await uploadBytes(fotoRef, imgBlob);
+                      fullData.fotoEquipoURL = await getDownloadURL(fotoRef);
+                  }
+
+                  // Subir PDF
+                  const pdfRef = ref(storage, nombreArchivo);
+                  await uploadBytes(pdfRef, blob);
+                  fullData.pdfURL = await getDownloadURL(pdfRef);
+                  fullData.cargado_drive = "Si";
+
+                  // Guardar en Firestore
+                  if (finalDocId) {
+                      await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
+                  } else {
+                      await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+                  }
+                  
+                  console.log("Hoja guardada exitosamente en segundo plano.");
+
+              } catch (bgError) {
+                  console.error("Falló la red a medio guardado. Mandando a cola Offline:", bgError);
+                  // Si se le cae el internet a medio proceso, lo salvamos a la cola offline local
+                  addToOfflineQueue({
+                      id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                      timestamp: Date.now(),
+                      data: fullData,
+                      pdfBlob: pdfBase64,
+                      nombreArchivo,
+                      finalDocId,
+                      worksheetId,
+                  });
+              }
+          } else {
+              // Si ya sabíamos que estaba offline desde el inicio
+              addToOfflineQueue({
+                  id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                  timestamp: Date.now(),
+                  data: fullData,
+                  pdfBlob: pdfBase64,
+                  nombreArchivo,
+                  finalDocId,
+                  worksheetId,
+              });
+          }
+      })();
+
     } catch (e: any) {
-      console.error("Error al guardar:", e);
+      console.error("Error al preparar guardado:", e);
       localStorage.setItem('backup_worksheet_data', JSON.stringify(state));
-      setToast({ message: `Error inesperado: ${e.message || e}. Se guardó copia local.`, type: 'warning' });
-    } finally {
+      setToast({ message: `Error inesperado al preparar el guardado. Se guardó copia local.`, type: 'warning' });
       setIsSaving(false);
     }
   }, [state, currentUser, user, goBack, worksheetId, electricalValues, syncElectricalToGlobalState, syncMasaToGlobalState]);
@@ -1701,8 +1709,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
           <div className={activeClientNotes ? "lg:col-span-8 transition-all duration-300" : "lg:col-span-10 lg:col-start-2 transition-all duration-300"}>
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200 rounded-t-2xl">
                 <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
                 <p className="text-gray-600 mt-1">Complete los datos obligatorios marcados con *.</p>
               </div>
@@ -1983,15 +1991,15 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 {/* ============================================================ */}
                 {/* SECCIÓN: CONDICIÓN DEL EQUIPO + FOTO                         */}
                 {/* ============================================================ */}
-                <div className="rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm">
-                  <div className="bg-gradient-to-r from-gray-800 to-slate-700 px-6 py-4 flex items-center gap-3">
+                <div className="rounded-2xl border-2 border-gray-200 shadow-sm">
+                  <div className="bg-gradient-to-r from-gray-800 to-slate-700 px-6 py-4 flex items-center gap-3 rounded-t-2xl">
                     <ShieldCheck className="w-5 h-5 text-emerald-400" />
                     <div>
                       <h3 className="text-white font-bold text-sm">Inspección Visual del Equipo</h3>
                       <p className="text-gray-300 text-xs mt-0.5">¿El equipo presenta daños, golpes o anomalías visibles?</p>
                     </div>
                   </div>
-                  <div className="p-6 bg-white space-y-5">
+                  <div className="p-6 bg-white space-y-5 rounded-b-2xl">
                     {/* Botones de condición */}
                     <div className="grid grid-cols-2 gap-4">
                       <button
