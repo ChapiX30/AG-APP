@@ -320,3 +320,68 @@ export const agbotRegenerarPDF = functions.firestore
             return null;
         }
     });
+
+// ==================================================================
+// 7. SISTEMA DE NOTIFICACIONES PUSH (CALIDAD)
+// ==================================================================
+export const enviarNotificacionCalidad = functions.firestore
+    .document('notificaciones/{notificacionId}')
+    .onCreate(async (snap, context) => {
+        const nuevaNotificacion = snap.data();
+        
+        // Solo procesamos las que vienen del calendario de calidad
+        if (nuevaNotificacion.tipo !== 'asignacion_calidad') {
+            return null; 
+        }
+
+        const { usuarioId, titulo, mensaje, servicioId } = nuevaNotificacion;
+
+        try {
+            // 1. Buscar al usuario en la base de datos para obtener su Token de su Celular/PC
+            const userDoc = await db.collection('usuarios').doc(usuarioId).get();
+            
+            if (!userDoc.exists) {
+                console.log(`Usuario ${usuarioId} no encontrado.`);
+                return null;
+            }
+
+            const userData = userDoc.data();
+            
+            // Leemos el token que el archivo usePushNotifications.ts guarda
+            const fcmToken = userData?.fcmToken; 
+
+            if (!fcmToken) {
+                console.log(`El usuario ${usuarioId} no tiene un dispositivo registrado para notificaciones.`);
+                return null;
+            }
+
+            // 2. Construir el paquete (Payload) que despertará el celular o Chrome
+            const payload = {
+                notification: {
+                    title: titulo, // "Nueva Asignación de Calidad"
+                    body: mensaje,  // "Fuiste programado para Depth Micrometer el 11/05..."
+                },
+                data: {
+                    // Esta URL es la que lee tu Service Worker para abrir la app al hacer click
+                    url: `/calendario`, 
+                    servicioId: servicioId || ''
+                },
+                token: fcmToken // El ID único del dispositivo del técnico
+            };
+
+            // 3. Enviar a través de los servidores de Google FCM
+            const response = await admin.messaging().send(payload);
+            console.log(`Notificación enviada con éxito a ${usuarioId}. MessageId:`, response);
+            
+            return null;
+
+        } catch (error) {
+            console.error("Error crítico al enviar Push Notification:", error);
+            return null;
+        }
+    });
+
+// ==================================================================
+// 8. VIGILANTE DE ACTUALIZACIONES PJLA (Importado desde archivo externo)
+// ==================================================================
+export * from "./pjlaWatcher";

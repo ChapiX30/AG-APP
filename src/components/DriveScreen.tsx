@@ -357,9 +357,9 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
 
   return (
     <div
-      onClick={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)}
-      onContextMenu={onContextMenu}
-      onDoubleClick={onDoubleClick}
+      onClick={(e) => onSelect(file, e.ctrlKey || e.metaKey, e.shiftKey)}
+      onContextMenu={(e) => onContextMenu(e, file)}
+      onDoubleClick={() => onDoubleClick(file)}
       className={clsx(
         "group relative bg-white rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 flex flex-col select-none border",
         selected
@@ -461,9 +461,9 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
 
   return (
     <div
-      onClick={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)}
-      onContextMenu={onContextMenu}
-      onDoubleClick={onDoubleClick}
+      onClick={(e) => onSelect(file, e.ctrlKey || e.metaKey, e.shiftKey)}
+      onContextMenu={(e) => onContextMenu(e, file)}
+      onDoubleClick={() => onDoubleClick(file)}
       className={clsx(
         "grid grid-cols-12 gap-2 px-4 py-3 border-b border-slate-100 cursor-pointer items-center transition-all duration-150 group select-none last:border-b-0",
         selected ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-slate-50/80",
@@ -659,7 +659,7 @@ const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile; onCl
           </div>
         </div>
 
-        <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-hidden">
+        <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-hidden relative">
           {!file.url ? (
             <div className="flex flex-col items-center gap-3">
               <Loader2 size={36} className="animate-spin text-blue-500" />
@@ -668,7 +668,13 @@ const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile; onCl
           ) : isImage ? (
             <img src={file.url} alt="Preview" className="max-w-full max-h-full object-contain shadow-lg rounded-lg" />
           ) : isPdf ? (
-            <iframe src={file.url} className="w-full h-full" title="PDF Preview" />
+            <object data={file.url} type="application/pdf" className="w-full h-full absolute inset-0 z-10">
+              <iframe 
+                src={`https://docs.google.com/gview?url=${encodeURIComponent(file.url)}&embedded=true`} 
+                className="w-full h-full border-none absolute inset-0 z-0" 
+                title="PDF Preview Fallback" 
+              />
+            </object>
           ) : (
             <div className="text-center">
               <div className={clsx("w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-5", getFileColorBg(file.name))}>
@@ -1343,7 +1349,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     showToast(newVal ? "Agregado a destacados" : "Quitado de destacados", 'info');
   };
 
-  // ── Upload (MAGIA DE ENLACE PDF) ──
+  // ── Upload ──
   const processFiles = async (fileList: FileList) => {
     if (!isQuality && path.length === 0) { showToast("Entra a tu carpeta personal primero", 'error'); return; }
     setIsUploading(true);
@@ -1355,14 +1361,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const existing = await getDoc(doc(db, 'fileMetadata', docId));
         const existingData = existing.exists() ? existing.data() : {};
         
-        // Sube el archivo y obtén la URL pública
         const snap = await uploadBytes(ref(storage, fullPath), file);
         const meta = await getMetadata(snap.ref);
         const downloadUrl = await getDownloadURL(snap.ref);
 
         let fetchedUbicacion = "";
         try {
-          // Extraemos el certificado del nombre del archivo (Ej. AGM-24-001)
           const possibleId = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
           let wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
           if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
@@ -1370,8 +1374,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           
           if (!wsSnap.empty) {
             fetchedUbicacion = wsSnap.docs[0].data().ubicacion_real || wsSnap.docs[0].data().ubicacion || "";
-            
-            // --- AQUÍ ESTÁ EL ENLACE AUTOMÁTICO AL QR ---
             if (currentRoot === "certificados") {
               await updateDoc(wsSnap.docs[0].ref, {
                 pdfURL: downloadUrl,
@@ -1452,9 +1454,37 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setContextMenu({ x: e.clientX, y: e.clientY, file: null, folder });
   };
 
+  // --- INP FIX: Referencias estables ---
+  const handleSelectRef = useRef(handleSelect);
+  const handleToggleStarRef = useRef(handleToggleStar);
+  const handlePreviewRef = useRef(handlePreview);
+  const selectedIdsRef = useRef(selectedIds);
+
+  useEffect(() => {
+    handleSelectRef.current = handleSelect;
+    handleToggleStarRef.current = handleToggleStar;
+    handlePreviewRef.current = handlePreview;
+    selectedIdsRef.current = selectedIds;
+  });
+
+  const onCardSelect = useCallback((file: DriveFile, multi: boolean, range: boolean) => {
+    handleSelectRef.current(file, multi, range);
+  }, []);
+
+  const onCardContextMenu = useCallback((e: React.MouseEvent, file: DriveFile) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null });
+    if (!selectedIdsRef.current.has(file.fullPath)) {
+      handleSelectRef.current(file, false, false);
+    }
+  }, []);
+
+  const onCardDoubleClick = useCallback((file: DriveFile) => handlePreviewRef.current(file), []);
+  const onCardStar = useCallback((file: DriveFile) => handleToggleStarRef.current(file), []);
+  const onCardDownload = useCallback((file: DriveFile) => handleDownload(file), []);
+
   // ─── RENDER CONTENT ───────────────────────
   const renderContent = () => {
-    // Renderizado de las tarjetas agrupadas por técnico para "Completados" Y "Por revisar"
     if ((activeFilter === 'completed' || activeFilter === 'pending_review') && !groupView) {
       const groups = Object.keys(groupedFiles);
       if (groups.length === 0) return <EmptyState icon={activeFilter === 'completed' ? FileCheck : Bell} title={activeFilter === 'completed' ? "No hay servicios completados" : "No hay archivos por revisar"} />;
@@ -1484,7 +1514,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       );
     }
 
-    // Filtrar los archivos a mostrar si entramos a un técnico en específico
     let displayFiles = processedFiles;
     if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView) displayFiles = groupedFiles[groupView] || [];
     const showFolders = activeFilter === 'all' && !debouncedSearch && folders.length > 0;
@@ -1494,8 +1523,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       return <EmptyState icon={Folder} title="Esta carpeta está vacía" subtitle="Sube archivos o crea una carpeta para comenzar" />;
     }
 
-    // --- LÓGICA DE SEPARACIÓN (POR UBICACION_REAL O NOTAS) ---
-    // (Solo separa si estamos explorando carpetas y NO estamos en una vista global o buscando)
     const isMetrologistFolder = activeFilter === 'all' && !debouncedSearch && path.length > 0 && !path.some(p => ['hojas de trabajo', 'hojas de servicio'].some(ex => p.toLowerCase().includes(ex)));
 
     const labFiles: DriveFile[] = [];
@@ -1506,17 +1533,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       displayFiles.forEach(f => {
         const ubicacionAttr = (f.ubicacion_real || f.ubicacion || "").toLowerCase();
         const notasLower = (f.notas || "").toLowerCase();
-        
         const isSitio = ubicacionAttr.includes('sitio') || notasLower.includes('sitio');
         const isLab = ubicacionAttr.includes('laboratorio') || notasLower.includes('laboratorio') || ubicacionAttr.includes('lab');
-
-        if (isSitio) {
-          siteFiles.push(f);
-        } else if (isLab) {
-          labFiles.push(f);
-        } else {
-          labFiles.push(f);
-        }
+        if (isSitio) siteFiles.push(f);
+        else labFiles.push(f);
       });
     } else {
       otherFiles.push(...displayFiles);
@@ -1539,10 +1559,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
                   searchActive={!!debouncedSearch || activeFilter !== 'all'}
-                  onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
-                  onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
-                  onDoubleClick={() => handlePreview(file)}
-                  onStar={handleToggleStar}
+                  onSelect={onCardSelect}
+                  onContextMenu={onCardContextMenu}
+                  onDoubleClick={onCardDoubleClick}
+                  onStar={onCardStar}
                 />
               ))}
             </div>
@@ -1563,11 +1583,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
                   searchActive={!!debouncedSearch || activeFilter !== 'all'}
-                  onSelect={(multi: boolean, range: boolean) => handleSelect(file, multi, range)}
-                  onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, file, folder: null }); if (!selectedIds.has(file.fullPath)) handleSelect(file, false, false); }}
-                  onDoubleClick={() => handlePreview(file)}
-                  onDownload={handleDownload}
-                  onStar={handleToggleStar}
+                  onSelect={onCardSelect}
+                  onContextMenu={onCardContextMenu}
+                  onDoubleClick={onCardDoubleClick}
+                  onDownload={onCardDownload}
+                  onStar={onCardStar}
                 />
               ))}
             </div>
@@ -1612,8 +1632,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
               {folders.map(f => (
                 <FolderCard
-                  key={f.fullPath}
-                  folder={f}
+                  key={f.fullPath} folder={f}
                   isDragTarget={dropTargetFolder === f.fullPath}
                   draggable={isQuality}
                   onDragStart={(e: React.DragEvent) => handleItemDragStart(e, f, 'folder')}
@@ -1635,7 +1654,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 {debouncedSearch ? 'Resultados' : 'Archivos'}
                 <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md">{displayFiles.length}</span>
               </h2>
-
               {selectedIds.size > 0 && (
                 <div className="flex items-center gap-2 animate-in slide-in-from-right fade-in duration-150">
                   <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
@@ -1651,20 +1669,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   {isQuality && (
                     <>
                       <button
-                        onClick={() => {
-                          const selectedFilesList = files.filter(f => selectedIds.has(f.fullPath));
-                          setMoveTargetFiles(selectedFilesList);
-                          setMoveTargetFolder(null);
-                          setMoveDialogOpen(true);
-                        }}
+                        onClick={() => { setMoveTargetFiles(files.filter(f => selectedIds.has(f.fullPath))); setMoveTargetFolder(null); setMoveDialogOpen(true); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-all shadow-sm"
                       >
                         <FolderSymlink size={13} /> Mover
                       </button>
-                      <button
-                        onClick={handleBatchDelete}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-all"
-                      >
+                      <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-all">
                         <Trash2 size={13} /> Eliminar
                       </button>
                     </>
@@ -1675,23 +1685,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </div>
               )}
             </div>
-
             {isMetrologistFolder ? (
               <>
                 {renderFilesBlock('Laboratorio', labFiles)}
                 {renderFilesBlock('Servicio en Sitio', siteFiles)}
               </>
-            ) : (
-              renderFilesBlock(null, otherFiles)
-            )}
-
+            ) : ( renderFilesBlock(null, otherFiles) )}
           </section>
         )}
       </div>
     );
   };
 
-  // ─── SORT OPTIONS ─────────────────────────
   const sortOptions = [
     { key: 'dateDesc', label: 'Más recientes', icon: <SortDesc size={13} /> },
     { key: 'dateAsc', label: 'Más antiguos', icon: <SortAsc size={13} /> },
@@ -1710,10 +1715,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // RENDER
   // ─────────────────────────────────────────
   return (
-    <div
-      className="flex h-full w-full bg-[#f0f2f5] text-slate-800 font-sans overflow-hidden relative"
-      onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}
-    >
+    <div className="flex h-full w-full bg-[#f0f2f5] text-slate-800 font-sans overflow-hidden relative" onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}>
       {dragActive && !draggingItem && (
         <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-[3px] border-dashed border-blue-400 m-3 rounded-3xl flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center">
@@ -1723,15 +1725,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
       )}
-
       <div className="absolute inset-0 z-0" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} />
-
       {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />}
-
       <aside className={clsx(
         "fixed inset-y-0 left-0 z-50 w-60 bg-white border-r border-slate-200/80 flex flex-col transition-transform duration-300 shadow-xl md:shadow-none",
-        "md:relative md:translate-x-0",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        "md:relative md:translate-x-0", sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="px-5 py-5 flex items-center gap-3 border-b border-slate-100">
           <img src={labLogo} alt="Logo" className="w-8 h-8 object-contain" />
@@ -1740,29 +1738,24 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <p className="text-[10px] text-slate-400 mt-0.5">Gestión Documental</p>
           </div>
         </div>
-
         <div className="px-4 py-4 border-b border-slate-100">
           <div ref={newFileMenuRef} className="relative">
             <button
               onClick={() => setNewFileMenuOpen(v => !v)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-all shadow-sm shadow-blue-200"
+              className="w-40 flex items-center justify-start pl-5 gap-3 py-4 mb-2 bg-white text-slate-700 rounded-full text-[15px] font-medium hover:bg-slate-50 hover:shadow-md transition-all shadow-sm border border-slate-200 active:scale-95"
             >
-              <Plus size={16} /> Nuevo
-              <ChevronDown size={14} className={clsx("ml-auto transition-transform", newFileMenuOpen ? "rotate-180" : "")} />
+              <div className="w-8 h-8 flex items-center justify-center -ml-2 rounded-full">
+                <Plus size={24} className="text-blue-600" strokeWidth={2.5} /> 
+              </div>
+              Nuevo
             </button>
             {newFileMenuOpen && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                <button
-                  onClick={() => { fileInputRef.current?.click(); setNewFileMenuOpen(false); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                >
+              <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 w-56">
+                <button onClick={() => { fileInputRef.current?.click(); setNewFileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
                   <UploadCloud size={15} className="text-blue-500" /> Subir archivos
                 </button>
                 {isQuality && (
-                  <button
-                    onClick={() => { setCreateFolderOpen(true); setNewFileMenuOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
-                  >
+                  <button onClick={() => { setCreateFolderOpen(true); setNewFileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">
                     <FolderPlus size={15} className="text-amber-500" /> Nueva carpeta
                   </button>
                 )}
@@ -1770,42 +1763,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             )}
           </div>
         </div>
-
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {/* --- MENÚ DE ALMACENAMIENTO DINÁMICO --- */}
-          <div className="pt-2 pb-2 px-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Almacenamiento</p>
-          </div>
-          <SidebarItem 
-            icon={<HardDrive size={16} />} 
-            label="Hojas de Trabajo" 
-            active={activeFilter === 'all' && currentRoot === 'worksheets'} 
-            onClick={() => { setCurrentRoot('worksheets'); setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} 
-          />
-          <SidebarItem 
-            icon={<FileText size={16} />} 
-            label="Certificados PDF" 
-            className={currentRoot === 'certificados' ? "text-emerald-500" : "text-emerald-600/60 group-hover:text-emerald-600"}
-            active={activeFilter === 'all' && currentRoot === 'certificados'} 
-            onClick={() => { setCurrentRoot('certificados'); setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} 
-          />
-          
+          <div className="pt-2 pb-2 px-3"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Almacenamiento</p></div>
+          <SidebarItem icon={<HardDrive size={16} />} label="Hojas de Trabajo" active={activeFilter === 'all' && currentRoot === 'worksheets'} onClick={() => { setCurrentRoot('worksheets'); setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
+          <SidebarItem icon={<FileText size={16} />} label="Certificados PDF" className={currentRoot === 'certificados' ? "text-emerald-500" : "text-emerald-600/60"} active={activeFilter === 'all' && currentRoot === 'certificados'} onClick={() => { setCurrentRoot('certificados'); setActiveFilter('all'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
           <div className="my-3 border-t border-slate-100" />
-
           <SidebarItem icon={<Star size={16} />} label="Destacados" active={activeFilter === 'starred'} onClick={() => { setActiveFilter('starred'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
           <SidebarItem icon={<Clock size={16} />} label="Recientes" active={activeFilter === 'recent'} onClick={() => { setActiveFilter('recent'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
-
           {isQuality && (
             <>
-              <div className="pt-5 pb-2 px-3">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gestión</p>
-              </div>
+              <div className="pt-5 pb-2 px-3"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gestión</p></div>
               <SidebarItem icon={<Bell size={16} />} label="Por Revisar" active={activeFilter === 'pending_review'} badge onClick={() => { setActiveFilter('pending_review'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
               <SidebarItem icon={<FileCheck size={16} />} label="Completados" active={activeFilter === 'completed'} onClick={() => { setActiveFilter('completed'); setPath([]); setGroupView(null); setSearchQuery(""); setSidebarOpen(false); }} />
             </>
           )}
         </nav>
-
         <div className="px-4 py-4 border-t border-slate-100">
           {currentUserData && (
             <div className="flex items-center gap-3 mb-3 px-2">
@@ -1818,382 +1790,91 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </div>
             </div>
           )}
-          <button
-            onClick={handleBack}
-            className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all text-sm font-medium"
-          >
-            <LogOut size={15} /> Salir al Menú
-          </button>
+          <button onClick={handleBack} className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all text-sm font-medium"><LogOut size={15} /> Salir al Menú</button>
         </div>
       </aside>
-
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white/90 backdrop-blur-md sticky top-0 z-30 flex-shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
-            <Menu size={18} />
-          </button>
-
+          <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
           <div className="relative flex-1 max-w-lg group">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input
-              type="text"
-              placeholder="Buscar en AG Drive..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-100 hover:bg-slate-100/80 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-transparent focus:border-blue-500 rounded-xl py-2 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors">
-                <X size={13} />
-              </button>
-            )}
+            <input type="text" placeholder="Buscar en AG Drive..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100 hover:bg-slate-100/80 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-transparent focus:border-blue-500 rounded-xl py-2 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400" />
+            {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors"><X size={13} /></button>}
           </div>
-
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isSyncing && (
-              <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-blue-500 animate-pulse">
-                <RefreshCw size={11} className="animate-spin" /> Sincronizando...
-              </div>
-            )}
-
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="hidden md:flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95"
-            >
-              {isUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}
-              Subir
-            </button>
+            {isSyncing && <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-blue-500 animate-pulse"><RefreshCw size={11} className="animate-spin" /> Sincronizando...</div>}
+            <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95">{isUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}Subir</button>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
-
             <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-0.5">
-              <button onClick={() => setView('list')} className={clsx("p-1.5 rounded-lg transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}>
-                <Rows3 size={15} />
-              </button>
-              <button onClick={() => setView('grid')} className={clsx("p-1.5 rounded-lg transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}>
-                <Grid3X3 size={15} />
-              </button>
+              <button onClick={() => setView('list')} className={clsx("p-1.5 rounded-lg transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}><Rows3 size={15} /></button>
+              <button onClick={() => setView('grid')} className={clsx("p-1.5 rounded-lg transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}><Grid3X3 size={15} /></button>
             </div>
-
-            <button
-              onClick={() => setDetailsOpen(v => !v)}
-              className={clsx("p-2 rounded-xl border transition-all", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300")}
-              title="Información"
-            >
-              <Info size={15} />
-            </button>
+            <button onClick={() => setDetailsOpen(v => !v)} className={clsx("p-2 rounded-xl border transition-all", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300")} title="Información"><Info size={15} /></button>
           </div>
         </header>
-
         <div className="relative z-40 h-10 border-b border-slate-200/60 flex items-center justify-between px-4 md:px-6 bg-white/80 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-1 text-xs overflow-hidden min-w-0">
             {activeFilter !== 'all' ? (
-              <span className="flex items-center gap-1.5 font-semibold text-blue-600">
-                <Filter size={11} />
-                {filterLabels[activeFilter]}
-                {groupView && (
-                  <div className="flex items-center ml-1">
-                    <ChevronRight size={11} className="text-slate-400 mr-1" />
-                    <span className="text-slate-700 bg-white border border-blue-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                      {groupView}
-                      <button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700">
-                        <X size={10} />
-                      </button>
-                    </span>
-                  </div>
-                )}
+              <span className="flex items-center gap-1.5 font-semibold text-blue-600"><Filter size={11} />{filterLabels[activeFilter]}
+                {groupView && ( <div className="flex items-center ml-1"><ChevronRight size={11} className="text-slate-400 mr-1" /><span className="text-slate-700 bg-white border border-blue-100 px-2 py-0.5 rounded-md flex items-center gap-1">{groupView}<button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700"><X size={10} /></button></span></div> )}
               </span>
-            ) : debouncedSearch ? (
-              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                <Search size={11} className="text-blue-500" />
-                Resultados para "{debouncedSearch}"
-              </span>
-            ) : (
-              <nav className="flex items-center gap-1 text-slate-500">
-                <button
-                  onClick={() => setPath([])}
-                  className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", path.length === 0 ? "text-slate-800 font-semibold" : "")}
-                >
-                  <Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}
-                </button>
-                {path.map((folder, i) => (
-                  <React.Fragment key={folder}>
-                    <ChevronRight size={11} className="text-slate-300" />
-                    <button
-                      onClick={() => setPath(path.slice(0, i + 1))}
-                      className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === path.length - 1 ? "text-slate-800 font-semibold" : "")}
-                    >
-                      {folder}
-                    </button>
-                  </React.Fragment>
-                ))}
+            ) : debouncedSearch ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-blue-500" />Resultados para "{debouncedSearch}"</span> ) : (
+              <nav className="flex items-center gap-1 text-slate-500"><button onClick={() => setPath([])} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", path.length === 0 ? "text-slate-800 font-semibold" : "")}><Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}</button>
+                {path.map((folder, i) => ( <React.Fragment key={folder}><ChevronRight size={11} className="text-slate-300" /><button onClick={() => setPath(path.slice(0, i + 1))} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === path.length - 1 ? "text-slate-800 font-semibold" : "")}>{folder}</button></React.Fragment> ))}
               </nav>
             )}
           </div>
-
           <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
-            <button
-              onClick={() => setSortMenuOpen(v => !v)}
-              className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <ArrowUpWideNarrow size={13} />
-              <span className="hidden sm:inline">Ordenar</span>
-              <ChevronDown size={11} className={clsx("transition-transform", sortMenuOpen ? "rotate-180" : "")} />
-            </button>
-            {sortMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 py-1">
-                {sortOptions.map(opt => (
-                  <button
-                    key={opt.key}
-                    onClick={() => { setSortBy(opt.key as SortType); setSortMenuOpen(false); }}
-                    className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors", sortBy === opt.key ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-600 hover:bg-slate-50")}
-                  >
-                    {opt.icon} {opt.label}
-                    {sortBy === opt.key && <CheckCircle2 size={11} className="ml-auto text-blue-500" />}
-                  </button>
-                ))}
-              </div>
-            )}
+            <button onClick={() => setSortMenuOpen(v => !v)} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"><ArrowUpWideNarrow size={13} /><span className="hidden sm:inline">Ordenar</span><ChevronDown size={11} className={clsx("transition-transform", sortMenuOpen ? "rotate-180" : "")} /></button>
+            {sortMenuOpen && ( <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">{sortOptions.map(opt => ( <button key={opt.key} onClick={() => { setSortBy(opt.key as SortType); setSortMenuOpen(false); }} className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors", sortBy === opt.key ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-600 hover:bg-slate-50")}>{opt.icon} {opt.label}{sortBy === opt.key && <CheckCircle2 size={11} className="ml-auto text-blue-500" />}</button> ))}</div> )}
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto flex min-h-0">
-          <div className={clsx("flex-1 p-4 md:p-6 min-w-0 transition-all duration-200")}>
-            {loading ? <LoadingSkeleton /> : renderContent()}
-          </div>
-
+          <div className={clsx("flex-1 p-4 md:p-6 min-w-0 transition-all duration-200")}>{loading ? <LoadingSkeleton /> : renderContent()}</div>
           {detailsOpen && selectedIds.size === 1 && (() => {
             const file = files.find(f => f.fullPath === Array.from(selectedIds)[0]);
-            return file ? (
-              <DetailsPanel
-                file={file}
-                onClose={() => setDetailsOpen(false)}
-                isQualityUser={isQuality}
-                onToggleStatus={updateFileStatus}
-                onUpdateNotes={updateNotes}
-                onDownload={handlePreview}
-                onDelete={handleDelete}
-              />
-            ) : null;
+            return file ? ( <DetailsPanel file={file} onClose={() => setDetailsOpen(false)} isQualityUser={isQuality} onToggleStatus={updateFileStatus} onUpdateNotes={updateNotes} onDownload={handlePreview} onDelete={handleDelete} /> ) : null;
           })()}
         </div>
       </div>
-
-      {previewFile && (
-        <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} onDownload={() => handleDownload(previewFile)} />
-      )}
-
+      {previewFile && ( <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} onDownload={() => handleDownload(previewFile)} /> )}
       {contextMenu && (() => {
         const isFolder = !!contextMenu.folder;
-        const estimatedHeight = isFolder ? 200 : 380; 
-        
+        const estimatedHeight = isFolder ? 200 : 380;
         let topPos = contextMenu.y;
-        if (topPos + estimatedHeight > window.innerHeight) {
-          topPos = Math.max(10, window.innerHeight - estimatedHeight - 20);
-        }
-        
+        if (topPos + estimatedHeight > window.innerHeight) topPos = Math.max(10, window.innerHeight - estimatedHeight - 20);
         let leftPos = contextMenu.x;
-        if (leftPos + 224 > window.innerWidth) { 
-          leftPos = window.innerWidth - 240;
-        }
-
+        if (leftPos + 224 > window.innerWidth) leftPos = window.innerWidth - 240;
         return (
-          <div
-            className="context-menu-container fixed bg-white/95 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-2xl py-2 w-56 z-[150] text-sm animate-in fade-in zoom-in-95 duration-100 max-h-[75vh] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full"
-            style={{ top: topPos, left: leftPos }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-3 py-2 border-b border-slate-100 mb-1">
-              <p className="text-xs font-semibold text-slate-700 truncate">{contextMenu.file?.name ?? contextMenu.folder?.name}</p>
-              {contextMenu.file && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatFileSize(contextMenu.file.size)}</p>}
-            </div>
-
-            {contextMenu.file && (
-              <>
-                <MenuOption icon={<Eye size={14} />} label="Vista previa" shortcut="Esp" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
-                <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
-                <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
-                <MenuOption
-                  icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />}
-                  label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"}
-                  onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }}
-                />
-                <div className="my-1 mx-2 border-t border-slate-100" />
-                <MenuOption
-                  icon={<FileCheck size={14} />}
-                  label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"}
-                  onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }}
-                />
-                {isQuality && (
-                  <MenuOption
-                    icon={<CheckCircle2 size={14} />}
-                    label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"}
-                    onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }}
-                  />
-                )}
-                {isQuality && (
-                  <>
-                    <div className="my-1 mx-2 border-t border-slate-100" />
-                    <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                    <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { 
-                      if (contextMenu.file) { 
-                        if (selectedIds.has(contextMenu.file.fullPath) && selectedIds.size > 1) {
-                          setMoveTargetFiles(files.filter(f => selectedIds.has(f.fullPath)));
-                        } else {
-                          setMoveTargetFiles([contextMenu.file]);
-                        }
-                        setMoveTargetFolder(null); 
-                        setMoveDialogOpen(true); 
-                        setContextMenu(null); 
-                      } 
-                    }} />
-                    <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} shortcut="Del" />
-                  </>
-                )}
-              </>
-            )}
-
-            {contextMenu.folder && isQuality && (
-              <>
-                <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} />
-                <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} />
-                <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFiles([]); setMoveDialogOpen(true); setContextMenu(null); } }} />
-                <div className="my-1 mx-2 border-t border-slate-100" />
-                <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} />
-              </>
-            )}
+          <div className="context-menu-container fixed bg-white/95 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-2xl py-2 w-56 z-[150] text-sm animate-in fade-in zoom-in-95 duration-100 max-h-[75vh] overflow-y-auto" style={{ top: topPos, left: leftPos }} onClick={e => e.stopPropagation()}>
+            <div className="px-3 py-2 border-b border-slate-100 mb-1"><p className="text-xs font-semibold text-slate-700 truncate">{contextMenu.file?.name ?? contextMenu.folder?.name}</p>{contextMenu.file && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatFileSize(contextMenu.file.size)}</p>}</div>
+            {contextMenu.file && ( <>
+              <MenuOption icon={<Eye size={14} />} label="Vista previa" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
+              <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
+              <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+              <MenuOption icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />} label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"} onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }} />
+              <div className="my-1 mx-2 border-t border-slate-100" />
+              <MenuOption icon={<FileCheck size={14} />} label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"} onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} />
+              {isQuality && ( <MenuOption icon={<CheckCircle2 size={14} />} label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"} onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} /> )}
+              {isQuality && ( <> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFiles(selectedIds.has(contextMenu.file.fullPath) && selectedIds.size > 1 ? files.filter(f => selectedIds.has(f.fullPath)) : [contextMenu.file]); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /> </> )}
+            </> )}
+            {contextMenu.folder && isQuality && ( <> <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFiles([]); setMoveDialogOpen(true); setContextMenu(null); } }} /> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} /> </> )}
           </div>
         );
       })()}
-
       {moveDialogOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                <FolderSymlink size={16} className="text-blue-500" />
-                {moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}
-              </h3>
-              <button onClick={() => setMoveDialogOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-                <X size={15} className="text-slate-400" />
-              </button>
-            </div>
-
-            <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-              <button
-                disabled={moveToPath.length === 0}
-                onClick={() => setMoveToPath(prev => prev.slice(0, -1))}
-                className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all"
-              >
-                <ArrowUp size={13} />
-              </button>
-              <div className="flex items-center gap-1 text-xs text-slate-600 overflow-hidden">
-                <Home size={12} className="text-slate-400 flex-shrink-0" />
-                <span className="text-slate-400">/</span>
-                {moveToPath.map((p, i) => <span key={i} className="font-medium text-slate-700">{p} /</span>)}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-2 min-h-[180px]">
-              {moveFolderContent.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
-                  <FolderOpen size={28} strokeWidth={1.5} className="mb-2 opacity-50" />
-                  <p className="text-xs">Sin subcarpetas</p>
-                </div>
-              ) : (
-                <div className="px-2 space-y-0.5">
-                  {moveFolderContent.map((folder, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setMoveToPath([...moveToPath, folder.name])}
-                      disabled={moveTargetFolder?.name === folder.name}
-                      className={clsx("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors", moveTargetFolder?.name === folder.name ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50")}
-                    >
-                      <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Folder size={16} className="text-amber-500 fill-amber-100" />
-                      </div>
-                      <span className="text-sm text-slate-700 font-medium flex-1 truncate">{folder.name}</span>
-                      <ChevronRight size={14} className="text-slate-300" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2">
-              <button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">
-                Cancelar
-              </button>
-              <button
-                onClick={handleModalMove}
-                disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all"
-              >
-                {isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}
-                Mover aquí
-              </button>
-            </div>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><FolderSymlink size={16} className="text-blue-500" />{moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}</h3><button onClick={() => setMoveDialogOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><X size={15} className="text-slate-400" /></button></div>
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all"><ArrowUp size={13} /></button><div className="flex items-center gap-1 text-xs text-slate-600 overflow-hidden"><Home size={12} className="text-slate-400 flex-shrink-0" /><span className="text-slate-400">/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-slate-700">{p} /</span>)}</div></div>
+            <div className="flex-1 overflow-y-auto py-2 min-h-[180px]">{moveFolderContent.length === 0 ? ( <div className="flex flex-col items-center justify-center py-10 text-slate-400"><FolderOpen size={28} strokeWidth={1.5} className="mb-2 opacity-50" /><p className="text-xs">Sin subcarpetas</p></div> ) : ( <div className="px-2 space-y-0.5">{moveFolderContent.map((folder, i) => ( <button key={i} onClick={() => setMoveToPath([...moveToPath, folder.name])} disabled={moveTargetFolder?.name === folder.name} className={clsx("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors", moveTargetFolder?.name === folder.name ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50")}><div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0"><Folder size={16} className="text-amber-500 fill-amber-100" /></div><span className="text-sm text-slate-700 font-medium flex-1 truncate">{folder.name}</span><ChevronRight size={14} className="text-slate-300" /></button> ))}</div> )}</div>
+            <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2"><button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button><button onClick={handleModalMove} disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all">{isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}Mover aquí</button></div>
           </div>
         </div>
       )}
-
-      {createFolderOpen && (
-        <Dialog
-          title="Nueva carpeta"
-          onClose={() => { setCreateFolderOpen(false); setNewFolderName(""); }}
-          onConfirm={() => {
-            if (!newFolderName.trim()) return;
-            const folderRef = ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`);
-            uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); });
-          }}
-          confirmLabel="Crear"
-        >
-          <input
-            autoFocus
-            value={newFolderName}
-            onChange={e => setNewFolderName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) { const folderRef = ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`); uploadBytes(folderRef, new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); } }}
-            className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm transition-all bg-white text-slate-800"
-            placeholder="Nombre de la carpeta..."
-          />
-        </Dialog>
-      )}
-
-      {renameDialogOpen && (
-        <Dialog
-          title={renameTargetFile ? "Renombrar archivo" : "Renombrar carpeta"}
-          onClose={() => setRenameDialogOpen(false)}
-          onConfirm={async () => {
-            if (!newName.trim()) return;
-            setRenameDialogOpen(false);
-            const dest = [currentRoot, ...path].join('/');
-            if (renameTargetFile) {
-              const ok = await executeMoveFile(renameTargetFile, dest, newName.trim());
-              if (ok) { showToast("Archivo renombrado", 'success'); loadContent(); }
-            } else if (renameTargetFolder) {
-              const ok = await executeMoveFolder(renameTargetFolder, dest + '/' + newName.trim());
-              if (ok) { showToast("Carpeta renombrada", 'success'); loadContent(); }
-            }
-          }}
-          confirmLabel="Renombrar"
-          confirmClass="bg-violet-600 hover:bg-violet-700 text-white"
-        >
-          <input
-            autoFocus
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            className="w-full border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm transition-all bg-white text-slate-800"
-            placeholder="Nuevo nombre..."
-          />
-        </Dialog>
-      )}
-
-      <div className="fixed bottom-6 right-5 z-[300] flex flex-col gap-2 pointer-events-none">
-        {toasts.map(toast => (
-          <div key={toast.id} className="pointer-events-auto">
-            <Toast toast={toast} />
-          </div>
-        ))}
-      </div>
+      {createFolderOpen && ( <Dialog title="Nueva carpeta" onClose={() => { setCreateFolderOpen(false); setNewFolderName(""); }} onConfirm={() => { if (!newFolderName.trim()) return; uploadBytes(ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`), new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} confirmLabel="Crear"><input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) uploadBytes(ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`), new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm bg-white text-slate-800" placeholder="Nombre de la carpeta..." /></Dialog> )}
+      {renameDialogOpen && ( <Dialog title={renameTargetFile ? "Renombrar archivo" : "Renombrar carpeta"} onClose={() => setRenameDialogOpen(false)} onConfirm={async () => { if (!newName.trim()) return; setRenameDialogOpen(false); const dest = [currentRoot, ...path].join('/'); if (renameTargetFile) { const ok = await executeMoveFile(renameTargetFile, dest, newName.trim()); if (ok) { showToast("Archivo renombrado", 'success'); loadContent(); } } else if (renameTargetFolder) { const ok = await executeMoveFolder(renameTargetFolder, dest + '/' + newName.trim()); if (ok) { showToast("Carpeta renombrada", 'success'); loadContent(); } } }} confirmLabel="Renombrar" confirmClass="bg-violet-600 hover:bg-violet-700 text-white"><input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm bg-white text-slate-800" placeholder="Nuevo nombre..." /></Dialog> )}
+      <div className="fixed bottom-6 right-5 z-[300] flex flex-col gap-2 pointer-events-none">{toasts.map(toast => ( <div key={toast.id} className="pointer-events-auto"><Toast toast={toast} /></div> ))}</div>
     </div>
   );
 }

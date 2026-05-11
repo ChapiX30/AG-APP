@@ -220,18 +220,72 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
     try {
       const usersSnap = await getDocs(collection(db, 'usuarios'));
       const allUids = usersSnap.docs.map(d => d.id);
+      
+      // Recolectar todos los tokens de FCM
+      const tokens: string[] = [];
+      usersSnap.docs.forEach(d => {
+        const userData = d.data();
+        if (userData.fcmTokens && typeof userData.fcmTokens === 'object') {
+          Object.keys(userData.fcmTokens).forEach(t => { if (t && !tokens.includes(t)) tokens.push(t); });
+        } else if (userData.fcmToken && typeof userData.fcmToken === 'string') {
+          if (!tokens.includes(userData.fcmToken)) tokens.push(userData.fcmToken);
+        }
+      });
+
       const autorSnap = await getDoc(doc(db, 'usuarios', uid));
       const autorNombre = autorSnap.exists() ? (autorSnap.data().name || 'Calidad') : 'Calidad';
 
+      // 1. Guardar en Firestore
       await addDoc(collection(db, 'notificaciones'), {
         type, title: title.trim(), body: body.trim(),
         autorUid: uid, autorNombre,
         readBy: [], destinatarios: allUids,
         timestamp: serverTimestamp(), global: true,
       });
-      toast.success('¡Notificación enviada a todos!');
+
+      // 2. Enviar Push Notification (FCM)
+      const serverKey = import.meta.env.VITE_FCM_SERVER_KEY as string | undefined;
+      if (serverKey && tokens.length > 0) {
+        const iconos: Record<string, string> = { info: '💡', warning: '⚠️', success: '✅', error: '🚨' };
+        const emoji = iconos[type] || '📢';
+        const color = type === 'error' ? '#E11D48' : type === 'success' ? '#10B981' : type === 'warning' ? '#F59E0B' : '#3B82F6';
+
+        const chunks: string[][] = [];
+        for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
+
+        await Promise.allSettled(chunks.map(chunk => 
+          fetch('https://fcm.googleapis.com/fcm/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `key=${serverKey}` },
+            body: JSON.stringify({
+              registration_ids: chunk,
+              notification: {
+                title: `${emoji} ${title.trim()}`,
+                body: body.trim(),
+                icon: '/bell.png',
+              },
+              data: { url: '/', type: 'aviso_global' },
+              android: {
+                priority: 'high',
+                notification: {
+                  color: color,
+                  channel_id: 'ag_avisos',
+                  visibility: 'public', // ESTO ES CLAVE para la pantalla de bloqueo
+                  default_sound: true,
+                  default_vibrate_timings: true,
+                }
+              }
+            })
+          })
+        ));
+      }
+
+      toast.success('¡Aviso enviado a todos!');
       setTitle(''); setBody(''); setType('info'); setShowCompose(false);
-    } catch { toast.error('Error al enviar'); }
+    } catch (e) { 
+      console.error(e);
+      toast.error('Error al enviar'); 
+    }
     setSending(false);
   };
 

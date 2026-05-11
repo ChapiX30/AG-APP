@@ -937,7 +937,18 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
     case 'SET_CLIENTE':
       const cel = (action.payload || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("celestica");
       return { ...state, cliente: action.payload, id: cel ? "EP-" : "", equipo: "", marca: "", modelo: "", numeroSerie: "", fieldsLocked: false };
-    case 'AUTOCOMPLETE_SUCCESS': return { ...state, ...action.payload, isMasterData: true, fieldsLocked: true };
+    case 'AUTOCOMPLETE_SUCCESS': {
+      const payload = action.payload;
+      // Verificamos si alguno de los campos clave viene vacío
+      const faltaInfo = !payload.equipo || !payload.marca || !payload.modelo || !payload.numeroSerie;
+      return { 
+        ...state, 
+        ...payload, 
+        isMasterData: true, 
+        // Si falta información, fieldsLocked será false para permitir edición manual
+        fieldsLocked: !faltaInfo 
+      };
+    }
     case 'AUTOCOMPLETE_FAIL':
       const isCelestica = state.cliente.toLowerCase().includes("celestica");
       return { ...state, isMasterData: false, fieldsLocked: false, equipo: (isCelestica && !state.id) ? "" : state.equipo, marca: (isCelestica && !state.id) ? "" : state.marca, modelo: (isCelestica && !state.id) ? "" : state.numeroSerie };
@@ -1540,47 +1551,62 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       }
 
       // ==========================================================
-      // MAGIA DEL SEGUNDO PLANO
+      // MAGIA DEL SEGUNDO PLANO (MODIFICADA)
       // ==========================================================
       // Avisamos al usuario, limpiamos el backup y nos salimos ¡YA!
-      setToast({ message: "⏳ Guardando en segundo plano...", type: 'success' });
+      setToast({ message: "⏳ Guardando en base de datos...", type: 'success' });
       localStorage.removeItem('backup_worksheet_data');
       
       setTimeout(() => {
           goBack();
       }, 500);
 
-      // Tarea asíncrona "huérfana" (Se ejecuta aunque salgamos de la pantalla)
-      (async () => {
+      // 1. GUARDADO INICIAL INMEDIATO (Sin URLs todavía)
+      const initialSave = async () => {
           if (navigator.onLine) {
               try {
-                  // Subir Foto (Si existe)
-                  if (state.fotoEquipoBase64) {
-                      const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
-                      const imgBlob = await fetch(imgData).then(r => r.blob());
-                      const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
-                      await uploadBytes(fotoRef, imgBlob);
-                      fullData.fotoEquipoURL = await getDownloadURL(fotoRef);
-                  }
-
-                  // Subir PDF
-                  const pdfRef = ref(storage, nombreArchivo);
-                  await uploadBytes(pdfRef, blob);
-                  fullData.pdfURL = await getDownloadURL(pdfRef);
-                  fullData.cargado_drive = "Si";
-
-                  // Guardar en Firestore
+                  // Guardamos el registro de una vez para que sea visible
+                  let docRefId = finalDocId;
                   if (finalDocId) {
                       await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
                   } else {
-                      await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+                      const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+                      docRefId = newDoc.id;
                   }
-                  
-                  console.log("Hoja guardada exitosamente en segundo plano.");
 
-              } catch (bgError) {
-                  console.error("Falló la red a medio guardado. Mandando a cola Offline:", bgError);
-                  // Si se le cae el internet a medio proceso, lo salvamos a la cola offline local
+                  // 2. PROCESO DE SUBIDA DE ARCHIVOS (Segundo plano real)
+                  (async () => {
+                      try {
+                          let updates: any = {};
+
+                          // Subir Foto si existe
+                          if (state.fotoEquipoBase64) {
+                              const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
+                              const imgBlob = await fetch(imgData).then(r => r.blob());
+                              const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
+                              await uploadBytes(fotoRef, imgBlob);
+                              updates.fotoEquipoURL = await getDownloadURL(fotoRef);
+                          }
+
+                          // Subir PDF
+                          const pdfRef = ref(storage, nombreArchivo);
+                          await uploadBytes(pdfRef, blob);
+                          updates.pdfURL = await getDownloadURL(pdfRef);
+                          updates.cargado_drive = "Si";
+
+                          // Actualizamos el documento con las URLs finales
+                          if (docRefId) {
+                              await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
+                          }
+                          console.log("Archivos subidos y URLs actualizadas correctamente.");
+
+                      } catch (bgErr) {
+                          console.error("Error en subida de archivos (el registro ya está en DB):", bgErr);
+                      }
+                  })();
+
+              } catch (err) {
+                  console.error("Error en guardado inicial, mandando a cola offline:", err);
                   addToOfflineQueue({
                       id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
                       timestamp: Date.now(),
@@ -1603,7 +1629,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   worksheetId,
               });
           }
-      })();
+      };
+
+      initialSave();
 
     } catch (e: any) {
       console.error("Error al preparar guardado:", e);
