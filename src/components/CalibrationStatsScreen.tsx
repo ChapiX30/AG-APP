@@ -55,20 +55,36 @@ type ViewMode = "month" | "year";
 // --- HELPERS ---
 const cleanName = (name?: string) => name && name !== "null" && name !== "undefined" ? name.trim() : "";
 
-const parseDateRobust = (dateStr: string | null): Date | null => {
+const parseDateRobust = (dateStr: any): Date | null => {
     if (!dateStr) return null;
-    let d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-    if (dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        if (parts.length === 3) {
-            const day = parseInt(parts[0], 10);
-            const month = parseInt(parts[1], 10) - 1;
-            const year = parseInt(parts[2], 10);
-            d = new Date(year, month, day);
-            if (!isNaN(d.getTime())) return d;
+
+    // 1. Si es un Timestamp de Firestore (tiene el método toDate)
+    if (typeof dateStr.toDate === 'function') {
+        return dateStr.toDate();
+    }
+
+    // 2. Si ya es un objeto Date nativo
+    if (dateStr instanceof Date) {
+        return isNaN(dateStr.getTime()) ? null : dateStr;
+    }
+
+    // 3. Si es un string (aquí ya es seguro usar .includes)
+    if (typeof dateStr === 'string') {
+        let d = new Date(dateStr);
+        if (!isNaN(d.getTime())) return d;
+        
+        if (dateStr.includes('/')) {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parseInt(parts[2], 10);
+                d = new Date(year, month, day);
+                if (!isNaN(d.getTime())) return d;
+            }
         }
     }
+
     return null;
 };
 
@@ -184,7 +200,7 @@ const CalibrationStatsScreen: React.FC = () => {
     const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name)));
     const validQualityNames = new Set(usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name)));
 
-    const isDateInRange = (dateStr: string | null) => {
+    const isDateInRange = (dateStr: any) => {
         const d = parseDateRobust(dateStr);
         if (!d) return false;
         if (d.getFullYear() !== year) return false;
@@ -397,11 +413,11 @@ const CalibrationStatsScreen: React.FC = () => {
                     <div className="lg:col-span-8 space-y-6">
                         {selectedUserName ? (
                             <div className="grid grid-cols-1 gap-6">
-                                <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px]`}><h3 className="font-bold mb-4">Historial: {selectedUserName}</h3><ResponsiveContainer width="100%" height="100%"><BarChart data={mesesHistory}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="mes" stroke="#94a3b8" fontSize={12}/><YAxis stroke="#94a3b8" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" fill={METROLOGOS_ORDER_COLOR.find(m=>m.name===selectedUserName)?.color || "#3b82f6"} radius={[4,4,0,0]} /></BarChart></ResponsiveContainer></div>
-                                {viewMode === 'month' && (<div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px] flex items-center`}><ResponsiveContainer width="50%" height="100%"><PieChart><Pie activeIndex={activeIndex} activeShape={renderActiveShape} data={magnitudesPie} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onMouseEnter={(_, index) => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(-1)} onClick={(e, i) => {setSelectedMagnitud({...e, position:{x:0, y:0}}); setHologramVisible(true);}}>{magnitudesPie.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>}/></PieChart></ResponsiveContainer><div className="w-1/2 h-full overflow-y-auto"><h4 className="font-bold mb-2">Magnitudes</h4>{magnitudesPie.map(m=><div key={m.name} className="flex justify-between text-sm p-1 border-b border-white/5"><span>{m.name}</span><span>{m.value}</span></div>)}</div></div>)}
+                                <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px]`}><h3 className="font-bold mb-4">Historial: {selectedUserName}</h3><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={mesesHistory}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="mes" stroke="#94a3b8" fontSize={12}/><YAxis stroke="#94a3b8" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" fill={METROLOGOS_ORDER_COLOR.find(m=>m.name===selectedUserName)?.color || "#3b82f6"} radius={[4,4,0,0]} /></BarChart></ResponsiveContainer></div>
+                                {viewMode === 'month' && (<div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px] flex items-center`}><ResponsiveContainer width="50%" height="100%" minWidth={1} minHeight={1}><PieChart><Pie activeIndex={activeIndex} activeShape={renderActiveShape} data={magnitudesPie} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onMouseEnter={(_, index) => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(-1)} onClick={(e, i) => {setSelectedMagnitud({...e, position:{x:0, y:0}}); setHologramVisible(true);}}>{magnitudesPie.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>}/></PieChart></ResponsiveContainer><div className="w-1/2 h-full overflow-y-auto"><h4 className="font-bold mb-2">Magnitudes</h4>{magnitudesPie.map(m=><div key={m.name} className="flex justify-between text-sm p-1 border-b border-white/5"><span>{m.name}</span><span>{m.value}</span></div>)}</div></div>)}
                             </div>
                         ) : (
-                            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="flex justify-between items-center mb-6"><h3 className="font-bold">Comparativa Global</h3><div className="flex bg-slate-800 p-1 rounded-lg">{(['order','desc','asc'] as SortMode[]).map(m=><button key={m} onClick={()=>setSortMode(m)} className={`p-2 rounded ${sortMode===m?'bg-blue-600':'text-gray-400'}`}>{m==='order'?<SortDesc className="rotate-90" size={16}/>:m==='desc'?<SortDesc size={16}/>:<SortAsc size={16}/>}</button>)}</div></div><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={metrologosData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} interval={0} /><YAxis stroke="#9CA3AF" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" radius={[4,4,0,0]}>{metrologosData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar></BarChart></ResponsiveContainer></div></div>
+                            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="flex justify-between items-center mb-6"><h3 className="font-bold">Comparativa Global</h3><div className="flex bg-slate-800 p-1 rounded-lg">{(['order','desc','asc'] as SortMode[]).map(m=><button key={m} onClick={()=>setSortMode(m)} className={`p-2 rounded ${sortMode===m?'bg-blue-600':'text-gray-400'}`}>{m==='order'?<SortDesc className="rotate-90" size={16}/>:m==='desc'?<SortDesc size={16}/>:<SortAsc size={16}/>}</button>)}</div></div><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={metrologosData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} interval={0} /><YAxis stroke="#9CA3AF" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" radius={[4,4,0,0]}>{metrologosData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar></BarChart></ResponsiveContainer></div></div>
                         )}
                     </div>
                 </div>
@@ -415,7 +431,7 @@ const CalibrationStatsScreen: React.FC = () => {
                  </div>
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     <div className="lg:col-span-4"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10`}><label className="text-sm text-emerald-400 mb-2 block">Filtrar por Usuario</label><select value={selectedUserName} onChange={(e) => setSelectedUserName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none">{uniqueUserList.map(name => <option key={name} value={name}>{name}</option>)}</select></div></div>
-                    <div className="lg:col-span-8"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 min-h-[500px]`}><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={selectedUserName ? qualityHistory : qualityData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey={selectedUserName ? "mes" : "name"} stroke="#E5E7EB" fontSize={12} /><YAxis stroke="#9CA3AF" fontSize={12} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="realizado" fill="#3b82f6" radius={[4, 4, 0, 0]} /><Bar dataKey="revisado" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div></div>
+                    <div className="lg:col-span-8"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 min-h-[500px]`}><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={selectedUserName ? qualityHistory : qualityData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey={selectedUserName ? "mes" : "name"} stroke="#E5E7EB" fontSize={12} /><YAxis stroke="#9CA3AF" fontSize={12} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="realizado" fill="#3b82f6" radius={[4, 4, 0, 0]} /><Bar dataKey="revisado" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div></div>
                  </div>
             </motion.div>
         )}
@@ -425,7 +441,7 @@ const CalibrationStatsScreen: React.FC = () => {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                      <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-purple-900/20 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-purple-400">Magnitud Top</p><h3 className="text-2xl font-bold text-white truncate">{topMagnitud?.name || "N/A"}</h3></div><div className="absolute right-3 top-3 p-3 bg-purple-500/20 rounded-xl text-purple-400"><Trophy size={20}/></div></div>
                  </div>
-                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="h-[600px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={magnitudesGlobalData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis type="number" stroke="#9CA3AF" fontSize={12}/><YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} width={150}/><Tooltip content={<CustomTooltip />} /><Bar dataKey="total" radius={[0, 4, 4, 0]}>{magnitudesGlobalData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></div>
+                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="h-[600px] w-full"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={magnitudesGlobalData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis type="number" stroke="#9CA3AF" fontSize={12}/><YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} width={150}/><Tooltip content={<CustomTooltip />} /><Bar dataKey="total" radius={[0, 4, 4, 0]}>{magnitudesGlobalData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></div>
             </motion.div>
         )}
       </main>

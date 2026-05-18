@@ -102,7 +102,7 @@ export const agbotMonitorDiario = functions.pubsub
     });
 
 // ==================================================================
-// 5. PUENTE API PARA EXCEL (Corregido Equipo y Certificado)
+// 5. PUENTE API PARA EXCEL
 // ==================================================================
 export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
     const secretKey = req.query.key;
@@ -157,7 +157,6 @@ export const agbotRegenerarPDF = functions.firestore
         const data = change.after.data();
         const dataAnterior = change.before.data();
 
-        // 1. Solo regenerar si cambiaron datos críticos (cliente, equipo, fechas, mediciones, etc.)
         if (data.cliente === dataAnterior.cliente &&
             data.equipo === dataAnterior.equipo &&
             data.medicionPatron === dataAnterior.medicionPatron &&
@@ -168,7 +167,6 @@ export const agbotRegenerarPDF = functions.firestore
         console.log(`Regenerando PDF PROFESIONAL en Storage para el folio: ${data.certificado}`);
 
         try {
-            // Inicializar el documento con las mismas medidas de tu frontend
             const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
             const pageWidth = doc.internal.pageSize.width;
             const pageHeight = doc.internal.pageSize.height;
@@ -176,10 +174,9 @@ export const agbotRegenerarPDF = functions.firestore
             const marginRight = pageWidth - 40;
             let currentY = 80;
 
-            // --- CABECERA ---
             doc.setFont("helvetica", "bold");
             doc.setFontSize(18);
-            doc.setTextColor(0, 0, 139); // Azul Fuerte
+            doc.setTextColor(0, 0, 139); 
             doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
 
             doc.setTextColor(0, 0, 0);
@@ -195,13 +192,11 @@ export const agbotRegenerarPDF = functions.firestore
             doc.text(`Fecha: ${data.fecha || "-"}`, col2X, currentY);
             currentY += 25;
 
-            // Línea separadora
             doc.setDrawColor(100);
             doc.setLineWidth(1);
             doc.line(marginLeft, currentY, marginRight, currentY);
             currentY += 20;
 
-            // --- BLOQUE DE DATOS (2 COLUMNAS) ---
             const infoData = [
                 { l: "Cliente:", v: data.cliente, l2: "N. Certificado:", v2: data.certificado },
                 { l: "Equipo:", v: data.equipo, l2: "ID:", v2: data.id },
@@ -229,19 +224,16 @@ export const agbotRegenerarPDF = functions.firestore
 
             currentY += 15;
 
-            // --- TÍTULO DE MEDICIONES ---
             doc.setFont("helvetica", "bold");
             doc.setFontSize(13);
-            doc.setFillColor(220, 220, 220); // Gris claro
+            doc.setFillColor(220, 220, 220); 
             doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F');
             doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
             currentY += 20;
 
-            // --- TABLA DE MEDICIONES ---
             const tableWidth = 500;
             const tableX = (pageWidth - tableWidth) / 2;
 
-            // Encabezado Azul de la tabla
             doc.setFillColor(50, 80, 160);
             doc.setDrawColor(0);
             doc.setLineWidth(0.1);
@@ -289,13 +281,11 @@ export const agbotRegenerarPDF = functions.firestore
                 currentY += rowHeight;
             }
 
-            // Pie de página
             doc.setFontSize(9);
             doc.setFont("helvetica", "italic");
             doc.setTextColor(100);
             doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
 
-            // --- SUBIDA A FIREBASE STORAGE ---
             const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
             const rutaStorage = `worksheets/${data.nombre || "Sistema"}/${data.certificado}_${data.id}.pdf`;
             const bucket = admin.storage().bucket();
@@ -305,9 +295,6 @@ export const agbotRegenerarPDF = functions.firestore
                 metadata: { cacheControl: "no-cache, max-age=0" }
             });
 
-            console.log("PDF profesional sobrescrito exitosamente en Storage.");
-
-            // Sincronizar metadata para DriveScreen.tsx
             const metaId = rutaStorage.replace(/\//g, "_");
             await db.collection("fileMetadata").doc(metaId).set({
                 updated: admin.firestore.FieldValue.serverTimestamp(),
@@ -322,14 +309,13 @@ export const agbotRegenerarPDF = functions.firestore
     });
 
 // ==================================================================
-// 7. SISTEMA DE NOTIFICACIONES PUSH (CALIDAD)
+// 7. SISTEMA DE NOTIFICACIONES PUSH (CALIDAD - MULTIDISPOSITIVO)
 // ==================================================================
 export const enviarNotificacionCalidad = functions.firestore
     .document('notificaciones/{notificacionId}')
     .onCreate(async (snap, context) => {
         const nuevaNotificacion = snap.data();
         
-        // Solo procesamos las que vienen del calendario de calidad
         if (nuevaNotificacion.tipo !== 'asignacion_calidad') {
             return null; 
         }
@@ -337,46 +323,43 @@ export const enviarNotificacionCalidad = functions.firestore
         const { usuarioId, titulo, mensaje, servicioId } = nuevaNotificacion;
 
         try {
-            // 1. Buscar al usuario en la base de datos para obtener su Token de su Celular/PC
             const userDoc = await db.collection('usuarios').doc(usuarioId).get();
-            
-            if (!userDoc.exists) {
-                console.log(`Usuario ${usuarioId} no encontrado.`);
-                return null;
-            }
+            if (!userDoc.exists) return null;
 
             const userData = userDoc.data();
             
-            // Leemos el token que el archivo usePushNotifications.ts guarda
-            const fcmToken = userData?.fcmToken; 
+            // MAGIA: Leer el MAPA de tokens para enviarlo a la Tablet Y a la PC de Abraham al mismo tiempo
+            const tokensObj = userData?.fcmTokens || {};
+            const tokensArray = Object.keys(tokensObj).filter(token => tokensObj[token] === true);
 
-            if (!fcmToken) {
-                console.log(`El usuario ${usuarioId} no tiene un dispositivo registrado para notificaciones.`);
+            if (tokensArray.length === 0 && userData?.fcmToken) {
+                tokensArray.push(userData.fcmToken);
+            }
+
+            if (tokensArray.length === 0) {
+                console.log(`El usuario ${usuarioId} no tiene dispositivos registrados.`);
                 return null;
             }
 
-            // 2. Construir el paquete (Payload) que despertará el celular o Chrome
             const payload = {
                 notification: {
-                    title: titulo, // "Nueva Asignación de Calidad"
-                    body: mensaje,  // "Fuiste programado para Depth Micrometer el 11/05..."
+                    title: titulo,
+                    body: mensaje,
                 },
                 data: {
-                    // Esta URL es la que lee tu Service Worker para abrir la app al hacer click
                     url: `/calendario`, 
                     servicioId: servicioId || ''
                 },
-                token: fcmToken // El ID único del dispositivo del técnico
+                tokens: tokensArray 
             };
 
-            // 3. Enviar a través de los servidores de Google FCM
-            const response = await admin.messaging().send(payload);
-            console.log(`Notificación enviada con éxito a ${usuarioId}. MessageId:`, response);
+            const response = await admin.messaging().sendEachForMulticast(payload);
+            console.log(`Push enviada a ${usuarioId}. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`);
             
             return null;
 
         } catch (error) {
-            console.error("Error crítico al enviar Push Notification:", error);
+            console.error("Error crítico al enviar Push Notification Multicast:", error);
             return null;
         }
     });
