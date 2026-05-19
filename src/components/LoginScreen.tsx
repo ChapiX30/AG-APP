@@ -29,15 +29,9 @@ const errorMsg = (code: string) =>
 
 const fetchUser = async (email: string) => {
   try {
-    // Registro guarda `correo`; documentos antiguos pueden usar `email`
-    let snap = await getDocs(
-      query(collection(db, "usuarios"), where("correo", "==", email), limit(1))
+    const snap = await getDocs(
+      query(collection(db, "usuarios"), where("email", "==", email), limit(1))
     );
-    if (snap.empty) {
-      snap = await getDocs(
-        query(collection(db, "usuarios"), where("email", "==", email), limit(1))
-      );
-    }
     if (snap.empty) return null;
     const d = snap.docs[0].data() as any;
     const name = d.nombre || d.name || "Usuario";
