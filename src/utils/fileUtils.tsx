@@ -1,9 +1,10 @@
 // src/utils/fileUtils.ts
 
 import React from 'react';
-import { findUsuarioDocByCorreo } from './usuarioByCorreo';
+import { collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { db } from './firebase'; // Aseg˙rate que la ruta a tu config de firebase sea correcta
 
-// Iconos que podrùas necesitar para las funciones de ayuda
+// Iconos que podrÌas necesitar para las funciones de ayuda
 import {
     PictureAsPdf as PictureAsPdfIcon,
     InsertDriveFile as InsertDriveFileIcon,
@@ -110,27 +111,27 @@ export const getActivityIcon = (action: string): React.ReactElement => {
 export const getActivityDescription = (activity: ActivityLog): string => {
   switch (activity.action) {
     case 'create':
-      return `subiù el archivo "${activity.fileName}"`;
+      return `subiÛ el archivo "${activity.fileName}"`;
     case 'delete':
-      return `eliminù el archivo "${activity.fileName}"`;
+      return `eliminÛ el archivo "${activity.fileName}"`;
     case 'move':
-      return `moviù "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
+      return `moviÛ "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
     case 'review':
-      return `marcù como revisado "${activity.fileName}"`;
+      return `marcÛ como revisado "${activity.fileName}"`;
     case 'unreview':
-      return `marcù como no revisado "${activity.fileName}"`;
+      return `marcÛ como no revisado "${activity.fileName}"`;
     case 'complete':
-      return `marcù como realizado "${activity.fileName}"`;
+      return `marcÛ como realizado "${activity.fileName}"`;
     case 'uncomplete':
-      return `marcù como no realizado "${activity.fileName}"`;
+      return `marcÛ como no realizado "${activity.fileName}"`;
     case 'view':
-      return `abriù el archivo "${activity.fileName}"`;
+      return `abriÛ el archivo "${activity.fileName}"`;
     case 'download':
-      return `descargù el archivo "${activity.fileName}"`;
+      return `descargÛ el archivo "${activity.fileName}"`;
     case 'create_folder':
-      return `creù la carpeta "${activity.folderName}"`;
+      return `creÛ la carpeta "${activity.folderName}"`;
     default:
-      return `realizù una acciùn en "${activity.fileName || activity.folderName}"`;
+      return `realizÛ una acciÛn en "${activity.fileName || activity.folderName}"`;
   }
 };
 
@@ -142,8 +143,21 @@ export const getFileParentPath = (filePath: string): string[] => {
 
 export const getCurrentUserData = async (email: string): Promise<UserData | null> => {
   if (!email) return null;
-  const docSnap = await findUsuarioDocByCorreo(email);
-  return docSnap ? (docSnap.data() as UserData) : null;
+  try {
+    const usuariosQuery = query(
+      collection(db, 'usuarios'),
+      where('correo', '==', email),
+      limit(1)
+    );
+    const querySnapshot = await getDocs(usuariosQuery);
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data() as UserData;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error obteniendo datos del usuario:', error);
+    return null;
+  }
 };
 
 export const isQualityUser = (userData: UserData | null): boolean => {
@@ -155,17 +169,23 @@ export const isQualityUser = (userData: UserData | null): boolean => {
 export const isMetrologistUser = (userData: UserData | null): boolean => {
   if (!userData) return false;
   const puesto = userData.puesto?.toLowerCase();
-  return puesto === 'metrùlogo' || puesto === 'metrologist' || puesto === 'metrologo';
+  return puesto === 'metrÛlogo' || puesto === 'metrologist' || puesto === 'metrologo';
 };
 
 export const getUserNameByEmail = async (email: string): Promise<string> => {
     if (!email) return 'Usuario desconocido';
-    const docSnap = await findUsuarioDocByCorreo(email);
-    if (docSnap) {
-        const userData = docSnap.data();
-        return userData.name || userData.nombre || email.split('@')[0];
+    try {
+        const usuariosQuery = query(collection(db, 'usuarios'), where('correo', '==', email), limit(1));
+        const querySnapshot = await getDocs(usuariosQuery);
+        if (!querySnapshot.empty) {
+            const userData = querySnapshot.docs[0].data();
+            return userData.name || userData.nombre || email.split('@')[0];
+        }
+        return email.split('@')[0];
+    } catch (error) {
+        console.error('Error buscando usuario por email:', error);
+        return email.split('@')[0];
     }
-    return email.split('@')[0];
 };
 
 export const getUserDisplayName = async (user: any): Promise<string> => {

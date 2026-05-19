@@ -131,6 +131,26 @@ interface AttachmentPreview {
   size?: number;
 }
 
+const INITIAL_FORM_STATE = {
+  titulo: '',
+  descripcion: '',
+  tipo: 'calibracion',
+  prioridad: 'media',
+  estado: 'programado',
+  fecha: '',
+  horaInicio: '',
+  horaFin: '',
+  ubicacion: '',
+  clienteId: '',
+  cliente: '',
+  contacto: '',
+  telefono: '',
+  email: '',
+  personas: [] as string[],
+  archivos: [] as (string | File)[],
+  notas: '',
+};
+
 const CONSTANTS = {
   estados: [
     { value: 'programado', label: 'Programado', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', dot: 'bg-blue-500', icon: Calendar },
@@ -769,12 +789,31 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
+  const seededServiceIdRef = useRef<string | undefined>(undefined);
 
+  // Only seed form when the modal opens or when switching to a different service.
+  // Do not reset on parent re-renders (Firestore snapshots recreate initialData references).
   useEffect(() => {
-    setFormData(initialData);
-    setActiveStep(0);
-    setUploadStates([]);
-  }, [initialData, isOpen]);
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      seededServiceIdRef.current = undefined;
+      return;
+    }
+
+    const serviceId = initialData?.id ?? '';
+    const justOpened = !wasOpenRef.current;
+    const switchedService = seededServiceIdRef.current !== serviceId;
+
+    if (justOpened || switchedService) {
+      setFormData(initialData);
+      setActiveStep(0);
+      setUploadStates([]);
+      seededServiceIdRef.current = serviceId;
+    }
+
+    wasOpenRef.current = true;
+  }, [isOpen, initialData?.id, initialData]);
 
   const handleChange = (field: string, value: any) =>
     setFormData((prev: any) => ({ ...prev, [field]: value }));
@@ -1208,13 +1247,6 @@ const FridayServiciosScreen: React.FC = () => {
       return isCalidadAdmin || isEdgar || isAngel;
   }, [currentUserData]);
 
-  const initialFormState = {
-    titulo: '', descripcion: '', tipo: 'calibracion', prioridad: 'media',
-    estado: 'programado', fecha: '', horaInicio: '', horaFin: '',
-    ubicacion: '', clienteId: '', cliente: '', contacto: '', telefono: '',
-    email: '', personas: [], archivos: [], notas: ''
-  };
-
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 1024;
@@ -1640,7 +1672,7 @@ const FridayServiciosScreen: React.FC = () => {
         <ServiceFormModal
           isOpen={isFormOpen}
           onClose={() => setIsFormOpen(false)}
-          initialData={selectedService || initialFormState}
+          initialData={selectedService || INITIAL_FORM_STATE}
           onSubmit={handleSaveService}
           loading={processing}
           clientes={clientes}

@@ -11,7 +11,6 @@ import {
   RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette, Loader2
 } from "lucide-react";
 import { db } from "../utils/firebase";
-import { findUsuarioDocByCorreo } from "../utils/usuarioByCorreo";
 import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs, updateDoc } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
@@ -927,9 +926,10 @@ const FridayScreen: React.FC = () => {
         const fetchUser = async () => {
             setUserProfileResolved(false);
             if (user?.email) {
-                const docSnap = await findUsuarioDocByCorreo(user.email);
-                if (docSnap) {
-                    const data = docSnap.data();
+                const q = query(collection(db, "usuarios"), where("email", "==", user.email));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    const data = snap.docs[0].data();
                     const profile = {
                         nombre: data.nombre || data.name || user.name,
                         name: data.name || data.nombre,
