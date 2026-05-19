@@ -693,16 +693,19 @@ const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile; onCl
 };
 
 // ─── DIALOG ───────────────────────────────────
-const Dialog = ({ title, children, onClose, onConfirm, confirmLabel = "Confirmar", confirmClass = "bg-blue-600 hover:bg-blue-700 text-white" }: any) => (
-  <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+const Dialog = ({ title, children, onClose, onConfirm, confirmLabel = "Confirmar", confirmClass = "bg-blue-600 hover:bg-blue-700 text-white", confirmDisabled = false, confirmLoading = false }: any) => (
+  <div className="fixed inset-0 z-[210] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
       <div className="px-5 py-4 border-b border-slate-100">
         <h3 className="font-semibold text-slate-800 text-sm">{title}</h3>
       </div>
       <div className="p-5">{children}</div>
       <div className="px-5 pb-5 flex justify-end gap-2">
-        <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button>
-        <button onClick={onConfirm} className={clsx("px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm", confirmClass)}>{confirmLabel}</button>
+        <button onClick={onClose} disabled={confirmLoading} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors disabled:opacity-50">Cancelar</button>
+        <button onClick={onConfirm} disabled={confirmDisabled || confirmLoading} className={clsx("px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50", confirmClass)}>
+          {confirmLoading && <Loader2 size={14} className="animate-spin" />}
+          {confirmLabel}
+        </button>
       </div>
     </div>
   </div>
@@ -799,6 +802,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [moveTargetFolder, setMoveTargetFolder] = useState<DriveFolder | null>(null);
   const [moveToPath, setMoveToPath] = useState<string[]>([]);
   const [moveFolderContent, setMoveFolderContent] = useState<DriveFolder[]>([]);
+  const [moveCreateFolderOpen, setMoveCreateFolderOpen] = useState(false);
+  const [moveNewFolderName, setMoveNewFolderName] = useState("");
+  const [isCreatingMoveFolder, setIsCreatingMoveFolder] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetFile, setRenameTargetFile] = useState<DriveFile | null>(null);
@@ -1277,15 +1283,41 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     }
   };
 
+  const loadMoveFolderContent = useCallback(async () => {
+    try {
+      const res = await listAll(ref(storage, [currentRoot, ...moveToPath].join('/')));
+      setMoveFolderContent(res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath })));
+    } catch (e) { console.error(e); }
+  }, [currentRoot, moveToPath]);
+
   useEffect(() => {
     if (!moveDialogOpen) return;
-    (async () => {
-      try {
-        const res = await listAll(ref(storage, [currentRoot, ...moveToPath].join('/')));
-        setMoveFolderContent(res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath })));
-      } catch (e) { console.error(e); }
-    })();
-  }, [moveDialogOpen, moveToPath, currentRoot]);
+    loadMoveFolderContent();
+  }, [moveDialogOpen, loadMoveFolderContent]);
+
+  const handleCreateFolderInMove = async () => {
+    const name = moveNewFolderName.trim();
+    if (!name) return;
+    if (moveFolderContent.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+      showToast("Ya existe una carpeta con ese nombre", 'error');
+      return;
+    }
+    setIsCreatingMoveFolder(true);
+    try {
+      await uploadBytes(
+        ref(storage, `${[currentRoot, ...moveToPath, name].join('/')}/.keep`),
+        new Uint8Array([0])
+      );
+      setMoveCreateFolderOpen(false);
+      setMoveNewFolderName("");
+      showToast("Carpeta creada", 'success');
+      await loadMoveFolderContent();
+    } catch (e) {
+      showToast("Error al crear la carpeta", 'error');
+    } finally {
+      setIsCreatingMoveFolder(false);
+    }
+  };
 
   // ── File actions ──
   const handleDelete = async (file: DriveFile) => {
@@ -1669,7 +1701,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   {isQuality && (
                     <>
                       <button
-                        onClick={() => { setMoveTargetFiles(files.filter(f => selectedIds.has(f.fullPath))); setMoveTargetFolder(null); setMoveDialogOpen(true); }}
+                        onClick={() => { setMoveTargetFiles(files.filter(f => selectedIds.has(f.fullPath))); setMoveTargetFolder(null); setMoveToPath([]); setMoveDialogOpen(true); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-all shadow-sm"
                       >
                         <FolderSymlink size={13} /> Mover
@@ -1856,21 +1888,41 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <div className="my-1 mx-2 border-t border-slate-100" />
               <MenuOption icon={<FileCheck size={14} />} label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"} onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} />
               {isQuality && ( <MenuOption icon={<CheckCircle2 size={14} />} label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"} onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} /> )}
-              {isQuality && ( <> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFiles(selectedIds.has(contextMenu.file.fullPath) && selectedIds.size > 1 ? files.filter(f => selectedIds.has(f.fullPath)) : [contextMenu.file]); setMoveTargetFolder(null); setMoveDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /> </> )}
+              {isQuality && ( <> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFiles(selectedIds.has(contextMenu.file.fullPath) && selectedIds.size > 1 ? files.filter(f => selectedIds.has(f.fullPath)) : [contextMenu.file]); setMoveTargetFolder(null); setMoveToPath([]); setMoveDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /> </> )}
             </> )}
-            {contextMenu.folder && isQuality && ( <> <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFiles([]); setMoveDialogOpen(true); setContextMenu(null); } }} /> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} /> </> )}
+            {contextMenu.folder && isQuality && ( <> <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFiles([]); setMoveToPath([]); setMoveDialogOpen(true); setContextMenu(null); } }} /> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} /> </> )}
           </div>
         );
       })()}
       {moveDialogOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><FolderSymlink size={16} className="text-blue-500" />{moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}</h3><button onClick={() => setMoveDialogOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><X size={15} className="text-slate-400" /></button></div>
-            <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all"><ArrowUp size={13} /></button><div className="flex items-center gap-1 text-xs text-slate-600 overflow-hidden"><Home size={12} className="text-slate-400 flex-shrink-0" /><span className="text-slate-400">/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-slate-700">{p} /</span>)}</div></div>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><FolderSymlink size={16} className="text-blue-500" />{moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}</h3><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><X size={15} className="text-slate-400" /></button></div>
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all flex-shrink-0" title="Subir"><ArrowUp size={13} /></button><div className="flex items-center gap-1 text-xs text-slate-600 overflow-hidden flex-1 min-w-0"><Home size={12} className="text-slate-400 flex-shrink-0" /><span className="text-slate-400">/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-slate-700">{p} /</span>)}</div><button type="button" title="Nueva carpeta" onClick={() => { setMoveNewFolderName(""); setMoveCreateFolderOpen(true); }} disabled={isMoving || isCreatingMoveFolder} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all flex-shrink-0"><FolderPlus size={13} className="text-amber-500" /></button></div>
             <div className="flex-1 overflow-y-auto py-2 min-h-[180px]">{moveFolderContent.length === 0 ? ( <div className="flex flex-col items-center justify-center py-10 text-slate-400"><FolderOpen size={28} strokeWidth={1.5} className="mb-2 opacity-50" /><p className="text-xs">Sin subcarpetas</p></div> ) : ( <div className="px-2 space-y-0.5">{moveFolderContent.map((folder, i) => ( <button key={i} onClick={() => setMoveToPath([...moveToPath, folder.name])} disabled={moveTargetFolder?.name === folder.name} className={clsx("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors", moveTargetFolder?.name === folder.name ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50")}><div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0"><Folder size={16} className="text-amber-500 fill-amber-100" /></div><span className="text-sm text-slate-700 font-medium flex-1 truncate">{folder.name}</span><ChevronRight size={14} className="text-slate-300" /></button> ))}</div> )}</div>
-            <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2"><button onClick={() => setMoveDialogOpen(false)} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button><button onClick={handleModalMove} disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all">{isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}Mover aquí</button></div>
+            <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2"><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button><button onClick={handleModalMove} disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all">{isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}Mover aquí</button></div>
           </div>
         </div>
+      )}
+      {moveCreateFolderOpen && (
+        <Dialog
+          title="Nueva carpeta"
+          onClose={() => { if (!isCreatingMoveFolder) { setMoveCreateFolderOpen(false); setMoveNewFolderName(""); } }}
+          onConfirm={handleCreateFolderInMove}
+          confirmLabel="Crear"
+          confirmDisabled={!moveNewFolderName.trim()}
+          confirmLoading={isCreatingMoveFolder}
+        >
+          <input
+            autoFocus
+            value={moveNewFolderName}
+            onChange={e => setMoveNewFolderName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && moveNewFolderName.trim() && !isCreatingMoveFolder) handleCreateFolderInMove(); }}
+            disabled={isCreatingMoveFolder}
+            className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm bg-white text-slate-800 disabled:opacity-50"
+            placeholder="Nombre de la carpeta..."
+          />
+        </Dialog>
       )}
       {createFolderOpen && ( <Dialog title="Nueva carpeta" onClose={() => { setCreateFolderOpen(false); setNewFolderName(""); }} onConfirm={() => { if (!newFolderName.trim()) return; uploadBytes(ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`), new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} confirmLabel="Crear"><input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newFolderName.trim()) uploadBytes(ref(storage, `${[currentRoot, ...path, newFolderName.trim()].join('/')}/.keep`), new Uint8Array([0])).then(() => { setCreateFolderOpen(false); setNewFolderName(""); loadContent(); }); }} className="w-full border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 p-3 rounded-xl outline-none text-sm bg-white text-slate-800" placeholder="Nombre de la carpeta..." /></Dialog> )}
       {renameDialogOpen && ( <Dialog title={renameTargetFile ? "Renombrar archivo" : "Renombrar carpeta"} onClose={() => setRenameDialogOpen(false)} onConfirm={async () => { if (!newName.trim()) return; setRenameDialogOpen(false); const dest = [currentRoot, ...path].join('/'); if (renameTargetFile) { const ok = await executeMoveFile(renameTargetFile, dest, newName.trim()); if (ok) { showToast("Archivo renombrado", 'success'); loadContent(); } } else if (renameTargetFolder) { const ok = await executeMoveFolder(renameTargetFolder, dest + '/' + newName.trim()); if (ok) { showToast("Carpeta renombrada", 'success'); loadContent(); } } }} confirmLabel="Renombrar" confirmClass="bg-violet-600 hover:bg-violet-700 text-white"><input autoFocus value={newName} onChange={e => setNewName(e.target.value)} className="w-full border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 p-3 rounded-xl outline-none text-sm bg-white text-slate-800" placeholder="Nuevo nombre..." /></Dialog> )}

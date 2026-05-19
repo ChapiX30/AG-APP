@@ -1,5 +1,5 @@
-import { useState, createContext, useContext, ReactNode } from 'react';
-import { signInWithEmailAndPassword, signOut as firebaseSignOut } from "firebase/auth";
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { signInWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../utils/firebase";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -27,36 +27,43 @@ export const useAuth = () => {
   return context;
 };
 
+const loadUserProfile = async (uid: string, email: string): Promise<User> => {
+  const docSnap = await getDoc(doc(db, "usuarios", uid));
+  let name = email;
+  let role = "";
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    name = data.nombre || name;
+    role = data.puesto || "";
+  }
+  return { id: uid, name, email, role };
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-
-      // Traer datos adicionales de Firestore (usuarios)
-      const docRef = doc(db, "usuarios", userCredential.user.uid);
-      const docSnap = await getDoc(docRef);
-
-      let name = userCredential.user.email || "";
-      let role = "";
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        name = data.nombre || name;
-        role = data.puesto || "";
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        return;
       }
+      try {
+        setUser(await loadUserProfile(
+          firebaseUser.uid,
+          firebaseUser.email || "",
+        ));
+      } catch {
+        setUser(null);
+      }
+    });
+    return () => unsub();
+  }, []);
 
-      setUser({
-        id: userCredential.user.uid,
-        name,
-        email: userCredential.user.email || "",
-        role,
-      });
-
-      return true;
-    } catch (e) {
-      return false;
-    }
+  const login = async (email: string, password: string): Promise<boolean> => {
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    setUser(await loadUserProfile(cred.user.uid, cred.user.email || email));
+    return true;
   };
 
   const logout = async () => {

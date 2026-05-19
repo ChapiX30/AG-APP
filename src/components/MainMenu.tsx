@@ -20,12 +20,14 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { getAuth, updateProfile } from 'firebase/auth';
 import {
   addYears, addMonths, differenceInDays, parseISO, isValid,
-  format, isToday, parse, isWithinInterval, addHours, differenceInMinutes,
+  format, isToday, parse, isWithinInterval, addHours,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { isUserOnline } from '../hooks/usePresence';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 interface Service {
@@ -164,8 +166,32 @@ const ThemeStyle = () => (
     .cs::-webkit-scrollbar-thumb { background: var(--surface-hi); border-radius: 4px; }
     .cs::-webkit-scrollbar-track { background: transparent; }
     textarea { font-family: inherit; }
+    button:focus-visible, a:focus-visible, [role="button"]:focus-visible, input:focus-visible {
+      outline: 2px solid var(--acc); outline-offset: 2px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   `}</style>
 );
+
+const CATEGORY_ORDER = ['Operativo', 'Gestión', 'Técnico', 'Calidad', 'Análisis', 'Archivos', 'Logística'];
+
+const groupMenuByCategory = (items: typeof MENU_ITEMS) => {
+  const map = new Map<string, typeof MENU_ITEMS>();
+  items.forEach(item => {
+    const list = map.get(item.category) ?? [];
+    list.push(item);
+    map.set(item.category, list);
+  });
+  return CATEGORY_ORDER
+    .filter(cat => map.has(cat))
+    .map(category => ({ category, items: map.get(category)! }));
+};
 
 // ─── HOOK: PREFERENCIAS POR USUARIO EN FIRESTORE ──────────────────────────────
 const useUserPrefs = (uid: string | undefined) => {
@@ -295,8 +321,10 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
     <motion.div
       initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.96 }} transition={{ duration: 0.15 }}
-      className="absolute right-0 top-12 w-80 rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
+      className="absolute right-0 top-12 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
       onClick={e => e.stopPropagation()}
+      role="dialog"
+      aria-label="Notificaciones"
       style={{ borderColor: 'var(--border-color)' }}
     >
       {/* Header */}
@@ -312,7 +340,7 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
             <Megaphone size={13} />
           </button>
         )}
-        <button onClick={onClose} className="p-1 ag-muted hover:ag-text transition-colors"><X size={15} /></button>
+        <button onClick={onClose} aria-label="Cerrar notificaciones" className="p-1 ag-muted hover:ag-text transition-colors"><X size={15} /></button>
       </div>
 
       {/* Compose */}
@@ -414,16 +442,18 @@ const ThemeSelector = ({ prefs, setPrefs, onClose }: {
     <motion.div
       initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.96 }} transition={{ duration: 0.15 }}
-      className="absolute right-0 top-12 w-64 rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
+      className="absolute right-0 top-12 w-[min(16rem,calc(100vw-1.5rem))] rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
       style={{ borderColor: 'var(--border-color)' }}
       onClick={e => e.stopPropagation()}
+      role="dialog"
+      aria-label="Personalización"
     >
       <div className="flex items-center justify-between p-3.5 border-b ag-border">
         <div className="flex items-center gap-2">
           <Palette className="w-4 h-4 acc-text" />
           <span className="font-semibold text-sm ag-text">Mi Personalización</span>
         </div>
-        <button onClick={onClose} className="ag-muted"><X size={14} /></button>
+        <button onClick={onClose} aria-label="Cerrar personalización" className="ag-muted p-1 rounded-lg hover:ag-surface-hi transition-colors"><X size={14} /></button>
       </div>
 
       <div className="p-3.5 space-y-4">
@@ -535,39 +565,97 @@ const PatronesWidget = ({ navigateTo }: { navigateTo: any }) => {
   );
 };
 
+const TECH_ROLE_KEYS = ['metrologo', 'metrólogo', 'tecnico', 'técnico', 'ingeniero'];
+
+const isTechnicianUser = (u: { position?: string; puesto?: string; role?: string }) =>
+  TECH_ROLE_KEYS.some(k => (u.position || u.puesto || u.role || '').toLowerCase().includes(k));
+
+const findActiveService = (techId: string, serviciosHoy: Service[], ahora: Date) =>
+  serviciosHoy.find(sv => {
+    if (!sv.personas?.includes(techId)) return false;
+    const st = (sv.estado || '').toLowerCase();
+    if (st === 'en_proceso') return true;
+    if (!sv.horaInicio || ['finalizado', 'cancelado'].includes(st)) return false;
+    const hi = parse(sv.horaInicio, 'HH:mm', new Date());
+    const hf = sv.horaFin ? parse(sv.horaFin, 'HH:mm', new Date()) : addHours(hi, 2);
+    return isWithinInterval(ahora, { start: hi, end: hf });
+  });
+
+const mapTechnicianPresence = (tecnicos: any[], serviciosHoy: Service[]) => {
+  const ahora = new Date();
+  return tecnicos.map(tech => {
+    const active = findActiveService(tech.id, serviciosHoy, ahora);
+    if (active) {
+      return {
+        ...tech,
+        status: 'En proceso',
+        color: 'text-amber-400',
+        bg: 'bg-amber-500/10',
+        detail: active.cliente || active.titulo || 'Servicio activo',
+        dot: 'bg-amber-500',
+      };
+    }
+    if (isUserOnline(tech.lastActive, ahora)) {
+      return {
+        ...tech,
+        status: 'Conectado',
+        color: 'text-emerald-400',
+        bg: 'bg-emerald-500/10',
+        detail: 'En la app',
+        dot: 'bg-emerald-500',
+      };
+    }
+    return {
+      ...tech,
+      status: 'Ausente',
+      color: 'ag-muted',
+      bg: '',
+      detail: 'Fuera de la app',
+      dot: 'bg-slate-500',
+    };
+  });
+};
+
 const TechnicianStatusWidget = () => {
   const [techs, setTechs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    let m = true;
-    const run = async () => {
-      try {
-        const usersSnap = await getDocs(collection(db, 'usuarios'));
-        const tecnicos = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
-          .filter(u => ['metrologo','metrólogo','tecnico','técnico','ingeniero'].some(k =>
-            (u.position || u.puesto || u.role || '').toLowerCase().includes(k)));
-        const hoyStr = format(new Date(), 'yyyy-MM-dd');
-        const servSnap = await getDocs(query(collection(db, 'servicios'), where('fecha', '==', hoyStr)));
-        const serviciosHoy = servSnap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
-        const ahora = new Date();
-        const fuera = ahora.getHours() >= 17 || ahora.getHours() < 8;
-        const arr = tecnicos.map(tech => {
-          if (fuera) return { ...tech, status: 'Fuera turno', color: 'ag-muted', bg: '', detail: 'Horario concluido', dot: 'bg-slate-500' };
-          const s = serviciosHoy.find(sv => {
-            if (!sv.personas?.includes(tech.id) || !sv.horaInicio) return false;
-            const hi = parse(sv.horaInicio, 'HH:mm', new Date());
-            const hf = sv.horaFin ? parse(sv.horaFin, 'HH:mm', new Date()) : addHours(hi, 2);
-            return isWithinInterval(ahora, { start: hi, end: hf }) && sv.estado !== 'finalizado';
-          });
-          if (s) return { ...tech, status: 'En Servicio', color: 'text-amber-400', bg: 'bg-amber-500/10', detail: s.cliente || '—', dot: 'bg-amber-500' };
-          return { ...tech, status: 'Laboratorio', color: 'text-emerald-400', bg: 'bg-emerald-500/10', detail: 'Disponible', dot: 'bg-emerald-500' };
-        });
-        if (m) { setTechs(arr); setLoading(false); }
-      } catch { if (m) setLoading(false); }
+    let usersRaw: any[] = [];
+    let serviciosHoy: Service[] = [];
+    let hasUsers = false;
+
+    const recompute = () => {
+      if (!hasUsers) return;
+      const tecnicos = usersRaw.filter(isTechnicianUser);
+      setTechs(mapTechnicianPresence(tecnicos, serviciosHoy));
+      setLoading(false);
     };
-    run();
-    const iv = setInterval(run, 180000);
-    return () => { m = false; clearInterval(iv); };
+
+    const hoyStr = format(new Date(), 'yyyy-MM-dd');
+    const unsubUsers = onSnapshot(
+      collection(db, 'usuarios'),
+      snap => {
+        usersRaw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        hasUsers = true;
+        recompute();
+      },
+      () => setLoading(false)
+    );
+
+    const unsubServicios = onSnapshot(
+      query(collection(db, 'servicios'), where('fecha', '==', hoyStr)),
+      snap => {
+        serviciosHoy = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+        recompute();
+      },
+      () => setLoading(false)
+    );
+
+    return () => {
+      unsubUsers();
+      unsubServicios();
+    };
   }, []);
   if (loading) return <div className="h-40 rounded-2xl border ag-border animate-pulse ag-surface" />;
   return (
@@ -619,7 +707,10 @@ const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]
               const esTerminado = ['finalizado', 'cancelado'].includes(st);
               const esUrgente = s.prioridad === 'alta' || s.prioridad === 'critica';
               return (
-                <div key={s.id} onClick={() => navigateTo('friday-servicios')}
+                <div key={s.id} onClick={() => {
+                  localStorage.setItem('open_servicio_id', s.id);
+                  navigateTo('friday-servicios');
+                }}
                   className={`p-3 rounded-xl border ag-border cursor-pointer transition-all card-interact ${esTerminado ? 'opacity-50 hover:opacity-80' : ''}`}
                 >
                   <div className="flex justify-between items-start mb-1">
@@ -741,10 +832,11 @@ const ProfileModal = ({ currentUser, onClose, onUpdate }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+        role="dialog" aria-modal="true" aria-labelledby="profile-modal-title"
         className="w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden ag-card" style={{ borderColor: 'var(--border-color)' }}
       >
         <div className="flex items-center justify-between p-5 border-b ag-border">
-          <h3 className="text-base font-bold ag-text">Editar Perfil</h3>
+          <h3 id="profile-modal-title" className="text-base font-bold ag-text">Editar Perfil</h3>
           <button onClick={onClose} className="ag-muted"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-4">
@@ -793,7 +885,83 @@ const ProfileModal = ({ currentUser, onClose, onUpdate }: {
   );
 };
 
-// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
+type MenuItem = (typeof MENU_ITEMS)[number];
+
+const activateMenuItem = (
+  e: React.KeyboardEvent,
+  isDisabled: boolean,
+  onActivate: () => void,
+) => {
+  if (isDisabled) return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    onActivate();
+  }
+};
+
+const MenuGridCard = ({
+  item, index, isDisabled, onNavigate, hideCategory,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean }) => (
+  <motion.div
+    key={item.id}
+    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.025 }}
+    whileHover={isDisabled ? {} : { y: -3 }} whileTap={isDisabled ? {} : { scale: 0.97 }}
+    role="button"
+    tabIndex={isDisabled ? -1 : 0}
+    aria-disabled={isDisabled}
+    aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
+    onClick={() => !isDisabled && onNavigate(item.id)}
+    onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
+    className={`group relative rounded-2xl border p-4 cursor-pointer card-interact ag-card overflow-hidden
+      ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+    `}
+  >
+    {isDisabled && (
+      <span className="absolute top-2 right-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
+    )}
+    {!isDisabled && (
+      <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl"
+        style={{ background: `radial-gradient(circle at 20% 80%, rgba(var(--acc-rgb)/0.08) 0%, transparent 60%)` }} />
+    )}
+    <motion.div className="relative z-10 flex flex-col h-full gap-3">
+      <div className="p-2.5 rounded-xl w-fit ag-surface-hi transition-colors group-hover:acc-soft">
+        <item.icon className="w-5 h-5 ag-muted ci-icon transition-colors" />
+      </div>
+      <div>
+        <h3 className="text-sm font-semibold ag-text leading-tight">{item.title}</h3>
+        {!hideCategory && (
+          <span className="text-[10px] uppercase font-bold tracking-wide ag-faint mt-0.5 block">{item.category}</span>
+        )}
+      </div>
+    </motion.div>
+  </motion.div>
+);
+
+const MenuListRow = ({
+  item, index, isDisabled, onNavigate,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void }) => (
+  <motion.div
+    initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.015 }}
+    whileTap={isDisabled ? {} : { scale: 0.99 }}
+    role="button"
+    tabIndex={isDisabled ? -1 : 0}
+    aria-disabled={isDisabled}
+    aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
+    onClick={() => !isDisabled && onNavigate(item.id)}
+    onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
+    className={`group flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer card-interact ag-card
+      ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+    `}
+  >
+    <div className="p-2 rounded-lg ag-surface-hi group-hover:acc-soft transition-colors">
+      <item.icon className="w-4 h-4 ag-muted ci-icon transition-colors" />
+    </div>
+    <span className="flex-1 text-sm font-medium ag-text">{item.title}</span>
+    <span className="text-[10px] uppercase font-bold ag-faint hidden sm:inline">{item.category}</span>
+    {!isDisabled && <ChevronRight className="w-4 h-4 ag-faint group-hover:acc-text transition-colors opacity-60 group-hover:opacity-100 flex-shrink-0" />}
+  </motion.div>
+);
+
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { logout, user } = useAuth();
@@ -828,14 +996,6 @@ export const MainMenu: React.FC = () => {
       phone: (user as any).phone,
     });
   }, [user]);
-
-  // Presencia
-  useEffect(() => {
-    if (!uid) return;
-    const up = async () => { try { await setDoc(doc(db, 'usuarios', uid), { lastActive: serverTimestamp() }, { merge: true }); } catch {} };
-    up(); const iv = setInterval(up, 3 * 60 * 1000);
-    return () => clearInterval(iv);
-  }, [uid]);
 
   // Notificaciones en tiempo real
   useEffect(() => {
@@ -878,6 +1038,18 @@ export const MainMenu: React.FC = () => {
     });
   }, [uid]);
 
+  useEffect(() => {
+    if (!uid || assignedServices.length === 0) return;
+
+    const runAutoStart = () => {
+      void autoStartServiciosIfDue(assignedServices, uid);
+    };
+
+    runAutoStart();
+    const intervalId = window.setInterval(runAutoStart, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [assignedServices, uid]);
+
   const isAdmin      = useMemo(() => !!(localUser && (localUser.role.includes('admin') || localUser.role.includes('administrativo') || SUPER_ADMINS.includes(localUser.email))), [localUser]);
   const isCalidad    = useMemo(() => !!(localUser?.role.includes('calidad')), [localUser]);
   const isJefe       = useMemo(() => !!(localUser?.role.includes('admin') || localUser?.role.includes('gerente')), [localUser]);
@@ -893,6 +1065,20 @@ export const MainMenu: React.FC = () => {
       return true;
     }).filter(i => !searchTerm || i.title.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [localUser, searchTerm, isJefe, isCalidad, isSuperAdmin]);
+
+  const menuGroups = useMemo(() => groupMenuByCategory(filteredMenu), [filteredMenu]);
+  const isSearching = searchTerm.trim().length > 0;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setShowNotif(false);
+      setShowTheme(false);
+      setShowProfile(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const today = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
@@ -925,16 +1111,21 @@ export const MainMenu: React.FC = () => {
               </div>
             </div>
 
-            <div className="hidden lg:block text-xs font-medium ag-muted">{formattedDate}</div>
+            <div className="hidden md:block text-xs font-medium ag-muted truncate max-w-[12rem] lg:max-w-none">{formattedDate}</div>
 
             <div className="flex items-center gap-1">
               {/* Notificaciones */}
               <div className="relative">
-                <button onClick={() => { setShowNotif(v => !v); setShowTheme(false); }}
-                  className="relative p-2 rounded-xl ag-muted acc-hover transition-all">
+                <button
+                  type="button"
+                  onClick={() => { setShowNotif(v => !v); setShowTheme(false); }}
+                  aria-label={unreadCount > 0 ? `Notificaciones, ${unreadCount} sin leer` : 'Notificaciones'}
+                  aria-expanded={showNotif}
+                  className="relative p-2 rounded-xl ag-muted acc-hover transition-all"
+                >
                   <Bell size={17} />
                   {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full acc border-2" style={{ borderColor: 'var(--bg)' }} />
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full acc border-2" style={{ borderColor: 'var(--bg)' }} aria-hidden />
                   )}
                 </button>
                 <AnimatePresence>
@@ -947,8 +1138,14 @@ export const MainMenu: React.FC = () => {
 
               {/* Tema */}
               <div className="relative">
-                <button onClick={() => { setShowTheme(v => !v); setShowNotif(false); }}
-                  className="p-2 rounded-xl ag-muted acc-hover transition-all" title="Mi personalización">
+                <button
+                  type="button"
+                  onClick={() => { setShowTheme(v => !v); setShowNotif(false); }}
+                  aria-label="Personalización"
+                  aria-expanded={showTheme}
+                  className="p-2 rounded-xl ag-muted acc-hover transition-all"
+                  title="Mi personalización"
+                >
                   <Palette size={17} />
                 </button>
                 <AnimatePresence>
@@ -957,23 +1154,31 @@ export const MainMenu: React.FC = () => {
               </div>
 
               {/* Vista */}
-              <button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-                className="p-2 rounded-xl ag-muted acc-hover transition-all">
+              <button
+                type="button"
+                onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+                aria-label={viewMode === 'grid' ? 'Cambiar a vista lista' : 'Cambiar a vista cuadrícula'}
+                className="p-2 rounded-xl ag-muted acc-hover transition-all"
+              >
                 {viewMode === 'grid' ? <AlignLeft size={17} /> : <LayoutGrid size={17} />}
               </button>
 
               <div className="w-px h-5 mx-1 ag-border" />
 
               {/* Perfil */}
-              <button onClick={() => setShowProfile(true)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-xl border ag-border acc-hover transition-all">
+              <button
+                type="button"
+                onClick={() => setShowProfile(true)}
+                aria-label="Editar perfil"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-xl border ag-border acc-hover transition-all"
+              >
                 <div className="w-6 h-6 rounded-lg overflow-hidden flex items-center justify-center ag-surface-hi">
                   {localUser.photoUrl ? <img src={localUser.photoUrl} className="w-full h-full object-cover" /> : <User className="w-3.5 h-3.5 ag-muted" />}
                 </div>
                 <span className="text-xs font-medium ag-text hidden sm:block">{localUser.name.split(' ')[0]}</span>
               </button>
 
-              <button onClick={logout} className="p-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all ml-0.5">
+              <button type="button" onClick={logout} aria-label="Cerrar sesión" className="p-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all ml-0.5">
                 <LogOut size={17} />
               </button>
             </div>
@@ -987,21 +1192,73 @@ export const MainMenu: React.FC = () => {
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
                 <div className="flex-1">
                   <h2 className="text-lg font-bold ag-text">Hola, {localUser.name.split(' ')[0]} 👋</h2>
-                  <p className="text-xs ag-muted">{formattedDate}</p>
+                  <p className="text-xs ag-muted md:hidden">{formattedDate}</p>
                 </div>
-                <div className="relative flex-1 max-w-xs">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint" />
-                  <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar módulo..."
-                    className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border ag-input" />
+                <div className="relative w-full sm:flex-1 sm:max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint pointer-events-none" aria-hidden />
+                  <input
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder="Buscar módulo..."
+                    aria-label="Buscar módulo"
+                    className="w-full pl-9 pr-9 py-2.5 text-sm rounded-xl border ag-input"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      aria-label="Limpiar búsqueda"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg ag-muted hover:ag-text transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
 
               <AnimatePresence mode="wait">
-                {viewMode === 'grid' ? (
-                  <motion.div key="grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"
+                {filteredMenu.length === 0 ? (
+                  <motion.div
+                    key="empty"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex flex-col items-center justify-center py-16 gap-3 rounded-2xl border ag-border ag-card"
                   >
-                    {filteredMenu.map((item, i) => {
+                    <Search className="w-10 h-10 ag-faint opacity-30" aria-hidden />
+                    <p className="text-sm ag-muted text-center px-4">
+                      {isSearching ? `Ningún módulo coincide con «${searchTerm}»` : 'No hay módulos disponibles'}
+                    </p>
+                    {isSearching && (
+                      <button type="button" onClick={() => setSearchTerm('')} className="text-xs acc-text font-semibold hover:underline">
+                        Limpiar búsqueda
+                      </button>
+                    )}
+                  </motion.div>
+                ) : viewMode === 'grid' ? (
+                  <motion.div key="grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className={isSearching ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3' : 'space-y-5'}
+                  >
+                    {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => (
+                      <div key={category || 'search'} className={isSearching ? 'contents' : undefined}>
+                        {!isSearching && (
+                          <h3 className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2 px-0.5 col-span-full">{category}</h3>
+                        )}
+                        <div className={isSearching ? 'contents' : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3'}>
+                          {items.map((item, i) => (
+                            <MenuGridCard
+                              key={item.id}
+                              item={item}
+                              index={i}
+                              hideCategory={!isSearching}
+                              isDisabled={item.id === 'formatos' && !isAdmin}
+                              onNavigate={navigateTo}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {false && filteredMenu.map((item, i) => {
                       const isDisabled = item.id === 'formatos' && !isAdmin;
                       return (
                         <motion.div key={item.id}
@@ -1079,7 +1336,11 @@ export const MainMenu: React.FC = () => {
         </AnimatePresence>
 
         {(showTheme || showNotif) && (
-          <div className="fixed inset-0 z-30" onClick={() => { setShowTheme(false); setShowNotif(false); }} />
+          <div
+            className="fixed inset-0 z-30"
+            aria-hidden
+            onClick={() => { setShowTheme(false); setShowNotif(false); }}
+          />
         )}
       </div>
     </>

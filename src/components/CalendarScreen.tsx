@@ -6,7 +6,7 @@ import startOfWeek from 'date-fns/startOfWeek';
 import getDay from 'date-fns/getDay';
 import es from 'date-fns/locale/es';
 import parseISO from 'date-fns/parseISO';
-import { collection, onSnapshot, query, getDocs, doc, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, getDocs, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db } from '../utils/firebase';
 import { useNavigation } from '../hooks/useNavigation';
@@ -23,6 +23,26 @@ const locales = { 'es': es };
 const localizer = dateFnsLocalizer({
   format, parse, startOfWeek: (date: Date) => startOfWeek(date, { weekStartsOn: 1 }), getDay, locales,
 });
+
+async function notifyAsignacionServicio(uid: string, titulo: string, mensaje: string, servicioId: string) {
+  await addDoc(collection(db, 'notificaciones'), {
+    type: 'info',
+    title: titulo,
+    body: mensaje,
+    destinatarios: [uid],
+    readBy: [],
+    timestamp: serverTimestamp(),
+    autorNombre: 'Calendario',
+    autorUid: '',
+    usuarioId: uid,
+    titulo,
+    mensaje,
+    leido: false,
+    fecha: new Date().toISOString(),
+    tipo: 'asignacion_calidad',
+    servicioId,
+  });
+}
 
 const CONSTANTS = {
   estados: [
@@ -175,11 +195,12 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                 const oldPersonas = event?.personas || [];
                 const newPersonas = formData.personas.filter(pId => !oldPersonas.includes(pId));
                 for (const uid of newPersonas) {
-                    await addDoc(collection(db, 'notificaciones'), {
-                        usuarioId: uid, titulo: 'Nueva Asignación en Calendario',
-                        mensaje: `Fuiste programado para "${formData.titulo}". Ingresa al calendario para confirmar de enterado.`,
-                        leido: false, fecha: new Date().toISOString(), tipo: 'asignacion_calidad', servicioId: event.id
-                    });
+                    await notifyAsignacionServicio(
+                        uid,
+                        'Nueva Asignación en Calendario',
+                        `Fuiste programado para "${formData.titulo}". Ingresa al calendario para confirmar de enterado.`,
+                        event.id
+                    );
                 }
             } else {
                 if (usarPlantilla && (formData.tipo === 'interlaboratorio' || formData.tipo === 'intralaboratorio')) {
@@ -191,20 +212,22 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                         curStart = addDaysNative(curEnd, 1); 
                     }
                     for (const uid of formData.personas) {
-                        await addDoc(collection(db, 'notificaciones'), {
-                            usuarioId: uid, titulo: 'Nuevo Estudio PT Asignado',
-                            mensaje: `Se generó el estudio PT para "${formData.magnitudPT}". Revisa el Gantt para ver las fechas de tus actividades.`,
-                            leido: false, fecha: new Date().toISOString(), tipo: 'asignacion_calidad', servicioId: 'pt_group'
-                        });
+                        await notifyAsignacionServicio(
+                            uid,
+                            'Nuevo Estudio PT Asignado',
+                            `Se generó el estudio PT para "${formData.magnitudPT}". Revisa el Gantt para ver las fechas de tus actividades.`,
+                            'pt_group'
+                        );
                     }
                 } else {
                     const newDoc = await addDoc(collection(db, 'servicios'), { ...basePayload, elemento: formData.titulo, enterados: [] }); 
                     for (const uid of formData.personas) {
-                        await addDoc(collection(db, 'notificaciones'), {
-                            usuarioId: uid, titulo: 'Nueva Asignación en Calendario',
-                            mensaje: `Fuiste programado para "${formData.titulo}". Ingresa para confirmar de enterado.`,
-                            leido: false, fecha: new Date().toISOString(), tipo: 'asignacion_calidad', servicioId: newDoc.id
-                        });
+                        await notifyAsignacionServicio(
+                            uid,
+                            'Nueva Asignación en Calendario',
+                            `Fuiste programado para "${formData.titulo}". Ingresa para confirmar de enterado.`,
+                            newDoc.id
+                        );
                     }
                 }
             }

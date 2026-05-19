@@ -10,7 +10,7 @@ import {
 
 import { 
   doc, collection, updateDoc, addDoc, deleteDoc, onSnapshot, query, 
-  orderBy, serverTimestamp, getDocs, getDoc, arrayUnion
+  orderBy, serverTimestamp, getDocs, getDoc, arrayUnion, where
 } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, storage } from '../utils/firebase';
@@ -18,10 +18,15 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useNavigation } from '../hooks/useNavigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { FileViewer } from './FileViewer';
+import labLogo from '../assets/lab_logo.png';
 
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import es from 'date-fns/locale/es';
+import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { getUserTeamColor } from '../utils/teamAvatarColor';
+import TeamColorPickerModal from './TeamColorPickerModal';
 
 // ==========================================
 // TYPES
@@ -31,10 +36,14 @@ interface Usuario {
   id: string;
   name?: string;
   nombre?: string;
+  email?: string;
+  correo?: string;
   position?: string;
   puesto?: string;
   role?: string;
   photoUrl?: string;
+  /** Permanent team avatar color (hex). Shared with Friday board. */
+  color?: string;
 }
 
 interface ChatMessage {
@@ -93,7 +102,17 @@ const formatDateRelative = (dateString: string) => {
 };
 
 const getInitials = (name: string) => name ? name.substring(0, 2).toUpperCase() : '??';
-const isImageFile = (name: string) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name);
+
+const getFileExtension = (name: string) => {
+  const base = (name || '').split('?')[0];
+  const parts = base.split('.');
+  return parts.length > 1 ? (parts.pop() || '').toLowerCase() : '';
+};
+
+const isImageFile = (name: string) => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(getFileExtension(name));
+const isPdfFile = (name: string) => getFileExtension(name) === 'pdf';
+const isOfficeFile = (name: string) => ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(getFileExtension(name));
+const isTextFile = (name: string) => ['txt', 'csv', 'md', 'json', 'xml', 'log'].includes(getFileExtension(name));
 
 const getFileName = (file: string | File) =>
   typeof file === 'string'
@@ -105,6 +124,12 @@ const formatFileSize = (bytes: number) => {
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1048576).toFixed(1)} MB`;
 };
+
+interface AttachmentPreview {
+  url: string;
+  name: string;
+  size?: number;
+}
 
 const CONSTANTS = {
   estados: [
@@ -134,12 +159,40 @@ const CONSTANTS = {
 
 const Avatar = ({ user, size = 'sm' }: { user: Usuario | undefined, size?: 'sm' | 'md' | 'lg' }) => {
   const sizeClass = size === 'lg' ? 'w-10 h-10 text-sm' : size === 'md' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
+  const teamColor = getUserTeamColor(user);
   return (
-    <div title={user?.name || user?.nombre} className={`${sizeClass} rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold ring-2 ring-white shadow-sm flex-shrink-0`}>
-      {getInitials(user?.name || user?.nombre || '??')}
-    </div>
+    <AvatarChip
+      title={user?.name || user?.nombre}
+      sizeClass={sizeClass}
+      teamColor={teamColor}
+      initials={getInitials(user?.name || user?.nombre || '??')}
+    />
   );
 };
+
+function AvatarChip({
+  title,
+  sizeClass,
+  teamColor,
+  initials,
+}: {
+  title?: string;
+  sizeClass: string;
+  teamColor?: string;
+  initials: string;
+}) {
+  return (
+    <div
+      title={title}
+      className={`${sizeClass} rounded-full flex items-center justify-center text-white font-bold ring-2 ring-white shadow-sm flex-shrink-0 ${
+        teamColor ? '' : 'bg-gradient-to-br from-indigo-500 to-purple-600'
+      }`}
+      style={teamColor ? { backgroundColor: teamColor } : undefined}
+    >
+      {initials}
+    </div>
+  );
+}
 
 const PriorityBadge = ({ priority }: { priority: string }) => {
   const config = CONSTANTS.prioridades.find(p => p.value === priority) || CONSTANTS.prioridades[0];
@@ -151,9 +204,69 @@ const PriorityBadge = ({ priority }: { priority: string }) => {
   );
 };
 
+const getFileTypeLabel = (name: string) => {
+  if (isImageFile(name)) return 'Imagen';
+  if (isPdfFile(name)) return 'PDF';
+  if (isOfficeFile(name)) return 'Office';
+  if (isTextFile(name)) return 'Texto';
+  const ext = getFileExtension(name);
+  return ext ? ext.toUpperCase() : 'Archivo';
+};
+
+const AttachmentPreviewModal = ({ attachment, onClose }: { attachment: AttachmentPreview; onClose: () => void }) => {
+  const ext = getFileExtension(attachment.name);
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="h-14 border-b border-gray-100 flex items-center justify-between px-4 sm:px-5 bg-white flex-shrink-0 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900 truncate">{attachment.name}</p>
+              <p className="text-[10px] text-gray-400 font-mono uppercase">
+                {getFileTypeLabel(attachment.name)}
+                {ext ? ` · .${ext}` : ''}
+                {attachment.size != null ? ` · ${formatFileSize(attachment.size)}` : ''}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <a
+              href={attachment.url}
+              download={attachment.name}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> Descargar
+            </a>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 bg-gray-100 overflow-hidden flex flex-col min-h-0">
+          <div className="flex-1 min-h-[280px] p-3 sm:p-4 flex flex-col overflow-hidden">
+            <FileViewer
+              url={attachment.url}
+              fileName={attachment.name}
+              maxHeight="100%"
+              style={{ flex: 1, width: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const FileThumbnail = ({ file, onView, onRemove }: { file: string | File, onView?: () => void, onRemove?: () => void }) => {
   const name = getFileName(file);
   const isImg = isImageFile(name);
+  const ext = getFileExtension(name);
   const [imgSrc, setImgSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -164,6 +277,8 @@ const FileThumbnail = ({ file, onView, onRemove }: { file: string | File, onView
     }
     if (typeof file === 'string' && isImg) {
       setImgSrc(file);
+    } else {
+      setImgSrc(null);
     }
   }, [file, isImg]);
 
@@ -173,9 +288,10 @@ const FileThumbnail = ({ file, onView, onRemove }: { file: string | File, onView
         {imgSrc ? (
           <img src={imgSrc} alt={name} className="w-full h-full object-cover" />
         ) : (
-          <div className="flex flex-col items-center gap-1 text-gray-400">
+          <div className="flex flex-col items-center gap-1 text-gray-400 px-2 text-center">
             <FileText className="w-8 h-8" />
-            <span className="text-[10px] font-mono uppercase">{name.split('.').pop()}</span>
+            <span className="text-[10px] font-bold uppercase">{ext || 'file'}</span>
+            <span className="text-[9px] text-gray-300">{getFileTypeLabel(name)}</span>
           </div>
         )}
         {onView && (
@@ -192,8 +308,8 @@ const FileThumbnail = ({ file, onView, onRemove }: { file: string | File, onView
           </button>
         )}
         {onView && !onRemove && (
-          <button onClick={onView} className="flex-shrink-0 text-blue-400 hover:text-blue-600">
-            <Download className="w-3.5 h-3.5" />
+          <button onClick={onView} className="flex-shrink-0 text-blue-400 hover:text-blue-600" title="Vista previa">
+            <Eye className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -235,7 +351,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
 
   if (variant === 'list') {
     return (
-      <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-3 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col sm:flex-row gap-3 items-center relative">
+      <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-3 shadow-sm hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col sm:flex-row gap-3 items-center relative">
         <div className={`p-2.5 rounded-lg hidden sm:flex flex-shrink-0 ${tipoConfig?.color || 'bg-gray-100 text-gray-500'}`}>
           <TipoIcon className="w-4 h-4" />
         </div>
@@ -277,7 +393,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
   }
 
   return (
-    <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer flex flex-col gap-3 relative overflow-visible">
+    <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl hover:border-blue-300 transition-all cursor-pointer flex flex-col gap-3 relative overflow-visible">
       <div className={`absolute top-0 left-0 w-1 h-full rounded-l-xl ${statusConfig.dot}`} />
       <div className="flex justify-between items-start pl-2">
         <div className="flex flex-col gap-1">
@@ -1033,7 +1149,9 @@ const FridayServiciosScreen: React.FC = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [servicios, setServicios] = useState<Service[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [usuariosLoading, setUsuariosLoading] = useState(true);
   const [clientes, setClientes] = useState<any[]>([]);
+  const [localTeamColor, setLocalTeamColor] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
@@ -1043,7 +1161,8 @@ const FridayServiciosScreen: React.FC = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [viewingFile, setViewingFile] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentPreview | null>(null);
+  const previewBlobRef = useRef<string | null>(null);
   const [authUser, setAuthUser] = useState<any>(null);
 
   useEffect(() => {
@@ -1064,7 +1183,16 @@ const FridayServiciosScreen: React.FC = () => {
 
   const currentUserData = useMemo(() => {
       if (!authUser || usuarios.length === 0) return null;
-      return usuarios.find(u => u.id === authUser.uid) || usuarios.find(u => u.email === authUser.email) || null;
+      const emailKey = (authUser.email || '').trim().toLowerCase();
+      const byUid = usuarios.find((u) => u.id === authUser.uid);
+      const byEmail = usuarios.find((u) => {
+        const uEmail = (u.email || u.correo || '').trim().toLowerCase();
+        return emailKey.length > 0 && uEmail === emailKey;
+      });
+      if (byUid && byEmail && byUid.id !== byEmail.id) {
+        return { ...byEmail, ...byUid, id: authUser.uid, color: byUid.color ?? byEmail.color };
+      }
+      return byUid || byEmail || null;
   }, [authUser, usuarios]);
 
   // SEGURIDAD: Solo Calidad y Edgar/Angel pueden crear/editar
@@ -1095,42 +1223,117 @@ const FridayServiciosScreen: React.FC = () => {
     };
     window.addEventListener('resize', handleResize);
     handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-    const loadData = async () => {
+  useEffect(() => {
+    setUsuariosLoading(true);
+    const unsubUsers = onSnapshot(
+      collection(db, 'usuarios'),
+      (snap) => {
+        setUsuarios(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Usuario)));
+        setUsuariosLoading(false);
+      },
+      (error) => {
+        console.error(error);
+        toast.error('Error cargando usuarios');
+        setUsuariosLoading(false);
+      }
+    );
+    (async () => {
       try {
-        const q = query(collection(db, 'servicios'), orderBy('fechaCreacion', 'desc'));
-        const unsub = onSnapshot(q, (snap) => {
-          setServicios(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
-          setLoading(false);
-        });
-
-        const [usersSnap, clientsSnap] = await Promise.all([
-          getDocs(collection(db, 'usuarios')),
-          getDocs(collection(db, 'clientes'))
-        ]);
-
-        const usersData = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setUsuarios(usersData);
-        setClientes(clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-
-        return () => unsub();
+        const clientsSnap = await getDocs(collection(db, 'clientes'));
+        setClientes(clientsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (error) {
+        console.error(error);
+        toast.error('Error cargando clientes');
+      }
+    })();
+    return () => unsubUsers();
+  }, []);
+
+  const effectiveTeamColor =
+    localTeamColor || getUserTeamColor(currentUserData ?? undefined);
+
+  const needsTeamColorPicker = Boolean(
+    authUser &&
+      currentUserData &&
+      !usuariosLoading &&
+      !effectiveTeamColor
+  );
+
+  const currentUserId = currentUserData?.id || authUser?.uid || '';
+
+  useEffect(() => {
+    if (!authUser) return;
+
+    const serviciosQuery = canEdit
+      ? query(collection(db, 'servicios'), orderBy('fechaCreacion', 'desc'))
+      : currentUserId
+        ? query(collection(db, 'servicios'), where('personas', 'array-contains', currentUserId))
+        : null;
+
+    if (!serviciosQuery) {
+      setServicios([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const unsub = onSnapshot(
+      serviciosQuery,
+      (snap) => {
+        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+        docs.sort((a, b) => {
+          const ta = (a as any).fechaCreacion?.toMillis?.() ?? (a as any).fechaCreacion?.seconds ?? 0;
+          const tb = (b as any).fechaCreacion?.toMillis?.() ?? (b as any).fechaCreacion?.seconds ?? 0;
+          return tb - ta;
+        });
+        setServicios(docs);
+        setLoading(false);
+      },
+      (error) => {
         console.error(error);
         toast.error('Error conectando con la base de datos');
         setLoading(false);
       }
+    );
+
+    return () => unsub();
+  }, [authUser, canEdit, currentUserId]);
+
+  useEffect(() => {
+    const openId = localStorage.getItem('open_servicio_id');
+    if (!openId || loading) return;
+
+    localStorage.removeItem('open_servicio_id');
+    const service = servicios.find(s => s.id === openId);
+    if (service) {
+      setSelectedService(service);
+      setIsDetailOpen(true);
+    }
+  }, [loading, servicios]);
+
+  useEffect(() => {
+    if (!currentUserId || servicios.length === 0) return;
+
+    const runAutoStart = () => {
+      void autoStartServiciosIfDue(servicios, currentUserId);
     };
 
-    loadData();
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    runAutoStart();
+    const intervalId = window.setInterval(runAutoStart, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [servicios, currentUserId]);
 
   const filteredServices = useMemo(() => servicios.filter(s => {
     const matchSearch = !filterText || s.titulo.toLowerCase().includes(filterText.toLowerCase()) || s.cliente.toLowerCase().includes(filterText.toLowerCase());
     const matchStatus = filterStatus === 'todos' || s.estado === filterStatus;
-    const matchMyTasks = !showOnlyMyTasks || (currentUserData?.id && Array.isArray(s.personas) && s.personas.includes(currentUserData.id));
+    const matchMyTasks = canEdit
+      ? (!showOnlyMyTasks || (currentUserId && Array.isArray(s.personas) && s.personas.includes(currentUserId)))
+      : true;
     return matchSearch && matchStatus && matchMyTasks;
-  }), [servicios, filterText, filterStatus, showOnlyMyTasks, currentUserData]);
+  }), [servicios, filterText, filterStatus, showOnlyMyTasks, currentUserId, canEdit]);
 
   const stats = useMemo(() => ({
     total: servicios.length,
@@ -1205,14 +1408,24 @@ const FridayServiciosScreen: React.FC = () => {
         personasANotificar = nuevasPersonas.filter(id => id !== currentUserData?.id && !anterioresIds.includes(id));
       }
 
+      const autorNombre = currentUserData?.nombre || currentUserData?.name || 'Calidad';
       for (const uid of personasANotificar) {
         const tituloPush = isNew ? '🗓️ Nueva asignación de servicio' : '✏️ Servicio actualizado';
         const fechaFormateada = data.fecha ? formatDateRelative(data.fecha) : 'fecha por definir';
-        
+        const mensajeBody = `Fuiste programado para "${data.titulo}" el ${fechaFormateada}.`;
+
         await addDoc(collection(db, 'notificaciones'), {
+            type: 'info',
+            title: tituloPush,
+            body: mensajeBody,
+            destinatarios: [uid],
+            readBy: [],
+            timestamp: serverTimestamp(),
+            autorNombre,
+            autorUid: currentUserData?.id || '',
             usuarioId: uid,
             titulo: tituloPush,
-            mensaje: `Fuiste programado para "${data.titulo}" el ${fechaFormateada}.`,
+            mensaje: mensajeBody,
             leido: false,
             fecha: new Date().toISOString(),
             tipo: 'asignacion_calidad',
@@ -1237,19 +1450,44 @@ const FridayServiciosScreen: React.FC = () => {
     }
   };
 
+  const handleViewFile = useCallback((file: string | File) => {
+    if (typeof file === 'string') {
+      setPreviewAttachment({ url: file, name: getFileName(file) });
+      return;
+    }
+    if (previewBlobRef.current) URL.revokeObjectURL(previewBlobRef.current);
+    const blobUrl = URL.createObjectURL(file);
+    previewBlobRef.current = blobUrl;
+    setPreviewAttachment({ url: blobUrl, name: file.name, size: file.size });
+  }, []);
+
+  const handleClosePreview = useCallback(() => {
+    if (previewBlobRef.current) {
+      URL.revokeObjectURL(previewBlobRef.current);
+      previewBlobRef.current = null;
+    }
+    setPreviewAttachment(null);
+  }, []);
+
   return (
     <div className="flex h-screen bg-gray-50/50 font-sans text-slate-900 overflow-hidden">
       <main className="flex-1 flex flex-col h-full min-w-0 relative">
 
-        <header className="bg-white border-b border-gray-200 z-10 sticky top-0 shadow-sm">
-          <div className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <button onClick={() => navigateTo('menu')} className="p-2 -ml-1 text-gray-500 hover:bg-gray-100 rounded-lg">
+        <header className="bg-white/95 backdrop-blur-md border-b border-gray-200/80 z-10 sticky top-0 shadow-sm">
+          <div className="px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button onClick={() => navigateTo('menu')} className="p-2 -ml-1 text-gray-500 hover:bg-gray-100 rounded-lg border border-transparent hover:border-gray-200 transition-colors flex-shrink-0" title="Regresar al menú">
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Gestión de Servicios</h2>
-                <p className="text-xs text-gray-400 hidden sm:block">Calibraciones · Mantenimientos · Verificaciones</p>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex-shrink-0 flex items-center justify-center p-1.5 bg-gradient-to-br from-slate-50 to-white rounded-xl border border-gray-100 shadow-sm">
+                  <img src={labLogo} alt="AG Metrology Logo" className="h-8 sm:h-9 w-auto object-contain drop-shadow-sm" />
+                </div>
+                <div className="h-9 w-px bg-gray-200 hidden sm:block flex-shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight truncate">Gestión de Servicios</h2>
+                  <p className="text-xs text-gray-500 hidden sm:block mt-0.5">Calibraciones · Mantenimientos · Verificaciones</p>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1274,7 +1512,7 @@ const FridayServiciosScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 py-2 overflow-x-auto border-t border-gray-100 bg-gray-50/60 flex items-center gap-3 scrollbar-hide">
+          <div className="px-4 sm:px-6 py-2.5 overflow-x-auto border-t border-gray-100 bg-gradient-to-r from-slate-50/80 via-gray-50/60 to-slate-50/80 flex items-center gap-3 scrollbar-hide">
             {[
               { label: 'Todos', value: 'todos', count: stats.total, color: 'gray' },
               { label: 'Pendientes', value: 'programado', count: stats.pendientes, color: 'blue' },
@@ -1284,7 +1522,7 @@ const FridayServiciosScreen: React.FC = () => {
               <button
                 key={f.value}
                 onClick={() => setFilterStatus(f.value === 'critico_filter' ? filterStatus : f.value)}
-                className={`flex flex-col items-start min-w-[88px] p-2.5 rounded-xl border transition-all ${filterStatus === f.value ? 'bg-white border-blue-400 shadow-md' : 'bg-white border-gray-200 hover:border-blue-200'}`}
+                className={`flex flex-col items-start min-w-[88px] p-2.5 rounded-xl border transition-all ${filterStatus === f.value ? 'bg-white border-blue-400 shadow-md ring-1 ring-blue-100' : 'bg-white/90 border-gray-200 hover:border-blue-200 hover:shadow-sm shadow-sm'}`}
               >
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{f.label}</span>
                 <span className={`text-lg font-black ${f.color === 'blue' ? 'text-blue-600' : f.color === 'amber' ? 'text-amber-600' : f.color === 'red' ? 'text-red-600' : 'text-gray-900'}`}>{f.count}</span>
@@ -1300,17 +1538,24 @@ const FridayServiciosScreen: React.FC = () => {
               </div>
             )}
 
-            <button
-              onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
-              className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${showOnlyMyTasks ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-gray-200'}`}
-            >
-              <User className="w-3.5 h-3.5" /> Mis asignaciones
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
+                className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${showOnlyMyTasks ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-gray-200'}`}
+              >
+                <User className="w-3.5 h-3.5" /> Mis asignaciones
+              </button>
+            )}
+            {!canEdit && currentUserId && (
+              <span className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                <User className="w-3.5 h-3.5" /> Mis asignaciones
+              </span>
+            )}
           </div>
         </header>
 
         {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-100/50">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gradient-to-br from-slate-100/80 via-gray-50 to-slate-100/60">
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
               {[1, 2, 3].map(i => <div key={i} className="h-64 bg-gray-200 rounded-2xl" />)}
@@ -1328,7 +1573,7 @@ const FridayServiciosScreen: React.FC = () => {
                             <span className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
                             {col.label}
                           </h3>
-                          <span className="bg-white border border-gray-200 text-gray-500 px-2 py-0.5 rounded-md text-xs font-bold shadow-sm">{items.length}</span>
+                          <span className="bg-white border border-gray-200 text-gray-500 px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm">{items.length}</span>
                         </div>
                         <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 pb-20 custom-scrollbar">
                           {items.map(service => (
@@ -1389,7 +1634,7 @@ const FridayServiciosScreen: React.FC = () => {
           currentUser={currentUserData}
           onDelete={handleDelete}
           onEdit={(s: any) => { setIsDetailOpen(false); setSelectedService(s); setIsFormOpen(true); }}
-          onViewFile={(f: string) => setViewingFile(f)}
+          onViewFile={handleViewFile}
         />
 
         <ServiceFormModal
@@ -1402,23 +1647,21 @@ const FridayServiciosScreen: React.FC = () => {
           usuarios={usuarios}
         />
 
-        {viewingFile && (
-          <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-in fade-in">
-            <div className="flex justify-between items-center p-4 text-white bg-black/50">
-              <span className="font-medium truncate flex-1 text-sm">{decodeURIComponent(viewingFile.split('/').pop()?.split('?')[0] || '')}</span>
-              <div className="flex gap-3 ml-4">
-                <a href={viewingFile} download target="_blank" rel="noreferrer" className="p-2 hover:bg-white/20 rounded-full transition-colors"><Download className="w-5 h-5" /></a>
-                <button onClick={() => setViewingFile(null)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><X className="w-5 h-5" /></button>
-              </div>
-            </div>
-            {isImageFile(viewingFile) ? (
-              <div className="flex-1 flex items-center justify-center p-4">
-                <img src={viewingFile} alt="Preview" className="max-w-full max-h-full object-contain rounded-xl" />
-              </div>
-            ) : (
-              <iframe src={viewingFile} className="flex-1 bg-white" title="Doc Viewer" />
-            )}
-          </div>
+        {previewAttachment && (
+          <AttachmentPreviewModal attachment={previewAttachment} onClose={handleClosePreview} />
+        )}
+
+        {needsTeamColorPicker && currentUserData && authUser?.uid && (
+          <TeamColorPickerModal
+            authUserId={authUser.uid}
+            userName={currentUserData.name || currentUserData.nombre || ''}
+            usuarios={usuarios}
+            isAdmin={canEdit}
+            onColorClaimed={(color) => {
+              setLocalTeamColor(color);
+              toast.success('Color de equipo guardado');
+            }}
+          />
         )}
 
         {canEdit && (

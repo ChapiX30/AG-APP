@@ -1,13 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import * as XLSX from "xlsx";
 
-// === INICIO DE LA CORRECCIÓN DE RUTAS CSS ===
-// Importamos el CSS directamente desde 'pdfjs-dist' que SÍ existe
 import "pdfjs-dist/web/pdf_viewer.css";
-// (Eliminamos las rutas incorrectas de 'react-pdf/dist/...')
-// === FIN DE LA CORRECCIÓN DE RUTAS CSS ===
 
-// Iconos para los botones
 import {
   ZoomIn,
   ZoomOut,
@@ -16,9 +12,9 @@ import {
   ChevronRight,
   Download,
   FileText,
+  Loader2,
 } from "lucide-react";
 
-// Tu configuración del worker (está perfecta)
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js`;
 
 type Props = {
@@ -30,6 +26,415 @@ type Props = {
 
 const getExtension = (fileName: string) =>
   (fileName || "").split("?")[0].split(".").pop()?.toLowerCase() || "";
+
+const SPREADSHEET_EXTS = ["xls", "xlsx"];
+const DOCX_EXTS = ["docx"];
+const OFFICE_UNSUPPORTED_EXTS = ["doc", "ppt", "pptx"];
+const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const MAX_PREVIEW_ROWS = 100;
+
+type OfficePreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | {
+      status: "spreadsheet";
+      rows: string[][];
+      sheetName: string;
+      totalRows: number;
+    }
+  | { status: "document"; html: string }
+  | { status: "unsupported" }
+  | { status: "error" };
+
+async function fetchFileBuffer(url: string): Promise<ArrayBuffer> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.arrayBuffer();
+}
+
+async function previewSpreadsheet(buffer: ArrayBuffer): Promise<{
+  rows: string[][];
+  sheetName: string;
+  totalRows: number;
+}> {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    throw new Error("Sin hojas");
+  }
+  const sheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json<string[]>(sheet, {
+    header: 1,
+    defval: "",
+  }) as string[][];
+  const normalized = rows.map((row) =>
+    row.map((cell) => (cell == null ? "" : String(cell)))
+  );
+  return {
+    rows: normalized,
+    sheetName,
+    totalRows: normalized.length,
+  };
+}
+
+async function previewDocx(buffer: ArrayBuffer): Promise<string | null> {
+  try {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+    return result.value;
+  } catch {
+    return null;
+  }
+}
+
+const downloadButtonStyle: React.CSSProperties = {
+  marginTop: 16,
+  padding: "10px 20px",
+  background: "#2563eb",
+  color: "white",
+  textDecoration: "none",
+  borderRadius: 8,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const FileDownloadFallback: React.FC<{
+  url: string;
+  fileName: string;
+  ext: string;
+  message: string;
+  style?: React.CSSProperties;
+  maxHeight?: string | number;
+}> = ({ url, fileName, ext, message, style, maxHeight }) => (
+  <div
+    style={{
+      width: "100%",
+      height: "100%",
+      minHeight: 280,
+      maxHeight,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#f0f0f0",
+      borderRadius: 8,
+      padding: 24,
+      ...style,
+    }}
+  >
+    <FileText size={48} color="#888" />
+    <p
+      style={{
+        marginTop: 16,
+        color: "#555",
+        textAlign: "center",
+        maxWidth: 420,
+        lineHeight: 1.5,
+      }}
+    >
+      {message}
+    </p>
+    {ext ? (
+      <p
+        style={{
+          marginTop: 8,
+          color: "#999",
+          fontSize: 12,
+          fontFamily: "monospace",
+        }}
+      >
+        .{ext.toUpperCase()}
+        {fileName ? ` · ${fileName}` : ""}
+      </p>
+    ) : null}
+    <a
+      href={url}
+      download={fileName || true}
+      target="_blank"
+      rel="noreferrer"
+      style={downloadButtonStyle}
+    >
+      <Download size={16} /> Descargar
+    </a>
+  </div>
+);
+
+const SpreadsheetPreview: React.FC<{
+  rows: string[][];
+  sheetName: string;
+  totalRows: number;
+  maxHeight?: string | number;
+  style?: React.CSSProperties;
+}> = ({ rows, sheetName, totalRows, maxHeight, style }) => {
+  if (!rows.length) {
+    return <p style={{ padding: 24, color: "#666" }}>La hoja está vacía.</p>;
+  }
+
+  const headerRow = rows[0] ?? [];
+  const bodyRows = rows.slice(1, MAX_PREVIEW_ROWS + 1);
+  const colCount = Math.max(
+    headerRow.length,
+    ...bodyRows.map((r) => r.length),
+    1
+  );
+  const padRow = (row: string[]) => {
+    const padded = [...row];
+    while (padded.length < colCount) padded.push("");
+    return padded;
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        maxHeight,
+        minHeight: 0,
+        overflow: "hidden",
+        ...style,
+      }}
+    >
+      <div
+        style={{
+          padding: "12px 16px",
+          borderBottom: "1px solid #e5e7eb",
+          background: "#fff",
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+          {sheetName}
+        </span>
+        {totalRows > MAX_PREVIEW_ROWS + 1 && (
+          <span style={{ marginLeft: 12, fontSize: 12, color: "#9ca3af" }}>
+            Mostrando {MAX_PREVIEW_ROWS} de {totalRows - 1} filas
+          </span>
+        )}
+      </div>
+      <div style={{ flex: 1, overflow: "auto", background: "#fff" }}>
+        <table
+          style={{
+            minWidth: "100%",
+            borderCollapse: "collapse",
+            fontSize: 13,
+          }}
+        >
+          <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+            <tr style={{ background: "#f9fafb" }}>
+              {padRow(headerRow).map((cell, i) => (
+                <th
+                  key={i}
+                  style={{
+                    padding: "8px 12px",
+                    textAlign: "left",
+                    fontWeight: 600,
+                    color: "#374151",
+                    borderBottom: "1px solid #e5e7eb",
+                    borderRight: "1px solid #f3f4f6",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {cell || `Col ${i + 1}`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bodyRows.map((row, ri) => (
+              <tr
+                key={ri}
+                style={{ background: ri % 2 ? "#f9fafb" : "#fff" }}
+              >
+                {padRow(row).map((cell, ci) => (
+                  <td
+                    key={ci}
+                    style={{
+                      padding: "8px 12px",
+                      borderBottom: "1px solid #f3f4f6",
+                      borderRight: "1px solid #f3f4f6",
+                      color: "#111827",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const OfficeFilePreview: React.FC<{
+  url: string;
+  fileName: string;
+  ext: string;
+  maxHeight?: string | number;
+  style?: React.CSSProperties;
+}> = ({ url, fileName, ext, maxHeight, style }) => {
+  const [preview, setPreview] = useState<OfficePreviewState>({ status: "idle" });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (OFFICE_UNSUPPORTED_EXTS.includes(ext)) {
+        setPreview({ status: "unsupported" });
+        return;
+      }
+
+      if (!SPREADSHEET_EXTS.includes(ext) && !DOCX_EXTS.includes(ext)) {
+        setPreview({ status: "unsupported" });
+        return;
+      }
+
+      setPreview({ status: "loading" });
+
+      try {
+        const buffer = await fetchFileBuffer(url);
+        if (cancelled) return;
+
+        if (SPREADSHEET_EXTS.includes(ext)) {
+          const data = await previewSpreadsheet(buffer);
+          if (!cancelled) {
+            setPreview({ status: "spreadsheet", ...data });
+          }
+          return;
+        }
+
+        if (DOCX_EXTS.includes(ext)) {
+          const html = await previewDocx(buffer);
+          if (cancelled) return;
+          if (html) {
+            setPreview({ status: "document", html });
+          } else {
+            setPreview({ status: "unsupported" });
+          }
+        }
+      } catch {
+        if (!cancelled) setPreview({ status: "error" });
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [url, ext]);
+
+  if (preview.status === "loading" || preview.status === "idle") {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          minHeight: 280,
+          maxHeight,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f0f0f0",
+          borderRadius: 8,
+          ...style,
+        }}
+      >
+        <Loader2
+          size={36}
+          color="#2563eb"
+          className="animate-spin"
+        />
+        <p style={{ marginTop: 12, color: "#666" }}>Cargando vista previa…</p>
+      </div>
+    );
+  }
+
+  if (preview.status === "spreadsheet") {
+    return (
+      <SpreadsheetPreview
+        rows={preview.rows}
+        sheetName={preview.sheetName}
+        totalRows={preview.totalRows}
+        maxHeight={maxHeight}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          height: "100%",
+          minHeight: 0,
+          background: "#f0f0f0",
+          borderRadius: 8,
+          overflow: "hidden",
+          ...style,
+        }}
+      />
+    );
+  }
+
+  if (preview.status === "document") {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          height: "100%",
+          minHeight: 0,
+          maxHeight,
+          background: "#fff",
+          borderRadius: 8,
+          overflow: "hidden",
+          ...style,
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: 24,
+            lineHeight: 1.6,
+            color: "#1f2937",
+          }}
+        >
+          <div
+            className="file-viewer-docx"
+            dangerouslySetInnerHTML={{ __html: preview.html }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const fallbackMessage =
+    preview.status === "error"
+      ? "No se pudo cargar la vista previa. Descarga el archivo para abrirlo."
+      : ext === "docx"
+        ? "Vista previa de Word no disponible. Descarga el archivo para abrirlo."
+        : ["doc", "ppt", "pptx"].includes(ext)
+          ? `Vista previa no disponible para .${ext}. Descarga el archivo para abrirlo.`
+          : "Vista previa no disponible. Descarga el archivo para abrirlo.";
+
+  return (
+    <FileDownloadFallback
+      url={url}
+      fileName={fileName}
+      ext={ext}
+      message={fallbackMessage}
+      style={style}
+      maxHeight={maxHeight}
+    />
+  );
+};
 
 export const FileViewer: React.FC<Props> = ({
   url,
@@ -44,39 +449,34 @@ export const FileViewer: React.FC<Props> = ({
   const [rotacionPDF, setRotacionPDF] = useState<number>(0);
 
   const ext = getExtension(fileName || url);
+  const isOffice =
+    SPREADSHEET_EXTS.includes(ext) ||
+    DOCX_EXTS.includes(ext) ||
+    OFFICE_UNSUPPORTED_EXTS.includes(ext);
 
-  // Cargar texto para TXT/CSV
   useEffect(() => {
     if (["txt", "csv", "md"].includes(ext)) {
       fetch(url)
-        .then((r) => r.text())
+        .then((r) => {
+          if (!r.ok) throw new Error();
+          return r.text();
+        })
         .then(setText)
         .catch(() => setText("No se pudo cargar el archivo de texto."));
     }
   }, [url, ext]);
 
-  // Google Docs Viewer para Word/Excel
-  const isWord = ext === "doc" || ext === "docx";
-  const isExcel = ext === "xls" || ext === "xlsx";
-  const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(
-    url
-  )}&embedded=true`;
-
-  // === RENDERIZADO DE ARCHIVOS ===
-
-  // 1. Imágenes
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+  if (IMAGE_EXTS.includes(ext)) {
     return (
-      <img
-        src={url}
-        alt={fileName}
-        style={{ maxWidth: "100%", maxHeight, ...style }}
-        draggable={false}
+      <ImageFilePreview
+        url={url}
+        fileName={fileName}
+        maxHeight={maxHeight}
+        style={style}
       />
     );
   }
 
-  // 2. Texto
   if (["txt", "csv", "md"].includes(ext)) {
     return (
       <pre
@@ -95,56 +495,48 @@ export const FileViewer: React.FC<Props> = ({
     );
   }
 
-  // 3. Documentos de Office
-  if (isWord || isExcel) {
+  if (isOffice) {
     return (
-      <iframe
-        title={fileName}
-        src={googleViewerUrl}
-        style={{ width: "100%", height: maxHeight, border: "none", ...style }}
-        sandbox="allow-scripts allow-same-origin"
+      <OfficeFilePreview
+        url={url}
+        fileName={fileName}
+        ext={ext}
+        maxHeight={maxHeight}
+        style={style}
       />
     );
   }
 
-  // 4. PDF
   if (ext === "pdf") {
     return (
-      // Contenedor principal (ocupa todo el espacio de <main>)
       <div
         style={{
           position: "relative",
           width: "100%",
-          height: "100%", // Ocupa el 100% del <main>
+          height: "100%",
           display: "flex",
           flexDirection: "column",
           ...style,
         }}
       >
-        {/* === INICIO DE LA CORRECCIÓN DEL ZOOM === */}
-        {/* Contenedor de Scroll:
-          - Ocupa todo el espacio (flexGrow: 1).
-          - TIENE EL SCROLL (overflow: auto).
-          - NO USA FLEX. Es un bloque que centra su contenido con text-align.
-          - Este div gris NO SE ENCOGERÁ.
-        */}
         <div
           style={{
-            flexGrow: 1, // Ocupa el espacio vertical disponible
+            flexGrow: 1,
             overflow: "auto",
             background: "#f0f0f0",
             padding: "16px 0",
             borderRadius: "8px",
-            width: "100%", // Ocupa 100% del ancho
-            textAlign: "center", // Centra el div del documento
+            width: "100%",
+            textAlign: "center",
           }}
         >
-          {/* Contenedor del Documento:
-            - Es 'inline-block' para que 'text-align: center' funcione.
-            - Este div SÍ se encogerá con el zoom, pero no afectará
-              al contenedor de scroll de arriba.
-          */}
-          <div style={{ padding: "16px", display: "inline-block", height: "fit-content" }}>
+          <div
+            style={{
+              padding: "16px",
+              display: "inline-block",
+              height: "fit-content",
+            }}
+          >
             <Document
               file={url}
               onLoadSuccess={({ numPages }) => {
@@ -166,31 +558,30 @@ export const FileViewer: React.FC<Props> = ({
             </Document>
           </div>
         </div>
-        {/* === FIN DE LA CORRECCIÓN DEL ZOOM === */}
 
-        {/* Barra de Controles (Movida abajo) */}
         <div
           style={{
             zIndex: 10,
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            gap: "16px", // Espacio entre grupos de botones
+            gap: "16px",
             background: "rgba(40, 40, 40, 0.9)",
             color: "white",
             padding: "8px 12px",
             borderRadius: "8px",
             boxShadow: "0 -2px 8px rgba(0,0,0,0.3)",
             width: "fit-content",
-            margin: "8px auto 0 auto", // Margen superior
-            flexShrink: 0, // Evita que se encoja
+            margin: "8px auto 0 auto",
+            flexShrink: 0,
           }}
         >
-          {/* Grupo de Páginas */}
           {numPages > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <button
-                style={pageNumber <= 1 ? disabledControlStyle : controlButtonStyle}
+                style={
+                  pageNumber <= 1 ? disabledControlStyle : controlButtonStyle
+                }
                 disabled={pageNumber <= 1}
                 onClick={() => setPageNumber((n) => Math.max(1, n - 1))}
               >
@@ -200,9 +591,15 @@ export const FileViewer: React.FC<Props> = ({
                 {pageNumber} / {numPages}
               </span>
               <button
-                style={pageNumber >= numPages ? disabledControlStyle : controlButtonStyle}
+                style={
+                  pageNumber >= numPages
+                    ? disabledControlStyle
+                    : controlButtonStyle
+                }
                 disabled={pageNumber >= numPages}
-                onClick={() => setPageNumber((n) => Math.min(numPages, n + 1))}
+                onClick={() =>
+                  setPageNumber((n) => Math.min(numPages, n + 1))
+                }
               >
                 <ChevronRight size={18} />
               </button>
@@ -213,7 +610,6 @@ export const FileViewer: React.FC<Props> = ({
             <div style={{ borderLeft: "1px solid #666", height: "20px" }} />
           )}
 
-          {/* Grupo de Zoom */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
               onClick={() => setEscalaZoom((z) => Math.max(0.2, z - 0.2))}
@@ -234,7 +630,6 @@ export const FileViewer: React.FC<Props> = ({
 
           <div style={{ borderLeft: "1px solid #666", height: "20px" }} />
 
-          {/* Grupo de Rotación */}
           <button
             onClick={() => setRotacionPDF((r) => (r + 90) % 360)}
             title="Rotar 90°"
@@ -247,48 +642,18 @@ export const FileViewer: React.FC<Props> = ({
     );
   }
 
-  // 5. Fallback (si no es un tipo conocido)
   return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        minHeight: "300px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f0f0f0",
-        borderRadius: 8,
-        ...style,
-      }}
-    >
-      <FileText size={48} color="#888" />
-      <p style={{ marginTop: 16, color: "#555" }}>
-        Vista previa no disponible para este archivo ({ext}).
-      </p>
-      <a
-        href={url}
-        download={fileName || true}
-        style={{
-          marginTop: 12,
-          padding: "8px 16px",
-          background: "#007bff",
-          color: "white",
-          textDecoration: "none",
-          borderRadius: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <Download size={16} /> Descargar
-      </a>
-    </div>
+    <FileDownloadFallback
+      url={url}
+      fileName={fileName}
+      ext={ext}
+      message={`Vista previa no disponible para este archivo${ext ? ` (.${ext})` : ""}.`}
+      style={style}
+      maxHeight={maxHeight}
+    />
   );
 };
 
-// Estilos para los botones (para no usar Tailwind aquí)
 const controlButtonStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
@@ -304,6 +669,138 @@ const disabledControlStyle: React.CSSProperties = {
   ...controlButtonStyle,
   color: "#666",
   cursor: "not-allowed",
+};
+
+const ZoomControlsBar: React.FC<{
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  minZoom?: number;
+  children?: React.ReactNode;
+}> = ({ zoom, onZoomIn, onZoomOut, minZoom = 0.2, children }) => (
+  <div
+    style={{
+      zIndex: 10,
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: "16px",
+      background: "rgba(40, 40, 40, 0.9)",
+      color: "white",
+      padding: "8px 12px",
+      borderRadius: "8px",
+      boxShadow: "0 -2px 8px rgba(0,0,0,0.3)",
+      width: "fit-content",
+      margin: "8px auto 0 auto",
+      flexShrink: 0,
+    }}
+  >
+    {children}
+    {children ? (
+      <div style={{ borderLeft: "1px solid #666", height: "20px" }} />
+    ) : null}
+    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <button
+        onClick={onZoomOut}
+        title="Alejar"
+        style={zoom <= minZoom ? disabledControlStyle : controlButtonStyle}
+        disabled={zoom <= minZoom}
+      >
+        <ZoomOut size={18} />
+      </button>
+      <span>{(zoom * 100).toFixed(0)}%</span>
+      <button onClick={onZoomIn} title="Acercar" style={controlButtonStyle}>
+        <ZoomIn size={18} />
+      </button>
+    </div>
+  </div>
+);
+
+const ImageFilePreview: React.FC<{
+  url: string;
+  fileName: string;
+  maxHeight?: string | number;
+  style?: React.CSSProperties;
+}> = ({ url, fileName, maxHeight, style }) => {
+  const [zoom, setZoom] = useState(1);
+  const [fitSize, setFitSize] = useState<{ w: number; h: number } | null>(
+    null
+  );
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setZoom(1);
+    setFitSize(null);
+  }, [url]);
+
+  const computeFitSize = (img: HTMLImageElement) => {
+    const viewport = viewportRef.current;
+    if (!viewport || !img.naturalWidth || !img.naturalHeight) return;
+
+    const padding = 32;
+    const maxW = Math.max(viewport.clientWidth - padding, 1);
+    const maxH = Math.max(viewport.clientHeight - padding, 1);
+    const scale = Math.min(
+      maxW / img.naturalWidth,
+      maxH / img.naturalHeight,
+      1
+    );
+    setFitSize({
+      w: Math.round(img.naturalWidth * scale),
+      h: Math.round(img.naturalHeight * scale),
+    });
+  };
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        minHeight: 280,
+        maxHeight,
+        display: "flex",
+        flexDirection: "column",
+        ...style,
+      }}
+    >
+      <div
+        ref={viewportRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "auto",
+          background: "#f0f0f0",
+          borderRadius: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+        }}
+      >
+        <img
+          src={url}
+          alt={fileName}
+          draggable={false}
+          onLoad={(e) => computeFitSize(e.currentTarget)}
+          style={{
+            display: "block",
+            width: fitSize ? fitSize.w * zoom : "auto",
+            height: fitSize ? fitSize.h * zoom : "auto",
+            maxWidth: fitSize ? "none" : "100%",
+            maxHeight: fitSize ? "none" : "100%",
+            objectFit: "contain",
+            objectPosition: "center",
+          }}
+        />
+      </div>
+      <ZoomControlsBar
+        zoom={zoom}
+        onZoomOut={() => setZoom((z) => Math.max(0.2, z - 0.2))}
+        onZoomIn={() => setZoom((z) => z + 0.2)}
+      />
+    </div>
+  );
 };
 
 export default FileViewer;

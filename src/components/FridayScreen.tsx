@@ -1,14 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, useTransition, useDeferredValue } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { List, type RowComponentProps } from "react-window";
 import {
   Plus, Trash2, ChevronDown, Search, 
   UserCircle, Calendar, X, 
   Building2, ArrowLeft,
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
-  MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Pencil,
-  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette
+  MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Eye, Pencil,
+  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette, Loader2
 } from "lucide-react";
 import { db } from "../utils/firebase";
+import { findUsuarioDocByCorreo } from "../utils/usuarioByCorreo";
 import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs, updateDoc } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
@@ -71,6 +74,168 @@ const getRowYearStr = (row: WorksheetData) => {
         }
     }
     return "2025"; 
+};
+
+const normalizeText = (text: string) =>
+    text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
+
+const getResponsableName = (row: WorksheetData) =>
+    (row.nombre || row.assignedTo || "").trim();
+
+const getResponsableRowBackground = (
+    responsableName: string,
+    isSelected: boolean,
+    metrologos: { name?: string; color?: string }[]
+): string => {
+    if (isSelected) return "#f0f7ff";
+    if (!responsableName) return "#ffffff";
+    const userObj = metrologos.find((m) => m.name === responsableName);
+    if (userObj?.color) return hexToRgba(userObj.color, 0.14);
+    return stringToColor(responsableName);
+};
+
+const isCalidadLogisticaRoleText = (roleStr: string): boolean =>
+    (roleStr.includes("calidad") && roleStr.includes("logist")) ||
+    roleStr.includes("calidad y logistica") ||
+    (roleStr.includes("seguridad") && roleStr.includes("calidad") && roleStr.includes("logist"));
+
+const canUserEditFridayBoard = (profile: {
+    nombre?: string;
+    name?: string;
+    correo?: string;
+    email?: string;
+    puesto?: string;
+    role?: string;
+    departamento?: string;
+} | null): boolean => {
+    if (!profile) return false;
+    const nombre = normalizeText(profile.nombre || profile.name || "");
+    const correo = normalizeText(profile.correo || profile.email || "");
+    const isNoraAmador =
+        (nombre.includes("nora") && nombre.includes("amador")) ||
+        (correo.includes("nora") && correo.includes("amador"));
+    const roleStr = normalizeText(
+        [profile.puesto, profile.role, profile.departamento].filter(Boolean).join(" ")
+    );
+    const puestoNorm = normalizeText(profile.puesto || profile.role || "");
+    const isSclPuesto =
+        puestoNorm === "calidad" ||
+        puestoNorm === "logistica" ||
+        puestoNorm === "logística";
+    return isCalidadLogisticaRoleText(roleStr) || isSclPuesto || isNoraAmador;
+};
+
+const buildRowSearchBlob = (row: WorksheetData) =>
+    normalizeText(
+        [
+            row.cliente, row.folio, row.folioSalida, row.equipo, row.id,
+            row.marca, row.modelo, row.serie, row.nombre, row.assignedTo,
+            row.certificado, row.status_equipo, row.status_certificado,
+        ]
+            .filter(Boolean)
+            .join(" ")
+    );
+
+function useDebounce<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState<T>(value);
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+    return debouncedValue;
+}
+
+const ROW_HEIGHT_PX = 44;
+const VIRTUALIZE_MIN_ROWS = 48;
+const VIRTUAL_LIST_MAX_HEIGHT = 520;
+const BOARD_POPOVER_Z = 9999;
+
+type PopoverAlign = "left" | "center" | "right";
+
+function computePopoverStyle(
+    triggerEl: HTMLElement,
+    { minWidth, maxWidth = 360, align = "left", gap = 4 }: { minWidth: number; maxWidth?: number; align?: PopoverAlign; gap?: number }
+): React.CSSProperties {
+    const rect = triggerEl.getBoundingClientRect();
+    const width = Math.min(Math.max(minWidth, rect.width), maxWidth);
+    let left = rect.left;
+    if (align === "center") left = rect.left + rect.width / 2 - width / 2;
+    else if (align === "right") left = rect.right - width;
+    const margin = 8;
+    if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
+    if (left < margin) left = margin;
+    let top = rect.bottom + gap;
+    const estHeight = 280;
+    if (top + estHeight > window.innerHeight - margin) top = Math.max(margin, rect.top - estHeight - gap);
+    return { position: "fixed", top, left, width, zIndex: BOARD_POPOVER_Z };
+}
+
+function useCellPopoverPosition(
+    isOpen: boolean,
+    triggerRef: React.RefObject<HTMLElement | null>,
+    options: { minWidth: number; maxWidth?: number; align?: PopoverAlign }
+) {
+    const [style, setStyle] = useState<React.CSSProperties>({ position: "fixed", visibility: "hidden" });
+    const { minWidth, maxWidth, align } = options;
+
+    useEffect(() => {
+        if (!isOpen || !triggerRef.current) return;
+        const update = () => {
+            if (triggerRef.current) setStyle(computePopoverStyle(triggerRef.current, { minWidth, maxWidth, align }));
+        };
+        update();
+        const scrollEl = document.getElementById("main-board-scroll");
+        scrollEl?.addEventListener("scroll", update, { passive: true });
+        window.addEventListener("resize", update);
+        return () => {
+            scrollEl?.removeEventListener("scroll", update);
+            window.removeEventListener("resize", update);
+        };
+    }, [isOpen, minWidth, maxWidth, align, triggerRef]);
+
+    return style;
+}
+
+function usePopoverClickOutside(
+    isOpen: boolean,
+    onClose: () => void,
+    triggerRef: React.RefObject<HTMLElement | null>,
+    popoverRef: React.RefObject<HTMLElement | null>
+) {
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+            onClose();
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [isOpen, onClose, triggerRef, popoverRef]);
+}
+
+const CellPopover = ({
+    isOpen, triggerRef, popoverRef, onClose, children, minWidth, maxWidth, align = "left", className,
+}: {
+    isOpen: boolean;
+    triggerRef: React.RefObject<HTMLElement | null>;
+    popoverRef: React.RefObject<HTMLDivElement | null>;
+    onClose: () => void;
+    children: React.ReactNode;
+    minWidth: number;
+    maxWidth?: number;
+    align?: PopoverAlign;
+    className?: string;
+}) => {
+    const style = useCellPopoverPosition(isOpen, triggerRef, { minWidth, maxWidth, align });
+    usePopoverClickOutside(isOpen, onClose, triggerRef, popoverRef);
+    if (!isOpen) return null;
+    return createPortal(
+        <div ref={popoverRef} style={style} className={className} onMouseDown={(e) => e.stopPropagation()}>
+            {children}
+        </div>,
+        document.body
+    );
 };
 
 // --- MÓDULO 1: CEREBRO DEPARTAMENTAL (AG-Bot Core) ---
@@ -221,47 +386,58 @@ const TextCell = React.memo(({ value, onChange, placeholder, disabled }: any) =>
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (document.activeElement !== inputRef.current) setLocalValue(value || ""); }, [value]);
   const handleBlur = () => { if (!disabled && localValue !== value) onChange(localValue); };
+  const displayTitle = localValue ? String(localValue) : undefined;
   return (
-    <input ref={inputRef} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => { if(e.key === 'Enter') inputRef.current?.blur(); }} placeholder={placeholder} disabled={disabled} className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#0073ea] focus:z-10 transition-all text-xs truncate placeholder-gray-300 font-medium text-gray-700 disabled:cursor-not-allowed" />
+    <input ref={inputRef} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => { if(e.key === 'Enter') inputRef.current?.blur(); }} placeholder={placeholder} disabled={disabled} title={displayTitle} className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#0073ea] focus:z-10 transition-all text-[13px] truncate placeholder-gray-400 text-[#323338] disabled:cursor-not-allowed disabled:opacity-60" />
   );
 });
 
 const DropdownCell = React.memo(({ value, options, onChange, disabled }: any) => {
   const [isOpen, setIsOpen] = useState(false);
   const configItem = STATUS_CONFIG[value] || { label: value || "-", bg: "#c4c4c4" };
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(event.target as Node)) setIsOpen(false); };
-    if (isOpen) document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const handleSelect = (opt: string, e: React.MouseEvent) => { e.stopPropagation(); onChange(opt); setIsOpen(false); };
 
   if (disabled) return (
-      <div className="w-full h-full flex items-center justify-center opacity-70 cursor-not-allowed bg-gray-50/10">
-          <div className="text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow-sm uppercase tracking-wider" style={{ backgroundColor: configItem.bg }}>{configItem.label} <Lock className="w-2.5 h-2.5 text-white/70" /></div>
+      <div className="w-full h-full flex items-center justify-center px-1 opacity-70 cursor-not-allowed">
+          <div className="text-white text-[11px] font-semibold px-2.5 py-1 rounded-md flex items-center gap-1 max-w-full" style={{ backgroundColor: configItem.bg }} title={configItem.label}><span className="truncate">{configItem.label}</span> <Lock className="w-2.5 h-2.5 text-white/70 shrink-0" /></div>
       </div>
   );
 
   return (
-    <div className="w-full h-full relative p-1" ref={containerRef}>
-      <div className="w-full h-full flex items-center justify-center text-white text-[11px] font-bold cursor-pointer hover:brightness-110 relative transition-all shadow-sm uppercase tracking-wide" style={{ backgroundColor: configItem.bg }} onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}>
-         <span className="truncate px-1 text-center">{configItem.label}</span>
-         <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 hover:opacity-100"><ChevronDown size={10}/></div>
+    <div className="w-full h-full relative flex items-center justify-center px-1 py-0.5">
+      <div
+        ref={triggerRef}
+        className="w-full max-w-full flex items-center justify-center gap-0.5 text-white text-[11px] font-semibold cursor-pointer hover:brightness-105 relative transition-all rounded-md px-2.5 py-1"
+        style={{ backgroundColor: configItem.bg }}
+        title={configItem.label}
+        onClick={(e) => { e.stopPropagation(); setIsOpen((o) => !o); }}
+      >
+         <span className="truncate text-center">{configItem.label}</span>
+         <ChevronDown size={10} className="shrink-0 opacity-60" />
       </div>
-      {isOpen && (
-        <div className="absolute top-full left-0 w-[180px] bg-white shadow-2xl rounded-lg border border-gray-100 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-100 max-h-60 overflow-y-auto z-[100]">
+      <CellPopover
+        isOpen={isOpen}
+        triggerRef={triggerRef}
+        popoverRef={popoverRef}
+        onClose={() => setIsOpen(false)}
+        minWidth={200}
+        maxWidth={280}
+        align="left"
+        className="bg-white shadow-2xl rounded-lg border border-gray-200 py-1 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100"
+      >
            {options?.map((opt: string) => {
              const optConfig = STATUS_CONFIG[opt] || { label: opt, bg: "#ccc" };
              return (
                 <div key={opt} className="px-3 py-2 hover:bg-gray-50 cursor-pointer flex items-center gap-3 transition-colors border-b border-gray-50 last:border-0" onClick={(e) => handleSelect(opt, e)}>
-                    <div className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm" style={{ background: optConfig.bg }}></div><span className="text-xs font-medium text-gray-700">{optConfig.label}</span>
+                    <div className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm" style={{ background: optConfig.bg }}></div>
+                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap">{optConfig.label}</span>
                 </div>
              );
            })}
-        </div>
-      )}
+      </CellPopover>
     </div>
   );
 });
@@ -269,10 +445,10 @@ const DropdownCell = React.memo(({ value, options, onChange, disabled }: any) =>
 const DateCell = React.memo(({ value, onChange, disabled }: any) => {
     const displayDate = value ? new Date(value + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
     const inputRef = useRef<HTMLInputElement>(null);
-    if (disabled) return <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 cursor-not-allowed bg-gray-50/20">{displayDate || "-"}</div>;
+    if (disabled) return <div className="w-full h-full flex items-center justify-center text-[13px] text-[#676879] cursor-not-allowed">{displayDate || "-"}</div>;
     return (
-        <div className="w-full h-full flex items-center justify-center group relative cursor-pointer hover:bg-black/5" onClick={() => inputRef.current?.showPicker()}>
-             {!value && <Calendar className="w-4 h-4 text-gray-300 group-hover:text-gray-400" />}{value && <span className="text-xs text-gray-700 font-medium">{displayDate}</span>}
+        <div className="w-full h-full flex items-center justify-center group relative cursor-pointer hover:bg-[#f5f6f8]" onClick={() => inputRef.current?.showPicker()} title={value ? String(displayDate) : undefined}>
+             {!value && <Calendar className="w-4 h-4 text-gray-300 group-hover:text-[#676879]" />}{value && <span className="text-[13px] text-[#323338]">{displayDate}</span>}
              <input ref={inputRef} type="date" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer" onChange={(e) => onChange(e.target.value)} />
         </div>
     );
@@ -280,80 +456,110 @@ const DateCell = React.memo(({ value, onChange, disabled }: any) => {
 
 const PersonCell = React.memo(({ value, metrologos, onChange, onUpdateMetrologoColor, disabled }: any) => {
     const [isOpen, setIsOpen] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const popoverRef = useRef<HTMLDivElement>(null);
     const initials = getInitials(value && typeof value === 'string' ? value : "");
     const assignedUser = metrologos.find((m: any) => m.name === value);
     const badgeColor = assignedUser?.color || "#cbd5e0";
 
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(event.target as Node)) setIsOpen(false); };
-        if (isOpen) document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [isOpen]);
-
-    if (disabled) return <div className="w-full h-full flex items-center justify-center opacity-60 cursor-not-allowed">{value ? <div className="w-6 h-6 rounded-full bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm">{initials}</div> : <div className="text-gray-300 text-xs">-</div>}</div>;
+    if (disabled) return <div className="w-full h-full flex items-center justify-center opacity-60 cursor-not-allowed">{value ? <div className="w-7 h-7 rounded-full bg-gray-400 text-white flex items-center justify-center text-[11px] font-semibold ring-2 ring-white">{initials}</div> : <div className="text-gray-300 text-xs">-</div>}</div>;
 
     return (
-        <div className="w-full h-full flex items-center justify-center relative" ref={containerRef}>
-            <div className="cursor-pointer hover:opacity-80 transition-opacity flex items-center gap-2" onClick={() => setIsOpen(true)}>
-                {value ? <div className="w-6 h-6 rounded-full text-white flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm" style={{ backgroundColor: badgeColor }} title={value}>{initials}</div> : <UserCircle className="w-6 h-6 text-gray-300" />}
+        <div className="w-full h-full flex items-center justify-center relative">
+            <div
+                ref={triggerRef}
+                className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
+                onClick={(e) => { e.stopPropagation(); setIsOpen((o) => !o); }}
+            >
+                {value ? <div className="w-7 h-7 rounded-full text-white flex items-center justify-center text-[11px] font-semibold ring-2 ring-white" style={{ backgroundColor: badgeColor }} title={value}>{initials}</div> : <UserCircle className="w-7 h-7 text-gray-300" />}
             </div>
-            {isOpen && (
-                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-[240px] bg-white shadow-2xl rounded-lg border border-gray-100 z-[100] p-2 max-h-60 overflow-y-auto">
+            <CellPopover
+                isOpen={isOpen}
+                triggerRef={triggerRef}
+                popoverRef={popoverRef}
+                onClose={() => setIsOpen(false)}
+                minWidth={260}
+                maxWidth={320}
+                align="left"
+                className="bg-white shadow-2xl rounded-lg border border-gray-200 p-2 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100"
+            >
                     {metrologos.map((m: any) => (
-                        <div key={m.id} className="flex items-center gap-2 p-2 hover:bg-blue-50 rounded cursor-pointer group">
-                            <div className="flex items-center gap-2 cursor-pointer flex-1" onClick={() => { onChange(m.name || "Sin Nombre"); setIsOpen(false); }}>
-                                <div className="w-6 h-6 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0" style={{ backgroundColor: m.color || '#3b82f6' }}>{getInitials(m.name || "SN")}</div>
-                                <span className="text-xs font-medium text-gray-700 truncate">{m.name || "Sin Nombre"}</span>
-                            </div>
-                            <div className="relative flex items-center pr-2" title="Cambiar color del metrólogo">
+                        <div
+                            key={m.id}
+                            className="flex items-center gap-2 p-2 hover:bg-blue-50 rounded cursor-pointer min-w-0"
+                            onClick={() => { onChange(m.name || "Sin Nombre"); setIsOpen(false); }}
+                        >
+                            <div className="w-7 h-7 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0" style={{ backgroundColor: m.color || '#3b82f6' }}>{getInitials(m.name || "SN")}</div>
+                            <span className="flex-1 min-w-0 text-xs font-medium text-gray-700 truncate pr-1">{m.name || "Sin Nombre"}</span>
+                            <div
+                                className="relative shrink-0 w-7 h-7 flex items-center justify-center"
+                                title="Cambiar color del metrólogo"
+                                onClick={(e) => e.stopPropagation()}
+                            >
                                 <input type="color" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" value={m.color || "#3b82f6"} onChange={(e) => onUpdateMetrologoColor && onUpdateMetrologoColor(m.id, e.target.value)} />
-                                <Palette size={16} className="text-gray-400 hover:text-blue-600 transition-colors cursor-pointer" />
+                                <Palette size={16} className="text-gray-400 hover:text-blue-600 transition-colors pointer-events-none" />
                             </div>
                         </div>
                     ))}
                     {value && <button onClick={() => { onChange(""); setIsOpen(false); }} className="w-full text-center text-red-500 text-xs py-2 hover:bg-red-50 border-t mt-1">Desasignar</button>}
-                </div>
-            )}
+            </CellPopover>
         </div>
     );
 });
 
 const ClientCell = React.memo(({ value, clientes, onChange, disabled }: any) => {
-    const [isOpen, setIsOpen] = useState(false); const [searchTerm, setSearchTerm] = useState(""); const containerRef = useRef<HTMLDivElement>(null);
-    useEffect(() => { const handleClickOutside = (event: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(event.target as Node)) setIsOpen(false); }; if (isOpen) document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [isOpen]);
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const popoverRef = useRef<HTMLDivElement>(null);
     const filtered = useMemo(() => { if (!isOpen) return []; if (!searchTerm) return clientes; return clientes.filter((c:any) => (c.nombre || "").toLowerCase().includes(searchTerm.toLowerCase())); }, [clientes, searchTerm, isOpen]);
-    if (disabled) return <div className="w-full h-full px-3 flex items-center text-xs text-gray-500 truncate cursor-not-allowed bg-gray-50/20 italic select-none">{value || "-"}</div>;
+    if (disabled) return <div className="w-full h-full px-3 flex items-center text-[13px] text-[#676879] truncate cursor-not-allowed select-none" title={value || undefined}>{value || "-"}</div>;
     return (
-        <div className="w-full h-full relative group" ref={containerRef}>
-            <div className="w-full h-full px-3 flex items-center cursor-pointer hover:bg-black/5" onClick={() => { setIsOpen(true); setSearchTerm(""); }}>
-                {value ? <span className="text-xs text-blue-800 truncate font-bold flex items-center gap-2"><Building2 size={12} className="text-blue-400"/> {value}</span> : <span className="text-xs text-gray-300 flex items-center gap-1 italic"><Plus className="w-3 h-3"/> Cliente</span>}
+        <div className="w-full h-full relative group">
+            <div
+                ref={triggerRef}
+                className="w-full h-full px-3 flex items-center cursor-pointer hover:bg-[#f5f6f8]"
+                onClick={(e) => { e.stopPropagation(); setIsOpen(true); setSearchTerm(""); }}
+            >
+                {value ? <span className="text-[13px] text-[#323338] truncate font-medium flex items-center gap-2 min-w-0" title={value}><Building2 size={12} className="text-[#676879] shrink-0"/> <span className="truncate">{value}</span></span> : <span className="text-[13px] text-gray-400 flex items-center gap-1"><Plus className="w-3 h-3"/> Cliente</span>}
             </div>
-            {isOpen && (
-                <div className="absolute top-0 left-0 w-[260px] bg-white shadow-2xl rounded-lg border border-blue-200 z-[100] p-2 animate-in fade-in zoom-in-95 duration-100 flex flex-col max-h-[300px]">
+            <CellPopover
+                isOpen={isOpen}
+                triggerRef={triggerRef}
+                popoverRef={popoverRef}
+                onClose={() => setIsOpen(false)}
+                minWidth={260}
+                maxWidth={340}
+                align="left"
+                className="bg-white shadow-2xl rounded-lg border border-blue-200 p-2 animate-in fade-in zoom-in-95 duration-100 flex flex-col max-h-[300px]"
+            >
                     <div className="relative mb-2 shrink-0"><Search className="w-3 h-3 absolute left-2 top-2.5 text-gray-400"/><input autoFocus placeholder="Buscar empresa..." className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:border-blue-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                     <div className="overflow-y-auto flex-1 space-y-1">
                         {filtered.length > 0 ? filtered.map((c: any) => (
                             <div key={c.id} className="px-2 py-2 hover:bg-blue-50 cursor-pointer rounded flex items-center gap-2" onClick={() => { onChange(c.nombre); setIsOpen(false); }}><div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center text-blue-600 shrink-0"><Building2 className="w-3 h-3"/></div><span className="text-xs text-gray-700 font-medium">{c.nombre}</span></div>
                         )) : <div className="text-xs text-gray-400 text-center py-2">No encontrado</div>}
                     </div>
-                </div>
-            )}
+            </CellPopover>
         </div>
     );
 });
 
 // --- PANELES COMPLEMENTARIOS ---
-const CommentsPanel = ({ row, onClose }: { row: WorksheetData, onClose: () => void }) => {
+const CommentsPanel = ({ row, onClose, canPost }: { row: WorksheetData; onClose: () => void; canPost: boolean }) => {
     const [comments, setComments] = useState<any[]>([]); const [text, setText] = useState(""); const { user } = useAuth(); const chatRef = useRef<HTMLDivElement>(null);
     useEffect(() => { const q = query(collection(db, `hojasDeTrabajo/${row.docId}/comments`), orderBy("createdAt", "asc")); const unsub = onSnapshot(q, (snap) => { setComments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setTimeout(() => chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }), 100); }); return () => unsub(); }, [row.docId]);
-    const sendComment = async () => { if (!text.trim()) return; await addDoc(collection(db, `hojasDeTrabajo/${row.docId}/comments`), { text, user: user?.displayName || user?.email || "Usuario", createdAt: new Date().toISOString() }); setText(""); };
+    const sendComment = async () => { if (!canPost || !text.trim()) return; await addDoc(collection(db, `hojasDeTrabajo/${row.docId}/comments`), { text, user: user?.name || user?.email || "Usuario", createdAt: new Date().toISOString() }); setText(""); };
     return (
         <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl z-[120] flex flex-col border-l border-gray-200 animate-in slide-in-from-right duration-300">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50"><div><h3 className="font-bold text-gray-800 text-sm truncate w-60">{row.equipo || "Sin Equipo"}</h3><span className="text-xs text-gray-500">{row.folio || "Sin Folio"}</span></div><button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full text-gray-500"><X size={18}/></button></div>
             <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f8f9fa]">
                 {comments.map((c) => (<div key={c.id} className="bg-white p-3 rounded-tr-xl rounded-bl-xl rounded-br-xl shadow-sm border border-gray-100 text-sm relative group"><div className="flex justify-between items-center mb-1"><span className="font-bold text-[11px] text-blue-600">{c.user}</span><span className="text-[10px] text-gray-400">{new Date(c.createdAt).toLocaleDateString()}</span></div><p className="text-gray-700 text-xs leading-relaxed">{c.text}</p></div>))}
             </div>
-            <div className="p-3 border-t bg-white flex gap-2"><input className="flex-1 bg-gray-100 border-transparent focus:bg-white border rounded-full px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" placeholder="Escribir nota..." value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendComment()}/><button onClick={sendComment} className="p-2 bg-blue-600 text-white rounded-full"><Send size={16}/></button></div>
+            {canPost ? (
+                <div className="p-3 border-t bg-white flex gap-2"><input className="flex-1 bg-gray-100 border-transparent focus:bg-white border rounded-full px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" placeholder="Escribir nota..." value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendComment()}/><button onClick={sendComment} className="p-2 bg-blue-600 text-white rounded-full"><Send size={16}/></button></div>
+            ) : (
+                <div className="p-3 border-t bg-gray-50 text-center text-xs text-gray-500">Modo lectura — no se pueden agregar comentarios</div>
+            )}
         </div>
     );
 };
@@ -413,7 +619,7 @@ const AGBotWidget = ({ thoughts }: { thoughts: AGBotThought[] }) => {
 };
 
 // --- BOARD ROW ---
-const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, userRole, onOpenComments, index, groupId, onOpenHistory, onUpdateMetrologoColor }: any) => {
+const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, onOpenComments, index, groupId, onOpenHistory, onUpdateMetrologoColor }: any) => {
     
     const handleCellChange = useCallback((key: string, value: any) => { 
         let finalKey = key;
@@ -425,21 +631,17 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
         onUpdateRow(row.docId, finalKey, value); 
     }, [row.docId, row.departamento, onUpdateRow, groupId]);
     
-    let currentStickyLeft = 40; 
-    const checkPermission = (col: Column) => (!col.permissions || col.permissions.length === 0 || col.permissions.includes(userRole));
-    const responsibleName = row.nombre || row.assignedTo;
-    
-    const rowBackgroundColor = useMemo(() => { 
-        if (!responsibleName) return isSelected ? "#f0f9ff" : "white"; 
-        const userObj = metrologos.find((m: any) => m.name === responsibleName);
-        if (userObj && userObj.color) { return isSelected ? hexToRgba(userObj.color, 0.25) : hexToRgba(userObj.color, 0.12); }
-        return stringToColor(responsibleName); 
-    }, [responsibleName, isSelected, metrologos]);
+    let currentStickyLeft = 40;
+    const responsableName = getResponsableName(row);
+    const rowBackgroundColor = useMemo(
+        () => getResponsableRowBackground(responsableName, isSelected, metrologos),
+        [responsableName, isSelected, metrologos]
+    );
 
     return (
-        <div id={`row-${row.docId}`} className="flex border-b border-[#d0d4e4] group transition-colors h-[40px] hover:bg-gray-50/80" draggable="true" onDragStart={(e) => onDragStart(e, { type: 'row', index, id: row.docId, groupId })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => { e.stopPropagation(); onDrop(e, { type: 'row', index, id: row.docId, groupId }); }} style={{ backgroundColor: rowBackgroundColor }}>
+        <div id={`row-${row.docId}`} className="flex border-b border-[#e6e9ef] group transition-colors hover:!bg-[#f5f6f8]" style={{ backgroundColor: rowBackgroundColor, height: ROW_HEIGHT_PX }} draggable={canEditBoard} onDragStart={canEditBoard ? (e) => onDragStart(e, { type: 'row', index, id: row.docId, groupId }) : undefined} onDragOver={canEditBoard ? (e) => e.preventDefault() : undefined} onDragEnd={canEditBoard ? onDragEnd : undefined} onDrop={canEditBoard ? (e) => { e.stopPropagation(); onDrop(e, { type: 'row', index, id: row.docId, groupId }); } : undefined}>
             <div className="w-1.5 flex-shrink-0 sticky left-0 z-20" style={{ backgroundColor: color }}></div>
-            <div className="w-[40px] flex-shrink-0 border-r border-[#d0d4e4] sticky left-1.5 z-20 flex items-center justify-center" style={{ backgroundColor: rowBackgroundColor }}>
+            <div className="w-[40px] flex-shrink-0 border-r border-[#e6e9ef] sticky left-1.5 z-20 flex items-center justify-center" style={{ backgroundColor: rowBackgroundColor }}>
                  <div className="w-full h-full flex items-center justify-center relative group/control">
                     <div className="hidden group-hover/control:flex gap-1 absolute bg-white shadow-lg p-1 rounded-md border border-gray-200 z-50 left-full ml-1">
                         <button onClick={() => onOpenComments(row)} className="p-1 hover:bg-blue-50 text-gray-500 hover:text-blue-600 rounded" title="Comentarios"><MessageSquare size={14}/></button>
@@ -452,7 +654,7 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
             {columns.filter((c: Column) => !c.hidden).map((col: Column) => {
                 const style: React.CSSProperties = { width: col.width };
                 if (col.sticky) { style.position = 'sticky'; style.left = currentStickyLeft + 1.5; style.zIndex = 15; style.backgroundColor = rowBackgroundColor; currentStickyLeft += col.width; }
-                const canEdit = checkPermission(col);
+                const canEdit = canEditBoard;
                 
                 let cellValue = row[col.key];
                 if (col.key === 'folio') { 
@@ -466,18 +668,18 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                      const deadline = addBusinessDays(start, row.diasPromesa);
                      const calibDate = new Date(cellValue + 'T00:00:00');
                      calibDate.setHours(0,0,0,0); deadline.setHours(0,0,0,0);
-                     if (calibDate > deadline) customClass = "bg-red-50 text-red-700 font-bold border-l-2 border-red-400";
-                     else customClass = "bg-green-50 text-green-700 font-bold border-l-2 border-green-400";
+                     if (calibDate > deadline) customClass = "bg-red-50/60 text-red-800 border-l-2 border-red-300";
+                     else customClass = "bg-emerald-50/50 text-emerald-800 border-l-2 border-emerald-300";
                 }
 
                 const isWorkDone = row.status_certificado === 'Generado' || row.status_certificado === 'Firmado' || row.cargado_drive === 'Si' || row.cargado_drive === 'Realizado';
 
                 return (
-                    <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#d0d4e4] relative flex items-center transition-colors", col.sticky && "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]")}>
+                    <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#e6e9ef] relative flex items-center transition-colors", col.sticky && "shadow-[1px_0_3px_rgba(0,0,0,0.04)] border-r-[#e6e9ef]")}>
                         <div className={clsx("w-full h-full", customClass)}>
                              {col.type === 'dropdown' ? <DropdownCell value={cellValue} options={col.options!} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
                              col.type === 'date' ? <DateCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
-                             col.type === 'person' ? <PersonCell value={cellValue} metrologos={metrologos} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} onUpdateMetrologoColor={onUpdateMetrologoColor} /> : 
+                             col.type === 'person' ? <PersonCell value={cellValue} metrologos={metrologos} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} onUpdateMetrologoColor={canEditBoard ? onUpdateMetrologoColor : undefined} /> : 
                              col.type === 'client' ? <ClientCell value={cellValue} clientes={clientes} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} /> : 
                              col.type === 'sla_manual' ? <EditableSLACell days={cellValue} startDate={row.fechaEntrada} onChange={(v:any) => handleCellChange(col.key, v)} isCompleted={isWorkDone} disabled={!canEdit} /> :
                              <TextCell value={cellValue} onChange={(v:any) => handleCellChange(col.key, v)} disabled={!canEdit} />}
@@ -488,7 +690,17 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
              <div className="flex-1 border-b border-transparent min-w-[50px]"></div>
         </div>
     );
-});
+}, (prev, next) =>
+    prev.row === next.row &&
+    prev.isSelected === next.isSelected &&
+    prev.index === next.index &&
+    prev.groupId === next.groupId &&
+    prev.color === next.color &&
+    prev.columns === next.columns &&
+    prev.canEditBoard === next.canEditBoard &&
+    prev.metrologos === next.metrologos &&
+    prev.clientes === next.clientes
+);
 
 const ColumnOptions = ({ colKey, onClose, onSort, onHide, onRename, onPermissions, currentLabel, onFilter, uniqueValues }: any) => {
     useEffect(() => { const h = () => onClose(); window.addEventListener('click', h); return () => window.removeEventListener('click', h); }, [onClose]);
@@ -541,6 +753,103 @@ const PermissionMenu = ({ x, y, column, onClose, onTogglePermission }: any) => {
     );
 };
 
+type BoardRowSharedProps = {
+    rows: WorksheetData[];
+    groupId: string;
+    groupColor: string;
+    columns: Column[];
+    selectedIds: Set<string>;
+    onToggleSelect: (id: string) => void;
+    onUpdateRow: (rowId: string, key: string, value: any) => void;
+    metrologos: any[];
+    clientes: any[];
+    onDragStart: (e: React.DragEvent, item: DragItem) => void;
+    onDrop: (e: React.DragEvent, target: DragItem) => void;
+    onDragEnd: (e: React.DragEvent) => void;
+    canEditBoard: boolean;
+    onOpenComments: (row: WorksheetData) => void;
+    onOpenHistory: (row: WorksheetData) => void;
+    onUpdateMetrologoColor: (userId: string, newColor: string) => void;
+};
+
+function VirtualBoardRow({
+    index, style, rows, groupId, groupColor, columns, selectedIds,
+    onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd,
+    canEditBoard, onOpenComments, onOpenHistory, onUpdateMetrologoColor,
+}: RowComponentProps<BoardRowSharedProps>) {
+    const row = rows[index];
+    if (!row) return null;
+    return (
+        <div style={style}>
+            <BoardRow
+                row={row}
+                index={index}
+                groupId={groupId}
+                columns={columns}
+                color={groupColor}
+                isSelected={selectedIds.has(row.docId)}
+                onToggleSelect={onToggleSelect}
+                onUpdateRow={onUpdateRow}
+                metrologos={metrologos}
+                clientes={clientes}
+                onDragStart={onDragStart}
+                onDrop={onDrop}
+                onDragEnd={onDragEnd}
+                canEditBoard={canEditBoard}
+                onOpenComments={onOpenComments}
+                onOpenHistory={onOpenHistory}
+                onUpdateMetrologoColor={onUpdateMetrologoColor}
+            />
+        </div>
+    );
+}
+
+const GroupRowsBody = React.memo(function GroupRowsBody(props: BoardRowSharedProps) {
+    const { rows, groupId, groupColor, columns } = props;
+    if (rows.length === 0) return null;
+
+    if (rows.length < VIRTUALIZE_MIN_ROWS) {
+        return (
+            <>
+                {rows.map((row, rIndex) => (
+                    <BoardRow
+                        key={row.docId}
+                        row={row}
+                        index={rIndex}
+                        groupId={groupId}
+                        columns={columns}
+                        color={groupColor}
+                        isSelected={props.selectedIds.has(row.docId)}
+                        onToggleSelect={props.onToggleSelect}
+                        onUpdateRow={props.onUpdateRow}
+                        metrologos={props.metrologos}
+                        clientes={props.clientes}
+                        onDragStart={props.onDragStart}
+                        onDrop={props.onDrop}
+                        onDragEnd={props.onDragEnd}
+                        canEditBoard={props.canEditBoard}
+                        onOpenComments={props.onOpenComments}
+                        onOpenHistory={props.onOpenHistory}
+                        onUpdateMetrologoColor={props.onUpdateMetrologoColor}
+                    />
+                ))}
+            </>
+        );
+    }
+
+    const height = Math.min(rows.length * ROW_HEIGHT_PX, VIRTUAL_LIST_MAX_HEIGHT);
+    return (
+        <List<BoardRowSharedProps>
+            rowCount={rows.length}
+            rowHeight={ROW_HEIGHT_PX}
+            rowComponent={VirtualBoardRow}
+            rowProps={props}
+            style={{ height, width: "100%" }}
+            overscanCount={6}
+        />
+    );
+});
+
 const HiddenColumnsBar = ({ hiddenColumns, onUnhide }: { hiddenColumns: Column[], onUnhide: (key: string) => void }) => {
     if (hiddenColumns.length === 0) return null;
     return (
@@ -561,9 +870,19 @@ const FridayScreen: React.FC = () => {
     const { navigateTo } = useNavigation();
     const { user } = useAuth();
     const [isLoadingData, setIsLoadingData] = useState(true);
-    const [userRole, setUserRole] = useState<string>("admin"); 
+    const [userRole, setUserRole] = useState<string>(""); 
     const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
     const [currentUserName, setCurrentUserName] = useState<string>("");
+    const [currentUserProfile, setCurrentUserProfile] = useState<{
+        nombre?: string; name?: string; correo?: string; email?: string;
+        puesto?: string; role?: string; departamento?: string;
+    } | null>(null);
+    const [userProfileResolved, setUserProfileResolved] = useState(false);
+
+    const canEditBoard = useMemo(
+        () => (userProfileResolved ? canUserEditFridayBoard(currentUserProfile) : false),
+        [currentUserProfile, userProfileResolved]
+    );
 
     const [rows, setRows] = useState<WorksheetData[]>([]);
     const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
@@ -579,7 +898,8 @@ const FridayScreen: React.FC = () => {
     const [isThinking, setIsThinking] = useState(false);
     
     const [search, setSearch] = useState("");
-    const deferredSearch = useDeferredValue(search); 
+    const debouncedSearch = useDebounce(search, 300);
+    const agBotRanRef = useRef(false);
 
     const [permissionMenu, setPermissionMenu] = useState<{ x: number, y: number, colKey: string } | null>(null);
     const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
@@ -594,6 +914,7 @@ const FridayScreen: React.FC = () => {
     const [isPending, startTransition] = useTransition();
 
     const saveColumnsToFirebase = async (colsToSave: Column[]) => {
+        if (!canEditBoard) return;
         try {
             const cleanColumns = JSON.parse(JSON.stringify(colsToSave));
             await setDoc(doc(db, "tableros", "principal"), { columns: cleanColumns }, { merge: true });
@@ -604,14 +925,39 @@ const FridayScreen: React.FC = () => {
 
     useEffect(() => {
         const fetchUser = async () => {
+            setUserProfileResolved(false);
             if (user?.email) {
-                const q = query(collection(db, "usuarios"), where("email", "==", user.email));
-                const snap = await getDocs(q);
-                if (!snap.empty) {
-                    setCurrentUserName(snap.docs[0].data().nombre || user.displayName || "Yo");
-                    setUserRole(snap.docs[0].data().role || "admin");
-                } else setCurrentUserName(user.displayName || "Yo");
+                const docSnap = await findUsuarioDocByCorreo(user.email);
+                if (docSnap) {
+                    const data = docSnap.data();
+                    const profile = {
+                        nombre: data.nombre || data.name || user.name,
+                        name: data.name || data.nombre,
+                        correo: data.correo || data.email || user.email,
+                        email: data.email || data.correo || user.email,
+                        puesto: data.puesto || data.role,
+                        role: data.role || data.puesto,
+                        departamento: data.departamento,
+                    };
+                    setCurrentUserProfile(profile);
+                    setCurrentUserName(profile.nombre || user.name || "Yo");
+                    setUserRole((data.role || data.puesto || "").toLowerCase());
+                } else {
+                    setCurrentUserProfile({
+                        nombre: user.name,
+                        name: user.name,
+                        correo: user.email,
+                        email: user.email,
+                        puesto: user.role,
+                        role: user.role,
+                    });
+                    setCurrentUserName(user.name || "Yo");
+                    setUserRole((user.role || "").toLowerCase());
+                }
+            } else {
+                setCurrentUserProfile(null);
             }
+            setUserProfileResolved(true);
         };
         fetchUser();
     }, [user]);
@@ -657,8 +1003,9 @@ const FridayScreen: React.FC = () => {
     }, [currentYear]); 
 
     useEffect(() => {
-        if (isLoadingData || rows.length === 0) return;
+        if (!userProfileResolved || !canEditBoard || isLoadingData || rows.length === 0 || agBotRanRef.current) return;
         const runAGBot = async () => {
+            agBotRanRef.current = true;
             const batch = writeBatch(db); let updateCount = 0; const newThoughts: AGBotThought[] = [];
             rows.forEach(row => {
                 let needsUpdate = false; const updates: any = {};
@@ -686,18 +1033,24 @@ const FridayScreen: React.FC = () => {
             if (newThoughts.length > 0) setAgBotThoughts(prev => [...newThoughts, ...prev].slice(0, 10));
             if (updateCount > 0) { setIsThinking(true); try { await batch.commit(); showToast(`🤖 AG-Bot: ${updateCount} dato(s) sincronizado(s)`, 'info'); } catch(error) {} setTimeout(() => setIsThinking(false), 1000); }
         };
-        const timer = setTimeout(runAGBot, 3500); return () => clearTimeout(timer);
-    }, [rows, isLoadingData]); 
+        const timer = setTimeout(runAGBot, 2000);
+        return () => clearTimeout(timer);
+    }, [userProfileResolved, canEditBoard, isLoadingData, rows.length]);
+
+    useEffect(() => {
+        agBotRanRef.current = false;
+    }, [currentYear]);
 
     const showToast = (message: string, type: 'success' | 'info' | 'error') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000); };
     const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
     const handleSort = (key: string, direction: 'asc' | 'desc') => { setSortConfig({ key, direction }); setActiveColumnMenu(null); };
-    const handleHide = async (key: string) => { const newCols = columns.map(c => c.key === key ? { ...c, hidden: true } : c); setColumns(newCols); setActiveColumnMenu(null); await saveColumnsToFirebase(newCols); };
-    const handleUnhide = async (key: string) => { const newCols = columns.map(c => c.key === key ? { ...c, hidden: false } : c); setColumns(newCols); await saveColumnsToFirebase(newCols); };
-    const handleResetLayout = async () => { if(confirm("¿Restablecer vista original?")) { setColumns(DEFAULT_COLUMNS); await saveColumnsToFirebase(DEFAULT_COLUMNS); window.location.reload(); } };
-    const handleRename = async (key: string) => { const newName = prompt("Nuevo nombre:"); if (newName) { const newCols = columns.map(c => c.key === key ? { ...c, label: newName } : c); setColumns(newCols); await saveColumnsToFirebase(newCols); } setActiveColumnMenu(null); };
+    const handleHide = async (key: string) => { if (!canEditBoard) return; const newCols = columns.map(c => c.key === key ? { ...c, hidden: true } : c); setColumns(newCols); setActiveColumnMenu(null); await saveColumnsToFirebase(newCols); };
+    const handleUnhide = async (key: string) => { if (!canEditBoard) return; const newCols = columns.map(c => c.key === key ? { ...c, hidden: false } : c); setColumns(newCols); await saveColumnsToFirebase(newCols); };
+    const handleResetLayout = async () => { if (!canEditBoard) return; if(confirm("¿Restablecer vista original?")) { setColumns(DEFAULT_COLUMNS); await saveColumnsToFirebase(DEFAULT_COLUMNS); window.location.reload(); } };
+    const handleRename = async (key: string) => { if (!canEditBoard) return; const newName = prompt("Nuevo nombre:"); if (newName) { const newCols = columns.map(c => c.key === key ? { ...c, label: newName } : c); setColumns(newCols); await saveColumnsToFirebase(newCols); } setActiveColumnMenu(null); };
     
     const handleAddColumn = async () => {
+        if (!canEditBoard) return;
         const name = prompt("Nombre de la nueva columna:"); if (!name) return;
         const newKey = `col_${Date.now()}`;
         const newCol: Column = { key: newKey, label: name, type: 'text', width: 150, hidden: false, sticky: false, permissions: [] };
@@ -708,7 +1061,7 @@ const FridayScreen: React.FC = () => {
     const handleOpenPermissions = (e: any, key: string) => { setPermissionMenu({ x: e.clientX, y: e.clientY, colKey: key }); setActiveColumnMenu(null); };
     
     const handleTogglePermission = async (roleId: string) => {
-        if (!permissionMenu) return;
+        if (!canEditBoard || !permissionMenu) return;
         const targetCol = columns.find(c => c.key === permissionMenu.colKey); if (!targetCol) return;
         let currentPerms = targetCol.permissions || [];
         if (currentPerms.includes(roleId)) currentPerms = currentPerms.filter(p => p !== roleId); else currentPerms = [...currentPerms, roleId];
@@ -716,18 +1069,23 @@ const FridayScreen: React.FC = () => {
         setColumns(newCols); await saveColumnsToFirebase(newCols);
     };
 
-    const handleUpdateMetrologoColor = async (userId: string, newColor: string) => { await updateDoc(doc(db, "usuarios", userId), { color: newColor }); };
+    const handleUpdateMetrologoColor = async (userId: string, newColor: string) => {
+        if (!canEditBoard) return;
+        await updateDoc(doc(db, "usuarios", userId), { color: newColor });
+    };
 
     const handleAddRow = useCallback(async (groupId: string) => {
+        if (!canEditBoard) return;
         const docRef = doc(collection(db, "hojasDeTrabajo"));
         let initialStatus = 'Desconocido'; let initialLocation = '';
         if (groupId === 'sitio') { initialStatus = 'Calibrado'; initialLocation = 'Servicio en Sitio'; } else if (groupId === 'laboratorio') { initialLocation = 'Laboratorio'; }
         const now = new Date(); const fechaEntradaStr = now.toISOString().split('T')[0]; 
         const newRowData = { id: "", folio: "", cliente: "", equipo: "", lugarCalibracion: groupId, status_equipo: initialStatus, ubicacion_real: initialLocation, nombre: currentUserName, assignedTo: currentUserName, createdAt: now.toISOString(), fechaEntrada: fechaEntradaStr, fechaRecepcion: fechaEntradaStr, diasPromesa: 5, status_certificado: 'Pendiente de Certificado' };
         await setDoc(docRef, newRowData); showToast("Fila agregada correctamente", 'success');
-    }, [currentUserName]);
+    }, [currentUserName, canEditBoard]);
 
     const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
+        if (!canEditBoard) return;
         setRows(prevRows => prevRows.map(r => {
             if (r.docId === rowId) {
                 const updated = { ...r, [key]: value };
@@ -746,27 +1104,34 @@ const FridayScreen: React.FC = () => {
             batch.set(historyDoc, { field: key, oldValue: oldValue || "", newValue: value, user: currentUserName, timestamp: new Date().toISOString() });
             await batch.commit();
         } catch (error) { showToast("Error de conexión al guardar", 'error'); }
-    }, [rows, currentUserName]);
+    }, [rows, currentUserName, canEditBoard]);
 
     const handleDeleteSelected = async () => {
+        if (!canEditBoard) return;
         if (!confirm(`¿Eliminar ${selectedIds.size} elementos?`)) return; 
         const batch = writeBatch(db); selectedIds.forEach(id => { batch.delete(doc(db, "hojasDeTrabajo", id)); });
         setSelectedIds(new Set()); await batch.commit(); showToast("Elementos eliminados", 'success');
     };
 
     const toggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }, []);
-    const startResize = (e: React.MouseEvent, colKey: string, currentWidth: number) => { e.preventDefault(); e.stopPropagation(); setIsResizing(true); resizingRef.current = { startX: e.clientX, startWidth: currentWidth, key: colKey }; document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp); };
+    const startResize = (e: React.MouseEvent, colKey: string, currentWidth: number) => { if (!canEditBoard) return; e.preventDefault(); e.stopPropagation(); setIsResizing(true); resizingRef.current = { startX: e.clientX, startWidth: currentWidth, key: colKey }; document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp); };
     const handleMouseMove = useCallback((e: MouseEvent) => { if (!resizingRef.current) return; const { startX, startWidth, key } = resizingRef.current; const diff = e.clientX - startX; const newWidth = Math.max(50, startWidth + diff); setColumns(prevCols => prevCols.map(col => col.key === key ? { ...col, width: newWidth } : col)); }, []);
-    const handleMouseUp = useCallback(async () => { setIsResizing(false); document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); resizingRef.current = null; }, []);
-    const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => { if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; } dragItemRef.current = item; e.dataTransfer.effectAllowed = "move"; if (e.target instanceof HTMLElement) e.target.style.opacity = '0.5'; }, [columns]);
+    const handleMouseUp = useCallback(async () => {
+        setIsResizing(false);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        resizingRef.current = null;
+    }, []);
+    const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => { if (!canEditBoard) { e.preventDefault(); return; } if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; } dragItemRef.current = item; e.dataTransfer.effectAllowed = "move"; if (e.target instanceof HTMLElement) e.target.style.opacity = '0.5'; }, [columns, canEditBoard]);
     const onDragEnd = (e: React.DragEvent) => { if (e.target instanceof HTMLElement) e.target.style.opacity = '1'; dragItemRef.current = null; };
     const onDrop = useCallback(async (e: React.DragEvent, target: DragItem) => {
+        if (!canEditBoard) return;
         e.preventDefault(); const dragItem = dragItemRef.current; if (!dragItem) return;
         if (dragItem.type === 'column' && target.type === 'column') {
              const fromIdx = dragItem.index; const toIdx = target.index; if(columns[toIdx].sticky || columns[fromIdx].sticky) return;
              let newCols = [...columns]; const [moved] = newCols.splice(fromIdx, 1); newCols.splice(toIdx, 0, moved); setColumns(newCols); await saveColumnsToFirebase(newCols);
         }
-    }, [columns]); 
+    }, [columns, canEditBoard]); 
 
     const handleExportCSV = () => {
         const headers = columns.filter(c => !c.hidden).map(c => c.label).join(",");
@@ -774,34 +1139,94 @@ const FridayScreen: React.FC = () => {
         const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + csvRows; const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `tablero_${currentYear}.csv`); document.body.appendChild(link); link.click();
     };
 
-    const groupedRows = useMemo(() => {
-        let filtered = rows.filter(r => {
-            if (deferredSearch) {
-                const s = deferredSearch.toLowerCase();
-                const matches = ( (r.cliente || "").toLowerCase().includes(s) || (r.folio || "").toLowerCase().includes(s) || (r.equipo || "").toLowerCase().includes(s) || (r.id || "").toLowerCase().includes(s) || (r.marca || "").toLowerCase().includes(s) || (r.modelo || "").toLowerCase().includes(s) || (r.serie || "").toLowerCase().includes(s) || (r.nombre || "").toLowerCase().includes(s) || (r.assignedTo || "").toLowerCase().includes(s) || (r.folioSalida || "").toLowerCase().includes(s) );
-                if (!matches) return false;
-            }
-            for (const [key, val] of Object.entries(activeFilters)) { if (val && r[key] !== val) return false; }
-            return true;
-        });
+    const searchBlobByDocId = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const row of rows) map.set(row.docId, buildRowSearchBlob(row));
+        return map;
+    }, [rows]);
 
-        if (sortConfig.key) {
-            filtered.sort((a, b) => { const valA = a[sortConfig.key!] || ""; const valB = b[sortConfig.key!] || ""; if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1; if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1; return 0; });
+    const groupedRows = useMemo(() => {
+        const searchTerm = normalizeText(debouncedSearch);
+        let filtered = rows;
+
+        if (searchTerm) {
+            filtered = rows.filter((r) => searchBlobByDocId.get(r.docId)?.includes(searchTerm));
         }
 
-        return groupsConfig.map(group => ({ ...group, rows: filtered.filter(r => (r.lugarCalibracion || "").toLowerCase() === group.id) }));
-    }, [rows, groupsConfig, deferredSearch, sortConfig, activeFilters]);
+        const filterEntries = Object.entries(activeFilters).filter(([, val]) => val);
+        if (filterEntries.length > 0) {
+            filtered = filtered.filter((r) => filterEntries.every(([key, val]) => r[key] === val));
+        }
 
-    let headerStickyOffset = 40; 
-    const hiddenColumns = columns.filter(c => c.hidden);
+        if (sortConfig.key) {
+            const key = sortConfig.key;
+            filtered = [...filtered].sort((a, b) => {
+                const valA = a[key] || "";
+                const valB = b[key] || "";
+                if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+                if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+                return 0;
+            });
+        }
+
+        return groupsConfig.map((group) => ({
+            ...group,
+            rows: filtered.filter((r) => (r.lugarCalibracion || "").toLowerCase() === group.id),
+        }));
+    }, [rows, groupsConfig, debouncedSearch, sortConfig, activeFilters, searchBlobByDocId]);
+
+    const visibleRowCount = useMemo(
+        () => groupedRows.reduce((sum, g) => sum + g.rows.length, 0),
+        [groupedRows]
+    );
+
+    const boardStats = useMemo(() => ({
+        sitio: groupedRows.find((g) => g.id === "sitio")?.rows.length ?? 0,
+        laboratorio: groupedRows.find((g) => g.id === "laboratorio")?.rows.length ?? 0,
+    }), [groupedRows]);
+
+    const hiddenColumns = useMemo(() => columns.filter((c) => c.hidden), [columns]);
+    const visibleColumns = useMemo(() => columns.filter((c) => !c.hidden), [columns]);
+    const hasActiveFilters = useMemo(
+        () => Object.values(activeFilters).some(Boolean) || debouncedSearch.trim().length > 0,
+        [activeFilters, debouncedSearch]
+    );
+
+    const getUniqueValuesForColumn = useCallback((key: string) => {
+        return [...new Set(rows.map((r) => String(r[key] ?? "")))].sort((a, b) => a.localeCompare(b, "es"));
+    }, [rows]);
+
+    const clearBoardFilters = useCallback(() => {
+        setSearch("");
+        setActiveFilters({});
+        setSortConfig({ key: null, direction: "asc" });
+    }, []);
+
+    const boardRowSharedProps: Omit<BoardRowSharedProps, "rows" | "groupId" | "groupColor"> = useMemo(() => ({
+        columns,
+        selectedIds,
+        onToggleSelect: toggleSelect,
+        onUpdateRow: handleUpdateRow,
+        metrologos,
+        clientes,
+        onDragStart,
+        onDrop,
+        onDragEnd,
+        canEditBoard,
+        onOpenComments: setActiveCommentRow,
+        onOpenHistory: setActiveHistoryRow,
+        onUpdateMetrologoColor: handleUpdateMetrologoColor,
+    }), [columns, selectedIds, toggleSelect, handleUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, handleUpdateMetrologoColor]);
+
+    let headerStickyOffset = 40;
 
     return (
         /* ¡MAGIA AQUÍ! El fixed inset-0 z-[100] ocultará tu sidebar lateral aplastando el layout superior */
-        <div className="fixed inset-0 z-[100] flex h-screen bg-[#eceff8] font-sans text-[#323338] w-full overflow-hidden">
+        <div className="fixed inset-0 z-[100] flex h-screen bg-[#f6f7fb] font-sans text-[#323338] w-full overflow-hidden">
             <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all w-full">
                 
                 {/* --- BARRA SUPERIOR --- */}
-                <div className="px-6 py-4 border-b border-[#d0d4e4] flex justify-between items-center bg-white sticky top-0 z-40 shadow-sm w-full">
+                <div className="px-6 py-3.5 border-b border-[#e6e9ef] flex justify-between items-center bg-white sticky top-0 z-40 w-full">
                     <div className="flex items-center gap-4">
                         <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shadow-sm border border-transparent hover:border-gray-200" title="Regresar al Menú">
                             <ArrowLeft className="w-5 h-5"/>
@@ -810,11 +1235,11 @@ const FridayScreen: React.FC = () => {
                              <img src={labLogo} alt="AG Metrology Logo" className="h-9 w-auto object-contain drop-shadow-sm" />
                         </div>
                         <div className="flex flex-col ml-2">
-                            <h1 className="text-2xl font-bold leading-tight flex items-center gap-2 text-gray-800 tracking-tight">
-                                Tablero Principal 
-                                <div className="inline-flex bg-gray-100 rounded-lg p-1 ml-3 border border-gray-200">
-                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-0.5 rounded-md text-xs font-bold transition-all", currentYear === 2025 ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}>2025</button>
-                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-3 py-0.5 rounded-md text-xs font-bold transition-all", currentYear === 2026 ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}>2026</button>
+                            <h1 className="text-xl font-semibold leading-tight flex items-center gap-2 text-[#323338] tracking-tight">
+                                Tablero de Calibración
+                                <div className="inline-flex bg-[#f5f6f8] rounded-lg p-0.5 ml-2 border border-[#e6e9ef]">
+                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2025 ? "bg-white text-[#0073ea] shadow-sm" : "text-[#676879] hover:text-[#323338]")}>2025</button>
+                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2026 ? "bg-white text-[#0073ea] shadow-sm" : "text-[#676879] hover:text-[#323338]")}>2026</button>
                                 </div>
                             </h1>
                         </div>
@@ -822,38 +1247,65 @@ const FridayScreen: React.FC = () => {
                     <div className="flex gap-3 items-center">
                         <div className="relative">
                             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-                            <input placeholder="Buscar todo..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all bg-gray-50 w-72" value={search} onChange={e => setSearch(e.target.value)} />
+                            <input placeholder="Buscar en tablero..." className="pl-9 pr-9 py-2 border border-[#e6e9ef] rounded-lg text-sm focus:border-[#0073ea] focus:ring-2 focus:ring-blue-100/80 outline-none transition-all bg-white w-72 shadow-sm" value={search} onChange={e => setSearch(e.target.value)} />
+                            {search !== debouncedSearch && <Loader2 className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" />}
                         </div>
                         
                         <div className={clsx("p-2 rounded-lg transition-all", isThinking ? "text-purple-600 bg-purple-50 animate-pulse" : "text-gray-400")} title="AG-Bot Activo"><Brain size={18}/></div>
                         <AGBotWidget thoughts={agBotThoughts} />
 
                         <button onClick={handleExportCSV} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors flex items-center gap-2 shadow-sm" title="Exportar a Excel"><Download size={18}/><span className="text-xs font-bold hidden md:inline">Exportar</span></button>
-                        <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-lg transition-colors shadow-sm border border-transparent hover:border-gray-200" title="Restablecer vista original"><RotateCcw size={18}/></button>
+                        {canEditBoard && (
+                            <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-lg transition-colors shadow-sm border border-transparent hover:border-gray-200" title="Restablecer vista original"><RotateCcw size={18}/></button>
+                        )}
+                        {userProfileResolved && !canEditBoard && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-md">
+                                <Eye className="w-3.5 h-3.5" /> Modo lectura
+                            </span>
+                        )}
                     </div>
+                </div>
+
+                <div className="px-6 py-2 border-b border-[#e6e9ef] bg-[#f5f6f8] flex flex-wrap items-center gap-3 sticky top-[61px] z-[35]">
+                    <span className="text-xs font-semibold text-gray-600">{visibleRowCount} elementos visibles</span>
+                    <span className="text-[10px] font-bold text-[#0073ea] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">Sitio {boardStats.sitio}</span>
+                    <span className="text-[10px] font-bold text-[#a25ddc] bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">Lab {boardStats.laboratorio}</span>
+                    {Object.entries(activeFilters).filter(([, v]) => v).map(([key, val]) => {
+                        const col = columns.find((c) => c.key === key);
+                        return (
+                            <button key={key} onClick={() => handleFilter(key, "")} className="text-[10px] bg-white border border-gray-200 rounded-full px-2 py-0.5 flex items-center gap-1 hover:border-red-200">
+                                {col?.label || key}: {val} <X size={10} />
+                            </button>
+                        );
+                    })}
+                    {hasActiveFilters && (
+                        <button onClick={clearBoardFilters} className="text-xs text-blue-600 hover:underline font-medium ml-auto">Limpiar vista</button>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-auto bg-white w-full" id="main-board-scroll">
                     <div className="inline-block min-w-full pb-32">
                         <HiddenColumnsBar hiddenColumns={hiddenColumns} onUnhide={handleUnhide} />
 
-                        <div className="flex border-b border-[#d0d4e4] sticky top-0 z-30 bg-white shadow-sm h-[36px]">
-                            <div className="w-1.5 bg-white sticky left-0 z-30"></div>
-                            <div className="w-[40px] border-r border-[#d0d4e4] bg-white sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300" /></div>
+                        <div className="flex border-b border-[#e6e9ef] sticky top-0 z-30 bg-[#f5f6f8] h-[40px]">
+                            <div className="w-1.5 bg-[#f5f6f8] sticky left-0 z-30"></div>
+                            <div className="w-[40px] border-r border-[#e6e9ef] bg-[#f5f6f8] sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300 text-[#0073ea]" /></div>
                             
-                            {columns.filter(c => !c.hidden).map((col, index) => {
+                            {visibleColumns.map((col, index) => {
                                 const style: React.CSSProperties = { width: col.width, zIndex: col.sticky ? 30 : undefined };
                                 if (col.sticky) { style.position = 'sticky'; style.left = headerStickyOffset + 1.5; headerStickyOffset += col.width; }
                                 const isLocked = col.permissions && col.permissions.length > 0 && !col.permissions.includes(userRole);
                                 return (
-                                <div key={col.key} draggable={!col.sticky && !isResizing} onDragStart={(e) => onDragStart(e, { type: 'column', index })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => onDrop(e, { type: 'column', index })} style={style} className={clsx("px-2 text-[11px] font-bold text-gray-500 flex items-center justify-center border-r border-transparent hover:bg-gray-50 select-none bg-white group hover:text-gray-800 transition-colors uppercase tracking-wide relative", col.sticky ? "shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r-[#d0d4e4]" : "cursor-pointer")}>
+                                <div key={col.key} draggable={canEditBoard && !col.sticky && !isResizing} onDragStart={(e) => onDragStart(e, { type: 'column', index })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => onDrop(e, { type: 'column', index })} style={style} className={clsx("px-3 text-[12px] font-semibold text-[#676879] flex items-center justify-center border-r border-[#e6e9ef] hover:bg-[#eceef3] select-none bg-[#f5f6f8] group hover:text-[#323338] transition-colors relative", col.sticky ? "shadow-[1px_0_3px_rgba(0,0,0,0.04)]" : "cursor-pointer")}>
                                     <span className="truncate flex items-center gap-1 flex-1 justify-center">{col.label} {isLocked && <Lock className="w-2.5 h-2.5 text-gray-300" />}{activeFilters[col.key] && <Filter size={10} className="text-blue-500 fill-blue-500"/>}</span>
                                     <button onClick={(e) => { e.stopPropagation(); setActiveColumnMenu(activeColumnMenu === col.key ? null : col.key); }} className="p-0.5 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity absolute right-1"><MoreHorizontal className="w-3 h-3 text-gray-500" /></button>
                                     {!col.sticky && (<div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors opacity-0 hover:opacity-100" onMouseDown={(e) => startResize(e, col.key, col.width)} onClick={(e) => e.stopPropagation()}></div>)}
-                                    {activeColumnMenu === col.key && ( <ColumnOptions colKey={col.key} currentLabel={col.label} uniqueValues={[...new Set(rows.map(r => r[col.key] || ""))].sort()} onClose={() => setActiveColumnMenu(null)} onSort={handleSort} onHide={handleHide} onRename={handleRename} onFilter={handleFilter} onPermissions={(k:string) => handleOpenPermissions(window.event, k)} /> )}
+                                    {activeColumnMenu === col.key && ( <ColumnOptions colKey={col.key} currentLabel={col.label} uniqueValues={getUniqueValuesForColumn(col.key)} onClose={() => setActiveColumnMenu(null)} onSort={handleSort} onHide={handleHide} onRename={handleRename} onFilter={handleFilter} onPermissions={(k:string) => handleOpenPermissions(window.event, k)} /> )}
                                 </div>
                             )})}
-                            <div className="px-2 border-r border-transparent flex items-center justify-center cursor-pointer hover:bg-gray-50 group transition-colors" onClick={handleAddColumn} title="Agregar columna"><Plus size={16} className="text-gray-400 group-hover:text-blue-500 transition-colors" /></div>
+                            {canEditBoard && (
+                                <div className="px-2 border-r border-transparent flex items-center justify-center cursor-pointer hover:bg-gray-50 group transition-colors" onClick={handleAddColumn} title="Agregar columna"><Plus size={16} className="text-gray-400 group-hover:text-blue-500 transition-colors" /></div>
+                            )}
                             <div className="flex-1 border-b border-gray-100 min-w-[50px]"></div>
                         </div>
 
@@ -863,27 +1315,33 @@ const FridayScreen: React.FC = () => {
                             ) : (
                                 groupedRows.map((group) => (
                                     <div key={group.id} className="mb-10">
-                                        <div className="flex items-center mb-2 group sticky left-0 z-10 p-2 rounded hover:bg-gray-50 transition-colors">
-                                            <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-gray-200", group.collapsed && "-rotate-90", isPending && "opacity-50")} style={{ color: group.color }} onClick={() => { startTransition(() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }); }} />
-                                            <h2 className="text-lg font-medium ml-2 px-1 text-gray-800" style={{ color: group.color }}>{group.name}</h2>
-                                            <span className="ml-3 text-xs text-gray-400 font-light border border-gray-200 px-2 py-0.5 rounded-full shadow-sm bg-white">{group.rows.length}</span>
+                                        <div className="flex items-center mb-2 group sticky left-0 z-10 px-3 py-2 rounded-lg hover:bg-white/80 transition-colors border border-[#e6e9ef] bg-white shadow-sm">
+                                            <div className="w-1 h-6 rounded-full mr-2 shrink-0" style={{ backgroundColor: group.color }} />
+                                            <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-[#f5f6f8] text-[#676879]", group.collapsed && "-rotate-90", isPending && "opacity-50")} onClick={() => { startTransition(() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }); }} />
+                                            <h2 className="text-[15px] font-semibold ml-1 text-[#323338]">{group.name}</h2>
+                                            <span className="ml-3 text-[11px] text-[#676879] font-medium border border-[#e6e9ef] px-2.5 py-0.5 rounded-full bg-[#f5f6f8]">{group.rows.length}</span>
                                         </div>
                                         {!group.collapsed && (
-                                            <div className="shadow-sm rounded-tr-md rounded-tl-md overflow-hidden border-l border-t border-r border-[#d0d4e4] min-h-[50px]">
-                                                {group.rows.map((row, rIndex) => (
-                                                    <BoardRow key={row.docId} row={row} index={rIndex} groupId={group.id} columns={columns} color={group.color} isSelected={selectedIds.has(row.docId)} onToggleSelect={toggleSelect} onUpdateRow={handleUpdateRow} metrologos={metrologos} clientes={clientes} onDragStart={onDragStart} onDrop={onDrop} onDragEnd={onDragEnd} userRole={userRole} onOpenComments={setActiveCommentRow} onOpenHistory={setActiveHistoryRow} onUpdateMetrologoColor={handleUpdateMetrologoColor} />
-                                                ))}
-                                                <div className="flex h-[40px] border-b border-[#d0d4e4] bg-white group hover:bg-gray-50">
+                                            <div className="rounded-lg overflow-hidden border border-[#e6e9ef] bg-white min-h-[50px]">
+                                                <GroupRowsBody
+                                                    {...boardRowSharedProps}
+                                                    rows={group.rows}
+                                                    groupId={group.id}
+                                                    groupColor={group.color}
+                                                />
+                                                {canEditBoard && (
+                                                <div className="flex border-b border-[#e6e9ef] bg-white group hover:bg-[#f5f6f8]" style={{ height: ROW_HEIGHT_PX }}>
                                                     <div className="sticky left-0 z-20 flex bg-white group-hover:bg-gray-50">
                                                         <div className="w-1.5 flex-shrink-0" style={{ backgroundColor: group.color, opacity: 0.5 }}></div>
-                                                        <div className="w-[40px] flex-shrink-0 border-r border-[#d0d4e4]"></div>
-                                                        {columns.filter(c => c.sticky && !c.hidden).map(c => ( <div key={c.key} style={{width: c.width}} className="border-r border-[#d0d4e4] flex-shrink-0"></div> ))}
+                                                        <div className="w-[40px] flex-shrink-0 border-r border-[#e6e9ef]"></div>
+                                                        {columns.filter(c => c.sticky && !c.hidden).map(c => ( <div key={c.key} style={{width: c.width}} className="border-r border-[#e6e9ef] flex-shrink-0"></div> ))}
                                                     </div>
                                                     <div className="flex-1 flex items-center px-2 relative">
                                                         <input type="text" placeholder="+ Nuevo Equipo" className="outline-none text-sm w-[200px] h-full placeholder-gray-400 bg-transparent absolute left-2 font-medium" onKeyDown={(e) => { if (e.key === 'Enter') { handleAddRow(group.id); (e.target as HTMLInputElement).value = ''; } }} />
                                                         <button onClick={() => handleAddRow(group.id)} className="ml-[200px] text-xs bg-blue-600 text-white px-3 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity font-medium shadow-sm">Agregar</button>
                                                     </div>
                                                 </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -893,7 +1351,7 @@ const FridayScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {selectedIds.size > 0 && (
+                {canEditBoard && selectedIds.size > 0 && (
                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 z-50 animate-in slide-in-from-bottom-4">
                        <div className="flex items-center gap-3 border-r border-gray-200 pr-6"><div className="bg-[#0073ea] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">{selectedIds.size}</div><span className="text-sm font-medium text-gray-700">Seleccionados</span></div>
                        <button onClick={handleDeleteSelected} className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /><span className="text-[10px]">Eliminar</span></button>
@@ -901,8 +1359,8 @@ const FridayScreen: React.FC = () => {
                    </div>
                 )}
 
-                {permissionMenu && (<PermissionMenu x={permissionMenu.x} y={permissionMenu.y} column={columns.find(c => c.key === permissionMenu.colKey)!} onClose={() => setPermissionMenu(null)} onTogglePermission={handleTogglePermission}/>)}
-                {activeCommentRow && (<CommentsPanel row={activeCommentRow} onClose={() => setActiveCommentRow(null)} />)}
+                {canEditBoard && permissionMenu && (<PermissionMenu x={permissionMenu.x} y={permissionMenu.y} column={columns.find(c => c.key === permissionMenu.colKey)!} onClose={() => setPermissionMenu(null)} onTogglePermission={handleTogglePermission}/>)}
+                {activeCommentRow && (<CommentsPanel row={activeCommentRow} onClose={() => setActiveCommentRow(null)} canPost={canEditBoard} />)}
                 {activeHistoryRow && (<HistoryPanel row={activeHistoryRow} onClose={() => setActiveHistoryRow(null)} />)}
                 <ToastContainer toasts={toasts} removeToast={removeToast} />
             </div>

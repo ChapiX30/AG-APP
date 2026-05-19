@@ -68,7 +68,7 @@ const magnitudesAcreditadas = [
 ];
 
 const magnitudesTrazables = [
-  { id: 'acustica Trazable', name: 'AcusticaTrazable', description: 'Medición de sonido y vibraciones' },
+  { id: 'acustica Trazable', name: 'Acustica Trazable', description: 'Medición de sonido y vibraciones' },
   { id: 'dimensional Trazable', name: 'Dimensional Trazable', description: 'Mediciones de longitud y dimensiones' },
   { id: 'dureza Trazable', name: 'Dureza Trazable', description: 'Mediciones de dureza' },
   { id: 'electrica Trazable', name: 'Electrica Trazable', description: 'Mediciones eléctricas y electrónicas' },

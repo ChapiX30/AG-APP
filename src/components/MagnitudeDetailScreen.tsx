@@ -137,7 +137,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
       const anio = new Date().getFullYear().toString().slice(-2);
       setLoading(true);
       const consecutivo = await generarConsecutivo(selectedMagnitude, anio, user.name);
-      navigateTo('work-sheet', { consecutive: consecutivo, magnitud: selectedMagnitude });
+      navigateTo('work-sheet', { consecutive: consecutivo });
     } catch (error) {
       console.error(error);
     } finally {

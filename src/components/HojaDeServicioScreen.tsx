@@ -10,6 +10,8 @@ import {
   setDoc, addDoc, Timestamp, writeBatch,
   onSnapshot, deleteDoc, serverTimestamp
 } from "firebase/firestore";
+import { getAuth } from 'firebase/auth';
+import { finalizeServicioFromHoja } from '../utils/servicioAutomation';
 import logoImage from '../assets/lab_logo.png';
 
 const camposIniciales = {
@@ -24,6 +26,7 @@ const camposIniciales = {
   comentarios: '',
   calidadServicio: 'Excelente', 
   tecnicoResponsable: '',
+  servicioId: '',
 };
 
 type Empresa = {
@@ -617,6 +620,28 @@ export default function HojaDeServicioScreen() {
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
       await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
+
+      try {
+        const authUser = getAuth().currentUser;
+        const userId = authUser?.uid || '';
+        const hasSignature = !!(firmaTecnico || firmaCliente);
+        const finalizedAt = new Date();
+
+        if (userId && (campos.servicioId || (campos.empresaId && campos.fecha))) {
+          await finalizeServicioFromHoja({
+            servicioId: campos.servicioId || undefined,
+            clienteId: campos.empresaId,
+            fecha: campos.fecha,
+            userId,
+            finalizedAt,
+          });
+          if (!hasSignature) {
+            console.info('[HojaDeServicio] Servicio finalizado al guardar (sin firmas).');
+          }
+        }
+      } catch (finalizeError) {
+        console.error('Error al finalizar servicio vinculado:', finalizeError);
+      }
       
       const folderPath = `worksheets/Hojas de Trabajo/${campos.folio}`;
       
@@ -778,6 +803,14 @@ Gracias.`;
       }
     }
   };
+
+  useEffect(() => {
+    const linkedServicioId = localStorage.getItem('hoja_servicio_id');
+    if (linkedServicioId) {
+      setCampos((c) => ({ ...c, servicioId: linkedServicioId }));
+      localStorage.removeItem('hoja_servicio_id');
+    }
+  }, []);
 
   useEffect(() => {
     const fetchEmpresas = async () => {

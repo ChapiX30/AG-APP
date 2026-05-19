@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { usePresence } from '../hooks/usePresence';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { LoginScreen } from './LoginScreen';
@@ -60,10 +61,10 @@ export const MainApp: React.FC = () => {
     new URLSearchParams(window.location.search).get('share')
   );
 
-  usePushNotifications(
-    user?.uid || user?.id || localStorage.getItem('usuario_id') || '',
-    user?.email || localStorage.getItem('usuario.email') || ''
-  );
+  const uid = user?.uid || user?.id || localStorage.getItem('usuario_id') || '';
+
+  usePushNotifications(uid, user?.email || localStorage.getItem('usuario.email') || '');
+  usePresence(isAuthenticated ? uid : undefined);
 
   // --- PRIORIDAD 1: SI ES UNA CONSULTA DE QR, MOSTRAR VISTA PÚBLICA SIN LOGIN ---
   if (shareCertificado) {

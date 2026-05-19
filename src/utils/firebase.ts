@@ -7,7 +7,7 @@ import { getStorage } from "firebase/storage";
 // --- FCM (Web Push) ---
 import { isSupported, getMessaging, getToken, onMessage } from "firebase/messaging";
 
-const firebaseConfig = {
+export const firebaseConfig = {
     apiKey: "AIzaSyCOsmnfM950uNrUnCjQsRtAc2jiUESYxqI",
     authDomain: "agg1-b7f40.firebaseapp.com",
     projectId: "agg1-b7f40",
