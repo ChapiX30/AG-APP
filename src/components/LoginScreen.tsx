@@ -8,10 +8,10 @@ import {
   useMotionValue, useMotionTemplate,
 } from "framer-motion";
 import { sendPasswordResetEmail, AuthError } from "firebase/auth";
+import { collection, query, where, getDocs, limit } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigation } from "../hooks/useNavigation";
-import { auth } from "../utils/firebase";
-import { findUsuarioDocByCorreo } from "../utils/usuarioByCorreo";
+import { auth, db } from "../utils/firebase";
 import labLogo from "../assets/lab_logo.png";
 
 /* ─── helpers ─── */
@@ -20,28 +20,35 @@ const isValidEmail = (e: string) =>
 
 const errorMsg = (code: string) =>
   ({
-    "auth/user-not-found":           "No existe una cuenta con este correo.",
-    "auth/wrong-password":           "Contraseña incorrecta.",
-    "auth/invalid-email":            "Formato de correo inválido.",
-    "auth/too-many-requests":        "Demasiados intentos. Intenta más tarde.",
-    "auth/invalid-credential":       "Credenciales inválidas.",
-    "auth/network-request-failed":   "Sin conexión. Revisa tu red e intenta de nuevo.",
-    "auth/user-disabled":            "Esta cuenta está deshabilitada. Contacta al administrador.",
-    "auth/operation-not-allowed":    "Operación no permitida.",
-    "auth/missing-password":         "Ingresa tu contraseña.",
-    "auth/weak-password":            "La contraseña es demasiado débil.",
+    "auth/user-not-found":    "No existe una cuenta con este correo.",
+    "auth/wrong-password":    "Contraseña incorrecta.",
+    "auth/invalid-email":     "Formato de correo inválido.",
+    "auth/too-many-requests": "Demasiados intentos. Intenta más tarde.",
+    "auth/invalid-credential":"Credenciales inválidas.",
   }[code] ?? "Error inesperado. Intenta nuevamente.");
 
 const fetchUser = async (email: string) => {
-  const docSnap = await findUsuarioDocByCorreo(email);
-  if (!docSnap) return null;
-  const d = docSnap.data();
-  const name = d.nombre || d.name || "Usuario";
-  return {
-    name,
-    initial: name[0].toUpperCase(),
-    photoUrl: d.photoUrl || d.photoURL || null,
-  };
+  try {
+    // Registro guarda `correo`; documentos antiguos pueden usar `email`
+    let snap = await getDocs(
+      query(collection(db, "usuarios"), where("correo", "==", email), limit(1))
+    );
+    if (snap.empty) {
+      snap = await getDocs(
+        query(collection(db, "usuarios"), where("email", "==", email), limit(1))
+      );
+    }
+    if (snap.empty) return null;
+    const d = snap.docs[0].data() as any;
+    const name = d.nombre || d.name || "Usuario";
+    return {
+      name,
+      initial: name[0].toUpperCase(),
+      photoUrl: d.photoUrl || d.photoURL || null,
+    };
+  } catch {
+    return null;
+  }
 };
 
 /* ─── component ─── */
@@ -67,30 +74,9 @@ export const LoginScreen: React.FC<{
   } | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
 
-  const cacheRef = useRef<Record<string, typeof user>>({});
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const resetCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const cacheRef = useRef<Record<string, any>>({});
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastRef  = useRef<string | null>(null);
-  const lookupIdRef = useRef(0);
-
-  const openResetModal = () => {
-    restoreFocusRef.current = document.activeElement as HTMLElement;
-    setResetStatus(null);
-    setShowReset(true);
-  };
-
-  const closeResetModal = () => {
-    if (resetLoading) return;
-    if (resetCloseTimerRef.current) {
-      clearTimeout(resetCloseTimerRef.current);
-      resetCloseTimerRef.current = null;
-    }
-    setShowReset(false);
-    setResetStatus(null);
-    restoreFocusRef.current?.focus();
-    restoreFocusRef.current = null;
-  };
 
   /* spotlight en panel derecho */
   const mouseX   = useMotionValue(0);
@@ -103,51 +89,27 @@ export const LoginScreen: React.FC<{
     if (!email.trim()) { setUser(null); lastRef.current = null; return; }
     timerRef.current = setTimeout(async () => {
       const key = email.trim().toLowerCase();
-      if (!isValidEmail(key)) {
-        setUser(null);
-        lastRef.current = null;
-        return;
-      }
-      if (lastRef.current === key) return;
+      if (!isValidEmail(key) || lastRef.current === key) return;
       if (cacheRef.current[key] !== undefined) {
-        setUser(cacheRef.current[key]);
-        lastRef.current = key;
-        return;
+        setUser(cacheRef.current[key]); return;
       }
-      const lookupId = ++lookupIdRef.current;
       setFetching(true);
       const found = await fetchUser(key);
-      if (lookupId !== lookupIdRef.current) {
-        setFetching(false);
-        return;
-      }
       cacheRef.current[key] = found;
       setUser(found);
-      lastRef.current = key;
+      if (found) lastRef.current = key;
       setFetching(false);
     }, 600);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [email]);
 
-  useEffect(() => {
-    if (!showReset) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !resetLoading) closeResetModal();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [showReset, resetLoading]);
-
-  useEffect(() => () => {
-    if (resetCloseTimerRef.current) clearTimeout(resetCloseTimerRef.current);
-  }, []);
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setError("");
     try {
-      await login(email.trim().toLowerCase(), password);
-      navigateTo("menu");
+      const ok = await login(email.trim().toLowerCase(), password);
+      if (ok) navigateTo("menu");
+      else { setAttempts(p => p + 1); setError("Credenciales incorrectas."); }
     } catch (err) {
       setAttempts(p => p + 1);
       setError(errorMsg((err as AuthError).code ?? ""));
@@ -165,8 +127,7 @@ export const LoginScreen: React.FC<{
     try {
       await sendPasswordResetEmail(auth, clean);
       setResetStatus({ ok: true, msg: `Enlace enviado a ${clean}` });
-      if (resetCloseTimerRef.current) clearTimeout(resetCloseTimerRef.current);
-      resetCloseTimerRef.current = setTimeout(() => closeResetModal(), 3000);
+      setTimeout(() => { setShowReset(false); setResetStatus(null); }, 3000);
     } catch (err) {
       setResetStatus({ ok: false, msg: errorMsg((err as AuthError).code) });
     } finally { setResetLoading(false); }
@@ -338,13 +299,12 @@ export const LoginScreen: React.FC<{
 
             {/* Correo */}
             <div className="space-y-1.5">
-              <label htmlFor="login-email" className="text-xs font-medium text-slate-400">
+              <label className="text-xs font-medium text-slate-400">
                 Correo institucional
               </label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" aria-hidden />
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <input
-                  id="login-email"
                   type="email" value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
@@ -354,11 +314,7 @@ export const LoginScreen: React.FC<{
                   className="w-full pl-10 pr-9 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500 focus:bg-slate-800/80 transition-all disabled:opacity-50"
                 />
                 {fetching && (
-                  <span
-                    className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border-2 border-sky-400 border-t-transparent animate-spin"
-                    role="status"
-                    aria-label="Buscando usuario"
-                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border-2 border-sky-400 border-t-transparent animate-spin" />
                 )}
               </div>
             </div>
@@ -366,18 +322,17 @@ export const LoginScreen: React.FC<{
             {/* Contraseña */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label htmlFor="login-password" className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-slate-400">
                   Contraseña
                 </label>
-                <button type="button" onClick={openResetModal}
+                <button type="button" onClick={() => setShowReset(true)}
                   className="text-[11px] text-sky-400 hover:text-sky-300 transition-colors">
                   ¿Olvidaste tu contraseña?
                 </button>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" aria-hidden />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <input
-                  id="login-password"
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -387,12 +342,8 @@ export const LoginScreen: React.FC<{
                   required
                   className="w-full pl-10 pr-10 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500 focus:bg-slate-800/80 transition-all disabled:opacity-50"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(p => !p)}
-                  aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors"
-                >
+                <button type="button" onClick={() => setShowPass(p => !p)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors">
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
@@ -402,15 +353,13 @@ export const LoginScreen: React.FC<{
             <AnimatePresence>
               {error && (
                 <motion.div
-                  role="alert"
-                  aria-live="assertive"
                   className="flex items-center gap-2 text-[11px] text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2.5"
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                 >
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                   {attempts >= 3 && (
-                    <button type="button" onClick={openResetModal}
+                    <button type="button" onClick={() => setShowReset(true)}
                       className="ml-auto underline whitespace-nowrap">
                       Recuperar acceso
                     </button>
@@ -453,12 +402,9 @@ export const LoginScreen: React.FC<{
       <AnimatePresence>
         {showReset && (
           <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="reset-dialog-title"
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={(e) => { if (e.target === e.currentTarget && !resetLoading) closeResetModal(); }}
+            onClick={(e) => { if (e.target === e.currentTarget && !resetLoading) setShowReset(false); }}
           >
             <motion.div
               className="relative w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-700 px-6 py-6 shadow-2xl"
@@ -467,34 +413,24 @@ export const LoginScreen: React.FC<{
               exit={{ scale: 0.94, opacity: 0 }}
               transition={{ duration: 0.22 }}
             >
-              <button
-                type="button"
-                onClick={closeResetModal}
-                disabled={resetLoading}
-                aria-label="Cerrar"
-                className="absolute right-4 top-4 text-slate-500 hover:text-white transition-colors disabled:opacity-50"
-              >
+              <button onClick={() => !resetLoading && setShowReset(false)}
+                className="absolute right-4 top-4 text-slate-500 hover:text-white transition-colors">
                 <X className="h-4 w-4" />
               </button>
 
-              <h3 id="reset-dialog-title" className="text-sm font-semibold text-slate-50 mb-0.5">Recuperar acceso</h3>
+              <h3 className="text-sm font-semibold text-slate-50 mb-0.5">Recuperar acceso</h3>
               <p className="text-[11px] text-slate-400 mb-4">
                 Te enviamos un enlace a tu correo institucional.
               </p>
 
               <form onSubmit={handleReset} className="space-y-3">
-                <label htmlFor="reset-email" className="text-xs font-medium text-slate-400">
-                  Correo institucional
-                </label>
                 <div className="relative">
-                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" aria-hidden />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                   <input
-                    id="reset-email"
                     type="email" value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={resetLoading}
                     placeholder="usuario@ese-ag.com"
-                    autoComplete="email"
                     className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500 transition-colors disabled:opacity-50"
                     autoFocus
                   />
@@ -503,8 +439,6 @@ export const LoginScreen: React.FC<{
                 <AnimatePresence>
                   {resetStatus && (
                     <motion.p
-                      role="alert"
-                      aria-live="polite"
                       className={`flex items-center gap-1.5 text-[11px] rounded-xl px-3 py-2 ${
                         resetStatus.ok
                           ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-200"
