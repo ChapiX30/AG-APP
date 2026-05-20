@@ -1,5 +1,10 @@
-import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
-import { signInWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from "firebase/auth";
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import {
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  setPersistence,
+  inMemoryPersistence,
+} from "firebase/auth";
 import { auth, db } from "../utils/firebase";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -41,35 +46,16 @@ const loadUserProfile = async (uid: string, email: string): Promise<User> => {
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const loadedUidRef = useRef<string | null>(null);
 
+  // Sin sesión al recargar: no restaurar usuario desde Firebase (comportamiento original)
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        loadedUidRef.current = null;
-        setUser(null);
-        return;
-      }
-      if (loadedUidRef.current === firebaseUser.uid) return;
-      loadedUidRef.current = firebaseUser.uid;
-      try {
-        setUser(await loadUserProfile(
-          firebaseUser.uid,
-          firebaseUser.email || "",
-        ));
-      } catch {
-        loadedUidRef.current = null;
-        setUser(null);
-      }
-    });
-    return () => unsub();
+    void setPersistence(auth, inMemoryPersistence);
+    void firebaseSignOut(auth);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
-    const profile = await loadUserProfile(cred.user.uid, cred.user.email || email);
-    loadedUidRef.current = cred.user.uid;
-    setUser(profile);
+    setUser(await loadUserProfile(cred.user.uid, cred.user.email || email));
     return true;
   };
 
@@ -82,7 +68,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     user,
     login,
     logout,
-    isAuthenticated: !!user
+    isAuthenticated: !!user,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

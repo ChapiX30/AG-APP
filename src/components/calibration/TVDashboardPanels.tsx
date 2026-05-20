@@ -12,6 +12,7 @@ import {
   Briefcase,
   Activity,
   UserCircle,
+  Users,
 } from "lucide-react";
 import {
   BarChart,
@@ -33,6 +34,8 @@ import {
   normalizeServicioDateKey,
   LabPendingByArea,
   ServicioRow,
+  UsuarioRow,
+  resolveServicioAssignees,
   CalibrationChartTooltip,
 } from "../../utils/calibrationShared.tsx";
 
@@ -416,9 +419,14 @@ const PRIORITY_DOT: Record<string, string> = {
 
 const ServicioTvCard: React.FC<{
   service: ServicioRow;
+  usuarios: UsuarioRow[];
   dateBadge?: string;
   showDateBadge?: boolean;
-}> = ({ service, dateBadge, showDateBadge }) => {
+}> = ({ service, usuarios, dateBadge, showDateBadge }) => {
+  const assignees = useMemo(
+    () => resolveServicioAssignees(service.personas, usuarios),
+    [service.personas, usuarios]
+  );
   const st = SERVICE_STATUS[service.estado] || SERVICE_STATUS.programado;
   const statusAccent =
     service.estado === "en_proceso"
@@ -465,6 +473,28 @@ const ServicioTvCard: React.FC<{
               </span>
             )}
           </div>
+          <div className="mt-1.5 flex items-start gap-1.5 flex-wrap">
+            <Users className="w-3.5 h-3.5 shrink-0 text-purple-300 mt-0.5" aria-hidden />
+            {assignees.length > 0 ? (
+              assignees.map((a) => (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/35 text-[11px] font-bold text-purple-100 max-w-full"
+                  title={a.name}
+                >
+                  {a.color && (
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0 ring-1 ring-white/20"
+                      style={{ backgroundColor: a.color }}
+                    />
+                  )}
+                  <span className="truncate">{a.name}</span>
+                </span>
+              ))
+            ) : (
+              <span className="text-[11px] font-semibold text-amber-300/90 italic">Sin asignar</span>
+            )}
+          </div>
         </div>
         <span className={clsx("text-[10px] px-1.5 py-0.5 rounded border font-bold shrink-0", st.className)}>
           {st.label}
@@ -477,12 +507,14 @@ const ServicioTvCard: React.FC<{
 interface ServicesDashboardPanelProps {
   todayServices: ServicioRow[];
   programmedServices: ServicioRow[];
+  usuarios: UsuarioRow[];
   todayKey: string;
 }
 
 export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
   todayServices,
   programmedServices,
+  usuarios,
   todayKey,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -545,7 +577,7 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
                 ) : (
                   <div className="space-y-2">
                     {todayServices.map((s) => (
-                      <ServicioTvCard key={s.id} service={s} />
+                      <ServicioTvCard key={s.id} service={s} usuarios={usuarios} />
                     ))}
                   </div>
                 )}
@@ -568,6 +600,7 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
                         <ServicioTvCard
                           key={s.id}
                           service={s}
+                          usuarios={usuarios}
                           showDateBadge
                           dateBadge={formatServicioScheduleBadge(dateKey, todayKey)}
                         />

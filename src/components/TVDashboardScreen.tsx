@@ -33,6 +33,7 @@ const TVDashboardScreen: React.FC = () => {
     totalPendingToday,
     metrologosMonth,
     arrivalsForMonth,
+    usuarios,
   } = useCalibrationDashboardData(selectedDate);
 
   useEffect(() => {
@@ -113,6 +114,7 @@ const TVDashboardScreen: React.FC = () => {
             <ServicesDashboardPanel
               todayServices={todayServices}
               programmedServices={programmedServices}
+              usuarios={usuarios}
               todayKey={todayKey}
             />
           </div>

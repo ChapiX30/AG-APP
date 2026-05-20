@@ -88,6 +88,22 @@ export interface ServicioRow {
   personas?: string[];
 }
 
+export const getUsuarioDisplayName = (user?: UsuarioRow) =>
+  user?.name || user?.nombre || "Usuario";
+
+/** Resuelve IDs de `personas` (Firestore servicios) a nombres para UI. */
+export const resolveServicioAssignees = (
+  personas: string[] | undefined,
+  usuarios: UsuarioRow[]
+): { id: string; name: string; color?: string }[] => {
+  if (!Array.isArray(personas) || personas.length === 0) return [];
+  const byId = new Map(usuarios.map((u) => [u.id, u]));
+  return personas.map((id) => {
+    const u = byId.get(id);
+    return { id, name: getUsuarioDisplayName(u), color: u?.color };
+  });
+};
+
 export const LAB_AREA_ORDER = ["Dimensional", "Mecánica", "Eléctrica"] as const;
 export type LabAreaKey = (typeof LAB_AREA_ORDER)[number] | "Sin Asignar";
 
