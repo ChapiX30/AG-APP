@@ -31,13 +31,14 @@ export function useSWUpdate() {
     }, []);
 
     const reloadPage = () => {
-        if (waitingWorker) {
-            waitingWorker.postMessage({ type: "SKIP_WAITING" });
-            navigator.serviceWorker.addEventListener("controllerchange", () => {
-                window.location.reload();
-            });
-            setShowReload(false); // oculta el banner mientras actualiza
-        }
+        if (!waitingWorker) return;
+        waitingWorker.postMessage({ type: "SKIP_WAITING" });
+        navigator.serviceWorker.addEventListener(
+            "controllerchange",
+            () => window.location.reload(),
+            { once: true },
+        );
+        setShowReload(false);
     };
 
     return { showReload, reloadPage };

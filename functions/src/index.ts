@@ -368,3 +368,4 @@ export const enviarNotificacionCalidad = functions.firestore
 // 8. VIGILANTE DE ACTUALIZACIONES PJLA (Importado desde archivo externo)
 // ==================================================================
 export * from "./pjlaWatcher";
+export { scheduledDriveReconcile } from "./scheduledDriveReconcile";

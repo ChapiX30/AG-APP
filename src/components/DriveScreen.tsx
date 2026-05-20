@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, where, limit, orderBy } from "firebase/firestore";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
@@ -21,6 +21,11 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import labLogo from '../assets/lab_logo.png';
+import {
+  extractWorksheetLinkId,
+  isLinkableWorksheetId,
+  resolveWorksheetDoc,
+} from "../utils/worksheetDriveSync";
 
 // ─────────────────────────────────────────────
 // INTERFACES
@@ -964,13 +969,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           let linkedDoc = false;
           if (!fetchedUbicacion && item.name.toLowerCase().endsWith('.pdf')) {
             try {
-              const possibleId = item.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
-              let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
-              if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
-              if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
-              
-              if (!snap.empty) {
-                fetchedUbicacion = snap.docs[0].data().ubicacion_real || snap.docs[0].data().ubicacion || "";
+              const possibleId = extractWorksheetLinkId(item.name);
+              const wsDoc = await resolveWorksheetDoc(possibleId);
+              if (wsDoc) {
+                fetchedUbicacion = wsDoc.data().ubicacion_real || wsDoc.data().ubicacion || "";
                 if (fetchedUbicacion) linkedDoc = true;
               }
             } catch(e) {}
@@ -1192,13 +1194,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, updated: new Date().toISOString() }, { merge: true });
         
         try {
-          const possibleId = item.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
-          let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
-          if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
-          if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
-          
-          if (!snap.empty) {
-            await updateDoc(snap.docs[0].ref, { pdfURL: newPdfUrl });
+          const possibleId = extractWorksheetLinkId(item.name);
+          const wsDoc = await resolveWorksheetDoc(possibleId);
+          if (wsDoc) {
+            await updateDoc(wsDoc.ref, { pdfURL: newPdfUrl });
           }
         } catch (syncErr) {
           console.error("Error sincronizando link al mover carpeta:", syncErr);
@@ -1243,13 +1242,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, name: targetName, updated: new Date().toISOString() }, { merge: true });
       
       try {
-        const possibleId = targetName.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
-        let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
-        if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
-        if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
-        
-        if (!snap.empty) {
-          await updateDoc(snap.docs[0].ref, { pdfURL: newPdfUrl });
+        const possibleId = extractWorksheetLinkId(targetName);
+        const wsDoc = await resolveWorksheetDoc(possibleId);
+        if (wsDoc) {
+          await updateDoc(wsDoc.ref, { pdfURL: newPdfUrl });
         }
       } catch (syncErr) {
         console.error("Error sincronizando link al mover archivo:", syncErr);
@@ -1359,16 +1355,25 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       await setDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')), data, { merge: true });
       if (field === 'reviewed' && value) showToast("Validación guardada", 'success');
       if (field === 'completed' && value) showToast("Marcado como completado", 'success');
-      if (value && (field === 'completed' || field === 'reviewed')) {
-        const possibleId = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
-        let snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
-        if (snap.empty) snap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
-        if (!snap.empty) {
+      if (field === 'completed' || field === 'reviewed') {
+        const possibleId = extractWorksheetLinkId(file.name);
+        const wsDoc = await resolveWorksheetDoc(possibleId);
+        if (wsDoc) {
           const updateData: any = { lastUpdated: new Date().toISOString() };
-          if (field === 'completed') { updateData.status_certificado = "Generado"; updateData.cargado_drive = "Si"; }
-          if (field === 'reviewed') updateData.status_certificado = "Firmado";
-          await updateDoc(snap.docs[0].ref, updateData);
+          if (field === 'completed') {
+            if (value) {
+              updateData.status_certificado = "Generado";
+              updateData.cargado_drive = "Si";
+            } else {
+              updateData.status_certificado = "Pendiente de Certificado";
+              updateData.cargado_drive = "No";
+            }
+          }
+          if (field === 'reviewed' && value) updateData.status_certificado = "Firmado";
+          await updateDoc(wsDoc.ref, updateData);
           showToast(`Sincronizado con ${possibleId}`, 'success');
+        } else if (value && isLinkableWorksheetId(possibleId)) {
+          showToast(`No se encontró hoja para ${possibleId}`, 'warning');
         }
       }
     } catch (e) { showToast("Error de conexión", 'error'); loadContent(); }
@@ -1399,17 +1404,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
         let fetchedUbicacion = "";
         try {
-          const possibleId = file.name.replace(/\.[^/.]+$/, "").replace(/\s*\(\d+\)/, "").split(/[_ ]/)[0].trim();
-          let wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", possibleId)));
-          if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)));
-          if (wsSnap.empty) wsSnap = await getDocs(query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)));
+          const possibleId = extractWorksheetLinkId(file.name);
+          const wsDoc = await resolveWorksheetDoc(possibleId);
           
-          if (!wsSnap.empty) {
-            fetchedUbicacion = wsSnap.docs[0].data().ubicacion_real || wsSnap.docs[0].data().ubicacion || "";
+          if (wsDoc) {
+            const wsData = wsDoc.data();
+            fetchedUbicacion = wsData.ubicacion_real || wsData.ubicacion || "";
             if (currentRoot === "certificados") {
-              await updateDoc(wsSnap.docs[0].ref, {
+              await updateDoc(wsDoc.ref, {
                 pdfURL: downloadUrl,
-                status_certificado: "Finalizado",
+                status_certificado: "Firmado",
                 cargado_drive: "Si"
               });
               showToast(`PDF enlazado al folio ${possibleId}`, 'success');

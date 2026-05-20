@@ -3,7 +3,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import {
   BarChart, Bar, PieChart, Pie, Cell, Tooltip, XAxis, YAxis,
-  ResponsiveContainer, Sector, CartesianGrid, TooltipProps
+  ResponsiveContainer, Sector, CartesianGrid
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -15,36 +15,23 @@ import {
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import clsx from "clsx";
+import {
+  CALIBRATION_COLORS,
+  METROLOGOS_ORDER_COLOR,
+  FALLBACK_CHART_COLORS,
+  MAGNITUDES_COLORS,
+  cleanName,
+  parseDateRobust,
+  isQualityRole,
+  isMetrologyRole,
+  CalibrationChartTooltip,
+  UsuarioRow,
+} from "../utils/calibrationShared.tsx";
 
-// --- CONSTANTES ---
-const COLORS = {
-  background: "bg-slate-900",
-  cardBg: "bg-gray-900/60",
-  cardBorder: "border-white/10",
-};
-
-const METROLOGOS_ORDER_COLOR = [
-  { name: "Abraham Ginez", color: "#ef4444" },
-  { name: "Dante Hernández", color: "#3b82f6" },
-  { name: "Edgar Amador", color: "#007e2e" },
-  { name: "Angel Amador", color: "#14b8a6" },
-  { name: "Ricardo Domínguez", color: "#d946ef" },
-  { name: "Mario Medina", color: "#ababab" },
-  { name: "Daniel Hernández", color: "#8f6a2c" },
-];
-const FALLBACK_COLORS = ["#f59e0b", "#6366f1", "#8b5cf6", "#ec4899", "#64748b"];
-
-const MAGNITUDES_COLORS: Record<string, string> = {
-  "Acustica": "#b6cfcb", "Dimensional": "#001e78", "Electrica": "#ffee00",
-  "Flujo": "#20cde0", "Fuerza": "#835700", "Humedad": "#6f888c",
-  "Frecuencia": "#ff9100", "Optica Trazable": "#4a3419", "Par Torsional Trazable": "#00ff2f",
-  "Reporte Diagnostico": "#9203ff", "Masa": "#06e52f", "Par Torsional": "#30306D",
-  "Presión": "#6c6cfa", "Temperatura": "#bd0101", "Tiempo": "#f33220",
-  "Vibracion Trazable": "#49ae9a", "Vacio": "#bebebe",
-};
+const COLORS = CALIBRATION_COLORS;
+const FALLBACK_COLORS = FALLBACK_CHART_COLORS;
 
 // --- INTERFACES ---
-interface Usuario { id: string; name: string; puesto: string; role?: string; }
 interface HojaTrabajo { id: string; nombre: string; fecha: string; magnitud: string; } 
 interface DriveMetadata { name: string; created: string | null; completedByName?: string; reviewedByName?: string; magnitud?: string; }
 
@@ -52,75 +39,12 @@ type SortMode = "order" | "asc" | "desc";
 type TabMode = "metrologos" | "calidad" | "magnitudes";
 type ViewMode = "month" | "year";
 
-// --- HELPERS ---
-const cleanName = (name?: string) => name && name !== "null" && name !== "undefined" ? name.trim() : "";
-
-const parseDateRobust = (dateStr: any): Date | null => {
-    if (!dateStr) return null;
-
-    // 1. Si es un Timestamp de Firestore (tiene el método toDate)
-    if (typeof dateStr.toDate === 'function') {
-        return dateStr.toDate();
-    }
-
-    // 2. Si ya es un objeto Date nativo
-    if (dateStr instanceof Date) {
-        return isNaN(dateStr.getTime()) ? null : dateStr;
-    }
-
-    // 3. Si es un string (aquí ya es seguro usar .includes)
-    if (typeof dateStr === 'string') {
-        let d = new Date(dateStr);
-        if (!isNaN(d.getTime())) return d;
-        
-        if (dateStr.includes('/')) {
-            const parts = dateStr.split('/');
-            if (parts.length === 3) {
-                const day = parseInt(parts[0], 10);
-                const month = parseInt(parts[1], 10) - 1;
-                const year = parseInt(parts[2], 10);
-                d = new Date(year, month, day);
-                if (!isNaN(d.getTime())) return d;
-            }
-        }
-    }
-
-    return null;
-};
-
-const isQualityRole = (user: Usuario) => {
-    const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
-    return text.includes('calidad') || text.includes('quality') || text.includes('aseguramiento');
-};
-
-const isMetrologyRole = (user: Usuario) => {
-    const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
-    return text.includes('metrólogo') || text.includes('tecnico') || text.includes('técnico');
-};
-
-const CustomTooltip = ({ active, payload, label }: TooltipProps<any, any>) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-slate-800/95 border border-slate-700 p-3 rounded-lg shadow-xl backdrop-blur-md z-50">
-        <p className="text-slate-300 text-xs mb-1 font-medium capitalize">{label}</p>
-        {payload.map((entry: any, index: number) => (
-             <p key={index} className="text-white font-bold text-sm flex items-center gap-2 mb-1">
-             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color || entry.fill }} />
-             {entry.name}: {entry.value}
-           </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
-
 // --- COMPONENTE PRINCIPAL ---
 const CalibrationStatsScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
   
   // Datos
-  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [usuarios, setUsuarios] = useState<UsuarioRow[]>([]);
   const [hojasDeTrabajo, setHojasDeTrabajo] = useState<HojaTrabajo[]>([]);
   const [driveFiles, setDriveFiles] = useState<DriveMetadata[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,7 +73,7 @@ const CalibrationStatsScreen: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     const unsubUsuarios = onSnapshot(collection(db, "usuarios"), (snapshot) => {
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Usuario));
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UsuarioRow));
       setUsuarios(data);
     });
 
@@ -197,8 +121,8 @@ const CalibrationStatsScreen: React.FC = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
 
-    const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name)));
-    const validQualityNames = new Set(usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name)));
+    const validMetrologosNames = new Set(usuarios.filter(u => isMetrologyRole(u)).map(u => cleanName(u.name || u.nombre)));
+    const validQualityNames = new Set(usuarios.filter(u => isQualityRole(u)).map(u => cleanName(u.name || u.nombre)));
 
     const isDateInRange = (dateStr: any) => {
         const d = parseDateRobust(dateStr);
@@ -413,11 +337,11 @@ const CalibrationStatsScreen: React.FC = () => {
                     <div className="lg:col-span-8 space-y-6">
                         {selectedUserName ? (
                             <div className="grid grid-cols-1 gap-6">
-                                <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px]`}><h3 className="font-bold mb-4">Historial: {selectedUserName}</h3><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={mesesHistory}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="mes" stroke="#94a3b8" fontSize={12}/><YAxis stroke="#94a3b8" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" fill={METROLOGOS_ORDER_COLOR.find(m=>m.name===selectedUserName)?.color || "#3b82f6"} radius={[4,4,0,0]} /></BarChart></ResponsiveContainer></div>
-                                {viewMode === 'month' && (<div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px] flex items-center`}><ResponsiveContainer width="50%" height="100%" minWidth={1} minHeight={1}><PieChart><Pie activeIndex={activeIndex} activeShape={renderActiveShape} data={magnitudesPie} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onMouseEnter={(_, index) => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(-1)} onClick={(e, i) => {setSelectedMagnitud({...e, position:{x:0, y:0}}); setHologramVisible(true);}}>{magnitudesPie.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CustomTooltip/>}/></PieChart></ResponsiveContainer><div className="w-1/2 h-full overflow-y-auto"><h4 className="font-bold mb-2">Magnitudes</h4>{magnitudesPie.map(m=><div key={m.name} className="flex justify-between text-sm p-1 border-b border-white/5"><span>{m.name}</span><span>{m.value}</span></div>)}</div></div>)}
+                                <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px]`}><h3 className="font-bold mb-4">Historial: {selectedUserName}</h3><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={mesesHistory}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="mes" stroke="#94a3b8" fontSize={12}/><YAxis stroke="#94a3b8" fontSize={12}/><Tooltip content={<CalibrationChartTooltip/>}/><Bar dataKey="total" fill={METROLOGOS_ORDER_COLOR.find(m=>m.name===selectedUserName)?.color || "#3b82f6"} radius={[4,4,0,0]} /></BarChart></ResponsiveContainer></div>
+                                {viewMode === 'month' && (<div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 h-[300px] flex items-center`}><ResponsiveContainer width="50%" height="100%" minWidth={1} minHeight={1}><PieChart><Pie activeIndex={activeIndex} activeShape={renderActiveShape} data={magnitudesPie} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" onMouseEnter={(_, index) => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(-1)} onClick={(e, i) => {setSelectedMagnitud({...e, position:{x:0, y:0}}); setHologramVisible(true);}}>{magnitudesPie.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie><Tooltip content={<CalibrationChartTooltip/>}/></PieChart></ResponsiveContainer><div className="w-1/2 h-full overflow-y-auto"><h4 className="font-bold mb-2">Magnitudes</h4>{magnitudesPie.map(m=><div key={m.name} className="flex justify-between text-sm p-1 border-b border-white/5"><span>{m.name}</span><span>{m.value}</span></div>)}</div></div>)}
                             </div>
                         ) : (
-                            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="flex justify-between items-center mb-6"><h3 className="font-bold">Comparativa Global</h3><div className="flex bg-slate-800 p-1 rounded-lg">{(['order','desc','asc'] as SortMode[]).map(m=><button key={m} onClick={()=>setSortMode(m)} className={`p-2 rounded ${sortMode===m?'bg-blue-600':'text-gray-400'}`}>{m==='order'?<SortDesc className="rotate-90" size={16}/>:m==='desc'?<SortDesc size={16}/>:<SortAsc size={16}/>}</button>)}</div></div><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={metrologosData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} interval={0} /><YAxis stroke="#9CA3AF" fontSize={12}/><Tooltip content={<CustomTooltip/>}/><Bar dataKey="total" radius={[4,4,0,0]}>{metrologosData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar></BarChart></ResponsiveContainer></div></div>
+                            <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="flex justify-between items-center mb-6"><h3 className="font-bold">Comparativa Global</h3><div className="flex bg-slate-800 p-1 rounded-lg">{(['order','desc','asc'] as SortMode[]).map(m=><button key={m} onClick={()=>setSortMode(m)} className={`p-2 rounded ${sortMode===m?'bg-blue-600':'text-gray-400'}`}>{m==='order'?<SortDesc className="rotate-90" size={16}/>:m==='desc'?<SortDesc size={16}/>:<SortAsc size={16}/>}</button>)}</div></div><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={metrologosData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false}/><XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} interval={0} /><YAxis stroke="#9CA3AF" fontSize={12}/><Tooltip content={<CalibrationChartTooltip/>}/><Bar dataKey="total" radius={[4,4,0,0]}>{metrologosData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar></BarChart></ResponsiveContainer></div></div>
                         )}
                     </div>
                 </div>
@@ -431,7 +355,7 @@ const CalibrationStatsScreen: React.FC = () => {
                  </div>
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     <div className="lg:col-span-4"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10`}><label className="text-sm text-emerald-400 mb-2 block">Filtrar por Usuario</label><select value={selectedUserName} onChange={(e) => setSelectedUserName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none">{uniqueUserList.map(name => <option key={name} value={name}>{name}</option>)}</select></div></div>
-                    <div className="lg:col-span-8"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 min-h-[500px]`}><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={selectedUserName ? qualityHistory : qualityData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey={selectedUserName ? "mes" : "name"} stroke="#E5E7EB" fontSize={12} /><YAxis stroke="#9CA3AF" fontSize={12} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="realizado" fill="#3b82f6" radius={[4, 4, 0, 0]} /><Bar dataKey="revisado" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div></div>
+                    <div className="lg:col-span-8"><div className={`p-6 rounded-2xl border border-emerald-500/20 bg-emerald-900/10 min-h-[500px]`}><div className="h-[400px]"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={selectedUserName ? qualityHistory : qualityData}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey={selectedUserName ? "mes" : "name"} stroke="#E5E7EB" fontSize={12} /><YAxis stroke="#9CA3AF" fontSize={12} /><Tooltip content={<CalibrationChartTooltip />} /><Bar dataKey="realizado" fill="#3b82f6" radius={[4, 4, 0, 0]} /><Bar dataKey="revisado" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div></div>
                  </div>
             </motion.div>
         )}
@@ -441,7 +365,7 @@ const CalibrationStatsScreen: React.FC = () => {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                      <div className={`p-5 rounded-2xl border ${COLORS.cardBorder} bg-purple-900/20 backdrop-blur-md relative overflow-hidden`}><div className="relative z-10"><p className="text-sm text-purple-400">Magnitud Top</p><h3 className="text-2xl font-bold text-white truncate">{topMagnitud?.name || "N/A"}</h3></div><div className="absolute right-3 top-3 p-3 bg-purple-500/20 rounded-xl text-purple-400"><Trophy size={20}/></div></div>
                  </div>
-                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="h-[600px] w-full"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={magnitudesGlobalData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis type="number" stroke="#9CA3AF" fontSize={12}/><YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} width={150}/><Tooltip content={<CustomTooltip />} /><Bar dataKey="total" radius={[0, 4, 4, 0]}>{magnitudesGlobalData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></div>
+                 <div className={`p-6 rounded-2xl border ${COLORS.cardBorder} bg-gray-900/60 min-h-[500px]`}><div className="h-[600px] w-full"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><BarChart data={magnitudesGlobalData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis type="number" stroke="#9CA3AF" fontSize={12}/><YAxis dataKey="name" type="category" stroke="#E5E7EB" fontSize={12} width={150}/><Tooltip content={<CalibrationChartTooltip />} /><Bar dataKey="total" radius={[0, 4, 4, 0]}>{magnitudesGlobalData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></div>
             </motion.div>
         )}
       </main>

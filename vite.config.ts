@@ -3,10 +3,14 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+    resolve: {
+        // Prefer .tsx over .ts so extensionless imports hit JSX modules first
+        extensions: ['.mjs', '.js', '.mts', '.tsx', '.ts', '.jsx', '.json'],
+    },
     plugins: [
         react(),
         VitePWA({
-            registerType: 'autoUpdate', // Se actualiza siempre que subas cambios a Vercel
+            registerType: 'prompt', // Actualización solo cuando el usuario lo confirma (evita recargas en bucle en tablet)
             manifest: {
                 name: 'AG App',
                 short_name: 'AGApp',
@@ -29,10 +33,9 @@ export default defineConfig({
                 ]
             },
             workbox: {
-                // Mejora la cache y el refresco automático
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,
-                skipWaiting: true,
+                // Sin skipWaiting: el SW nuevo espera hasta que el usuario pulse "Actualizar"
             }
         })
     ]

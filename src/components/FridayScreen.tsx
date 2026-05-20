@@ -8,9 +8,10 @@ import {
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
   MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Eye, Pencil,
-  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette, Loader2
+  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette, Loader2, ShieldCheck
 } from "lucide-react";
 import { db } from "../utils/firebase";
+import { reconcileWorksheetDriveFlags } from "../utils/worksheetDriveSync";
 import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs, updateDoc } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
@@ -77,6 +78,42 @@ const getRowYearStr = (row: WorksheetData) => {
 
 const normalizeText = (text: string) =>
     text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
+
+/** Evita enlazar Drive con filas cuyo id/folio/certificado están vacíos (matcheo masivo). */
+const isLinkableWorksheetId = (id: string): boolean => {
+    const t = (id || "").trim();
+    return t.length >= 2;
+};
+
+/** Cargado en Drive: solo Si/Realizado si Firestore lo indica; filas nuevas → No. */
+const getEffectiveCargadoDrive = (row: WorksheetData): string => {
+    const raw = (row.cargado_drive || "").trim();
+    if (!raw || raw.toLowerCase() === "pendiente") return "No";
+    return raw;
+};
+
+/** Certificado alineado con Drive: Generado solo si la carga en Drive está hecha. */
+const getEffectiveCertStatus = (row: WorksheetData): string => {
+    const raw = (row.status_certificado || "").trim();
+    const drive = getEffectiveCargadoDrive(row).toLowerCase();
+    const driveDone = drive === "si" || drive === "realizado";
+    if (raw.toLowerCase() === "finalizado") return "Firmado";
+    if (!raw || raw === "Pendiente de Certificado") {
+        return driveDone ? "Generado" : "Pendiente de Certificado";
+    }
+    if (raw === "Generado" && !driveDone) return "Pendiente de Certificado";
+    return raw;
+};
+
+/** Cronograma COMPLETADO solo cuando el flujo documental (Drive/cert) terminó. */
+const isCronogramaComplete = (row: WorksheetData): boolean => {
+    const drive = getEffectiveCargadoDrive(row).toLowerCase();
+    const cert = getEffectiveCertStatus(row);
+    if (cert === "Firmado") return true;
+    if (drive === "si" || drive === "realizado") return true;
+    if ((row.ubicacion_real || "").toLowerCase() === "entregado") return true;
+    return false;
+};
 
 const getResponsableName = (row: WorksheetData) =>
     (row.nombre || row.assignedTo || "").trim();
@@ -302,6 +339,9 @@ interface WorksheetData { docId: string; id: string; createdAt: string; lugarCal
 interface GroupData { id: string; name: string; color: string; collapsed: boolean; total?: number; rows?: WorksheetData[] }
 interface DragItem { type: 'row' | 'column'; index: number; id?: string; groupId?: string; }
 interface AGBotThought { id: number; type: 'info' | 'warning' | 'success'; message: string; timestamp: string; }
+
+/** Reconciliación Drive periódica: Cloud Function `scheduledDriveReconcile` (cada 5 min). */
+const AGBOT_INITIAL_DELAY_MS = 2_000;
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Desconocido": { label: "Desconocido", bg: "#c4c4c4" }, "En Revisión": { label: "En Revisión", bg: "#fdab3d" },
@@ -610,7 +650,11 @@ const AGBotWidget = ({ thoughts }: { thoughts: AGBotThought[] }) => {
                             </div>
                         ))}
                     </div>
-                    <div className="p-2 bg-gray-50 border-t border-gray-200 text-center"><span className="text-[10px] text-gray-400 font-medium">Sistema Activo & Aprendiendo</span></div>
+                    <div className="p-2 bg-gray-50 border-t border-gray-200 text-center">
+                        <span className="text-[10px] text-gray-400 font-medium">
+                            Drive: reconciliación automática en servidor (cada 5 min)
+                        </span>
+                    </div>
                 </div>
             )}
         </div>
@@ -660,6 +704,8 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                     if (groupId === 'laboratorio') cellValue = row.folioSalida || ""; 
                     else cellValue = row.folio || ""; 
                 }
+                if (col.key === 'cargado_drive') cellValue = getEffectiveCargadoDrive(row);
+                if (col.key === 'status_certificado') cellValue = getEffectiveCertStatus(row);
                 
                 let customClass = "";
                 if (col.key === 'fecha' && row.diasPromesa && row.fechaEntrada && cellValue) {
@@ -671,7 +717,7 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                      else customClass = "bg-emerald-50/50 text-emerald-800 border-l-2 border-emerald-300";
                 }
 
-                const isWorkDone = row.status_certificado === 'Generado' || row.status_certificado === 'Firmado' || row.cargado_drive === 'Si' || row.cargado_drive === 'Realizado';
+                const isWorkDone = isCronogramaComplete(row);
 
                 return (
                     <div key={col.key} style={style} className={clsx("flex-shrink-0 border-r border-[#e6e9ef] relative flex items-center transition-colors", col.sticky && "shadow-[1px_0_3px_rgba(0,0,0,0.04)] border-r-[#e6e9ef]")}>
@@ -895,11 +941,11 @@ const FridayScreen: React.FC = () => {
     const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
     const dragItemRef = useRef<DragItem | null>(null); 
     const [isThinking, setIsThinking] = useState(false);
+    const [isReconcilingDrive, setIsReconcilingDrive] = useState(false);
     
     const [search, setSearch] = useState("");
     const debouncedSearch = useDebounce(search, 300);
     const agBotRanRef = useRef(false);
-
     const [permissionMenu, setPermissionMenu] = useState<{ x: number, y: number, colKey: string } | null>(null);
     const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
     const [activeCommentRow, setActiveCommentRow] = useState<WorksheetData | null>(null);
@@ -987,9 +1033,10 @@ const FridayScreen: React.FC = () => {
                     const recordYear = getRowYearStr({ ...data, docId: doc.id } as WorksheetData);
 
                     if (recordYear === yearStr) {
-                        newRows.push({ 
-                            ...data, docId: doc.id, id: data.id || "", nombre: data.nombre || data.assignedTo, fecha: data.fecha || data.fecha_calib, cargado_drive: data.cargado_drive || "No", status_certificado: data.status_certificado || "Pendiente de Certificado", entregado: data.entregado === true, folioSalida: data.folioSalida 
-                        } as WorksheetData); 
+                        const baseRow = { 
+                            ...data, docId: doc.id, id: data.id || "", nombre: data.nombre || data.assignedTo, fecha: data.fecha || data.fecha_calib, entregado: data.entregado === true, folioSalida: data.folioSalida 
+                        } as WorksheetData;
+                        newRows.push(baseRow); 
                     }
                 });
 
@@ -1001,6 +1048,29 @@ const FridayScreen: React.FC = () => {
         });
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
     }, [currentYear]); 
+
+    const toReconcileRawRows = useCallback(
+        (source: WorksheetData[]) =>
+            source.map((r) => ({
+                docId: r.docId,
+                id: r.id,
+                folio: r.folio,
+                folioSalida: r.folioSalida,
+                certificado: r.certificado,
+                equipo: r.equipo,
+                cliente: r.cliente,
+                cargado_drive: r.cargado_drive,
+                status_certificado: r.status_certificado,
+                pdfURL: r.pdfURL,
+            })),
+        []
+    );
+
+    const showToast = (message: string, type: 'success' | 'info' | 'error') => {
+        const id = Date.now().toString();
+        setToasts((prev) => [...prev, { id, message, type }]);
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+    };
 
     useEffect(() => {
         if (!userProfileResolved || !canEditBoard || isLoadingData || rows.length === 0 || agBotRanRef.current) return;
@@ -1030,10 +1100,20 @@ const FridayScreen: React.FC = () => {
                 if (needsUpdate) { const rowRef = doc(db, "hojasDeTrabajo", row.docId); updates.lastUpdated = new Date().toISOString(); batch.update(rowRef, updates); updateCount++; }
             });
 
+            if (updateCount > 0) {
+                setIsThinking(true);
+                try {
+                    await batch.commit();
+                    showToast(`🤖 AG-Bot: ${updateCount} dato(s) sincronizado(s)`, 'info');
+                } catch (error) {
+                    console.error('AG-Bot batch:', error);
+                }
+                setTimeout(() => setIsThinking(false), 1000);
+            }
+
             if (newThoughts.length > 0) setAgBotThoughts(prev => [...newThoughts, ...prev].slice(0, 10));
-            if (updateCount > 0) { setIsThinking(true); try { await batch.commit(); showToast(`🤖 AG-Bot: ${updateCount} dato(s) sincronizado(s)`, 'info'); } catch(error) {} setTimeout(() => setIsThinking(false), 1000); }
         };
-        const timer = setTimeout(runAGBot, 2000);
+        const timer = setTimeout(runAGBot, AGBOT_INITIAL_DELAY_MS);
         return () => clearTimeout(timer);
     }, [userProfileResolved, canEditBoard, isLoadingData, rows.length]);
 
@@ -1041,7 +1121,46 @@ const FridayScreen: React.FC = () => {
         agBotRanRef.current = false;
     }, [currentYear]);
 
-    const showToast = (message: string, type: 'success' | 'info' | 'error') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000); };
+    const handleReconcileDriveFlags = useCallback(async (dryRunOnly = false) => {
+        if (!canEditBoard || isReconcilingDrive) return;
+        setIsReconcilingDrive(true);
+        try {
+            const rawRows = toReconcileRawRows(rows);
+            const preview = await reconcileWorksheetDriveFlags(rawRows, { dryRun: true });
+            if (preview.candidates === 0) {
+                showToast(
+                    `Drive verificado: ${preview.skippedVerified} fila(s) con carga real; ninguna corrección necesaria.`,
+                    "success"
+                );
+                return;
+            }
+            const sample = preview.previews
+                .slice(0, 5)
+                .map((p) => `• ${p.equipo || p.cliente || p.docId.slice(0, 8)} (${p.before.cargado_drive}/${p.before.status_certificado})`)
+                .join("\n");
+            const extra = preview.candidates > 5 ? `\n… y ${preview.candidates - 5} más` : "";
+            if (dryRunOnly) {
+                showToast(`${preview.candidates} fila(s) sin respaldo en Drive (vista previa)`, "info");
+                return;
+            }
+            const ok = confirm(
+                `Se verificó fileMetadata (Drive). ${preview.candidates} fila(s) tienen Si/Generado sin archivo realizado.\n` +
+                `${preview.skippedVerified} fila(s) coinciden con Drive y NO se tocarán.\n\n${sample}${extra}\n\n¿Corregir solo las sin respaldo en Drive?`
+            );
+            if (!ok) return;
+            const result = await reconcileWorksheetDriveFlags(rawRows);
+            showToast(
+                `Corregidas ${result.corrected} fila(s). ${result.skippedVerified} conservadas (Drive real).`,
+                "success"
+            );
+        } catch (e) {
+            console.error(e);
+            showToast("Error al reconciliar con Drive", "error");
+        } finally {
+            setIsReconcilingDrive(false);
+        }
+    }, [canEditBoard, isReconcilingDrive, rows, toReconcileRawRows]);
+
     const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
     const handleSort = (key: string, direction: 'asc' | 'desc') => { setSortConfig({ key, direction }); setActiveColumnMenu(null); };
     const handleHide = async (key: string) => { if (!canEditBoard) return; const newCols = columns.map(c => c.key === key ? { ...c, hidden: true } : c); setColumns(newCols); setActiveColumnMenu(null); await saveColumnsToFirebase(newCols); };
@@ -1080,7 +1199,7 @@ const FridayScreen: React.FC = () => {
         let initialStatus = 'Desconocido'; let initialLocation = '';
         if (groupId === 'sitio') { initialStatus = 'Calibrado'; initialLocation = 'Servicio en Sitio'; } else if (groupId === 'laboratorio') { initialLocation = 'Laboratorio'; }
         const now = new Date(); const fechaEntradaStr = now.toISOString().split('T')[0]; 
-        const newRowData = { id: "", folio: "", cliente: "", equipo: "", lugarCalibracion: groupId, status_equipo: initialStatus, ubicacion_real: initialLocation, nombre: currentUserName, assignedTo: currentUserName, createdAt: now.toISOString(), fechaEntrada: fechaEntradaStr, fechaRecepcion: fechaEntradaStr, diasPromesa: 5, status_certificado: 'Pendiente de Certificado' };
+        const newRowData = { id: "", folio: "", cliente: "", equipo: "", lugarCalibracion: groupId, status_equipo: initialStatus, ubicacion_real: initialLocation, nombre: currentUserName, assignedTo: currentUserName, createdAt: now.toISOString(), fechaEntrada: fechaEntradaStr, fechaRecepcion: fechaEntradaStr, diasPromesa: 5, status_certificado: 'Pendiente de Certificado', cargado_drive: 'No' };
         await setDoc(docRef, newRowData); showToast("Fila agregada correctamente", 'success');
     }, [currentUserName, canEditBoard]);
 
@@ -1252,9 +1371,22 @@ const FridayScreen: React.FC = () => {
                         </div>
                         
                         <div className={clsx("p-2 rounded-lg transition-all", isThinking ? "text-purple-600 bg-purple-50 animate-pulse" : "text-gray-400")} title="AG-Bot Activo"><Brain size={18}/></div>
-                        <AGBotWidget thoughts={agBotThoughts} />
+                        <AGBotWidget
+                            thoughts={agBotThoughts}
+                        />
 
                         <button onClick={handleExportCSV} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors flex items-center gap-2 shadow-sm" title="Exportar a Excel"><Download size={18}/><span className="text-xs font-bold hidden md:inline">Exportar</span></button>
+                        {canEditBoard && (
+                            <button
+                                onClick={() => handleReconcileDriveFlags(false)}
+                                disabled={isReconcilingDrive}
+                                className="p-2 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
+                                title="Verifica fileMetadata (Drive) y corrige filas Si/Generado sin respaldo real"
+                            >
+                                {isReconcilingDrive ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                                <span className="text-xs font-bold hidden md:inline">Reconciliar Drive</span>
+                            </button>
+                        )}
                         {canEditBoard && (
                             <button onClick={handleResetLayout} className="p-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 rounded-lg transition-colors shadow-sm border border-transparent hover:border-gray-200" title="Restablecer vista original"><RotateCcw size={18}/></button>
                         )}
