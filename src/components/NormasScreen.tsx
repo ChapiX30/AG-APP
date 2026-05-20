@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
@@ -8,7 +8,7 @@ import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/fir
 import { db } from '../utils/firebase';
 import { 
   ArrowLeft, User, Package, Plus, Loader2, AlertTriangle, 
-  Camera, X, Save, FileText, Briefcase, Info
+  Camera, X, Save, FileText, Briefcase, Info, Printer
 } from 'lucide-react'; 
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 
@@ -49,6 +49,17 @@ const styles = `
   .status-vencido { background: #fecaca; color: #991b1b; }
   .status-vigente { background: #dcfce7; color: #166534; }
   .status-pendiente { background: #f1f5f9; color: #64748b; }
+  .status-proximo { background: #fef9c3; color: #854d0e; }
+  .status-critico { background: #ffedd5; color: #c2410c; }
+
+  .field-error { color: #dc2626; font-size: 0.75rem; margin-top: 4px; font-weight: 500; }
+  .help-text { color: #64748b; font-size: 0.8rem; margin-top: 4px; line-height: 1.4; }
+  .etiquetadora-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px dashed #cbd5e1; background: #f8fafc; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; }
+  .etiquetadora-chip:hover { border-color: var(--primary); background: #eff6ff; }
+  .etiquetadora-chip.is-own { border-style: solid; border-color: #93c5fd; background: #eff6ff; }
+  .etiquetadora-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+  .empty-state { text-align: center; padding: 32px 16px; color: #94a3b8; }
+  .empty-state svg { margin: 0 auto 12px; opacity: 0.5; }
   
   .floating-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 1100px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 16px; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); display: flex; gap: 12px; justify-content: space-between; align-items: center; z-index: 50; border: 1px solid #e2e8f0; }
   
@@ -101,14 +112,42 @@ type FormInputs = {
 // ==================================================================
 
 const BACKPACK_CATALOG = {
-  mochila_abraham: { nombre: 'Mochila 1 (Abraham)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700459' } ] },
-  mochila_Dante: { nombre: 'Mochila 2 (Dante)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVEPNEU0017947' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X1Y00150' } ] },
-  mochila_Angel: { nombre: 'Mochila 3 (Angel)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700192' } ] },
-  mochila_Edgar: { nombre: 'Mochila 4 (Edgar)', items: [ { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' }, { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' } ] },
-  mochila_Daniel: { nombre: 'Mochila 5 (Daniel)', items: [ { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' }, { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' } ] },
-  mochila_Ricardo: { nombre: 'Mochila 6 (Ricardo)', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017933' } ] },
-  mochila_Mario: { nombre: 'Mochila 7 (Mario)', items: [ { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' }, { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' }, { herramienta: 'Impresora', qty: "1", marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' } ] },
+  mochila_abraham: { nombre: 'Mochila 1 (Abraham)', ownerKey: 'abraham', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017166' } ] },
+  mochila_Dante: { nombre: 'Mochila 2 (Dante)', ownerKey: 'dante', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVEPNEU0017947' } ] },
+  mochila_Angel: { nombre: 'Mochila 3 (Angel)', ownerKey: 'angel', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700130' } ] },
+  mochila_Edgar: { nombre: 'Mochila 4 (Edgar)', ownerKey: 'edgar', items: [ { herramienta: 'Desarmador Plano', qty: "1", marca: 'Urrea', modelo: 'S/M', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Husky', modelo: '8"', serie: 'N/A' }, { herramienta: 'Destornillador ESD', qty: "4", marca: 'Urrea', modelo: 'S/M', serie: 'Sm' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'Fossibot', modelo: 'DT2', serie: 'DT220240700114' } ] },
+  mochila_Mario: { nombre: 'Mochila 5 (Mario)', ownerKey: 'mario', items: [ { herramienta: 'Perica', qty: "1", marca: 'Pretul', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'Urrea', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinza Electrica', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Rojo', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Verde', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Gris', qty: "1", marca: 'Husky', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0023514' }, { herramienta: 'Cepillo', qty: "2", marca: 'S/M', modelo: 'S/M', serie: 'S/N' } ] },
+  mochila_Ricardo: { nombre: 'Mochila 6 (Ricardo)', ownerKey: 'ricardo', items: [ { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '6"', serie: 'N/A' }, { herramienta: 'Perica', qty: "1", marca: 'FOY', modelo: '10"', serie: 'N/A' }, { herramienta: 'Desarmadores', qty: "4", marca: 'sm', modelo: 'sm', serie: 'Sm' }, { herramienta: 'Set Relojero', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/M' }, { herramienta: 'Pinzas', qty: "5", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Azul', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Set llaves Allen Rojo', qty: "1", marca: 'S/M', modelo: 'S/M', serie: 'S/N' }, { herramienta: 'Tablet', qty: "1", marca: 'BlackView', modelo: 'Active 8 Pro', serie: 'ACTIVE8PNEU0017933' } ] },
 };
+
+/** Etiquetadoras por persona — solo se ofrecen al agregar patrón manual (no van en kits). */
+const ETIQUETADORAS_CATALOG: { persona: string; ownerKey: string; item: ToolItem }[] = [
+  { persona: 'Abraham', ownerKey: 'abraham', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700459' } },
+  { persona: 'Dante', ownerKey: 'dante', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X1Y00150' } },
+  { persona: 'Angel', ownerKey: 'angel', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700192' } },
+  { persona: 'Edgar', ownerKey: 'edgar', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' } },
+];
+
+const resolveBackpackIdForUsuario = (usuarioNombre: string): string | null => {
+  if (!usuarioNombre) return null;
+  const lower = usuarioNombre.toLowerCase();
+  for (const [id, backpack] of Object.entries(BACKPACK_CATALOG)) {
+    if (lower.includes(backpack.ownerKey)) return id;
+  }
+  return null;
+};
+
+const resolveOwnerKeyForUsuario = (usuarioNombre: string): string | null => {
+  if (!usuarioNombre) return null;
+  const lower = usuarioNombre.toLowerCase();
+  for (const backpack of Object.values(BACKPACK_CATALOG)) {
+    if (lower.includes(backpack.ownerKey)) return backpack.ownerKey;
+  }
+  return null;
+};
+
+const isEtiquetadoraInList = (tools: ToolItem[], serie: string) =>
+  tools.some(t => t.serie === serie && (t.herramienta.toLowerCase().includes('etiquetadora') || t.herramienta.toLowerCase().includes('impresora')));
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
     if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'pendiente';
@@ -265,6 +304,7 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
 const NormasScreen = () => {
   const { navigateTo } = useNavigation();
   const [metrologos, setMetrologos] = useState<{ id: string; nombre: string; }[]>([]);
+  const [isLoadingMetrologos, setIsLoadingMetrologos] = useState(true);
   const [patronesMap, setPatronesMap] = useState<Map<string, PatronBase>>(new Map());
   const [patronesScannerMap, setPatronesScannerMap] = useState<Map<string, PatronBase>>(new Map());
   const [isSavingBatch, setIsSavingBatch] = useState(false); 
@@ -285,18 +325,41 @@ const NormasScreen = () => {
   const { fields, append, remove } = useFieldArray({ control, name: 'manualTools' });
   const watchedBackpacks = watch('selectedBackpacks');
   const watchedManualTools = watch('manualTools');
+  const watchedUsuario = watch('usuario');
+  const usuarioOwnerKey = useMemo(() => resolveOwnerKeyForUsuario(watchedUsuario || ''), [watchedUsuario]);
 
   // Lógica para combinar mochilas y herramientas manuales
   const aggregatedTools = useMemo(() => aggregateTools(watchedBackpacks || []), [watchedBackpacks]);
   const isAnyPatronVencido = useMemo(() => watchedManualTools.some(tool => tool.isVencida), [watchedManualTools]);
 
+  // Auto-seleccionar mochila del metrólogo responsable
+  useEffect(() => {
+    const backpackId = resolveBackpackIdForUsuario(watchedUsuario || '');
+    if (backpackId) {
+      setValue('selectedBackpacks', [backpackId]);
+    }
+  }, [watchedUsuario, setValue]);
+
+  const handleAddManualRow = () => {
+    append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' });
+  };
+
+  const handleAddEtiquetadora = (etiq: typeof ETIQUETADORAS_CATALOG[number]) => {
+    if (isEtiquetadoraInList(watchedManualTools, etiq.item.serie)) {
+      alert(`La etiquetadora de ${etiq.persona} ya está en la lista.`);
+      return;
+    }
+    append({ ...etiq.item, isVencida: false, isUnavailable: false });
+  };
+
   // Carga inicial de datos de Firebase
   useEffect(() => {
     const initData = async () => {
+      setIsLoadingMetrologos(true);
       try {
         const usersQ = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
         const usersSnap = await getDocs(usersQ);
-        setMetrologos(usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })));
+        setMetrologos(usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre)));
 
         const patronesSnap = await getDocs(query(collection(db, COLLECTION_NAME_PATRONES)));
         const mapDropdown = new Map<string, PatronBase>();
@@ -321,6 +384,7 @@ const NormasScreen = () => {
         setPatronesMap(mapDropdown);
         setPatronesScannerMap(mapScanner);
       } catch (e) { console.error("Error carga inicial", e); }
+      finally { setIsLoadingMetrologos(false); }
     };
     initData();
   }, []);
@@ -462,27 +526,38 @@ const NormasScreen = () => {
         <div className="card">
           <div className="flex items-center gap-3 mb-6 border-b pb-4">
               <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><User size={24}/></div>
-              <h2 className="text-lg font-bold text-gray-800">Responsable</h2>
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Responsable</h2>
+                <p className="help-text mb-0">Datos que aparecen en el registro de salida y en los PDF.</p>
+              </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-                <label>Metrólogo / Técnico *</label>
-                <select {...register('usuario', { required: true })} className="input-control">
-                  <option value="">-- Seleccionar --</option>
+                <label htmlFor="normas-fecha">Fecha de salida *</label>
+                <div className="relative">
+                  <input id="normas-fecha" type="date" className="input-control" {...register('fecha', { required: true })} aria-required="true" />
+                </div>
+            </div>
+            <div>
+                <label htmlFor="normas-usuario">Metrólogo / Técnico *</label>
+                <select id="normas-usuario" {...register('usuario', { required: 'Selecciona un metrólogo' })} className="input-control" aria-invalid={!!errors.usuario} disabled={isLoadingMetrologos}>
+                  <option value="">{isLoadingMetrologos ? 'Cargando metrólogos...' : '-- Seleccionar --'}</option>
                   {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
                 </select>
+                {errors.usuario && <p className="field-error" role="alert">{String(errors.usuario.message)}</p>}
             </div>
             <div>
-                 <label>No. Empleado *</label>
-                 <input className="input-control" {...register('noEmpleado', { required: true })} placeholder="Ej: 1234" />
+                 <label htmlFor="normas-empleado">No. Empleado *</label>
+                 <input id="normas-empleado" className="input-control" {...register('noEmpleado', { required: 'Número de empleado requerido' })} placeholder="Ej: 1234" aria-invalid={!!errors.noEmpleado} />
+                 {errors.noEmpleado && <p className="field-error" role="alert">{String(errors.noEmpleado.message)}</p>}
             </div>
             <div>
-                 <label>Compañía</label>
-                 <input className="input-control" {...register('companiaDepto')} />
+                 <label htmlFor="normas-compania">Compañía</label>
+                 <input id="normas-compania" className="input-control" {...register('companiaDepto')} />
             </div>
-            <div>
-                 <label>Gafete (Opcional)</label>
-                 <input className="input-control" {...register('gafeteContratista')} />
+            <div className="md:col-span-2">
+                 <label htmlFor="normas-gafete">Gafete (opcional)</label>
+                 <input id="normas-gafete" className="input-control" {...register('gafeteContratista')} placeholder="Solo si aplica para el cliente" />
             </div>
           </div>
         </div>
@@ -491,22 +566,33 @@ const NormasScreen = () => {
         <div className="card">
             <div className="flex items-center gap-3 mb-6 border-b pb-4">
                 <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Briefcase size={24}/></div>
-                <h2 className="text-lg font-bold text-gray-800">Kits Rápidos</h2>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Kits Rápidos (Mochilas)</h2>
+                  <p className="help-text mb-0">Herramientas fijas del kit. Las etiquetadoras se agregan solo como patrón manual.</p>
+                </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {!watchedUsuario && (
+              <p className="help-text mb-4 flex items-center gap-2"><Info size={14}/> Selecciona un metrólogo para resaltar su mochila automáticamente.</p>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6" role="group" aria-label="Selección de mochilas">
               <Controller name="selectedBackpacks" control={control} render={({ field }) => (
                   <>
-                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => (
-                        <label key={id} className={`border p-4 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${field.value.includes(id) ? 'bg-blue-50 border-blue-500 shadow-md' : 'hover:bg-gray-50'}`}>
-                          <input type="checkbox" className="hidden" checked={field.value.includes(id)} 
+                    {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => {
+                        const isSelected = field.value.includes(id);
+                        const isOwnKit = usuarioOwnerKey === backpack.ownerKey;
+                        return (
+                        <label key={id} className={`border p-4 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${isSelected ? 'bg-blue-50 border-blue-500 shadow-md' : 'hover:bg-gray-50'} ${isOwnKit && watchedUsuario ? 'ring-2 ring-blue-200' : ''}`}>
+                          <input type="checkbox" className="sr-only" checked={isSelected} aria-label={backpack.nombre}
                             onChange={e => field.onChange(e.target.checked ? [...field.value, id] : field.value.filter(v => v !== id))} />
-                          <Package size={28} className={field.value.includes(id) ? 'text-blue-600' : 'text-gray-400'} />
+                          <Package size={28} className={isSelected ? 'text-blue-600' : 'text-gray-400'} aria-hidden="true" />
                           <div>
-                              <span className={`block font-semibold ${field.value.includes(id) ? 'text-blue-900' : 'text-gray-600'}`}>{backpack.nombre}</span>
+                              <span className={`block font-semibold ${isSelected ? 'text-blue-900' : 'text-gray-600'}`}>{backpack.nombre}</span>
                               <span className="text-xs text-gray-400">{backpack.items.length} pzas</span>
+                              {isOwnKit && watchedUsuario && <span className="text-xs text-blue-600 font-semibold">Tu kit</span>}
                           </div>
                         </label>
-                    ))}
+                        );
+                    })}
                   </>
               )} />
             </div>
@@ -533,17 +619,50 @@ const NormasScreen = () => {
 
         {/* ESCANEO MANUAL */}
         <div className="card">
-            <div className="flex justify-between items-center mb-6 border-b pb-4">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 border-b pb-4">
                 <div className="flex items-center gap-3">
                     <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Camera size={24}/></div>
-                    <h2 className="text-lg font-bold text-gray-800">Herramientas Extra / Patrones</h2>
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-800">Patrones y Equipo Extra</h2>
+                      <p className="help-text mb-0">Patrones de calibración, equipo prestado o etiquetadora si la llevas.</p>
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <button type="button" className="btn btn-secondary" onClick={() => setIsScannerOpen(true)}><Camera size={18}/> Escanear</button>
-                    <button type="button" className="btn btn-secondary" onClick={() => append({ herramienta: '', qty: '1', marca: '', modelo: '', serie: '' })}><Plus size={18}/> Manual</button>
+                <div className="flex gap-2 flex-wrap">
+                    <button type="button" className="btn btn-secondary" onClick={() => setIsScannerOpen(true)} aria-label="Escanear código de patrón"><Camera size={18}/> Escanear</button>
+                    <button type="button" className="btn btn-secondary" onClick={handleAddManualRow} aria-label="Agregar patrón manual"><Plus size={18}/> Patrón manual</button>
                 </div>
             </div>
             
+            {fields.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Printer size={18} className="text-slate-600"/>
+                      <h3 className="text-sm font-bold text-slate-700">Etiquetadoras por persona</h3>
+                    </div>
+                    <p className="help-text mb-3">No todos tienen impresora asignada; agrega la que uses o la que prestes.</p>
+                    <div className="flex flex-wrap gap-2">
+                      {ETIQUETADORAS_CATALOG.map(etiq => {
+                        const yaAgregada = isEtiquetadoraInList(watchedManualTools, etiq.item.serie);
+                        const esPropia = usuarioOwnerKey === etiq.ownerKey;
+                        return (
+                          <button
+                            key={etiq.ownerKey}
+                            type="button"
+                            className={`etiquetadora-chip ${esPropia ? 'is-own' : ''}`}
+                            disabled={yaAgregada}
+                            onClick={() => handleAddEtiquetadora(etiq)}
+                            title={yaAgregada ? 'Ya en la lista' : `Agregar etiquetadora de ${etiq.persona}`}
+                          >
+                            <Printer size={14}/>
+                            <span><strong>{etiq.persona}</strong> · {etiq.item.serie}</span>
+                            {esPropia && <span className="text-blue-600 text-xs">(tuya)</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                </div>
+            )}
+
             {isAnyPatronVencido && (
                 <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 flex items-center gap-3">
                     <AlertTriangle size={24}/> 
@@ -567,7 +686,15 @@ const NormasScreen = () => {
                     </thead>
                     <tbody>
                         {fields.length === 0 && (
-                            <tr><td colSpan={8} className="text-center py-8 text-gray-400 italic">No has agregado herramientas o patrones adicionales.</td></tr>
+                            <tr>
+                              <td colSpan={8}>
+                                <div className="empty-state">
+                                  <Package size={40}/>
+                                  <p className="font-medium text-gray-500">Sin patrones ni equipo extra</p>
+                                  <p className="text-sm mt-1">Usa <strong>Escanear</strong> o <strong>Patrón manual</strong> para agregar equipos de calibración o una etiquetadora.</p>
+                                </div>
+                              </td>
+                            </tr>
                         )}
                         {fields.map((item, index) => {
                              const selectedTool = watchedManualTools[index]?.herramienta;
@@ -613,10 +740,18 @@ const NormasScreen = () => {
                                         <input className="input-control text-sm px-2 py-1.5" placeholder="Serie" {...register(`manualTools.${index}.serie`)} />
                                     </td>
                                     <td className="text-center">
-                                        {current ? <span className={`status-badge status-${current.status}`}>{current.status}</span> : <span className="text-gray-300">-</span>}
+                                        {current ? (
+                                          <span className={`status-badge status-${['vencido','vigente','pendiente'].includes(current.status) ? current.status : current.status === 'critico' ? 'critico' : current.status === 'proximo' ? 'proximo' : 'pendiente'}`}>
+                                            {current.status === 'critico' ? 'crítico' : current.status === 'proximo' ? 'próximo' : current.status}
+                                          </span>
+                                        ) : watchedManualTools[index]?.herramienta ? (
+                                          <span className="status-badge status-pendiente">manual</span>
+                                        ) : (
+                                          <span className="text-gray-300">-</span>
+                                        )}
                                     </td>
                                     <td>
-                                        <button type="button" onClick={() => remove(index)} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"><X size={18}/></button>
+                                        <button type="button" onClick={() => remove(index)} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors" aria-label={`Quitar fila ${index + 1}`}><X size={18}/></button>
                                     </td>
                                 </tr>
                              )
@@ -628,8 +763,12 @@ const NormasScreen = () => {
 
         {/* BARRA DE ACCIONES */}
         <div className="floating-bar">
-            <div className="hidden md:block text-sm font-medium">
-                Total en lista: <strong className="text-blue-600">{aggregatedTools.length + fields.length} registros</strong>
+            <div className="hidden md:block text-sm font-medium text-gray-600">
+                <span>Kit: <strong>{aggregatedTools.length}</strong></span>
+                <span className="mx-2 text-gray-300">|</span>
+                <span>Manual: <strong>{fields.length}</strong></span>
+                <span className="mx-2 text-gray-300">|</span>
+                <span>Total: <strong className="text-blue-600">{aggregatedTools.length + fields.length}</strong></span>
             </div>
             <div className="flex gap-3 w-full md:w-auto">
                 <button 
