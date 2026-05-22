@@ -7,13 +7,15 @@ import getDay from 'date-fns/getDay';
 import es from 'date-fns/locale/es';
 import parseISO from 'date-fns/parseISO';
 import { collection, onSnapshot, query, getDocs, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { db } from '../utils/firebase';
+import { db, storage } from '../utils/firebase';
 import { useNavigation } from '../hooks/useNavigation';
 import { 
   ArrowLeft, Calendar as CalendarIcon, Clock, CheckCircle2, RotateCcw, 
   X, Users, ChevronLeft, ChevronRight, Search, MapPin, ShieldCheck,
-  Building2, FileText, Settings, Zap, Eye, Bell, ListFilter, LayoutGrid, Plus, Trash2, Check, UserCheck, Shield, TableProperties
+  Building2, FileText, Settings, Zap, Eye, Bell, LayoutGrid, Plus, Trash2, Check, UserCheck, Shield, TableProperties,
+  Upload, ExternalLink, Loader2
 } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
@@ -96,20 +98,37 @@ const addDaysNative = (dateStr: string, days: number) => {
     return d.toISOString().split('T')[0];
 };
 
+/** Avance mínimo al asignar responsable (personas no vacío) en filas PT. */
+const AVANCE_CON_RESPONSABLE = 35;
+
+const hasEvidencia = (ev: any) =>
+    !!(ev?.evidenciaUrl || (Array.isArray(ev?.evidenciaUrls) && ev.evidenciaUrls.length > 0));
+
+const hasResponsable = (ev: any) => Array.isArray(ev?.personas) && ev.personas.length > 0;
+
+/** Prioridad: evidencia → finalizado → bump responsable → avance por fechas. */
 const calculateAvance = (ev: any) => {
+    if (hasEvidencia(ev)) return 100;
     if (ev.estado === 'finalizado') return 100;
-    if (ev.estado === 'programado') return 0;
-    
-    const start = ev.start.getTime();
-    const end = ev.end.getTime();
-    const now = new Date().getTime();
-    
-    if (now <= start) return 5; 
-    if (now >= end) return 95;  
-    
-    const total = end - start;
-    const passed = now - start;
-    return Math.max(5, Math.min(95, Math.round((passed / total) * 100)));
+
+    let base = 0;
+    if (ev.estado === 'programado') {
+        base = hasResponsable(ev) ? AVANCE_CON_RESPONSABLE : 0;
+    } else {
+        const start = ev.start.getTime();
+        const end = ev.end.getTime();
+        const now = new Date().getTime();
+        if (now <= start) base = 5;
+        else if (now >= end) base = 95;
+        else {
+            const total = end - start;
+            const passed = now - start;
+            base = Math.max(5, Math.min(95, Math.round((passed / total) * 100)));
+        }
+    }
+
+    if (hasResponsable(ev) && base < AVANCE_CON_RESPONSABLE) return AVANCE_CON_RESPONSABLE;
+    return base;
 };
 
 const getEventHexColor = (event: any) => {
@@ -139,6 +158,21 @@ const isColorLight = (hex: string) => {
 
 // --- 2. COMPONENTE MODAL DE GESTIÓN ---
 
+async function uploadEvidenciaServicio(servicioId: string, file: File) {
+    const storageRef = ref(storage, `servicios/evidencia/${servicioId}/${Date.now()}_${file.name}`);
+    const url = await new Promise<string>((resolve, reject) => {
+        const task = uploadBytesResumable(storageRef, file);
+        task.on('state_changed', () => {}, reject, async () => resolve(await getDownloadURL(task.snapshot.ref)));
+    });
+    await updateDoc(doc(db, 'servicios', servicioId), {
+        evidenciaUrl: url,
+        evidenciaNombre: file.name,
+        evidenciaFecha: new Date().toISOString(),
+        estado: 'finalizado',
+    });
+    return url;
+}
+
 const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff, isCalidad, currentUser }: any) => {
     const [formData, setFormData] = useState({
         titulo: '', tipo: 'intralaboratorio', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', 
@@ -147,6 +181,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const [usarPlantilla, setUsarPlantilla] = useState(false);
     const [saving, setSaving] = useState(false);
     const [marking, setMarking] = useState(false);
+    const [uploadingEvidencia, setUploadingEvidencia] = useState(false);
 
     const isPJLA = event?.esAlertaAutomatica || event?.cliente === 'Perry Johnson Labs';
     
@@ -261,6 +296,18 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const statusConfig = CONSTANTS.estados.find(e => e.value === (event?.estado || formData.estado)) || CONSTANTS.estados[0];
     const StatusIcon = statusConfig.icon;
     const yaEstaEnterado = event?.enterados?.includes(currentUser?.id);
+    const isPT = event && (event.tipo === 'interlaboratorio' || event.tipo === 'intralaboratorio');
+    const canUploadEvidencia = isPT && event?.id && (isCalidad || event.personas?.includes(currentUser?.id));
+
+    const handleEvidenciaFile = async (file: File | undefined) => {
+        if (!file || !event?.id) return;
+        setUploadingEvidencia(true);
+        try {
+            await uploadEvidenciaServicio(event.id, file);
+            onClose();
+        } catch (error) { console.error(error); }
+        finally { setUploadingEvidencia(false); }
+    };
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
@@ -315,6 +362,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                             </div>
 
                             {(event.tipo === 'interlaboratorio' || event.tipo === 'intralaboratorio') && (
+                                <>
                                 <div className="flex items-center justify-between bg-emerald-50 p-3 rounded-2xl border border-emerald-100">
                                     <div>
                                         <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Magnitud: {event.magnitudPT || 'N/A'}</p>
@@ -324,6 +372,24 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                         <div className="h-full bg-emerald-600" style={{ width: `${calculateAvance(event)}%` }}></div>
                                     </div>
                                 </div>
+                                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase mb-2 tracking-widest">Evidencia</p>
+                                    {event.evidenciaUrl ? (
+                                        <a href={event.evidenciaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm font-bold text-blue-600 hover:underline">
+                                            <ExternalLink size={14}/> {event.evidenciaNombre || 'Ver evidencia'}
+                                        </a>
+                                    ) : (
+                                        <p className="text-xs text-slate-500 italic">Sin evidencia cargada.</p>
+                                    )}
+                                    {canUploadEvidencia && (
+                                        <label className="mt-2 flex items-center justify-center gap-2 w-full py-2 bg-white border border-dashed border-blue-300 rounded-xl text-xs font-bold text-blue-600 cursor-pointer hover:bg-blue-50">
+                                            {uploadingEvidencia ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>}
+                                            {event.evidenciaUrl ? 'Reemplazar evidencia' : 'Subir evidencia (completa actividad)'}
+                                            <input type="file" className="hidden" disabled={uploadingEvidencia} onChange={e => { handleEvidenciaFile(e.target.files?.[0]); e.target.value = ''; }} />
+                                        </label>
+                                    )}
+                                </div>
+                                </>
                             )}
 
                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
@@ -442,6 +508,24 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 <textarea value={formData.descripcion} onChange={e => setFormData({...formData, descripcion: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" rows={2} />
                             </div>
 
+                            {(formData.tipo === 'interlaboratorio' || formData.tipo === 'intralaboratorio') && event?.id && (
+                                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                                    <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Evidencia</p>
+                                    {event.evidenciaUrl ? (
+                                        <a href={event.evidenciaUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline">
+                                            <ExternalLink size={12}/> {event.evidenciaNombre || 'Ver archivo'}
+                                        </a>
+                                    ) : (
+                                        <p className="text-[10px] text-emerald-700 italic">Al subir evidencia, el avance será 100% y el estado Finalizado.</p>
+                                    )}
+                                    <label className="flex items-center justify-center gap-2 w-full py-2 bg-white border border-dashed border-emerald-400 rounded-lg text-xs font-bold text-emerald-700 cursor-pointer hover:bg-emerald-100/50">
+                                        {uploadingEvidencia ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>}
+                                        Subir evidencia
+                                        <input type="file" className="hidden" disabled={uploadingEvidencia} onChange={e => { handleEvidenciaFile(e.target.files?.[0]); e.target.value = ''; }} />
+                                    </label>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 flex justify-between">
                                     Participantes / Técnicos 
@@ -477,104 +561,10 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     );
 };
 
-// --- 3. VISTA GANTT CALIDAD GENERAL ---
+// --- 3. VISTA GANTT PT (INTERLABORATORIOS) MAYO - ABRIL ---
 
-const GanttGeneralView = ({ events, onCellClick, onEventClick, isCalidad }: any) => {
-    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const categories = [
-        { id: 'mtto_patrones', title: 'Mantenimiento de Patrones' },
-        { id: 'intralaboratorio', title: 'Intralaboratorios' },
-        { id: 'interlaboratorio', title: 'Interlaboratorios Externos' }
-    ];
-
-    const getWeekRange = (start: Date, end: Date) => {
-        const getIdx = (d: Date) => (d.getMonth() * 4) + Math.min(3, Math.floor((d.getDate() - 1) / 7));
-        return { startW: getIdx(start), endW: getIdx(end) };
-    };
-
-    return (
-        <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm mt-3">
-            <div className="overflow-x-auto custom-scrollbar flex-1 relative">
-                <table className="w-full min-w-[1200px] border-collapse bg-white">
-                    <thead className="sticky top-0 z-40 bg-white shadow-sm">
-                        <tr>
-                            <th rowSpan={2} className="border-b border-slate-200 p-3 text-left w-64 bg-slate-50 font-black text-slate-800 text-[10px] uppercase tracking-widest sticky left-0 z-50 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Magnitud / Prueba</th>
-                            {months.map(m => <th key={m} colSpan={4} className="border border-slate-200 p-1.5 text-center text-[10px] font-bold text-slate-600 uppercase bg-slate-100">{m}</th>)}
-                        </tr>
-                        <tr>
-                            {Array.from({ length: 48 }).map((_, i) => {
-                                const weekNum = i % 4;
-                                return (
-                                    <th key={i} className="border border-slate-200 py-1 text-center bg-slate-50 min-w-[24px]">
-                                        <div className="text-[9px] font-bold text-slate-500">S{weekNum + 1}</div>
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {categories.map(cat => {
-                            const config = CONSTANTS.tipos.find(t => t.value === cat.id);
-                            const catEvents = events.filter(e => e.tipo === cat.id);
-
-                            return (
-                                <React.Fragment key={cat.id}>
-                                    <tr className="bg-slate-50">
-                                        <td colSpan={49} className="py-2 px-4 text-[10px] font-bold text-slate-800 border-y border-slate-200">
-                                            <div className="flex items-center gap-1.5">
-                                                <div className="w-2.5 h-2.5 rounded-sm bg-current opacity-80" style={{ color: config?.hex }}></div>
-                                                {cat.title}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {catEvents.length === 0 ? (
-                                        <tr>
-                                            <td onClick={() => isCalidad && onCellClick(cat.id, 0, false)} className={`border border-slate-200 p-3 italic text-slate-400 text-[10px] sticky left-0 bg-white z-20 ${isCalidad ? 'cursor-pointer hover:bg-blue-50' : ''}`}>Sin programar</td>
-                                            {Array.from({ length: 48 }).map((_, i) => <td key={i} onClick={() => isCalidad && onCellClick(cat.id, i, false)} className={`border border-slate-100 ${isCalidad ? 'hover:bg-slate-50 cursor-crosshair' : ''}`}></td>)}
-                                        </tr>
-                                    ) : (
-                                        catEvents.map(ev => {
-                                            const { startW, endW } = getWeekRange(ev.start, ev.end);
-                                            const isEnProceso = ev.estado === 'en_proceso';
-                                            const isFinalizado = ev.estado === 'finalizado';
-                                            const todosEnterados = ev.personas?.length > 0 && ev.personas.every((pId:string) => ev.enterados?.includes(pId));
-
-                                            return (
-                                                <tr key={ev.id} className="group h-8 hover:bg-slate-50/80">
-                                                    <td onClick={() => onEventClick(ev)} className="border border-slate-200 px-3 py-1 text-[10px] font-semibold text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50 z-20 cursor-pointer shadow-[2px_0_5px_rgba(0,0,0,0.02)] truncate max-w-[200px] flex items-center justify-between" title={ev.title}>
-                                                        <span>{ev.title}</span>
-                                                        <div className="flex shrink-0 ml-1">
-                                                            {todosEnterados && !isFinalizado && <CheckCircle2 size={12} className="text-emerald-500"/>}
-                                                            {isFinalizado && <ShieldCheck size={12} className="text-blue-500"/>}
-                                                        </div>
-                                                    </td>
-                                                    {Array.from({ length: 48 }).map((_, i) => {
-                                                        const active = i >= startW && i <= endW;
-                                                        return (
-                                                            <td key={i} onClick={() => active ? onEventClick(ev) : (isCalidad && onCellClick(cat.id, i, false))} className={`border border-slate-100 p-0 relative min-w-[35px] ${!active && isCalidad && 'hover:bg-slate-50 cursor-crosshair'}`}>
-                                                                {active && (
-                                                                    <div className={`w-full h-full min-h-[20px] shadow-inner transition-opacity cursor-pointer flex items-center justify-center`} style={{ backgroundColor: config?.hex, opacity: isFinalizado ? 0.6 : 0.9, backgroundImage: isEnProceso ? 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.2) 5px, rgba(255,255,255,0.2) 10px)' : 'none' }} title={ev.title}></div>
-                                                                )}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                </React.Fragment>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-// --- 4. VISTA GANTT PT (INTERLABORATORIOS) MAYO - ABRIL ---
-
-const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalStaff }: any) => {
+const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalStaff, onUploadEvidencia, currentUser }: any) => {
+    const [uploadingId, setUploadingId] = useState<string | null>(null);
     const monthsPT = ['Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril'];
     const ptEvents = events.filter(e => e.tipo === 'intralaboratorio' || e.tipo === 'interlaboratorio');
 
@@ -638,6 +628,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-48 sticky left-[80px] z-50 text-[10px] shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Actividades</th>
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-24 text-[10px]">Responsable</th>
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-16 text-[10px] leading-tight">Avance %</th>
+                            <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-20 text-[10px]">Evidencia</th>
                             <th colSpan={2} className="border border-slate-300 p-1 bg-[#0070C0] text-white font-bold text-center text-[10px]">Fechas</th>
                             {monthsPT.map(m => <th key={m} colSpan={4} className="border border-slate-300 p-1 text-center font-bold bg-slate-200 text-slate-700 text-[10px]">{m}</th>)}
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-40 text-[10px]">Comentarios</th>
@@ -655,8 +646,11 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
                                 <React.Fragment key={magnitud}>
                                     {eventosMag.map((ev, idx) => {
                                         const { startW, endW } = getWeekRangePT(ev.start, ev.end);
-                                        const nombres = ev.personas.map((id:string) => getUserName(id, technicalStaff)).join(', ') || '-';
-                                        const avanceReal = calculateAvance(ev); 
+                                        const nombres = ev.personas?.length
+                                            ? ev.personas.map((id: string) => getUserName(id, technicalStaff)).join(', ')
+                                            : '—';
+                                        const avanceReal = calculateAvance(ev);
+                                        const puedeSubirEvidencia = isCalidad || (currentUser?.id && ev.personas?.includes(currentUser.id));
                                         const style = getActivityStyle(ev.title);
 
                                         return (
@@ -670,10 +664,38 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
                                                 <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-[9px] sticky left-[80px] z-30 shadow-[2px_0_5px_rgba(0,0,0,0.02)] leading-tight" style={style} title={ev.title}>
                                                     {ev.title}
                                                 </td>
-                                                <td className="border border-slate-300 p-1 text-center text-[9px] text-slate-600 bg-white truncate max-w-[96px]">{nombres}</td>
+                                                <td className="border border-slate-300 p-0.5 text-center bg-white">
+                                                    <span
+                                                        className="text-[9px] text-slate-600 block max-w-[96px] leading-tight break-words"
+                                                        title={nombres !== '—' ? nombres : undefined}
+                                                    >
+                                                        {nombres}
+                                                    </span>
+                                                </td>
                                                 
                                                 <td className={`border border-slate-300 p-1 text-center font-bold text-[10px] ${getAvanceColor(avanceReal)}`}>
                                                     {avanceReal}%
+                                                </td>
+
+                                                <td className="border border-slate-300 p-0.5 text-center bg-white" onClick={e => e.stopPropagation()}>
+                                                    {ev.evidenciaUrl ? (
+                                                        <a href={ev.evidenciaUrl} target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-blue-600 hover:underline" title={ev.evidenciaNombre || 'Evidencia'}>
+                                                            <ExternalLink size={12} className="inline"/>
+                                                        </a>
+                                                    ) : puedeSubirEvidencia ? (
+                                                        <label className="inline-flex items-center justify-center cursor-pointer text-blue-600 hover:text-blue-800" title="Subir evidencia">
+                                                            {uploadingId === ev.id ? <Loader2 size={12} className="animate-spin"/> : <Upload size={12}/>}
+                                                            <input type="file" className="hidden" disabled={uploadingId === ev.id} onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                e.target.value = '';
+                                                                if (!file) return;
+                                                                setUploadingId(ev.id);
+                                                                try { await onUploadEvidencia(ev.id, file); } finally { setUploadingId(null); }
+                                                            }} />
+                                                        </label>
+                                                    ) : (
+                                                        <span className="text-[9px] text-slate-300">—</span>
+                                                    )}
                                                 </td>
                                                 
                                                 <td className="border border-slate-300 p-0.5 text-center text-[8px] text-slate-600 bg-white">{format(ev.start, 'dd/MMM/yy', {locale: es})}</td>
@@ -682,7 +704,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
                                                 {Array.from({ length: 48 }).map((_, i) => {
                                                     const active = i >= startW && i <= endW;
                                                     return (
-                                                        <td key={i} onClick={(e) => { if(!active && isCalidad){ e.stopPropagation(); onCellClick(ev.tipo, i, true); } }} className="border border-slate-300 p-0 relative bg-white">
+                                                        <td key={i} onClick={(e) => { if(!active && isCalidad){ e.stopPropagation(); onCellClick(ev.tipo, i); } }} className="border border-slate-300 p-0 relative bg-white">
                                                             {active && (
                                                                 <div className="w-full h-full min-h-[16px] shadow-sm flex items-center justify-center text-[7px] font-bold" style={style}>
                                                                     {avanceReal === 100 ? '✓' : ''}
@@ -700,7 +722,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
                         })}
                         {ptEvents.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="border border-slate-300 p-3 text-center italic text-slate-400 bg-white text-[10px]">Dale a "NUEVA PRUEBA" y usa la Plantilla PT.</td>
+                                <td colSpan={7} className="border border-slate-300 p-3 text-center italic text-slate-400 bg-white text-[10px]">Dale a "NUEVA PRUEBA" y usa la Plantilla PT.</td>
                                 {Array.from({ length: 48 }).map((_, i) => <td key={i} className="border border-slate-300 bg-white"></td>)}
                                 <td className="border border-slate-300 bg-white"></td>
                             </tr>
@@ -775,7 +797,7 @@ export const CalendarScreen: React.FC = () => {
         return puesto.includes('calidad') || puesto.includes('admin') || puesto.includes('gerente');
     }, [currentUserData]);
 
-    const [viewMode, setViewMode] = useState<'calendar' | 'gantt' | 'gantt_pt'>('calendar'); 
+    const [viewMode, setViewMode] = useState<'calendar' | 'gantt_pt'>('calendar'); 
     const [events, setEvents] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
@@ -813,7 +835,11 @@ export const CalendarScreen: React.FC = () => {
                         destino: data.destino || '', laboratorioRef: data.laboratorioRef || '', descripcion: data.descripcion,
                         personas: data.personas || [], enterados: data.enterados || [], documentos: data.archivos || [],
                         pjlaUrl: pjlaUrl, esAlertaAutomatica: data.esAlertaAutomatica || false,
-                        magnitudPT: data.magnitudPT || '', comentariosPT: data.comentariosPT || ''
+                        magnitudPT: data.magnitudPT || '', comentariosPT: data.comentariosPT || '',
+                        evidenciaUrl: data.evidenciaUrl || null,
+                        evidenciaNombre: data.evidenciaNombre || '',
+                        evidenciaFecha: data.evidenciaFecha || null,
+                        evidenciaUrls: data.evidenciaUrls || []
                     };
                 });
                 setEvents(calendarEvents);
@@ -823,17 +849,15 @@ export const CalendarScreen: React.FC = () => {
         return () => unsub();
     }, []);
 
-    const handleGanttCellClick = (catId: string, weekIdx: number, isPT: boolean = false) => {
-        if (!isCalidad) return; 
-        let month, day, year = 2026;
-        if (isPT) {
-            month = (Math.floor(weekIdx / 4) + 4) % 12; 
-            year = month >= 4 ? 2026 : 2027; 
-            day = ((weekIdx % 4) * 7) + 1;
-        } else {
-            month = Math.floor(weekIdx / 4);
-            day = ((weekIdx % 4) * 7) + 1;
-        }
+    const handleUploadEvidenciaPT = async (servicioId: string, file: File) => {
+        await uploadEvidenciaServicio(servicioId, file);
+    };
+
+    const handleGanttCellClick = (catId: string, weekIdx: number) => {
+        if (!isCalidad) return;
+        const month = (Math.floor(weekIdx / 4) + 4) % 12;
+        const year = month >= 4 ? 2026 : 2027;
+        const day = ((weekIdx % 4) * 7) + 1;
         const dateStr = format(new Date(year, month, day), 'yyyy-MM-dd');
         setInitialModalData({ tipo: catId, fecha: dateStr, fechaFin: dateStr });
         setSelectedEvent(null);
@@ -902,10 +926,7 @@ export const CalendarScreen: React.FC = () => {
                             
                             {/* PESTAÑAS GANTT SOLO PARA CALIDAD */}
                             {isCalidad && (
-                                <>
-                                    <button onClick={() => setViewMode('gantt')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1.5 transition-all ${viewMode === 'gantt' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}><ListFilter size={14}/><span className="hidden sm:inline">Gantt General</span></button>
-                                    <button onClick={() => setViewMode('gantt_pt')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1.5 transition-all ${viewMode === 'gantt_pt' ? 'bg-[#0070C0] shadow-md text-white' : 'text-slate-500'}`}><TableProperties size={14}/><span className="hidden sm:inline">Gantt PT</span></button>
-                                </>
+                                <button onClick={() => setViewMode('gantt_pt')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold flex items-center gap-1.5 transition-all ${viewMode === 'gantt_pt' ? 'bg-[#0070C0] shadow-md text-white' : 'text-slate-500'}`}><TableProperties size={14}/><span className="hidden sm:inline">Gantt PT</span></button>
                             )}
                         </div>
                     </div>
@@ -951,10 +972,8 @@ export const CalendarScreen: React.FC = () => {
                                 ))}
                             </div>
                         </div>
-                    ) : viewMode === 'gantt' ? (
-                        <GanttGeneralView events={events} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} isCalidad={isCalidad} />
                     ) : (
-                        <GanttPTView events={events} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} isCalidad={isCalidad} technicalStaff={users} />
+                        <GanttPTView events={events} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} isCalidad={isCalidad} technicalStaff={users} onUploadEvidencia={handleUploadEvidenciaPT} currentUser={currentUserData} />
                     )}
                 </div>
 

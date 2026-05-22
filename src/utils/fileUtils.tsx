@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { collection, query, where, limit, getDocs } from 'firebase/firestore';
-import { db } from './firebase'; // Asegúrate que la ruta a tu config de firebase sea correcta
+import { db } from './firebase'; // Aseg?rate que la ruta a tu config de firebase sea correcta
 
-// Iconos que podrías necesitar para las funciones de ayuda
+// Iconos que podr?as necesitar para las funciones de ayuda
 import {
     PictureAsPdf as PictureAsPdfIcon,
     InsertDriveFile as InsertDriveFileIcon,
@@ -111,27 +111,27 @@ export const getActivityIcon = (action: string): React.ReactElement => {
 export const getActivityDescription = (activity: ActivityLog): string => {
   switch (activity.action) {
     case 'create':
-      return `subió el archivo "${activity.fileName}"`;
+      return `subi? el archivo "${activity.fileName}"`;
     case 'delete':
-      return `eliminó el archivo "${activity.fileName}"`;
+      return `elimin? el archivo "${activity.fileName}"`;
     case 'move':
-      return `movió "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
+      return `movi? "${activity.fileName}" de ${activity.fromPath} a ${activity.toPath}`;
     case 'review':
-      return `marcó como revisado "${activity.fileName}"`;
+      return `marc? como revisado "${activity.fileName}"`;
     case 'unreview':
-      return `marcó como no revisado "${activity.fileName}"`;
+      return `marc? como no revisado "${activity.fileName}"`;
     case 'complete':
-      return `marcó como realizado "${activity.fileName}"`;
+      return `marc? como realizado "${activity.fileName}"`;
     case 'uncomplete':
-      return `marcó como no realizado "${activity.fileName}"`;
+      return `marc? como no realizado "${activity.fileName}"`;
     case 'view':
-      return `abrió el archivo "${activity.fileName}"`;
+      return `abri? el archivo "${activity.fileName}"`;
     case 'download':
-      return `descargó el archivo "${activity.fileName}"`;
+      return `descarg? el archivo "${activity.fileName}"`;
     case 'create_folder':
-      return `creó la carpeta "${activity.folderName}"`;
+      return `cre? la carpeta "${activity.folderName}"`;
     default:
-      return `realizó una acción en "${activity.fileName || activity.folderName}"`;
+      return `realiz? una acci?n en "${activity.fileName || activity.folderName}"`;
   }
 };
 
@@ -169,7 +169,7 @@ export const isQualityUser = (userData: UserData | null): boolean => {
 export const isMetrologistUser = (userData: UserData | null): boolean => {
   if (!userData) return false;
   const puesto = userData.puesto?.toLowerCase();
-  return puesto === 'metrólogo' || puesto === 'metrologist' || puesto === 'metrologo';
+  return puesto === 'metr?logo' || puesto === 'metrologist' || puesto === 'metrologo';
 };
 
 export const getUserNameByEmail = async (email: string): Promise<string> => {
@@ -197,9 +197,56 @@ export const getUserDisplayName = async (user: any): Promise<string> => {
 
 export const filterFoldersByPermissions = (folders: DriveFolder[], userIsQuality: boolean, userName: string): DriveFolder[] => {
   if (userIsQuality) return folders;
-  const userNameLower = userName.toLowerCase();
-  return folders.filter(folder => {
-    const folderNameLower = folder.name.toLowerCase();
-    return folderNameLower.includes(userNameLower) || userNameLower.includes(folderNameLower) || folder.name === userName;
-  });
+  const myName = normalizeFolderKey(userName);
+  return folders.filter((folder) => normalizeFolderKey(folder.name).includes(myName));
+};
+
+const normalizeFolderKey = (name: string) =>
+  name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+const SHARED_FOLDER_KEYS = ["hojas de servicio", "hojas de trabajo"];
+
+export const isSharedDriveFolder = (folderName: string): boolean => {
+  const norm = normalizeFolderKey(folderName);
+  return SHARED_FOLDER_KEYS.some((k) => norm.includes(k));
+};
+
+export interface FolderVisualStyle {
+  bg: string;
+  hoverBg: string;
+  icon: string;
+  fill: string;
+  hoverFill: string;
+}
+
+const METROLOGIST_FOLDER_PALETTE: FolderVisualStyle[] = [
+  { bg: "bg-blue-50", hoverBg: "group-hover:bg-blue-100", icon: "text-blue-600", fill: "fill-blue-100", hoverFill: "group-hover:fill-blue-200" },
+  { bg: "bg-emerald-50", hoverBg: "group-hover:bg-emerald-100", icon: "text-emerald-600", fill: "fill-emerald-100", hoverFill: "group-hover:fill-emerald-200" },
+  { bg: "bg-violet-50", hoverBg: "group-hover:bg-violet-100", icon: "text-violet-600", fill: "fill-violet-100", hoverFill: "group-hover:fill-violet-200" },
+  { bg: "bg-rose-50", hoverBg: "group-hover:bg-rose-100", icon: "text-rose-600", fill: "fill-rose-100", hoverFill: "group-hover:fill-rose-200" },
+  { bg: "bg-cyan-50", hoverBg: "group-hover:bg-cyan-100", icon: "text-cyan-600", fill: "fill-cyan-100", hoverFill: "group-hover:fill-cyan-200" },
+  { bg: "bg-orange-50", hoverBg: "group-hover:bg-orange-100", icon: "text-orange-600", fill: "fill-orange-100", hoverFill: "group-hover:fill-orange-200" },
+  { bg: "bg-indigo-50", hoverBg: "group-hover:bg-indigo-100", icon: "text-indigo-600", fill: "fill-indigo-100", hoverFill: "group-hover:fill-indigo-200" },
+  { bg: "bg-teal-50", hoverBg: "group-hover:bg-teal-100", icon: "text-teal-600", fill: "fill-teal-100", hoverFill: "group-hover:fill-teal-200" },
+];
+
+const hashFolderName = (name: string): number => {
+  let h = 0;
+  const s = normalizeFolderKey(name);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+/** Consistent folder colors: neutral for shared folders, hash palette per metrologist name. */
+export const getFolderVisualStyle = (folderName: string): FolderVisualStyle => {
+  if (isSharedDriveFolder(folderName)) {
+    return {
+      bg: "bg-slate-100",
+      hoverBg: "group-hover:bg-slate-200",
+      icon: "text-slate-600",
+      fill: "fill-slate-200",
+      hoverFill: "group-hover:fill-slate-300",
+    };
+  }
+  return METROLOGIST_FOLDER_PALETTE[hashFolderName(folderName) % METROLOGIST_FOLDER_PALETTE.length];
 };

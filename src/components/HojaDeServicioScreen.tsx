@@ -5,6 +5,7 @@ import {
 import { useNavigation } from '../hooks/useNavigation';
 import { db, storage } from '../utils/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { writeDriveFileMetadata } from '../utils/driveFileMetadata';
 import {
   collection, getDocs, query, where, doc, getDoc,
   setDoc, addDoc, Timestamp, writeBatch,
@@ -618,6 +619,14 @@ export default function HojaDeServicioScreen() {
 
       const uploadResult = await uploadBytes(storageRef, pdfBlob as Blob);
       const downloadURL = await getDownloadURL(uploadResult.ref);
+
+      try {
+        await writeDriveFileMetadata(storagePath, uploadResult, campos.tecnicoResponsable || "Desconocido", {
+          workDate: campos.fecha,
+        });
+      } catch (metaErr) {
+        console.error("[HojaDeServicio] Error al registrar metadata en Drive:", metaErr);
+      }
 
       await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
 

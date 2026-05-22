@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { writeDriveFileMetadata } from "../utils/driveFileMetadata";
 import { useAuth } from "../hooks/useAuth";
-import { storage, db } from "../utils/firebase";
+import { storage, db, firebaseConfig } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
@@ -24,6 +25,8 @@ import { QRCodeSVG } from 'qrcode.react';
 // --- IMPORTS DE CAPACITOR ---
 import { Capacitor } from '@capacitor/core';
 import EpsonLabel from '../utils/EpsonPlugin';
+import { extractMagnitudFromConsecutivo, toWorksheetMagnitud } from "../utils/magnitudWorksheet";
+import { generateTemplatePDF, getTechnicianFolderName } from "../utils/worksheetPdfGenerator";
 
 // ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
@@ -55,7 +58,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         fechaSug: data.fechaSug,
         certificado: data.certificado.trim(),
         calibro: data.calibro,
-        tapeSize: "24mm",
+        tapeSize,
       });
     } else {
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -159,6 +162,48 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     </div>
   );
 };
+
+const FIREBASE_PROJECT_ID =
+  (import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined) || firebaseConfig.projectId;
+
+const parseWorksheetDate = (fechaISO?: string): Date => {
+  if (!fechaISO) return new Date();
+  const parts = fechaISO.split("-");
+  if (parts.length !== 3) return new Date();
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  return isNaN(d.getTime()) ? new Date() : d;
+};
+
+async function generateAndPrintLabel(
+  labelRef: React.RefObject<HTMLDivElement | null>,
+  tapeSize: "24mm" | "12mm",
+  data: LabelData
+): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    await EpsonLabel.printLabel({
+      id: data.id.trim(),
+      fechaCal: data.fechaCal,
+      fechaSug: data.fechaSug,
+      certificado: data.certificado.trim(),
+      calibro: data.calibro,
+      tapeSize,
+    });
+    return;
+  }
+  if (!labelRef.current) {
+    throw new Error("No se encontró el elemento de etiqueta");
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const canvas = await html2canvas(labelRef.current, {
+    scale: 3,
+    backgroundColor: "#ffffff",
+    useCORS: true,
+  });
+  const link = document.createElement("a");
+  link.download = `ETIQUETA_${data.id}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
 
 // ====================================================================
 // MODAL CONVERTIDOR
@@ -327,6 +372,14 @@ const saveOfflineQueue = (q: OfflineQueueItem[]) => {
 };
 const addToOfflineQueue = (item: OfflineQueueItem) => {
   const q = getOfflineQueue();
+  if (item.finalDocId) {
+    const existingIdx = q.findIndex((i) => i.finalDocId === item.finalDocId);
+    if (existingIdx >= 0) {
+      q[existingIdx] = item;
+      saveOfflineQueue(q);
+      return;
+    }
+  }
   q.push(item);
   saveOfflineQueue(q);
 };
@@ -474,29 +527,6 @@ const getLocalISODate = () => {
     return `${year}-${month}-${day}`;
 };
 
-const getUserName = (user: any) => user ? (user.displayName || user.name || user.email?.split("@")[0] || "Sin Usuario") : "Sin Usuario";
-
-const extractMagnitudFromConsecutivo = (consecutivo: string): string => {
-  if (!consecutivo) return "";
-  const m: Record<string, string> = { 
-    AGAC: "Acustica", AGD: "Dimensional", AGF: "Fuerza", AGP: "Presión", 
-    AGEL: "Electrica", AGT: "Temperatura", AGM: "Masa", AGVBT: "Vibracion", 
-    AGQ: "Quimica", AGOT: "Optica", AGFL: "Flujo", AGRD: "Reporte de Diagnostico", 
-    AGTI: "Tiempo", VE: "Velocidad", AGPT: "Par Torsional", AGH: "Humedad" 
-  };
-  
-  const parts = consecutivo.split("-");
-  if (parts.length > 0 && m[parts[0]]) return m[parts[0]];
-  if (parts.length >= 2 && m[parts[1]]) return m[parts[1]];
-
-  const keys = Object.keys(m).sort((a, b) => b.length - a.length);
-  for (const code of keys) {
-    if (consecutivo.includes(code)) return m[code];
-  }
-  
-  return "";
-};
-
 const magnitudesDisponibles = [
   "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Humedad", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion"
 ];
@@ -548,371 +578,6 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
   return null;
 }
 
-// --- GENERADOR DE PDF ---
-const generateTemplatePDF = (formData: WorksheetState, JsPDF: typeof jsPDF) => {
-  // @ts-ignore
-  const doc = new JsPDF({ orientation: "p", unit: "pt", format: "a4" });
-
-  const pageWidth = doc.internal.pageSize.width; 
-  const pageHeight = doc.internal.pageSize.height; 
-  const marginBottom = 40; 
-  const marginLeft = 40;
-  const marginRight = pageWidth - 40;
-  
-  const tableWidth = 500; 
-  const tableX = (pageWidth - tableWidth) / 2; 
-
-  let currentY = 60; 
-
-  const drawHeaderBase = () => {
-    doc.addImage(logoAg, 'PNG', marginLeft, 25, 100, 45);
-    
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(0, 51, 153); 
-    doc.text("Equipos y Servicios Especializados AG", marginLeft + 110, 50, { align: "left" });
-    
-    doc.setDrawColor(0, 51, 153);
-    doc.setLineWidth(1);
-    doc.line(marginLeft, 80, marginRight, 80);
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "normal");
-  };
-
-  const drawFooter = () => {
-    const totalPages = doc.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "italic");
-      doc.setTextColor(100);
-      doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
-      doc.text(`Página ${i} de ${totalPages}`, marginRight - 50, pageHeight - 20);
-    }
-  };
-
-  const checkPageBreak = (heightNeeded: number) => {
-    if (currentY + heightNeeded > pageHeight - marginBottom) {
-      doc.addPage();
-      drawHeaderBase(); 
-      currentY = 100; 
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(0, 0, 0);
-      doc.text("Mediciones (Continuación)", marginLeft, currentY);
-      currentY += 25;
-      
-      doc.setDrawColor(200);
-      doc.setFillColor(230, 235, 245); 
-      doc.setLineWidth(0.5);
-      doc.rect(tableX, currentY, tableWidth, 20, 'FD');
-      
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      
-      if (formData.magnitud === "Masa") {
-        doc.text("Parámetro", tableX + 20, currentY + 14);
-        doc.text("Valor", tableX + (tableWidth/2) + 20, currentY + 14);
-      } else {
-        doc.text("Medición Patrón", tableX + 20, currentY + 14);
-        doc.text("Medición Instrumento", tableX + (tableWidth/2) + 20, currentY + 14);
-      }
-      currentY += 20; 
-      return true;
-    }
-    return false;
-  };
-
-  drawHeaderBase();
-  currentY = 100; 
-  
-  const col1X = marginLeft;
-  const col2X = pageWidth / 2 + 35; 
-
-  doc.setFillColor(245, 247, 250); 
-  doc.rect(marginLeft, currentY - 12, pageWidth - 80, 25, 'F');
-
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.text("Nombre:", marginLeft + 10, currentY + 5);
-  doc.setFont("helvetica", "normal");
-  doc.text(formData.nombre || "-", marginLeft + 65, currentY + 5);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("Fecha:", col2X, currentY + 5);
-  doc.setFont("helvetica", "normal");
-  doc.text(formData.fecha || "-", col2X + 45, currentY + 5);
-  
-  currentY += 35; 
-
-  const infoData = [
-    { l: "Cliente:", v: formData.cliente, l2: "N. Certificado:", v2: formData.certificado },
-    { l: "Equipo:", v: formData.equipo, l2: "ID:", v2: formData.id },
-    { l: "Marca:", v: formData.marca, l2: "Modelo:", v2: formData.modelo },
-    { l: "N. Serie:", v: formData.numeroSerie, l2: "Ubicación:", v2: formData.lugarCalibracion },
-    { l: "Magnitud:", v: formData.magnitud, l2: "Unidad:", v2: Array.isArray(formData.unidad) ? formData.unidad.join(', ') : formData.unidad },
-    { l: "Alcance:", v: formData.alcance, l2: "Resolución:", v2: formData.resolucion },
-    { l: "Frecuencia:", v: formData.frecuenciaCalibracion, l2: "Recepción:", v2: formData.fechaRecepcion || "N/A" },
-    { l: "Temp. Amb:", v: `${formData.tempAmbiente || "-"} °C`, l2: "Humedad:", v2: `${formData.humedadRelativa || "-"} %` },
-    { l: "Condición:", v: formData.condicionEquipo === "buenas" ? "Buenas condiciones" : formData.condicionEquipo === "dano" ? "Presenta daño/anomalía" : "-", l2: "", v2: "" },
-  ];
-
-  doc.setFontSize(10);
-  
-  const formatText = (text: any, maxLength: number) => {
-    const str = String(text || "-");
-    return str.length > maxLength ? str.substring(0, maxLength) + "..." : str;
-  };
-
-  infoData.forEach((row, index) => {
-    checkPageBreak(20);
-    
-    if (index % 2 === 0) {
-       doc.setFillColor(252, 252, 252);
-       doc.rect(marginLeft, currentY - 11, pageWidth - 80, 16, 'F');
-    }
-
-    doc.setFont("helvetica", "bold");
-    doc.text(row.l, col1X + 5, currentY + 1);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatText(row.v, 45), col1X + 75, currentY + 1);
-
-    doc.setFont("helvetica", "bold");
-    doc.text(row.l2, col2X, currentY + 1);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatText(row.v2, 40), col2X + 80, currentY + 1);
-    
-    currentY += 16;
-  });
-
-  currentY += 20;
-
-  // --- CABECERA DE MEDICIONES ---
-  checkPageBreak(40); 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setFillColor(230, 235, 245); 
-  doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F'); 
-  doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
-  currentY += 25;
-
-  const isMasa = formData.magnitud === "Masa";
-  
-  if (isMasa) {
-      const excLines = (formData.excentricidad || "").split('\n');
-      let p1="-", p2="-", p3="-", p4="-", p5="-";
-      excLines.forEach(l => {
-           if (l.startsWith('1')) p1 = l.substring(l.indexOf(':')+1).trim() || "-";
-           else if (l.startsWith('2')) p2 = l.substring(l.indexOf(':')+1).trim() || "-";
-           else if (l.startsWith('3')) p3 = l.substring(l.indexOf(':')+1).trim() || "-";
-           else if (l.startsWith('4')) p4 = l.substring(l.indexOf(':')+1).trim() || "-";
-           else if (l.startsWith('5')) p5 = l.substring(l.indexOf(':')+1).trim() || "-";
-      });
-
-      checkPageBreak(130);
-      
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(0,0,0);
-      doc.text("Excentricidad:", tableX, currentY + 10);
-      currentY += 25;
-
-      const boxSize = 80;
-      const boxX = pageWidth / 2 - boxSize / 2;
-      const boxY = currentY;
-
-      doc.setDrawColor(150);
-      doc.setLineWidth(1);
-      doc.rect(boxX, boxY, boxSize, boxSize); 
-
-      doc.setLineWidth(0.5);
-      doc.setDrawColor(200);
-      doc.line(boxX + boxSize/2, boxY, boxX + boxSize/2, boxY + boxSize);
-      doc.line(boxX, boxY + boxSize/2, boxX + boxSize, boxY + boxSize/2);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-
-      doc.text(`3: ${p3}`, boxX - 35, boxY + 10);
-      doc.text(`4: ${p4}`, boxX + boxSize + 5, boxY + 10);
-      doc.setFont("helvetica", "bold");
-      doc.text(`1: ${p1}`, boxX + boxSize/2 - 12, boxY + boxSize/2 - 5);
-      doc.setFont("helvetica", "normal");
-      doc.text(`2: ${p2}`, boxX - 35, boxY + boxSize - 5);
-      doc.text(`5: ${p5}`, boxX + boxSize + 5, boxY + boxSize - 5);
-
-      currentY += boxSize + 25;
-
-      checkPageBreak(40);
-      doc.setFillColor(50, 80, 160); 
-      doc.setTextColor(255, 255, 255); 
-      doc.rect(tableX, currentY, tableWidth, 20, 'FD');
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      
-      doc.text("Parámetro", tableX + 20, currentY + 14);
-      doc.text("Valor", tableX + (tableWidth/2) + 20, currentY + 14);
-      currentY += 20;
-      doc.setTextColor(0,0,0); 
-
-      const masaData = [
-          ["Linealidad", formData.linealidad || "-"],
-          ["Repetibilidad", formData.repetibilidad || "-"]
-      ];
-      
-      masaData.forEach(([param, val]) => {
-           const paramLines = doc.splitTextToSize(val, tableWidth/2 - 20);
-           const rowHeight = Math.max(20, paramLines.length * 15 + 10);
-           checkPageBreak(rowHeight);
-
-           doc.setFontSize(10);
-           doc.setDrawColor(200);
-           doc.rect(tableX, currentY, tableWidth/2, rowHeight);
-           doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, rowHeight);
-           
-           doc.setFont("helvetica", "bold");
-           doc.text(param, tableX + 10, currentY + 14);
-           doc.setFont("helvetica", "normal");
-           doc.text(paramLines, tableX + tableWidth/2 + 10, currentY + 14);
-           currentY += rowHeight;
-      });
-
-  } else {
-    doc.setDrawColor(0);
-    doc.setFillColor(50, 80, 160); 
-    doc.setTextColor(255, 255, 255); 
-    doc.setLineWidth(0.1);
-
-    checkPageBreak(30);
-    doc.rect(tableX, currentY, tableWidth, 20, 'FD');
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-      
-    doc.text("Medición Patrón", tableX + 20, currentY + 14);
-    doc.text("Medición Instrumento", tableX + (tableWidth/2) + 20, currentY + 14);
-    currentY += 20;
-    doc.setTextColor(0,0,0); 
-
-    const patronRaw = (formData.medicionPatron || "").split('\n');
-    const instrumentoRaw = (formData.medicionInstrumento || "").split('\n');
-    const maxLines = Math.max(patronRaw.length, instrumentoRaw.length);
-    const loopLimit = maxLines > 0 ? maxLines : 1;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10); 
-
-    for (let i = 0; i < loopLimit; i++) {
-      const pLine = patronRaw[i] || "";
-      const iLine = instrumentoRaw[i] || "";
-      
-      const isHeaderLine = (pLine.trim().endsWith(':') || iLine.trim().endsWith(':'));
-      const rowHeight = 18; 
-      checkPageBreak(rowHeight);
-
-      doc.setDrawColor(200);
-      if (isHeaderLine) {
-        doc.setFillColor(240, 240, 240); 
-        doc.setFont("helvetica", "bold");
-        doc.rect(tableX, currentY, tableWidth, rowHeight, 'FD'); 
-        doc.setTextColor(0, 0, 100); 
-      } else {
-        doc.setFont("helvetica", "normal");
-        // Colores de fondo alternados para el PDF
-        doc.setFillColor(245, 250, 255);
-        doc.rect(tableX, currentY, tableWidth/2, rowHeight, 'FD'); 
-        doc.setFillColor(255, 252, 245);
-        doc.rect(tableX + tableWidth/2, currentY, tableWidth/2, rowHeight, 'FD');
-        doc.setTextColor(0, 0, 0);
-      }
-      
-      doc.text(pLine, tableX + 10, currentY + 12);
-      doc.text(iLine, tableX + (tableWidth/2) + 10, currentY + 12);
-      currentY += rowHeight;
-    }
-  }
-
-  currentY += 20;
-
-  if (formData.condicionEquipo === "dano" && formData.descripcionDano) {
-    checkPageBreak(60);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setFillColor(255, 240, 240);
-    doc.setDrawColor(200, 50, 50);
-    doc.setLineWidth(0.5);
-    doc.rect(marginLeft, currentY, pageWidth - 80, 20, 'FD');
-    doc.setTextColor(180, 0, 0);
-    doc.text("⚠ Daño / Anomalía Detectada:", marginLeft + 8, currentY + 14);
-    doc.setTextColor(0, 0, 0);
-    currentY += 24;
-    const danoLines = doc.splitTextToSize(formData.descripcionDano, tableWidth - 20);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(danoLines, marginLeft + 8, currentY);
-    currentY += danoLines.length * 14 + 16;
-  }
-
-  if (formData.fotoEquipoBase64) {
-    checkPageBreak(220);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(0, 0, 0);
-    doc.text("Evidencia Fotográfica del Equipo:", marginLeft, currentY);
-    currentY += 14;
-    try {
-      const imgData = formData.fotoEquipoBase64.startsWith('data:') 
-        ? formData.fotoEquipoBase64 
-        : `data:image/jpeg;base64,${formData.fotoEquipoBase64}`;
-      const maxImgWidth = 300;
-      const maxImgHeight = 200;
-      doc.addImage(imgData, 'JPEG', marginLeft, currentY, maxImgWidth, maxImgHeight, undefined, 'MEDIUM');
-      currentY += maxImgHeight + 16;
-    } catch(imgErr) {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(9);
-      doc.setTextColor(120);
-      doc.text("(No se pudo incrustar la imagen)", marginLeft, currentY);
-      currentY += 20;
-      doc.setTextColor(0, 0, 0);
-    }
-  }
-
-  const notasText = formData.notas ? formData.notas.trim() : "Sin observaciones adicionales.";
-  const notasLines = doc.splitTextToSize(notasText, tableWidth - 20);
-  const notasHeight = notasLines.length * 14 + 30;
-
-  let notesY = currentY + 20;
-  const spaceLeftOnPage = pageHeight - marginBottom - currentY;
-
-  if (spaceLeftOnPage > notasHeight + 20) {
-      notesY = pageHeight - marginBottom - notasHeight - 10;
-  } else {
-      checkPageBreak(notasHeight + 20);
-      notesY = currentY + 20;
-  }
-
-  doc.setFillColor(250, 250, 250);
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.5);
-  doc.rect(marginLeft, notesY - 15, pageWidth - 80, notasHeight, 'FD');
-
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text("Observaciones / Notas:", marginLeft + 10, notesY + 2);
-
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(10);
-  doc.text(notasLines, marginLeft + 10, notesY + 18);
-
-  drawFooter();
-  return doc;
-};
-
 // Quitamos la inicialización de la fecha aquí
 const initialState: WorksheetState = {
   lugarCalibracion: "", frecuenciaCalibracion: "", fecha: "", fechaRecepcion: "", certificado: "",
@@ -932,8 +597,21 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
   switch (action.type) {
     case 'SET_FIELD': return { ...state, [action.field]: action.payload };
     case 'SET_USER_NAME': return { ...state, nombre: action.payload };
-    case 'SET_CONSECUTIVE': return { ...state, certificado: action.consecutive, magnitud: action.magnitud, unidad: [] };
-    case 'SET_MAGNITUD': return { ...state, magnitud: action.payload, unidad: [] };
+    case 'SET_CONSECUTIVE': {
+      const nextMag = toWorksheetMagnitud(action.magnitud);
+      const magnitud = nextMag || state.magnitud;
+      return {
+        ...state,
+        certificado: action.consecutive,
+        magnitud,
+        ...(nextMag && nextMag !== state.magnitud ? { unidad: [] } : {}),
+      };
+    }
+    case 'SET_MAGNITUD': {
+      const nextMag = toWorksheetMagnitud(action.payload);
+      if (!nextMag || nextMag === state.magnitud) return state;
+      return { ...state, magnitud: nextMag, unidad: [] };
+    }
     case 'SET_CLIENTE':
       const cel = (action.payload || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("celestica");
       return { ...state, cliente: action.payload, id: cel ? "EP-" : "", equipo: "", marca: "", modelo: "", numeroSerie: "", fieldsLocked: false };
@@ -951,11 +629,11 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
     }
     case 'AUTOCOMPLETE_FAIL':
       const isCelestica = state.cliente.toLowerCase().includes("celestica");
-      return { ...state, isMasterData: false, fieldsLocked: false, equipo: (isCelestica && !state.id) ? "" : state.equipo, marca: (isCelestica && !state.id) ? "" : state.marca, modelo: (isCelestica && !state.id) ? "" : state.numeroSerie };
+      return { ...state, isMasterData: false, fieldsLocked: false, equipo: (isCelestica && !state.id) ? "" : state.equipo, marca: (isCelestica && !state.id) ? "" : state.marca, modelo: (isCelestica && !state.id) ? "" : state.modelo };
     case 'SET_ID_BLOCKED': return { ...state, idBlocked: true, idErrorMessage: action.message };
     case 'CLEAR_ID_BLOCK': return { ...state, idBlocked: false, idErrorMessage: "" };
     case 'SET_EXCEPCION': return { ...state, permitirExcepcion: action.payload };
-    case 'RESTORE_BACKUP': return { ...action.payload };
+    case 'RESTORE_BACKUP': return { ...action.payload, magnitud: toWorksheetMagnitud(action.payload.magnitud || "") };
     case 'CHANGE_CONDICION': {
       return { ...state, condicionEquipo: action.condicion };
     }
@@ -968,7 +646,7 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
 // ====================================================================
 
 export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetId }) => {
-  const { currentConsecutive, goBack, currentUser, currentMagnitude } = useNavigation();
+  const { currentConsecutive, goBack, selectedMagnitude } = useNavigation();
   const { user } = useAuth();
   
   // Usamos el initWorksheet
@@ -1055,8 +733,19 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
           const blob = new Blob([bytes], { type: 'application/pdf' });
           const pdfRef = ref(storage, item.nombreArchivo);
-          await uploadBytes(pdfRef, blob);
+          const uploadResult = await uploadBytes(pdfRef, blob);
           const pdfURL = await getDownloadURL(pdfRef);
+          try {
+            const uploadedBy =
+              getTechnicianFolderName(user) ||
+              item.nombreArchivo.split("/")[1] ||
+              "Desconocido";
+            await writeDriveFileMetadata(item.nombreArchivo, uploadResult, uploadedBy, {
+              workDate: item.data?.fecha,
+            });
+          } catch (metaErr) {
+            console.error("[WorkSheet] Error al registrar metadata en Drive (cola offline):", metaErr);
+          }
           const fullData = { ...item.data, pdfURL, cargado_drive: "Si", status: "completed" };
           if (item.finalDocId) {
             await updateDoc(doc(db, "hojasDeTrabajo", item.finalDocId), fullData);
@@ -1223,12 +912,16 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     const nextAllowed = calcularSiguienteFecha(maxFechaString!, frecuenciaAnterior);
     if (!nextAllowed) return;
 
-    if (isBefore(new Date(), nextAllowed)) {
+    const fechaReferencia = parseWorksheetDate(state.fecha);
+    if (isBefore(fechaReferencia, nextAllowed)) {
       dispatch({ type: 'SET_ID_BLOCKED', message: `⛔️ Este equipo fue calibrado el ${format(maxFecha, "dd/MM/yyyy")} (Frecuencia: ${frecuenciaAnterior}). Próxima calibración permitida: ${format(nextAllowed, "dd/MM/yyyy")}.` });
     }
-  }, [state.id, state.cliente]);
+  }, [state.id, state.cliente, state.fecha]);
 
-  useEffect(() => { validarIdEnPeriodo(); }, [validarIdEnPeriodo]);
+  useEffect(() => {
+    const timer = setTimeout(() => { validarIdEnPeriodo(); }, 450);
+    return () => clearTimeout(timer);
+  }, [validarIdEnPeriodo]);
 
   const cargarEmpresas = async () => {
     try {
@@ -1242,8 +935,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   };
 
   useEffect(() => {
-    const u = currentUser || user; dispatch({ type: 'SET_USER_NAME', payload: getUserName(u) }); cargarEmpresas();
-  }, [currentUser, user]);
+    if (user) dispatch({ type: 'SET_USER_NAME', payload: getTechnicianFolderName(user) });
+    cargarEmpresas();
+  }, [user]);
 
   useEffect(() => {
     const cert = currentConsecutive || ""; 
@@ -1255,7 +949,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
   }, [currentConsecutive, worksheetId]);
 
-  useEffect(() => { if (currentMagnitude) dispatch({ type: 'SET_MAGNITUD', payload: currentMagnitude }); }, [currentMagnitude]);
+  useEffect(() => {
+    if (!selectedMagnitude) return;
+    const magnitudFromCert = extractMagnitudFromConsecutivo(currentConsecutive || "");
+    if (magnitudFromCert) return;
+    dispatch({ type: 'SET_MAGNITUD', payload: selectedMagnitude });
+  }, [selectedMagnitude, currentConsecutive]);
 
   const unidadesDisponibles = React.useMemo(() => {
     if (state.magnitud === "Electrica") return [...unidadesPorMagnitud.Electrica.DC, ...unidadesPorMagnitud.Electrica.AC, ...unidadesPorMagnitud.Electrica.Otros] as string[];
@@ -1279,7 +978,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setIsSearchingPdf(true);
       setLastPdfUrl(null);
       try {
-        const cloudFunctionUrl = `https://us-central1-TU-PROYECTO.cloudfunctions.net/buscarPdfDrive?id=${newId}`;
+        const cloudFunctionUrl = `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net/buscarPdfDrive?id=${newId}`;
         const response = await fetch(cloudFunctionUrl);
 
         if (response.ok) {
@@ -1299,7 +998,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       }
     }
 
-    validarIdEnPeriodo();
   };
 
   const handleToggleElectrica = (unidadBase: string) => {
@@ -1335,311 +1033,326 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return { valido: true };
   };
 
+  const buildLabelData = useCallback((): LabelData => {
+    const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
+    const fCalObj = state.fecha ? parseISO(state.fecha) : new Date();
+    const fSugObj = nextDate ? nextDate : addYears(fCalObj, 1);
+    return {
+      id: state.id || "PENDIENTE",
+      certificado: state.certificado || "PENDIENTE",
+      fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace(".", "") : "---",
+      fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace(".", "") : "---",
+      calibro: state.nombre ? state.nombre.split(" ").map((n) => n[0]).join(".").toUpperCase() : "A.A",
+    };
+  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre]);
+
   const handleSave = useCallback(async () => {
     syncElectricalToGlobalState();
     syncMasaToGlobalState();
 
     const errors: Record<string, boolean> = {};
-    const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad", "alcance", "resolucion"];
+    const requiredFields = ["lugarCalibracion", "certificado", "nombre", "cliente", "id", "equipo", "marca", "magnitud", "unidad", "alcance", "resolucion", "condicionEquipo"];
     let hasError = false;
-    
-    requiredFields.forEach(field => {
-       const val = state[field as keyof WorksheetState];
-       if (Array.isArray(val) ? val.length === 0 : !val || String(val).trim() === "") {
-           errors[field] = true;
-           hasError = true;
-       }
+
+    requiredFields.forEach((field) => {
+      const val = state[field as keyof WorksheetState];
+      if (Array.isArray(val) ? val.length === 0 : !val || String(val).trim() === "") {
+        errors[field] = true;
+        hasError = true;
+      }
     });
 
-    const camposAValidar: { campo: string, valor: string, nombre: string }[] = [];
+    if (state.condicionEquipo === "dano" && !state.descripcionDano?.trim()) {
+      errors.descripcionDano = true;
+      hasError = true;
+    }
+
+    const camposAValidar: { campo: string; valor: string; nombre: string }[] = [];
 
     if (state.magnitud === "Masa") {
-        camposAValidar.push(
-            { campo: 'excentricidad', valor: state.excentricidad, nombre: 'Excentricidad' },
-            { campo: 'linealidad', valor: state.linealidad, nombre: 'Linealidad' },
-            { campo: 'repetibilidad', valor: state.repetibilidad, nombre: 'Repetibilidad' }
-        );
+      camposAValidar.push(
+        { campo: "excentricidad", valor: state.excentricidad, nombre: "Excentricidad" },
+        { campo: "linealidad", valor: state.linealidad, nombre: "Linealidad" },
+        { campo: "repetibilidad", valor: state.repetibilidad, nombre: "Repetibilidad" }
+      );
     } else if (state.magnitud === "Electrica") {
-        state.unidad.forEach(u => {
-            const vals = electricalValues[u] || { patron: "", instrumento: "" };
-            camposAValidar.push(
-                { campo: `patron_${u}`, valor: vals.patron, nombre: `Patrón (${u})` },
-                { campo: `instrumento_${u}`, valor: vals.instrumento, nombre: `Instrumento (${u})` }
-            );
-        });
-    } else {
+      state.unidad.forEach((u) => {
+        const vals = electricalValues[u] || { patron: "", instrumento: "" };
         camposAValidar.push(
-            { campo: 'medicionPatron', valor: state.medicionPatron, nombre: 'Medición Patrón' },
-            { campo: 'medicionInstrumento', valor: state.medicionInstrumento, nombre: 'Medición Instrumento' }
+          { campo: `patron_${u}`, valor: vals.patron, nombre: `Patrón (${u})` },
+          { campo: `instrumento_${u}`, valor: vals.instrumento, nombre: `Instrumento (${u})` }
         );
+      });
+    } else {
+      camposAValidar.push(
+        { campo: "medicionPatron", valor: state.medicionPatron, nombre: "Medición Patrón" },
+        { campo: "medicionInstrumento", valor: state.medicionInstrumento, nombre: "Medición Instrumento" }
+      );
     }
 
     for (const item of camposAValidar) {
-        const check = validarContenidoMedicion(item.valor);
-        if (!check.valido) {
-            setToast({ message: `Error en ${item.nombre}: ${check.error}`, type: 'error' });
-            return;
-        }
+      if (!item.valor?.trim()) {
+        errors[item.campo] = true;
+        hasError = true;
+        continue;
+      }
+      const check = validarContenidoMedicion(item.valor);
+      if (!check.valido) {
+        setToast({ message: `Error en ${item.nombre}: ${check.error}`, type: "error" });
+        return;
+      }
     }
 
     let advertenciaNorma = "";
-    
+
     if (state.magnitud === "Masa") {
-         const lineasLinealidad = state.linealidad.split('\n').filter(l => /\d/.test(l));
-         if (lineasLinealidad.length < 3) {
-             advertenciaNorma = `Para MASA (Linealidad), se recomiendan mínimo 3 puntos. Detectados: ${lineasLinealidad.length}.`;
-         }
+      const lineasLinealidad = state.linealidad.split("\n").filter((l) => /\d/.test(l));
+      if (lineasLinealidad.length < 3) {
+        advertenciaNorma = `Para MASA (Linealidad), se recomiendan mínimo 3 puntos. Detectados: ${lineasLinealidad.length}.`;
+      }
     } else if (state.magnitud === "Electrica") {
-        for (const u of state.unidad) {
-             const vals = electricalValues[u];
-             const lineas = (vals?.patron || "").split('\n').filter(l => /\d/.test(l));
-             if (lineas.length < 3) {
-                 advertenciaNorma = `Para ELÉCTRICA (${u}), se recomiendan mínimo 3 puntos de medición.`;
-                 break;
-             }
-        }
-    } else {
-        const lineas = state.medicionPatron.split('\n').filter(l => /\d/.test(l));
+      for (const u of state.unidad) {
+        const vals = electricalValues[u];
+        const lineas = (vals?.patron || "").split("\n").filter((l) => /\d/.test(l));
         if (lineas.length < 3) {
-             advertenciaNorma = `Para ${state.magnitud}, la norma sugiere cubrir el alcance (mínimo 3 puntos). Solo detecté ${lineas.length}.`;
+          advertenciaNorma = `Para ELÉCTRICA (${u}), se recomiendan mínimo 3 puntos de medición.`;
+          break;
         }
+      }
+    } else {
+      const lineas = state.medicionPatron.split("\n").filter((l) => /\d/.test(l));
+      if (lineas.length < 3) {
+        advertenciaNorma = `Para ${state.magnitud}, la norma sugiere cubrir el alcance (mínimo 3 puntos). Solo detecté ${lineas.length}.`;
+      }
     }
 
     if (advertenciaNorma) {
-        if (!window.confirm(`⚠️ ADVERTENCIA DE NORMA (ISO 17025):\n\n${advertenciaNorma}\n\n¿Deseas guardar de todos modos?`)) {
-            return;
-        }
+      if (!window.confirm(`⚠️ ADVERTENCIA DE NORMA (ISO 17025):\n\n${advertenciaNorma}\n\n¿Deseas guardar de todos modos?`)) {
+        return;
+      }
     }
 
     if (state.fechaRecepcion && state.fecha && new Date(state.fechaRecepcion) > new Date(state.fecha)) {
       errors.fecha = true;
       errors.fechaRecepcion = true;
-      setToast({ message: "La fecha de recepción debe ser antes de la fecha de calibración.", type: 'error' });
+      setToast({ message: "La fecha de recepción debe ser antes de la fecha de calibración.", type: "error" });
       hasError = true;
     }
 
     if (hasError) {
-        setValidationErrors(errors);
-        setToast({ message: "Completa los campos obligatorios para continuar.", type: 'error' });
-        return; 
+      setValidationErrors(errors);
+      setToast({ message: "Completa los campos obligatorios para continuar.", type: "error" });
+      return;
     }
     setValidationErrors({});
 
-    if (!state.permitirExcepcion) {
-        const idToCheck = state.id?.trim();
-        const clientToCheck = state.cliente;
-        setIsSaving(true); 
-        try {
-            const q = query(collection(db, "hojasDeTrabajo"), where("id", "==", idToCheck), where("cliente", "==", clientToCheck));
-            const docs = await getDocs(q);
-            if (!docs.empty) {
-                let maxFecha: Date | null = null;
-                let frecuenciaAnterior: string | undefined = undefined;
-                docs.forEach(doc => {
-                  const data = doc.data(); 
-                  if (data.fecha) {
-                      const parts = data.fecha.split('-');
-                      if (parts.length === 3) {
-                          const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-                          if (!isNaN(dateObj.getTime())) {
-                            if (!maxFecha || dateObj.getTime() > maxFecha.getTime()) { 
-                                maxFecha = dateObj; 
-                                frecuenciaAnterior = data.frecuenciaCalibracion; 
-                            }
-                          }
-                      }
-                  }
-                });
-
-                if (maxFecha && frecuenciaAnterior) {
-                    const nextAllowed = calcularSiguienteFecha(format(maxFecha, "yyyy-MM-dd"), frecuenciaAnterior);
-                    if (nextAllowed && isBefore(new Date(), nextAllowed)) {
-                        setIsSaving(false);
-                        setToast({ message: `⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.`, type: 'error' });
-                        return; 
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Error verificando fechas:", err);
-        }
-    }
-
     setIsSaving(true);
+
     try {
-      const { jsPDF } = await import("jspdf");
-      const pdfDoc = generateTemplatePDF(state, jsPDF as any); 
-      const blob = pdfDoc.output("blob");
-      const nombreArchivo = `worksheets/${getUserName(currentUser || user)}/${state.certificado}_${state.id || "SINID"}.pdf`;
-
-      let finalDocId = worksheetId || null;
-      let existingData: any = null;
-
-      if (!finalDocId) {
-          if (navigator.onLine) {
-            const q = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
-            if (!(await getDocs(q)).empty && !worksheetId) {
+      if (!state.permitirExcepcion && state.id?.trim() && state.cliente) {
+        const qPeriodo = query(
+          collection(db, "hojasDeTrabajo"),
+          where("id", "==", state.id.trim()),
+          where("cliente", "==", state.cliente)
+        );
+        const docs = await getDocs(qPeriodo);
+        if (!docs.empty) {
+          let maxFecha: Date | null = null;
+          let frecuenciaAnterior: string | undefined;
+          docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data.fecha) {
+              const parts = data.fecha.split("-");
+              if (parts.length === 3) {
+                const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                if (!isNaN(dateObj.getTime()) && (!maxFecha || dateObj.getTime() > maxFecha.getTime())) {
+                  maxFecha = dateObj;
+                  frecuenciaAnterior = data.frecuenciaCalibracion;
+                }
+              }
+            }
+          });
+          if (maxFecha && frecuenciaAnterior) {
+            const nextAllowed = calcularSiguienteFecha(format(maxFecha, "yyyy-MM-dd"), frecuenciaAnterior);
+            const fechaReferencia = parseWorksheetDate(state.fecha);
+            if (nextAllowed && isBefore(fechaReferencia, nextAllowed)) {
               setIsSaving(false);
-              setToast({ message: "El número de certificado ya existe.", type: 'error' });
+              setToast({
+                message: "⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.",
+                type: "error",
+              });
               return;
             }
-
-            const qDupe = query(
-                collection(db, "hojasDeTrabajo"),
-                where("id", "==", state.id.trim()),
-                where("cliente", "==", state.cliente)
-            );
-            const dupeDocs = await getDocs(qDupe);
-            let bestMatchDate = -1;
-            dupeDocs.forEach(d => {
-                const data = d.data();
-                if (!data.pdfURL || data.status_certificado === 'Pendiente de Certificado' || data.status_equipo === 'Desconocido' || data.status_equipo === 'Recepción') {
-                    const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
-                    if (docTime > bestMatchDate) {
-                        bestMatchDate = docTime;
-                        finalDocId = d.id;
-                        existingData = data;
-                    }
-                }
-            });
           }
-      }
-
-      const sanitizedState: WorksheetState = { ...state };
-      for (const key in sanitizedState) {
-        if (typeof sanitizedState[key as keyof WorksheetState] === 'string') {
-          sanitizedState[key as keyof WorksheetState] = sanitize(sanitizedState[key as keyof WorksheetState] as string) as never;
         }
       }
 
-      const lugarNormalizado = sanitizedState.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
+      const { jsPDF } = await import("jspdf");
+      const pdfDoc = generateTemplatePDF(state, jsPDF as any);
+      const blob = pdfDoc.output("blob");
+      const technicianName = getTechnicianFolderName(user);
+      const nombreArchivo = `worksheets/${technicianName}/${state.certificado}_${state.id || "SINID"}.pdf`;
 
-      const fullData: any = { 
-          ...sanitizedState, 
-          lugarCalibracion: lugarNormalizado, 
-          folio: sanitizedState.certificado, 
-          serie: sanitizedState.numeroSerie, 
-          status: "completed",
-          priority: "medium",
-          status_equipo: "Calibrado",        
-          status_certificado: "Generado",    
-          cargado_drive: "Pendiente",               
-          timestamp: Date.now(), 
-          createdAt: existingData?.createdAt || new Date().toISOString(), 
-          userId: currentUser?.uid || user?.uid || "unknown" 
-      };
-      
-      if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
-          fullData.fechaRecepcion = existingData.fechaEntrada;
-          fullData.fechaEntrada = existingData.fechaEntrada;
+      let finalDocId: string | null = worksheetId || null;
+      let existingData: Record<string, unknown> | null = null;
+
+      if (!finalDocId && navigator.onLine) {
+        const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
+        if (!(await getDocs(qCert)).empty && !worksheetId) {
+          setIsSaving(false);
+          setToast({ message: "El número de certificado ya existe.", type: "error" });
+          return;
+        }
+
+        const qDupe = query(
+          collection(db, "hojasDeTrabajo"),
+          where("id", "==", state.id.trim()),
+          where("cliente", "==", state.cliente)
+        );
+        const dupeDocs = await getDocs(qDupe);
+        let bestMatchDate = -1;
+        dupeDocs.forEach((d) => {
+          const data = d.data();
+          if (
+            !data.pdfURL ||
+            data.status_certificado === "Pendiente de Certificado" ||
+            data.status_equipo === "Desconocido" ||
+            data.status_equipo === "Recepción"
+          ) {
+            const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
+            if (docTime > bestMatchDate) {
+              bestMatchDate = docTime;
+              finalDocId = d.id;
+              existingData = data;
+            }
+          }
+        });
       }
 
-      // Convertir PDF a Base64 AHORA por si necesitamos guardarlo offline más adelante
+      const sanitizedState: WorksheetState = { ...state, magnitud: toWorksheetMagnitud(state.magnitud) };
+      for (const key in sanitizedState) {
+        if (typeof sanitizedState[key as keyof WorksheetState] === "string") {
+          sanitizedState[key as keyof WorksheetState] = sanitize(
+            sanitizedState[key as keyof WorksheetState] as string
+          ) as never;
+        }
+      }
+
+      const { fotoEquipoBase64, ...stateForFirestore } = sanitizedState;
+      const lugarNormalizado = stateForFirestore.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
+
+      const fullData: Record<string, unknown> = {
+        ...stateForFirestore,
+        lugarCalibracion: lugarNormalizado,
+        folio: stateForFirestore.certificado,
+        serie: stateForFirestore.numeroSerie,
+        status: "completed",
+        priority: "medium",
+        status_equipo: "Calibrado",
+        status_certificado: "Generado",
+        cargado_drive: "Pendiente",
+        timestamp: Date.now(),
+        createdAt: (existingData?.createdAt as string) || new Date().toISOString(),
+        userId: user?.id || "unknown",
+      };
+
+      if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
+        fullData.fechaRecepcion = existingData.fechaEntrada;
+        fullData.fechaEntrada = existingData.fechaEntrada;
+      }
+
       const pdfBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
       });
 
-      // Imprimir etiqueta MIENTRAS la pantalla sigue abierta
-      try {
-        // @ts-ignore
-        await generateAndPrintLabel(hiddenLabelRef, tapeSize);
-      } catch (printError) {
-        console.error("Error al imprimir:", printError);
+      if (!navigator.onLine) {
+        addToOfflineQueue({
+          id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          timestamp: Date.now(),
+          data: fullData,
+          pdfBlob: pdfBase64,
+          nombreArchivo,
+          finalDocId,
+          worksheetId,
+        });
+        setPendingUploads(getOfflineQueue().length);
+        setToast({ message: "Sin conexión. La hoja se guardó en cola para sincronizar.", type: "warning" });
+        setIsSaving(false);
+        return;
       }
 
-      // ==========================================================
-      // MAGIA DEL SEGUNDO PLANO (MODIFICADA)
-      // ==========================================================
-      // Avisamos al usuario, limpiamos el backup y nos salimos ¡YA!
-      setToast({ message: "⏳ Guardando en base de datos...", type: 'success' });
-      localStorage.removeItem('backup_worksheet_data');
-      
-      setTimeout(() => {
-          goBack();
-      }, 500);
+      let docRefId = finalDocId;
+      if (docRefId) {
+        await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
+      } else {
+        const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+        docRefId = newDoc.id;
+      }
 
-      // 1. GUARDADO INICIAL INMEDIATO (Sin URLs todavía)
-      const initialSave = async () => {
-          if (navigator.onLine) {
-              try {
-                  // Guardamos el registro de una vez para que sea visible
-                  let docRefId = finalDocId;
-                  if (finalDocId) {
-                      await updateDoc(doc(db, "hojasDeTrabajo", finalDocId), fullData);
-                  } else {
-                      const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
-                      docRefId = newDoc.id;
-                  }
+      const updates: Record<string, string> = {};
+      if (fotoEquipoBase64) {
+        const imgData = fotoEquipoBase64.startsWith("data:")
+          ? fotoEquipoBase64
+          : `data:image/jpeg;base64,${fotoEquipoBase64}`;
+        const imgBlob = await fetch(imgData).then((r) => r.blob());
+        const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
+        await uploadBytes(fotoRef, imgBlob);
+        updates.fotoEquipoURL = await getDownloadURL(fotoRef);
+      }
 
-                  // 2. PROCESO DE SUBIDA DE ARCHIVOS (Segundo plano real)
-                  (async () => {
-                      try {
-                          let updates: any = {};
+      const pdfRef = ref(storage, nombreArchivo);
+      const uploadResult = await uploadBytes(pdfRef, blob);
+      updates.pdfURL = await getDownloadURL(pdfRef);
+      try {
+        await writeDriveFileMetadata(nombreArchivo, uploadResult, technicianName, {
+          ubicacion_real:
+            lugarNormalizado === "sitio" ? "Servicio en Sitio" : "Laboratorio",
+          workDate: state.fecha,
+        });
+      } catch (metaErr) {
+        console.error("[WorkSheet] Error al registrar metadata en Drive:", metaErr);
+      }
+      updates.cargado_drive = "Si";
 
-                          // Subir Foto si existe
-                          if (state.fotoEquipoBase64) {
-                              const imgData = state.fotoEquipoBase64.startsWith('data:') ? state.fotoEquipoBase64 : `data:image/jpeg;base64,${state.fotoEquipoBase64}`;
-                              const imgBlob = await fetch(imgData).then(r => r.blob());
-                              const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
-                              await uploadBytes(fotoRef, imgBlob);
-                              updates.fotoEquipoURL = await getDownloadURL(fotoRef);
-                          }
+      if (docRefId) {
+        await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
+      }
 
-                          // Subir PDF
-                          const pdfRef = ref(storage, nombreArchivo);
-                          await uploadBytes(pdfRef, blob);
-                          updates.pdfURL = await getDownloadURL(pdfRef);
-                          updates.cargado_drive = "Si";
+      localStorage.removeItem("backup_worksheet_data");
 
-                          // Actualizamos el documento con las URLs finales
-                          if (docRefId) {
-                              await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
-                          }
-                          console.log("Archivos subidos y URLs actualizadas correctamente.");
+      try {
+        await generateAndPrintLabel(hiddenLabelRef, tapeSize, buildLabelData());
+      } catch (printError) {
+        console.error("Error al imprimir:", printError);
+        setToast({ message: "Guardado OK, pero falló la impresión de etiqueta.", type: "warning" });
+        setIsSaving(false);
+        goBack();
+        return;
+      }
 
-                      } catch (bgErr) {
-                          console.error("Error en subida de archivos (el registro ya está en DB):", bgErr);
-                      }
-                  })();
-
-              } catch (err) {
-                  console.error("Error en guardado inicial, mandando a cola offline:", err);
-                  addToOfflineQueue({
-                      id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                      timestamp: Date.now(),
-                      data: fullData,
-                      pdfBlob: pdfBase64,
-                      nombreArchivo,
-                      finalDocId,
-                      worksheetId,
-                  });
-              }
-          } else {
-              // Si ya sabíamos que estaba offline desde el inicio
-              addToOfflineQueue({
-                  id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                  timestamp: Date.now(),
-                  data: fullData,
-                  pdfBlob: pdfBase64,
-                  nombreArchivo,
-                  finalDocId,
-                  worksheetId,
-              });
-          }
-      };
-
-      initialSave();
-
-    } catch (e: any) {
-      console.error("Error al preparar guardado:", e);
-      localStorage.setItem('backup_worksheet_data', JSON.stringify(state));
-      setToast({ message: `Error inesperado al preparar el guardado. Se guardó copia local.`, type: 'warning' });
+      setToast({ message: "✅ Hoja de trabajo guardada e impresa correctamente.", type: "success" });
+      setIsSaving(false);
+      goBack();
+    } catch (e: unknown) {
+      console.error("Error al guardar:", e);
+      localStorage.setItem("backup_worksheet_data", JSON.stringify(state));
+      setToast({ message: "Error al guardar. Se conservó una copia local de respaldo.", type: "warning" });
       setIsSaving(false);
     }
-  }, [state, currentUser, user, goBack, worksheetId, electricalValues, syncElectricalToGlobalState, syncMasaToGlobalState]);
+  }, [
+    state,
+    user,
+    goBack,
+    worksheetId,
+    electricalValues,
+    syncElectricalToGlobalState,
+    syncMasaToGlobalState,
+    tapeSize,
+    buildLabelData,
+  ]);
 
   const slaInfo = React.useMemo(() => {
     if (state.lugarCalibracion !== "Laboratorio" || !state.fechaRecepcion || !state.fecha) {
@@ -1672,21 +1385,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     reader.readAsDataURL(file);
   };
 
-  const labelData: LabelData = React.useMemo(() => {
-    const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
-    const fCalObj = state.fecha ? parseISO(state.fecha) : new Date();
-    const fSugObj = nextDate ? nextDate : addYears(fCalObj, 1);
-
-    return {
-        id: state.id || "PENDIENTE",
-        certificado: state.certificado || "PENDIENTE",
-        fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
-        fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace('.', '') : "---",
-        calibro: state.nombre 
-          ? state.nombre.split(' ').map(n => n[0]).join('.').toUpperCase() 
-          : "A.A"
-    };
-  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre]);
+  const labelData = buildLabelData();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 relative">
@@ -1917,7 +1616,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3">
                       <Tag className="w-4 h-4 text-blue-500" /><span>Magnitud*</span>
                     </label>
-                    {currentMagnitude ? (
+                    {selectedMagnitude ? (
                       <div className="relative">
                         <input type="text" value={state.magnitud} readOnly 
                           className="w-full p-4 border border-slate-300 rounded-lg bg-gray-100 text-gray-900 font-bold shadow-inner" />

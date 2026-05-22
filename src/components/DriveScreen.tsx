@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy } from "firebase/firestore";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
@@ -26,6 +26,13 @@ import {
   isLinkableWorksheetId,
   resolveWorksheetDoc,
 } from "../utils/worksheetDriveSync";
+import {
+  generateWorksheetPdfFromFirestore,
+  getTechnicianFolderName,
+} from "../utils/worksheetPdfGenerator";
+import { getFolderVisualStyle } from "../utils/fileUtils";
+import { parseDateRobust } from "../utils/calibrationShared";
+import { normalizeDriveDate, resolveFileWorkDate, enrichFilesWithWorkDates, extractWorkDateFromWorksheet } from "../utils/driveFileMetadata";
 
 // ─────────────────────────────────────────────
 // INTERFACES
@@ -50,6 +57,7 @@ interface DriveFile {
   notas?: string;
   ubicacion?: string;
   ubicacion_real?: string;
+  workDate?: string;
 }
 
 interface DriveFolder {
@@ -169,9 +177,9 @@ const countBusinessDaysLeft = (deadlineDate: Date) => {
   return days;
 };
 
-const getDeadlineInfo = (createdDateStr: string) => {
-  if (!createdDateStr) return { progress: 0, daysLeft: 5, status: 'normal' as const };
-  const createdDate = new Date(createdDateStr);
+const getDeadlineInfo = (createdDateStr: unknown) => {
+  const createdDate = parseDateRobust(createdDateStr);
+  if (!createdDate) return { progress: 0, daysLeft: 5, status: 'normal' as const };
   const deadlineDate = addBusinessDays(createdDate, 5);
   const daysLeft = countBusinessDaysLeft(deadlineDate);
   const now = new Date();
@@ -202,17 +210,21 @@ const formatFileSize = (bytes?: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
+const formatDate = (dateStr: unknown) => {
+  const d = parseDateRobust(dateStr);
+  if (!d) return '—';
   const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24));
   if (days === 0) return 'Hoy';
   if (days === 1) return 'Ayer';
   if (days < 7) return `Hace ${days} días`;
   return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: days > 365 ? 'numeric' : undefined });
 };
+
+const getFileWorkDate = (file: DriveFile) =>
+  file.workDate || resolveFileWorkDate(file, [file.created, file.updated]) || file.created;
 
 const getFileIcon = (fileName?: string, size: number = 24) => {
   if (!fileName || typeof fileName !== 'string') return <File size={size} className="text-slate-400" strokeWidth={1.5} />;
@@ -330,34 +342,44 @@ const EmptyState = ({ icon: Icon, title, subtitle }: { icon: any; title: string;
   </div>
 );
 
-const LoadingSkeleton = () => (
-  <div className="flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-500">
-    <style>{`
-      @keyframes spin-3d {
-        0% { transform: perspective(600px) rotateY(0deg); }
-        100% { transform: perspective(600px) rotateY(360deg); }
-      }
-      .spin-3d { animation: spin-3d 2.5s linear infinite; }
-    `}</style>
-    <div className="relative mb-5">
-      <div className="absolute inset-0 bg-blue-400/20 blur-2xl rounded-full animate-pulse" />
-      <img src={labLogo} alt="Cargando" className="w-16 h-16 spin-3d relative z-10 drop-shadow-xl" />
-    </div>
-    <p className="text-slate-400 text-sm font-medium animate-pulse">Cargando archivos...</p>
-    <div className="mt-8 w-64 space-y-3">
+const LoadingSkeleton = ({ compact = false }: { compact?: boolean }) => (
+  <div className={clsx("flex flex-col animate-in fade-in duration-200", compact ? "py-6" : "items-center justify-center min-h-[280px]")}>
+    {!compact && (
+      <>
+        <Loader2 size={28} className="text-blue-500 animate-spin mb-3" />
+        <p className="text-slate-400 text-sm font-medium">Cargando...</p>
+      </>
+    )}
+    <div className={clsx("space-y-2", compact ? "w-full mt-2" : "mt-6 w-64")}>
       {[1, 2, 3].map(i => (
-        <div key={i} className="h-10 bg-slate-100 rounded-xl animate-pulse" style={{ opacity: 1 - i * 0.25 }} />
+        <div key={i} className="h-9 bg-slate-100 rounded-xl animate-pulse" style={{ opacity: 1 - i * 0.2 }} />
       ))}
     </div>
   </div>
 );
+
+const groupFilesByUbicacion = (files: DriveFile[]) => {
+  const lab: DriveFile[] = [];
+  const site: DriveFile[] = [];
+  files.forEach((f) => {
+    const ubicacionAttr = (f.ubicacion_real || f.ubicacion || "").toLowerCase();
+    const notasLower = (f.notas || "").toLowerCase();
+    const isSitio = ubicacionAttr.includes("sitio") || notasLower.includes("sitio");
+    if (isSitio) site.push(f);
+    else lab.push(f);
+  });
+  return { lab, site };
+};
+
+const isWorksheetPdfFile = (file: DriveFile) =>
+  (file.rawName || file.name).toLowerCase().endsWith(".pdf");
 
 // ─── FILE CARD (Grid) ─────────────────────────
 const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onStar }: any) => {
   const isReadyForReview = file.completed && !file.reviewed;
   const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
   const isNoExpiration = file.fullPath?.toLowerCase().includes('hojas de servicio') || file.name?.toUpperCase().startsWith('HSDG');
-  const { status } = getDeadlineInfo(file.created);
+  const { status } = getDeadlineInfo(getFileWorkDate(file));
   const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration;
 
   return (
@@ -447,7 +469,7 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
             <StatusChip file={file} />
           </div>
           {!isNoExpiration ? (
-            <DeadlineBar createdDate={file.created} />
+            <DeadlineBar createdDate={getFileWorkDate(file)} />
           ) : (
             <p className="text-[9px] text-slate-300 font-semibold uppercase tracking-wider">Documento Fijo</p>
           )}
@@ -461,7 +483,7 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
 const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onDownload, onStar }: any) => {
   const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
   const isNoExpiration = file.fullPath?.toLowerCase().includes('hojas de servicio') || file.name?.toUpperCase().startsWith('HSDG');
-  const { status } = getDeadlineInfo(file.created);
+  const { status } = getDeadlineInfo(getFileWorkDate(file));
   const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration;
 
   return (
@@ -503,7 +525,7 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
 
       <div className="hidden md:block md:col-span-3 pr-4">
         {!isNoExpiration ? (
-          <DeadlineBar createdDate={file.created} />
+          <DeadlineBar createdDate={getFileWorkDate(file)} />
         ) : (
           <span className="text-[9px] font-bold text-slate-300 uppercase tracking-wider">Fijo</span>
         )}
@@ -514,7 +536,7 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
       </div>
 
       <div className="hidden md:block md:col-span-1 text-right">
-        <span className="text-xs text-slate-400">{formatDate(file.updated)}</span>
+        <span className="text-xs text-slate-400">{formatDate(getFileWorkDate(file))}</span>
       </div>
 
       <div className="hidden md:flex md:col-span-1 items-center justify-end gap-1">
@@ -532,31 +554,34 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
 });
 
 // ─── FOLDER CARD ──────────────────────────────
-const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, draggable, onDragStart, onDragOver, onDrop }: any) => (
-  <div
-    draggable={draggable}
-    onDragStart={onDragStart}
-    onDragOver={onDragOver}
-    onDrop={onDrop}
-    onDoubleClick={onDoubleClick}
-    onContextMenu={onContextMenu}
-    className={clsx(
-      "group flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all duration-150 border select-none",
-      isDragTarget
-        ? "border-blue-400 bg-blue-50 ring-2 ring-blue-300 scale-[1.02]"
-        : "bg-white border-slate-200/80 hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm"
-    )}
-  >
-    <div className="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-amber-100 transition-colors">
-      <Folder size={20} className="text-amber-500 fill-amber-100 group-hover:fill-amber-200 transition-all" />
+const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, draggable, onDragStart, onDragOver, onDrop }: any) => {
+  const style = getFolderVisualStyle(folder.name);
+  return (
+    <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+      className={clsx(
+        "group flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all duration-150 border select-none",
+        isDragTarget
+          ? "border-blue-400 bg-blue-50 ring-2 ring-blue-300 scale-[1.02]"
+          : "bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-sm"
+      )}
+    >
+      <div className={clsx("w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors", style.bg, style.hoverBg)}>
+        <Folder size={20} className={clsx(style.icon, style.fill, style.hoverFill, "transition-all")} />
+      </div>
+      <span className="text-sm font-medium text-slate-700 truncate flex-1 group-hover:text-slate-900">{folder.name}</span>
+      <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 flex-shrink-0 transition-colors" />
     </div>
-    <span className="text-sm font-medium text-slate-700 truncate flex-1 group-hover:text-slate-900">{folder.name}</span>
-    <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 flex-shrink-0 transition-colors" />
-  </div>
-);
+  );
+};
 
 // ─── DETAILS PANEL ────────────────────────────
-const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes }: any) => {
+const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes, onRegeneratePdf, isGeneratingPdf, showRegeneratePdf }: any) => {
   const [notes, setNotes] = React.useState(file.notas || "");
   React.useEffect(() => { setNotes(file.notas || ""); }, [file]);
 
@@ -581,7 +606,8 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         <div className="space-y-3">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Detalles</h4>
           {[
-            { label: 'Creado', value: formatDate(file.created) },
+            { label: 'Fecha de trabajo', value: formatDate(getFileWorkDate(file)) },
+            { label: 'Subido', value: formatDate(file.created) },
             { label: 'Modificado', value: formatDate(file.updated) },
             { label: 'Subido por', value: file.uploadedBy || '—' },
             { label: 'Carpeta', value: file.parentFolder || 'Raíz' },
@@ -625,7 +651,18 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         </div>
       </div>
 
-      <div className="px-5 py-4 border-t border-slate-100 flex gap-2 flex-shrink-0">
+      <div className="px-5 py-4 border-t border-slate-100 flex flex-col gap-2 flex-shrink-0">
+        {showRegeneratePdf && onRegeneratePdf && (
+          <button
+            onClick={() => onRegeneratePdf(file)}
+            disabled={isGeneratingPdf}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-800 border border-slate-900 rounded-xl hover:bg-slate-900 text-xs font-semibold text-white transition-all disabled:opacity-60"
+          >
+            {isGeneratingPdf ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isGeneratingPdf ? "Regenerando PDF..." : "Regenerar PDF"}
+          </button>
+        )}
+        <div className="flex gap-2">
         <button onClick={() => onDownload(file)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-all">
           <Eye size={14} /> Vista Previa
         </button>
@@ -634,6 +671,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
             <Trash2 size={14} /> Eliminar
           </button>
         )}
+        </div>
       </div>
     </div>
   );
@@ -763,6 +801,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [suggestedFiles, setSuggestedFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filesLoading, setFilesLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentUserData, setCurrentUserData] = useState<UserData | null>(null);
   const [isZipping, setIsZipping] = useState(false);
@@ -815,6 +854,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [renameTargetFile, setRenameTargetFile] = useState<DriveFile | null>(null);
   const [renameTargetFolder, setRenameTargetFolder] = useState<DriveFolder | null>(null);
   const [newName, setNewName] = useState("");
+  const [generatingPdfLinkId, setGeneratingPdfLinkId] = useState<string | null>(null);
 
   const handleBack = () => { onBack ? onBack() : goBack(); };
 
@@ -831,14 +871,20 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     const loadUser = async () => {
       if (!user?.email) return;
       try {
-        const snap = await getDocs(collection(db, 'usuarios'));
-        let found: UserData | null = null;
-        snap.forEach(d => {
-          const data = d.data();
-          if (data.correo === user.email || data.email === user.email)
-            found = { name: data.nombre || data.name, email: data.correo || data.email, puesto: data.puesto || data.role };
-        });
-        setCurrentUserData(found || { name: user.displayName || "Usuario", email: user.email || "", role: "User" });
+        let snap = await getDocs(query(collection(db, "usuarios"), where("correo", "==", user.email), limit(1)));
+        if (snap.empty) {
+          snap = await getDocs(query(collection(db, "usuarios"), where("email", "==", user.email), limit(1)));
+        }
+        if (!snap.empty) {
+          const data = snap.docs[0].data();
+          setCurrentUserData({
+            name: data.nombre || data.name,
+            email: data.correo || data.email || user.email,
+            puesto: data.puesto || data.role,
+          });
+        } else {
+          setCurrentUserData({ name: user.displayName || "Usuario", email: user.email || "", role: "User" });
+        }
       } catch (e) { console.error(e); }
     };
     loadUser();
@@ -865,9 +911,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
             if (!fullPath.toLowerCase().includes(myName) && !isUploader) continue;
           }
-          recents.push({ name: cleanFileName(data.name), rawName: data.name, fullPath, updated: data.updated, created: data.created, size: data.size, url: "", contentType: data.contentType, notas: data.notas, ubicacion: data.ubicacion, ubicacion_real: data.ubicacion_real, ...data });
+          recents.push({
+            name: cleanFileName(data.name),
+            rawName: data.name,
+            fullPath,
+            url: "",
+            ...data,
+            updated: normalizeDriveDate(data.updated),
+            created: normalizeDriveDate(data.created || data.updated),
+            workDate: resolveFileWorkDate(data, [data.created, data.updated]),
+          });
         }
-        setSuggestedFiles(recents);
+        setSuggestedFiles(await enrichFilesWithWorkDates(recents));
       } catch (e) { console.error(e); }
     };
     load();
@@ -875,16 +930,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ── Load content ──
   const loadContent = useCallback(async () => {
-    setLoading(true);
     setContextMenu(null);
     setSelectedIds(new Set());
     setLastSelectedId(null);
 
-    try {
-      const isGlobalView = activeFilter !== 'all' || debouncedSearch !== "";
+    const isGlobalView = activeFilter !== 'all' || debouncedSearch !== "";
+    if (isGlobalView) setLoading(true);
 
+    try {
       if (isGlobalView) {
-        const q = query(collection(db, 'fileMetadata'), orderBy('created', 'desc'));
+        setLoading(true);
+        setFilesLoading(false);
+        const q = query(collection(db, 'fileMetadata'), orderBy('created', 'desc'), limit(400));
         const snap = await getDocs(q);
         const results: DriveFile[] = [];
         const myName = normalizeText(currentUserData?.name || "");
@@ -894,8 +951,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id;
           const fullPath = data.filePath || `${currentRoot}/${rawName}`;
-          
-          if (!fullPath.startsWith(currentRoot)) return; 
+
+          if (!fullPath.startsWith(currentRoot)) return;
 
           if (!isQuality) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
@@ -906,14 +963,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           if (activeFilter === 'pending_review' && !(data.completed === true && data.reviewed !== true)) return;
           if (activeFilter === 'completed' && data.reviewed !== true) return;
           if (activeFilter === 'recent') {
-            const diff = Math.abs(new Date().getTime() - new Date(data.updated || data.created).getTime());
+            const recentDate = parseDateRobust(resolveFileWorkDate(data, [data.updated, data.created]));
+            if (!recentDate) return;
+            const diff = Math.abs(new Date().getTime() - recentDate.getTime());
             if (Math.ceil(diff / (1000 * 60 * 60 * 24)) > 7) return;
           }
 
           const fileObj: DriveFile = {
             name: cleanFileName(rawName), rawName, url: "", fullPath,
-            updated: data.updated || new Date().toISOString(),
-            created: data.created || data.updated || new Date().toISOString(),
+            updated: normalizeDriveDate(data.updated),
+            created: normalizeDriveDate(data.created || data.updated),
+            workDate: resolveFileWorkDate(data, [data.created, data.updated]),
             size: data.size || 0, contentType: data.contentType,
             reviewed: data.reviewed, reviewedByName: data.reviewedByName,
             completed: data.completed, completedByName: data.completedByName,
@@ -929,23 +989,51 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             results.push(fileObj);
           }
         });
-        setFiles(results);
+        setFiles(await enrichFilesWithWorkDates(results));
         setFolders([]);
       } else {
+        setLoading(true);
+        setFiles([]);
         const pathStr = [currentRoot, ...path].join('/');
         const res = await listAll(ref(storage, pathStr));
         const myName = normalizeText(currentUserData?.name || "");
 
         let loadedFolders = res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath }));
-        if (!isQuality && path.length === 0) loadedFolders = loadedFolders.filter(f => normalizeText(f.name).includes(myName));
+        if (!isQuality && path.length === 0) {
+          loadedFolders = loadedFolders.filter((f) => normalizeText(f.name).includes(myName));
+        }
         if (debouncedSearch) {
           const term = normalizeText(debouncedSearch);
           loadedFolders = loadedFolders.filter(f => normalizeText(f.name).includes(term));
         }
         setFolders(loadedFolders);
+        setLoading(false);
+        setFilesLoading(true);
 
-        const filePromises = res.items.map(async (item) => {
-          if (item.name === '.keep') return null;
+        const items = res.items.filter(item => item.name !== '.keep');
+        let filteredItems = items;
+        if (debouncedSearch) {
+          const term = normalizeText(debouncedSearch);
+          filteredItems = items.filter(item => {
+            const cleanName = cleanFileName(item.name);
+            return normalizeText(cleanName).includes(term) || normalizeText(item.name).includes(term);
+          });
+        }
+
+        const metaIds = filteredItems.map(item => item.fullPath.replace(/\//g, '_'));
+        const metadataById = new Map<string, Record<string, unknown>>();
+        await Promise.all(
+          metaIds.map(async (metaId) => {
+            try {
+              const metaSnap = await getDoc(doc(db, 'fileMetadata', metaId));
+              if (metaSnap.exists()) metadataById.set(metaId, metaSnap.data());
+            } catch { /* ignore */ }
+          })
+        );
+
+        const repairs: Array<{ metaId: string; payload: Record<string, unknown> }> = [];
+
+        const filePromises = filteredItems.map(async (item) => {
           const rawName = item.name;
           const cleanName = cleanFileName(rawName);
           if (debouncedSearch) {
@@ -954,58 +1042,95 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           }
 
           const metaId = item.fullPath.replace(/\//g, '_');
-          let meta: any = {};
-          let needsRepair = false;
-          try {
-            const metaSnap = await getDoc(doc(db, 'fileMetadata', metaId));
-            if (metaSnap.exists()) { meta = metaSnap.data(); if (meta.name !== item.name) needsRepair = true; }
-            else needsRepair = true;
-          } catch (e) { }
+          const meta = metadataById.get(metaId) || {};
+          const needsRepair = !metadataById.has(metaId) || meta.name !== item.name;
 
-          let storageMeta = { size: 0, updated: new Date().toISOString(), timeCreated: new Date().toISOString(), contentType: 'unknown' };
-          try { storageMeta = await getMetadata(item) as any; } catch (e) { }
+          let size = Number(meta.size) || 0;
+          let updated = parseDateRobust(meta.updated)?.toISOString() || "";
+          let timeCreated = parseDateRobust(meta.created)?.toISOString() || "";
+          let contentType = String(meta.contentType || "unknown");
 
-          let fetchedUbicacion = meta.ubicacion_real || meta.ubicacion || "";
-          let linkedDoc = false;
-          if (!fetchedUbicacion && item.name.toLowerCase().endsWith('.pdf')) {
+          if (!size || !updated || contentType === "unknown") {
             try {
-              const possibleId = extractWorksheetLinkId(item.name);
-              const wsDoc = await resolveWorksheetDoc(possibleId);
-              if (wsDoc) {
-                fetchedUbicacion = wsDoc.data().ubicacion_real || wsDoc.data().ubicacion || "";
-                if (fetchedUbicacion) linkedDoc = true;
-              }
-            } catch(e) {}
+              const storageMeta = await getMetadata(item) as { size: number; updated: string; timeCreated: string; contentType: string };
+              size = storageMeta.size ?? size;
+              if (storageMeta.updated) updated = normalizeDriveDate(storageMeta.updated);
+              if (storageMeta.timeCreated) timeCreated = normalizeDriveDate(storageMeta.timeCreated);
+              contentType = storageMeta.contentType || contentType;
+            } catch { /* ignore */ }
           }
 
-          if ((needsRepair || linkedDoc) && !isSyncing) {
-            setIsSyncing(true);
-            const newMeta = {
-              name: item.name, filePath: item.fullPath, size: storageMeta.size, contentType: storageMeta.contentType,
-              updated: storageMeta.updated, created: meta.created || storageMeta.timeCreated,
-              uploadedBy: meta.uploadedBy || "Sistema", keywords: generateSearchTokens(cleanFileName(item.name)),
-              completed: meta.completed || false, reviewed: meta.reviewed || false, starred: meta.starred || false, notas: meta.notas || "",
-              ubicacion_real: fetchedUbicacion
-            };
-            setDoc(doc(db, 'fileMetadata', metaId), newMeta, { merge: true })
-              .finally(() => setIsSyncing(false));
-            meta = newMeta;
+          const fetchedUbicacion = String(meta.ubicacion_real || meta.ubicacion || "");
+
+          if (needsRepair) {
+            repairs.push({
+              metaId,
+              payload: {
+                name: item.name,
+                filePath: item.fullPath,
+                size,
+                contentType,
+                updated: updated || normalizeDriveDate(new Date()),
+                created: meta.created
+                  ? normalizeDriveDate(meta.created)
+                  : timeCreated || updated || normalizeDriveDate(new Date()),
+                uploadedBy: meta.uploadedBy || "Sistema",
+                keywords: generateSearchTokens(cleanName),
+                completed: meta.completed || false,
+                reviewed: meta.reviewed || false,
+                starred: meta.starred || false,
+                notas: meta.notas || "",
+                ubicacion_real: fetchedUbicacion,
+              },
+            });
           }
 
           return {
-            name: cleanName, rawName, fullPath: item.fullPath, url: '',
-            size: storageMeta.size, updated: storageMeta.updated,
-            created: meta.created || storageMeta.timeCreated, contentType: storageMeta.contentType,
+            name: cleanName,
+            rawName,
+            fullPath: item.fullPath,
+            url: '',
+            size,
+            updated: updated || normalizeDriveDate(new Date()),
+            created: meta.created
+              ? normalizeDriveDate(meta.created)
+              : timeCreated || updated || normalizeDriveDate(new Date()),
+            contentType,
             parentFolder: path.length > 0 ? path[path.length - 1] : "Raíz",
-            notas: meta.notas, ...meta
+            notas: meta.notas as string | undefined,
+            reviewed: meta.reviewed as boolean | undefined,
+            reviewedByName: meta.reviewedByName as string | undefined,
+            completed: meta.completed as boolean | undefined,
+            completedByName: meta.completedByName as string | undefined,
+            starred: meta.starred as boolean | undefined,
+            uploadedBy: meta.uploadedBy as string | undefined,
+            keywords: meta.keywords as string[] | undefined,
+            ubicacion: meta.ubicacion as string | undefined,
+            ubicacion_real: fetchedUbicacion || undefined,
+            workDate: resolveFileWorkDate(meta, [meta.created, timeCreated, updated]),
           } as DriveFile;
         });
 
-        const loaded = (await Promise.all(filePromises)).filter(Boolean) as DriveFile[];
+        const loaded = await enrichFilesWithWorkDates(
+          (await Promise.all(filePromises)).filter(Boolean) as DriveFile[]
+        );
         setFiles(loaded);
+        setFilesLoading(false);
+
+        if (repairs.length > 0) {
+          setIsSyncing(true);
+          Promise.all(
+            repairs.map(({ metaId, payload }) =>
+              setDoc(doc(db, 'fileMetadata', metaId), payload, { merge: true })
+            )
+          ).finally(() => setIsSyncing(false));
+        }
       }
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      setFilesLoading(false);
+    }
   }, [path, activeFilter, currentUserData, debouncedSearch, isQuality, currentRoot]);
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
@@ -1062,8 +1187,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       switch (sortBy) {
         case 'nameAsc': return a.name.localeCompare(b.name);
         case 'nameDesc': return b.name.localeCompare(a.name);
-        case 'dateAsc': return new Date(a.created).getTime() - new Date(b.created).getTime();
-        case 'dateDesc': return new Date(b.created).getTime() - new Date(a.created).getTime();
+        case 'dateAsc': return new Date(getFileWorkDate(a)).getTime() - new Date(getFileWorkDate(b)).getTime();
+        case 'dateDesc': return new Date(getFileWorkDate(b)).getTime() - new Date(getFileWorkDate(a)).getTime();
         case 'sizeAsc': return (a.size || 0) - (b.size || 0);
         case 'sizeDesc': return (b.size || 0) - (a.size || 0);
         default: return 0;
@@ -1071,6 +1196,24 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     });
     return result;
   }, [files, sortBy]);
+
+  const isMetrologistFolderView = useMemo(
+    () =>
+      activeFilter === "all" &&
+      !debouncedSearch &&
+      path.length > 0 &&
+      !path.some((p) =>
+        ["hojas de trabajo", "hojas de servicio"].some((ex) =>
+          p.toLowerCase().includes(ex)
+        )
+      ),
+    [activeFilter, debouncedSearch, path]
+  );
+
+  const metrologistFileGroups = useMemo(() => {
+    if (!isMetrologistFolderView) return null;
+    return groupFilesByUbicacion(processedFiles);
+  }, [isMetrologistFolderView, processedFiles]);
 
   // ── ARCHIVOS AGRUPADOS POR TÉCNICO (Para Completados Y Por Revisar) ──
   const groupedFiles = useMemo(() => {
@@ -1105,6 +1248,72 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   // ── Preview ──
+  const handleRegeneratePdf = useCallback(
+    async (file: DriveFile, allowIncomplete = false) => {
+      const possibleId = extractWorksheetLinkId(file.rawName || file.name);
+      if (!isLinkableWorksheetId(possibleId)) {
+        showToast("No se encontró hoja de trabajo vinculada a este PDF.", "error");
+        return;
+      }
+
+      const wsDoc = await resolveWorksheetDoc(possibleId);
+      if (!wsDoc) {
+        showToast(`No hay registro Friday para ${possibleId}.`, "error");
+        return;
+      }
+
+      const docId = wsDoc.id;
+      setGeneratingPdfLinkId(possibleId);
+      const technicianFolder =
+        path[path.length - 1]?.trim() ||
+        getTechnicianFolderName({ name: currentUserData?.name, email: currentUserData?.email });
+      const uploadedBy =
+        currentUserData?.name || user?.displayName || user?.email?.split("@")[0] || "Usuario";
+
+      try {
+        const result = await generateWorksheetPdfFromFirestore(docId, {
+          technicianFolder,
+          uploadedBy,
+          allowIncomplete,
+        });
+
+        if (!result.ok) {
+          if (!allowIncomplete && result.error?.includes("mediciones")) {
+            const proceed = window.confirm(
+              `${result.error}\n\nEl PDF se regenerará con encabezado e identificación, pero las tablas de medición quedarán vacías.\n\n¿Continuar?`
+            );
+            if (proceed) {
+              setGeneratingPdfLinkId(null);
+              await handleRegeneratePdf(file, true);
+              return;
+            }
+          } else {
+            const detail = result.missing?.length
+              ? ` Faltan: ${result.missing.join(", ")}.`
+              : "";
+            showToast(`${result.error || "No se pudo regenerar el PDF."}${detail}`, "error");
+          }
+          return;
+        }
+
+        const warnNote =
+          result.warnings && result.warnings.length > 0
+            ? " (PDF parcial — revise campos vacíos)"
+            : "";
+        showToast(`PDF regenerado y subido a Drive${warnNote}`, "success");
+        setSelectedIds(new Set());
+        setDetailsOpen(false);
+        await loadContent();
+      } catch (err) {
+        console.error("[Drive] regenerate PDF:", err);
+        showToast("Error inesperado al regenerar el PDF.", "error");
+      } finally {
+        setGeneratingPdfLinkId(null);
+      }
+    },
+    [path, currentUserData, user, showToast, loadContent]
+  );
+
   const handlePreview = async (file: DriveFile) => {
     setPreviewFile({ ...file, url: '' });
     try {
@@ -1403,6 +1612,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const downloadUrl = await getDownloadURL(snap.ref);
 
         let fetchedUbicacion = "";
+        let workDate = existingData.workDate as string | undefined;
         try {
           const possibleId = extractWorksheetLinkId(file.name);
           const wsDoc = await resolveWorksheetDoc(possibleId);
@@ -1410,6 +1620,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           if (wsDoc) {
             const wsData = wsDoc.data();
             fetchedUbicacion = wsData.ubicacion_real || wsData.ubicacion || "";
+            workDate = workDate || extractWorkDateFromWorksheet(wsData);
             if (currentRoot === "certificados") {
               await updateDoc(wsDoc.ref, {
                 pdfURL: downloadUrl,
@@ -1425,12 +1636,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
         await setDoc(doc(db, 'fileMetadata', docId), {
           name: file.name, filePath: fullPath, size: meta.size, contentType: meta.contentType,
-          updated: meta.updated, created: existingData.created || new Date().toISOString(),
+          updated: normalizeDriveDate(meta.updated || meta.timeCreated),
+          created: existingData.created
+            ? normalizeDriveDate(existingData.created)
+            : normalizeDriveDate(meta.timeCreated || meta.updated),
           uploadedBy: currentUserData?.name || "Desconocido",
           keywords: generateSearchTokens(cleanFileName(file.name)),
           completed: existingData.completed || false, completedByName: existingData.completedByName || null,
           reviewed: false, reviewedByName: null, notas: existingData.notas || "",
-          ubicacion_real: fetchedUbicacion || existingData.ubicacion_real || existingData.ubicacion || ""
+          ubicacion_real: fetchedUbicacion || existingData.ubicacion_real || existingData.ubicacion || "",
+          workDate: workDate || undefined,
         }, { merge: true });
         count++;
       }
@@ -1554,29 +1769,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView) displayFiles = groupedFiles[groupView] || [];
     const showFolders = activeFilter === 'all' && !debouncedSearch && folders.length > 0;
 
-    if (displayFiles.length === 0 && !showFolders) {
+    if (displayFiles.length === 0 && !showFolders && !filesLoading) {
       if (debouncedSearch) return <EmptyState icon={Search} title={`Sin resultados para "${debouncedSearch}"`} subtitle="Intenta con otras palabras clave" />;
       return <EmptyState icon={Folder} title="Esta carpeta está vacía" subtitle="Sube archivos o crea una carpeta para comenzar" />;
     }
 
-    const isMetrologistFolder = activeFilter === 'all' && !debouncedSearch && path.length > 0 && !path.some(p => ['hojas de trabajo', 'hojas de servicio'].some(ex => p.toLowerCase().includes(ex)));
-
-    const labFiles: DriveFile[] = [];
-    const siteFiles: DriveFile[] = [];
-    const otherFiles: DriveFile[] = [];
-
-    if (isMetrologistFolder) {
-      displayFiles.forEach(f => {
-        const ubicacionAttr = (f.ubicacion_real || f.ubicacion || "").toLowerCase();
-        const notasLower = (f.notas || "").toLowerCase();
-        const isSitio = ubicacionAttr.includes('sitio') || notasLower.includes('sitio');
-        const isLab = ubicacionAttr.includes('laboratorio') || notasLower.includes('laboratorio') || ubicacionAttr.includes('lab');
-        if (isSitio) siteFiles.push(f);
-        else labFiles.push(f);
-      });
-    } else {
-      otherFiles.push(...displayFiles);
-    }
+    const labFiles = metrologistFileGroups?.lab ?? [];
+    const siteFiles = metrologistFileGroups?.site ?? [];
+    const otherFiles = isMetrologistFolderView ? [] : displayFiles;
 
     const renderFilesBlock = (title: string | null, filesToRender: DriveFile[]) => {
       if (filesToRender.length === 0) return null;
@@ -1651,7 +1851,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">{f.name}</p>
-                    <p className="text-[10px] text-slate-400">{formatDate(f.updated)}</p>
+                    <p className="text-[10px] text-slate-400">{formatDate(getFileWorkDate(f))}</p>
                   </div>
                 </button>
               ))}
@@ -1682,13 +1882,16 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </section>
         )}
 
-        {displayFiles.length > 0 && (
+        {(displayFiles.length > 0 || filesLoading) && (
           <section>
             <div className="flex items-center justify-between mb-3 sticky top-0 bg-[#f0f2f5]/90 backdrop-blur-sm py-2 z-10">
               <h2 className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                 <File size={13} className="text-slate-400" />
                 {debouncedSearch ? 'Resultados' : 'Archivos'}
-                <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md">{displayFiles.length}</span>
+                <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md">
+                  {displayFiles.length}
+                </span>
+                {filesLoading && <Loader2 size={12} className="animate-spin text-blue-500" />}
               </h2>
               {selectedIds.size > 0 && (
                 <div className="flex items-center gap-2 animate-in slide-in-from-right fade-in duration-150">
@@ -1721,8 +1924,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </div>
               )}
             </div>
-            {isMetrologistFolder ? (
+            {isMetrologistFolderView ? (
               <>
+                {filesLoading && displayFiles.length === 0 ? <LoadingSkeleton compact /> : null}
                 {renderFilesBlock('Laboratorio', labFiles)}
                 {renderFilesBlock('Servicio en Sitio', siteFiles)}
               </>
@@ -1866,10 +2070,27 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto flex min-h-0">
-          <div className={clsx("flex-1 p-4 md:p-6 min-w-0 transition-all duration-200")}>{loading ? <LoadingSkeleton /> : renderContent()}</div>
+          <div className={clsx("flex-1 p-4 md:p-6 min-w-0 transition-all duration-200")}>
+            {loading ? <LoadingSkeleton /> : renderContent()}
+          </div>
           {detailsOpen && selectedIds.size === 1 && (() => {
             const file = files.find(f => f.fullPath === Array.from(selectedIds)[0]);
-            return file ? ( <DetailsPanel file={file} onClose={() => setDetailsOpen(false)} isQualityUser={isQuality} onToggleStatus={updateFileStatus} onUpdateNotes={updateNotes} onDownload={handlePreview} onDelete={handleDelete} /> ) : null;
+            const linkId = file ? extractWorksheetLinkId(file.rawName || file.name) : "";
+            const showRegenerate = !!file && currentRoot === "worksheets" && isWorksheetPdfFile(file);
+            return file ? (
+              <DetailsPanel
+                file={file}
+                onClose={() => setDetailsOpen(false)}
+                isQualityUser={isQuality}
+                onToggleStatus={updateFileStatus}
+                onUpdateNotes={updateNotes}
+                onDownload={handlePreview}
+                onDelete={handleDelete}
+                onRegeneratePdf={showRegenerate ? handleRegeneratePdf : undefined}
+                showRegeneratePdf={showRegenerate}
+                isGeneratingPdf={generatingPdfLinkId === linkId}
+              />
+            ) : null;
           })()}
         </div>
       </div>
@@ -1886,6 +2107,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <div className="px-3 py-2 border-b border-slate-100 mb-1"><p className="text-xs font-semibold text-slate-700 truncate">{contextMenu.file?.name ?? contextMenu.folder?.name}</p>{contextMenu.file && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatFileSize(contextMenu.file.size)}</p>}</div>
             {contextMenu.file && ( <>
               <MenuOption icon={<Eye size={14} />} label="Vista previa" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
+              {currentRoot === "worksheets" && isWorksheetPdfFile(contextMenu.file) && (
+                <MenuOption
+                  icon={generatingPdfLinkId === extractWorksheetLinkId(contextMenu.file.rawName || contextMenu.file.name) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  label={generatingPdfLinkId === extractWorksheetLinkId(contextMenu.file.rawName || contextMenu.file.name) ? "Regenerando PDF..." : "Regenerar PDF"}
+                  onClick={() => { if (contextMenu.file) handleRegeneratePdf(contextMenu.file); setContextMenu(null); }}
+                />
+              )}
               <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
               <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
               <MenuOption icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />} label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"} onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }} />
@@ -1903,7 +2131,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><FolderSymlink size={16} className="text-blue-500" />{moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}</h3><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><X size={15} className="text-slate-400" /></button></div>
             <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all flex-shrink-0" title="Subir"><ArrowUp size={13} /></button><div className="flex items-center gap-1 text-xs text-slate-600 overflow-hidden flex-1 min-w-0"><Home size={12} className="text-slate-400 flex-shrink-0" /><span className="text-slate-400">/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-slate-700">{p} /</span>)}</div><button type="button" title="Nueva carpeta" onClick={() => { setMoveNewFolderName(""); setMoveCreateFolderOpen(true); }} disabled={isMoving || isCreatingMoveFolder} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all flex-shrink-0"><FolderPlus size={13} className="text-amber-500" /></button></div>
-            <div className="flex-1 overflow-y-auto py-2 min-h-[180px]">{moveFolderContent.length === 0 ? ( <div className="flex flex-col items-center justify-center py-10 text-slate-400"><FolderOpen size={28} strokeWidth={1.5} className="mb-2 opacity-50" /><p className="text-xs">Sin subcarpetas</p></div> ) : ( <div className="px-2 space-y-0.5">{moveFolderContent.map((folder, i) => ( <button key={i} onClick={() => setMoveToPath([...moveToPath, folder.name])} disabled={moveTargetFolder?.name === folder.name} className={clsx("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors", moveTargetFolder?.name === folder.name ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50")}><div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0"><Folder size={16} className="text-amber-500 fill-amber-100" /></div><span className="text-sm text-slate-700 font-medium flex-1 truncate">{folder.name}</span><ChevronRight size={14} className="text-slate-300" /></button> ))}</div> )}</div>
+            <div className="flex-1 overflow-y-auto py-2 min-h-[180px]">{moveFolderContent.length === 0 ? ( <div className="flex flex-col items-center justify-center py-10 text-slate-400"><FolderOpen size={28} strokeWidth={1.5} className="mb-2 opacity-50" /><p className="text-xs">Sin subcarpetas</p></div> ) : ( <div className="px-2 space-y-0.5">{moveFolderContent.map((folder, i) => { const style = getFolderVisualStyle(folder.name); return ( <button key={i} onClick={() => setMoveToPath([...moveToPath, folder.name])} disabled={moveTargetFolder?.name === folder.name} className={clsx("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors", moveTargetFolder?.name === folder.name ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50")}><div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", style.bg)}><Folder size={16} className={clsx(style.icon, style.fill)} /></div><span className="text-sm text-slate-700 font-medium flex-1 truncate">{folder.name}</span><ChevronRight size={14} className="text-slate-300" /></button> ); })}</div> )}</div>
             <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2"><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button><button onClick={handleModalMove} disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all">{isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}Mover aquí</button></div>
           </div>
         </div>

@@ -170,8 +170,8 @@ export const resolveWorksheetDoc = async (
  * Reconcilia hojasDeTrabajo contra fileMetadata (fuente de verdad de DriveScreen).
  * Solo escribe filas donde Drive confirma que NO están completadas.
  *
- * La reconciliación periódica (cada 5 min) corre en Cloud Function
- * `scheduledDriveReconcile`; el tablero solo usa esto para acción manual / vista previa.
+ * Reconciliación periódica: Cloud Function `scheduledDriveReconcile` (cada 5 min)
+ * y respaldo en tablero (AG-Bot al cargar + intervalo cada 5 min con tablero abierto).
  */
 export const reconcileWorksheetDriveFlags = async (
   rows: { docId: string; [key: string]: unknown }[],

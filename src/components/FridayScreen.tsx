@@ -340,8 +340,10 @@ interface GroupData { id: string; name: string; color: string; collapsed: boolea
 interface DragItem { type: 'row' | 'column'; index: number; id?: string; groupId?: string; }
 interface AGBotThought { id: number; type: 'info' | 'warning' | 'success'; message: string; timestamp: string; }
 
-/** Reconciliación Drive periódica: Cloud Function `scheduledDriveReconcile` (cada 5 min). */
+/** Reconciliación Drive: servidor `scheduledDriveReconcile` + respaldo en tablero (AG-Bot / intervalo). */
 const AGBOT_INITIAL_DELAY_MS = 2_000;
+const DRIVE_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+const DRIVE_RECONCILE_INITIAL_MS = 15_000;
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Desconocido": { label: "Desconocido", bg: "#c4c4c4" }, "En Revisión": { label: "En Revisión", bg: "#fdab3d" },
@@ -652,7 +654,7 @@ const AGBotWidget = ({ thoughts }: { thoughts: AGBotThought[] }) => {
                     </div>
                     <div className="p-2 bg-gray-50 border-t border-gray-200 text-center">
                         <span className="text-[10px] text-gray-400 font-medium">
-                            Drive: reconciliación automática en servidor (cada 5 min)
+                            Drive: servidor cada 5 min + tablero abierto (AG-Bot)
                         </span>
                     </div>
                 </div>
@@ -946,6 +948,7 @@ const FridayScreen: React.FC = () => {
     const [search, setSearch] = useState("");
     const debouncedSearch = useDebounce(search, 300);
     const agBotRanRef = useRef(false);
+    const driveReconcileInFlightRef = useRef(false);
     const [permissionMenu, setPermissionMenu] = useState<{ x: number, y: number, colKey: string } | null>(null);
     const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
     const [activeCommentRow, setActiveCommentRow] = useState<WorksheetData | null>(null);
@@ -1072,6 +1075,102 @@ const FridayScreen: React.FC = () => {
         setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
     };
 
+    const runAutoDriveReconcile = useCallback(
+        async (source: "agbot" | "interval" | "manual" = "manual") => {
+            if (!canEditBoard || driveReconcileInFlightRef.current) return;
+            driveReconcileInFlightRef.current = true;
+            if (source === "manual") setIsReconcilingDrive(true);
+            try {
+                const rawRows = toReconcileRawRows(rows);
+                const preview = await reconcileWorksheetDriveFlags(rawRows, { dryRun: true });
+                if (preview.candidates === 0) {
+                    if (source === "manual") {
+                        showToast(
+                            `Drive verificado: ${preview.skippedVerified} fila(s) con carga real; ninguna corrección necesaria.`,
+                            "success"
+                        );
+                    }
+                    return;
+                }
+                const sample = preview.previews
+                    .slice(0, 5)
+                    .map(
+                        (p) =>
+                            `• ${p.equipo || p.cliente || p.docId.slice(0, 8)} (${p.before.cargado_drive}/${p.before.status_certificado})`
+                    )
+                    .join("\n");
+                const extra = preview.candidates > 5 ? `\n… y ${preview.candidates - 5} más` : "";
+                if (source === "manual") {
+                    const ok = confirm(
+                        `Se verificó fileMetadata (Drive). ${preview.candidates} fila(s) tienen Si/Generado sin archivo realizado.\n` +
+                            `${preview.skippedVerified} fila(s) coinciden con Drive y NO se tocarán.\n\n${sample}${extra}\n\n¿Corregir solo las sin respaldo en Drive?`
+                    );
+                    if (!ok) return;
+                }
+                const result = await reconcileWorksheetDriveFlags(rawRows);
+                if (result.corrected > 0) {
+                    const prefix =
+                        source === "agbot"
+                            ? "🤖 AG-Bot Drive:"
+                            : source === "interval"
+                              ? "Drive (auto):"
+                              : "Drive:";
+                    showToast(
+                        `${prefix} ${result.corrected} fila(s) corregida(s). ${result.skippedVerified} conservadas (Drive real).`,
+                        source === "manual" ? "success" : "info"
+                    );
+                    if (source === "agbot") {
+                        setAgBotThoughts((prev) =>
+                            [
+                                {
+                                    id: Date.now(),
+                                    type: "success" as const,
+                                    message: `Drive: ${result.corrected} fila(s) reconciliada(s) automáticamente`,
+                                    timestamp: new Date().toISOString(),
+                                },
+                                ...prev,
+                            ].slice(0, 10)
+                        );
+                    }
+                }
+            } catch (e) {
+                console.error("Drive reconcile:", e);
+                if (source === "manual") showToast("Error al reconciliar con Drive", "error");
+            } finally {
+                driveReconcileInFlightRef.current = false;
+                if (source === "manual") setIsReconcilingDrive(false);
+            }
+        },
+        [canEditBoard, rows, toReconcileRawRows]
+    );
+
+    const handleReconcileDriveFlags = useCallback(
+        async (dryRunOnly = false) => {
+            if (!canEditBoard || isReconcilingDrive) return;
+            if (dryRunOnly) {
+                setIsReconcilingDrive(true);
+                try {
+                    const rawRows = toReconcileRawRows(rows);
+                    const preview = await reconcileWorksheetDriveFlags(rawRows, { dryRun: true });
+                    showToast(
+                        preview.candidates === 0
+                            ? `Drive verificado: ${preview.skippedVerified} fila(s) OK`
+                            : `${preview.candidates} fila(s) sin respaldo en Drive (vista previa)`,
+                        preview.candidates === 0 ? "success" : "info"
+                    );
+                } catch (e) {
+                    console.error(e);
+                    showToast("Error al reconciliar con Drive", "error");
+                } finally {
+                    setIsReconcilingDrive(false);
+                }
+                return;
+            }
+            await runAutoDriveReconcile("manual");
+        },
+        [canEditBoard, isReconcilingDrive, rows, toReconcileRawRows, runAutoDriveReconcile]
+    );
+
     useEffect(() => {
         if (!userProfileResolved || !canEditBoard || isLoadingData || rows.length === 0 || agBotRanRef.current) return;
         const runAGBot = async () => {
@@ -1112,54 +1211,26 @@ const FridayScreen: React.FC = () => {
             }
 
             if (newThoughts.length > 0) setAgBotThoughts(prev => [...newThoughts, ...prev].slice(0, 10));
+            await runAutoDriveReconcile("agbot");
         };
         const timer = setTimeout(runAGBot, AGBOT_INITIAL_DELAY_MS);
         return () => clearTimeout(timer);
-    }, [userProfileResolved, canEditBoard, isLoadingData, rows.length]);
+    }, [userProfileResolved, canEditBoard, isLoadingData, rows.length, runAutoDriveReconcile]);
+
+    useEffect(() => {
+        if (!userProfileResolved || !canEditBoard || isLoadingData || rows.length === 0) return;
+        const tick = () => void runAutoDriveReconcile("interval");
+        const initialTimer = setTimeout(tick, DRIVE_RECONCILE_INITIAL_MS);
+        const intervalId = setInterval(tick, DRIVE_RECONCILE_INTERVAL_MS);
+        return () => {
+            clearTimeout(initialTimer);
+            clearInterval(intervalId);
+        };
+    }, [userProfileResolved, canEditBoard, isLoadingData, currentYear, rows.length, runAutoDriveReconcile]);
 
     useEffect(() => {
         agBotRanRef.current = false;
     }, [currentYear]);
-
-    const handleReconcileDriveFlags = useCallback(async (dryRunOnly = false) => {
-        if (!canEditBoard || isReconcilingDrive) return;
-        setIsReconcilingDrive(true);
-        try {
-            const rawRows = toReconcileRawRows(rows);
-            const preview = await reconcileWorksheetDriveFlags(rawRows, { dryRun: true });
-            if (preview.candidates === 0) {
-                showToast(
-                    `Drive verificado: ${preview.skippedVerified} fila(s) con carga real; ninguna corrección necesaria.`,
-                    "success"
-                );
-                return;
-            }
-            const sample = preview.previews
-                .slice(0, 5)
-                .map((p) => `• ${p.equipo || p.cliente || p.docId.slice(0, 8)} (${p.before.cargado_drive}/${p.before.status_certificado})`)
-                .join("\n");
-            const extra = preview.candidates > 5 ? `\n… y ${preview.candidates - 5} más` : "";
-            if (dryRunOnly) {
-                showToast(`${preview.candidates} fila(s) sin respaldo en Drive (vista previa)`, "info");
-                return;
-            }
-            const ok = confirm(
-                `Se verificó fileMetadata (Drive). ${preview.candidates} fila(s) tienen Si/Generado sin archivo realizado.\n` +
-                `${preview.skippedVerified} fila(s) coinciden con Drive y NO se tocarán.\n\n${sample}${extra}\n\n¿Corregir solo las sin respaldo en Drive?`
-            );
-            if (!ok) return;
-            const result = await reconcileWorksheetDriveFlags(rawRows);
-            showToast(
-                `Corregidas ${result.corrected} fila(s). ${result.skippedVerified} conservadas (Drive real).`,
-                "success"
-            );
-        } catch (e) {
-            console.error(e);
-            showToast("Error al reconciliar con Drive", "error");
-        } finally {
-            setIsReconcilingDrive(false);
-        }
-    }, [canEditBoard, isReconcilingDrive, rows, toReconcileRawRows]);
 
     const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
     const handleSort = (key: string, direction: 'asc' | 'desc') => { setSortConfig({ key, direction }); setActiveColumnMenu(null); };
