@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Download,
   ExternalLink,
@@ -60,7 +60,27 @@ interface DrivePreviewModalProps {
   onResolveUrl?: (file: DrivePreviewFile) => Promise<string>;
 }
 
-async function fetchBlobUrl(sourceUrl: string, retries = 2): Promise<string> {
+async function fetchPdfBytes(sourceUrl: string, retries = 2): Promise<Uint8Array> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(sourceUrl, {
+        mode: "cors",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function fetchImageBlobUrl(sourceUrl: string, retries = 2): Promise<string> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -80,50 +100,6 @@ async function fetchBlobUrl(sourceUrl: string, retries = 2): Promise<string> {
   }
   throw lastError;
 }
-
-/** iOS Safari / Android Chrome: iframe + blob works more reliably than react-pdf or object/embed */
-function usePreferNativePreview() {
-  const [preferNative, setPreferNative] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const coarse = window.matchMedia("(pointer: coarse)").matches;
-    const narrow = window.matchMedia("(max-width: 768px)").matches;
-    const ios =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    return coarse || narrow || ios;
-  });
-
-  useEffect(() => {
-    const update = () => {
-      const coarse = window.matchMedia("(pointer: coarse)").matches;
-      const narrow = window.matchMedia("(max-width: 768px)").matches;
-      setPreferNative(coarse || narrow);
-    };
-    const mq1 = window.matchMedia("(pointer: coarse)");
-    const mq2 = window.matchMedia("(max-width: 768px)");
-    mq1.addEventListener("change", update);
-    mq2.addEventListener("change", update);
-    return () => {
-      mq1.removeEventListener("change", update);
-      mq2.removeEventListener("change", update);
-    };
-  }, []);
-
-  return preferNative;
-}
-
-const NativePdfPreview: React.FC<{
-  url: string;
-  title: string;
-  onFallback: () => void;
-}> = ({ url, title, onFallback }) => (
-  <iframe
-    src={url}
-    title={title}
-    className="absolute inset-0 w-full h-full border-0 bg-white"
-    onError={onFallback}
-  />
-);
 
 const NativeImagePreview: React.FC<{
   url: string;
@@ -153,31 +129,26 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
   onDownload,
   onResolveUrl,
 }) => {
-  const preferNativePreview = usePreferNativePreview();
   const ext = getExtension(file.name);
   const isPdf = ext === "pdf";
   const isImage = IMAGE_EXTS.includes(ext);
 
-  const [previewUrl, setPreviewUrl] = useState(file.blobUrl || file.url);
   const [directUrl, setDirectUrl] = useState(file.url);
-  const [loading, setLoading] = useState(!file.blobUrl && !file.url);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [pdfData, setPdfData] = useState<Uint8Array | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [useFileViewer, setUseFileViewer] = useState(
-    !preferNativePreview || (!isPdf && !isImage)
-  );
-  const blobRef = useRef<string | null>(file.blobUrl || null);
-
-  const revokeBlob = useCallback(() => {
-    if (blobRef.current?.startsWith("blob:")) {
-      URL.revokeObjectURL(blobRef.current);
-      blobRef.current = null;
-    }
-  }, []);
+  const [retryKey, setRetryKey] = useState(0);
 
   const loadPreview = useCallback(async () => {
     setLoading(true);
     setError(null);
-    revokeBlob();
+    setPdfData(undefined);
+
+    setImagePreviewUrl((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
 
     try {
       let sourceUrl = file.url;
@@ -187,107 +158,96 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
       if (!sourceUrl) throw new Error("Sin URL");
 
       setDirectUrl(sourceUrl);
-      const needsBlob = isPdf || isImage;
 
-      if (needsBlob) {
-        const blobUrl = await fetchBlobUrl(sourceUrl);
-        blobRef.current = blobUrl;
-        setPreviewUrl(blobUrl);
-      } else {
-        setPreviewUrl(sourceUrl);
+      if (isPdf) {
+        const bytes = await fetchPdfBytes(sourceUrl);
+        setPdfData(bytes);
+      } else if (isImage) {
+        const blobUrl = await fetchImageBlobUrl(sourceUrl);
+        setImagePreviewUrl(blobUrl);
       }
-      setUseFileViewer(!preferNativePreview || (!isPdf && !isImage));
     } catch {
       setError(
-        "No se pudo cargar la vista previa. Intenta abrir en una nueva pestaña o descargar el archivo."
+        "No se pudo cargar la vista previa. Usa «Ver PDF» o descarga el archivo."
       );
-      if (file.url) {
-        setDirectUrl(file.url);
-        setPreviewUrl(file.url);
-      }
     } finally {
       setLoading(false);
     }
-  }, [file, onResolveUrl, revokeBlob, isPdf, isImage, preferNativePreview]);
+  }, [file.fullPath, file.url, onResolveUrl, isPdf, isImage]);
 
   useEffect(() => {
-    if (file.blobUrl) {
-      setPreviewUrl(file.blobUrl);
-      blobRef.current = file.blobUrl;
-      setLoading(false);
-      setUseFileViewer(!preferNativePreview || (!isPdf && !isImage));
-      return revokeBlob;
-    }
-    if (file.url || onResolveUrl) {
-      loadPreview();
-    }
-    return revokeBlob;
-  }, [
-    file.fullPath,
-    file.url,
-    file.blobUrl,
-    loadPreview,
-    onResolveUrl,
-    revokeBlob,
-    preferNativePreview,
-    isPdf,
-    isImage,
-  ]);
+    loadPreview();
+  }, [loadPreview, retryKey]);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
+  /** En WebView/Capacitor la URL HTTPS abre el visor nativo del sistema */
   const openInNewTab = () => {
-    const target = previewUrl || directUrl || file.url;
-    if (target) window.open(target, "_blank", "noopener,noreferrer");
+    const target = directUrl || file.url;
+    if (!target) return;
+    window.open(target, "_blank", "noopener,noreferrer");
   };
 
   const handleShare = async () => {
-    const target = previewUrl || directUrl || file.url;
+    const target = directUrl || file.url;
     if (!target) return;
     if (navigator.share) {
       try {
         await navigator.share({ title: file.name, url: target });
         return;
       } catch {
-        /* user cancelled or unsupported */
+        /* cancelado */
       }
     }
     openInNewTab();
   };
 
   const renderPreviewBody = () => {
-    if (!previewUrl) return null;
-
-    if (isPdf && (preferNativePreview || !useFileViewer)) {
+    if (isPdf && pdfData) {
       return (
-        <div className="relative flex-1 min-h-0 w-full">
-          <NativePdfPreview
-            url={previewUrl}
-            title={file.name}
-            onFallback={() => setUseFileViewer(true)}
+        <div className="flex-1 min-h-0 w-full flex flex-col">
+          <FileViewer
+            key={`${file.fullPath}-${pdfData.byteLength}`}
+            url={directUrl || file.url}
+            fileName={file.name}
+            pdfData={pdfData}
+            maxHeight="100%"
+            style={{ height: "100%", minHeight: 0, flex: 1 }}
           />
         </div>
       );
     }
 
-    if (isImage && preferNativePreview) {
+    if (isImage && imagePreviewUrl) {
       return (
         <NativeImagePreview
-          url={previewUrl}
+          url={imagePreviewUrl}
           alt={file.name}
-          fallbackUrl={directUrl !== previewUrl ? directUrl : undefined}
+          fallbackUrl={directUrl !== imagePreviewUrl ? directUrl : undefined}
         />
       );
     }
 
-    return (
-      <div className="flex-1 min-h-0 w-full">
-        <FileViewer
-          url={previewUrl}
-          fileName={file.name}
-          maxHeight="100%"
-          style={{ height: "100%", minHeight: 0 }}
-        />
-      </div>
-    );
+    if (!isPdf && !isImage && directUrl) {
+      return (
+        <div className="flex-1 min-h-0 w-full">
+          <FileViewer
+            url={directUrl}
+            fileName={file.name}
+            maxHeight="100%"
+            style={{ height: "100%", minHeight: 0 }}
+          />
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -329,7 +289,7 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
               type="button"
               onClick={openInNewTab}
               className="hidden sm:flex items-center gap-1.5 px-2.5 py-2 min-h-[40px] text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-medium transition-colors"
-              title="Abrir en nueva pestaña"
+              title="Abrir en el visor del sistema"
             >
               <ExternalLink size={14} />
               <span className="hidden md:inline">Abrir en nueva pestaña</span>
@@ -371,32 +331,34 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
           ) : error ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-4 px-6 text-center">
               <p className="text-sm text-slate-600 max-w-md">{error}</p>
-              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2 w-full max-w-sm">
+              <div className="flex flex-col w-full max-w-sm gap-2">
+                {isPdf && (
+                  <button
+                    type="button"
+                    onClick={openInNewTab}
+                    className="flex items-center justify-center gap-2 px-4 py-3 min-h-[48px] bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 shadow-sm"
+                  >
+                    <ExternalLink size={16} /> Ver PDF
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={loadPreview}
-                  className="flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                  onClick={() => setRetryKey((k) => k + 1)}
+                  className="flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <RefreshCw size={14} /> Reintentar
                 </button>
                 <button
                   type="button"
-                  onClick={openInNewTab}
-                  className="flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  <ExternalLink size={14} /> Abrir en nueva pestaña
-                </button>
-                <button
-                  type="button"
                   onClick={onDownload}
-                  className="flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-slate-800 text-white rounded-xl text-sm font-semibold hover:bg-slate-900 transition-colors shadow-sm"
+                  className="flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-slate-800 text-white rounded-xl text-sm font-semibold hover:bg-slate-900"
                 >
                   <Download size={14} /> Descargar
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col min-h-0 p-0 sm:p-2">
+            <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
               {renderPreviewBody()}
             </div>
           )}
@@ -406,14 +368,14 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
           <button
             type="button"
             onClick={openInNewTab}
-            className="flex-1 flex items-center justify-center gap-2 py-3 min-h-[44px] bg-[#f1f3f4] text-slate-700 rounded-xl text-xs font-semibold active:bg-slate-200"
+            className="flex-1 flex items-center justify-center gap-2 py-3 min-h-[48px] bg-[#e8f0fe] text-blue-700 rounded-xl text-xs font-bold active:bg-blue-100"
           >
-            <ExternalLink size={14} /> Abrir en nueva pestaña
+            <ExternalLink size={15} /> {isPdf ? "Ver PDF" : "Abrir archivo"}
           </button>
           <button
             type="button"
             onClick={onDownload}
-            className="flex-1 flex items-center justify-center gap-2 py-3 min-h-[44px] bg-blue-600 text-white rounded-xl text-xs font-semibold active:bg-blue-700"
+            className="flex-1 flex items-center justify-center gap-2 py-3 min-h-[48px] bg-blue-600 text-white rounded-xl text-xs font-semibold active:bg-blue-700"
           >
             <Download size={14} /> Descargar
           </button>

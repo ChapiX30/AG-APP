@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import * as XLSX from "xlsx";
 
 import "pdfjs-dist/web/pdf_viewer.css";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 
 import {
   ZoomIn,
@@ -15,11 +17,14 @@ import {
   Loader2,
 } from "lucide-react";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js`;
+/** Worker local: en Capacitor/Android el CDN suele fallar y el PDF no renderiza */
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 type Props = {
   url: string;
   fileName?: string;
+  /** PDF bytes — más fiable que blob:/iframe en móvil y Capacitor WebView */
+  pdfData?: Uint8Array;
   style?: React.CSSProperties;
   maxHeight?: string | number;
 };
@@ -439,20 +444,38 @@ const OfficeFilePreview: React.FC<{
 export const FileViewer: React.FC<Props> = ({
   url,
   fileName = "",
+  pdfData,
   style = {},
   maxHeight = "80vh",
 }) => {
-  const [numPages, setNumPages] = useState<number>(1);
+  const pdfScrollRef = useRef<HTMLDivElement>(null);
+  const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [text, setText] = useState<string | null>(null);
-  const [escalaZoom, setEscalaZoom] = useState<number>(1.0);
+  const defaultPdfZoom = () =>
+    typeof window !== "undefined" && window.innerWidth < 768 ? 0.75 : 0.92;
+
+  const [escalaZoom, setEscalaZoom] = useState<number>(() => defaultPdfZoom());
   const [rotacionPDF, setRotacionPDF] = useState<number>(0);
+  const [fitWidth, setFitWidth] = useState<number | undefined>(undefined);
 
   const ext = getExtension(fileName || url);
   const isOffice =
     SPREADSHEET_EXTS.includes(ext) ||
     DOCX_EXTS.includes(ext) ||
     OFFICE_UNSUPPORTED_EXTS.includes(ext);
+
+  const pdfFileSource = useMemo(() => {
+    if (pdfData?.byteLength) {
+      return {
+        data: pdfData.buffer.slice(
+          pdfData.byteOffset,
+          pdfData.byteOffset + pdfData.byteLength
+        ),
+      };
+    }
+    return url;
+  }, [pdfData, url]);
 
   useEffect(() => {
     if (["txt", "csv", "md"].includes(ext)) {
@@ -465,6 +488,34 @@ export const FileViewer: React.FC<Props> = ({
         .catch(() => setText("No se pudo cargar el archivo de texto."));
     }
   }, [url, ext]);
+
+  useEffect(() => {
+    if (ext !== "pdf") return;
+    setNumPages(null);
+    setPageNumber(1);
+    setEscalaZoom(defaultPdfZoom());
+  }, [ext, url, pdfData]);
+
+  useEffect(() => {
+    if (ext !== "pdf") return;
+    const measure = () => {
+      const el = pdfScrollRef.current;
+      const w = el?.clientWidth || window.innerWidth;
+      if (w > 0) setFitWidth(Math.max(200, w - 48));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (pdfScrollRef.current) ro?.observe(pdfScrollRef.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [ext, numPages]);
+
+  const pageRenderWidth = fitWidth
+    ? Math.round(fitWidth * escalaZoom)
+    : undefined;
 
   if (IMAGE_EXTS.includes(ext)) {
     return (
@@ -516,45 +567,69 @@ export const FileViewer: React.FC<Props> = ({
           height: "100%",
           display: "flex",
           flexDirection: "column",
+          minHeight: 0,
           ...style,
         }}
       >
         <div
+          ref={pdfScrollRef}
           style={{
-            flexGrow: 1,
+            flex: 1,
+            minHeight: 0,
             overflow: "auto",
             background: "#f0f0f0",
-            padding: "16px 0",
+            padding: "12px 0",
             borderRadius: "8px",
             width: "100%",
             textAlign: "center",
+            WebkitOverflowScrolling: "touch",
           }}
         >
           <div
             style={{
-              padding: "16px",
+              padding: "8px",
               display: "inline-block",
               height: "fit-content",
+              maxWidth: "100%",
             }}
           >
             <Document
-              file={url}
-              onLoadSuccess={({ numPages }) => {
-                setNumPages(numPages);
+              key={typeof pdfFileSource === "string" ? pdfFileSource : `bytes-${pdfData?.byteLength ?? 0}`}
+              file={pdfFileSource}
+              onLoadSuccess={({ numPages: n }) => {
+                setNumPages(n);
                 setPageNumber(1);
+                setEscalaZoom(defaultPdfZoom());
               }}
-              loading={<div style={{ padding: 20 }}>Cargando PDF…</div>}
+              onLoadError={() => setNumPages(null)}
+              loading={
+                <div style={{ padding: 20, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <Loader2 size={22} className="animate-spin" style={{ color: "#2563eb" }} />
+                  Cargando PDF…
+                </div>
+              }
               error={
-                <div style={{ color: "red", padding: 20 }}>
-                  No se pudo cargar el PDF. Verifica el enlace o permisos.
+                <div style={{ color: "#b91c1c", padding: 20, fontSize: 14 }}>
+                  No se pudo cargar el PDF. Usa «Abrir en nueva pestaña» o descarga el archivo.
                 </div>
               }
             >
-              <Page
-                pageNumber={pageNumber}
-                scale={escalaZoom}
-                rotate={rotacionPDF}
-              />
+              {numPages !== null && numPages > 0 && (
+                <Page
+                  key={`page-${pageNumber}-${pageRenderWidth ?? 0}-${Math.round(escalaZoom * 100)}`}
+                  pageNumber={Math.min(pageNumber, numPages)}
+                  width={pageRenderWidth}
+                  scale={pageRenderWidth ? undefined : escalaZoom}
+                  rotate={rotacionPDF}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                  loading={
+                    <div style={{ padding: 16 }}>
+                      <Loader2 size={20} className="animate-spin" style={{ color: "#2563eb" }} />
+                    </div>
+                  }
+                />
+              )}
             </Document>
           </div>
         </div>
@@ -576,7 +651,7 @@ export const FileViewer: React.FC<Props> = ({
             flexShrink: 0,
           }}
         >
-          {numPages > 1 && (
+          {numPages !== null && numPages > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <button
                 style={
@@ -592,11 +667,11 @@ export const FileViewer: React.FC<Props> = ({
               </span>
               <button
                 style={
-                  pageNumber >= numPages
+                  numPages !== null && pageNumber >= numPages
                     ? disabledControlStyle
                     : controlButtonStyle
                 }
-                disabled={pageNumber >= numPages}
+                disabled={numPages !== null && pageNumber >= numPages}
                 onClick={() =>
                   setPageNumber((n) => Math.min(numPages, n + 1))
                 }
@@ -606,21 +681,33 @@ export const FileViewer: React.FC<Props> = ({
             </div>
           )}
 
-          {numPages > 1 && (
+          {numPages !== null && numPages > 1 && (
             <div style={{ borderLeft: "1px solid #666", height: "20px" }} />
           )}
 
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
-              onClick={() => setEscalaZoom((z) => Math.max(0.2, z - 0.2))}
+              onClick={() => setEscalaZoom((z) => Math.max(0.35, +(z - 0.15).toFixed(2)))}
               title="Alejar"
               style={controlButtonStyle}
             >
               <ZoomOut size={18} />
             </button>
-            <span>{(escalaZoom * 100).toFixed(0)}%</span>
             <button
-              onClick={() => setEscalaZoom((z) => z + 0.2)}
+              type="button"
+              onClick={() => setEscalaZoom(defaultPdfZoom())}
+              title="Restablecer zoom"
+              style={{
+                ...controlButtonStyle,
+                minWidth: 44,
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {(escalaZoom * 100).toFixed(0)}%
+            </button>
+            <button
+              onClick={() => setEscalaZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}
               title="Acercar"
               style={controlButtonStyle}
             >
