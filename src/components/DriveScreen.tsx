@@ -33,6 +33,7 @@ import {
 import { getFolderVisualStyle } from "../utils/fileUtils";
 import { parseDateRobust } from "../utils/calibrationShared";
 import { normalizeDriveDate, resolveFileWorkDate, enrichFilesWithWorkDates, extractWorkDateFromWorksheet } from "../utils/driveFileMetadata";
+import DrivePreviewModal from "./DrivePreviewModal";
 
 // ─────────────────────────────────────────────
 // INTERFACES
@@ -333,12 +334,12 @@ const DeadlineBar = ({ createdDate }: { createdDate: string }) => {
 };
 
 const EmptyState = ({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle?: string }) => (
-  <div className="flex flex-col items-center justify-center py-24 text-center animate-in fade-in duration-500">
-    <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-5 border border-slate-100">
-      <Icon className="w-9 h-9 text-slate-300" strokeWidth={1.5} />
+  <div className="flex flex-col items-center justify-center py-20 md:py-28 text-center animate-in fade-in duration-500">
+    <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-6 border border-slate-200/80 shadow-sm">
+      <Icon className="w-10 h-10 text-slate-300" strokeWidth={1.5} />
     </div>
-    <p className="text-base font-semibold text-slate-500 mb-1">{title}</p>
-    {subtitle && <p className="text-sm text-slate-400">{subtitle}</p>}
+    <p className="text-lg font-semibold text-slate-600 mb-1.5">{title}</p>
+    {subtitle && <p className="text-sm text-slate-400 max-w-sm leading-relaxed">{subtitle}</p>}
   </div>
 );
 
@@ -388,18 +389,24 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
       onContextMenu={(e) => onContextMenu(e, file)}
       onDoubleClick={() => onDoubleClick(file)}
       className={clsx(
-        "group relative bg-white rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 flex flex-col select-none border",
+        "group relative bg-white rounded-xl overflow-hidden cursor-pointer transition-all duration-200 flex flex-col select-none border shadow-sm",
         selected
-          ? "ring-2 ring-blue-500 border-blue-200 shadow-lg shadow-blue-100/50 -translate-y-1"
-          : "border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5",
-        isOverdue && !selected ? "border-red-200 shadow-red-50" : "",
+          ? "ring-2 ring-blue-500 border-blue-200 shadow-md shadow-blue-100/40 -translate-y-0.5"
+          : "border-slate-200/90 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5",
+        isOverdue && !selected ? "border-red-200 shadow-red-50/50" : "",
         isReadyForReview && !isOverdue && !selected ? "border-blue-200 shadow-blue-50/50" : ""
       )}
     >
-      <div className={clsx(
-        "h-28 flex items-center justify-center relative transition-colors",
-        isOverdue ? "bg-red-50/60" : getFileColorBg(file.name)
-      )}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onDoubleClick(file); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onDoubleClick(file); } }}
+          className={clsx(
+            "h-28 flex items-center justify-center relative transition-colors cursor-pointer touch-manipulation",
+            isOverdue ? "bg-red-50/60" : getFileColorBg(file.name)
+          )}
+        >
         <div className={clsx(
           "absolute top-2 left-2 z-20 transition-all duration-200",
           selected ? "opacity-100 scale-100" : "opacity-0 group-hover:opacity-60 scale-90 group-hover:scale-100"
@@ -442,10 +449,10 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
           )}
         </div>
 
-        <div className="transform transition-transform group-hover:scale-110 duration-300 drop-shadow-sm">
+        <div className="transform transition-transform group-hover:scale-110 duration-300 drop-shadow-sm pointer-events-none">
           {getFileIcon(file.name, 52)}
         </div>
-      </div>
+        </div>
 
       <div className="p-3 flex flex-col gap-2 flex-1">
         <div>
@@ -492,9 +499,9 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
       onContextMenu={(e) => onContextMenu(e, file)}
       onDoubleClick={() => onDoubleClick(file)}
       className={clsx(
-        "grid grid-cols-12 gap-2 px-4 py-3 border-b border-slate-100 cursor-pointer items-center transition-all duration-150 group select-none last:border-b-0",
-        selected ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-slate-50/80",
-        isOverdue && !selected ? "bg-red-50/30" : ""
+        "grid grid-cols-12 gap-2 px-4 py-3.5 border-b border-slate-100/90 cursor-pointer items-center transition-all duration-150 group select-none last:border-b-0",
+        selected ? "bg-[#e8f0fe] border-l-[3px] border-l-blue-500 shadow-sm" : "hover:bg-[#f1f3f4]",
+        isOverdue && !selected ? "bg-red-50/40" : ""
       )}
     >
       <div className="col-span-12 md:col-span-5 flex items-center gap-3 min-w-0">
@@ -504,9 +511,14 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
         )}>
           {selected && <CheckCircle2 size={10} className="text-white" />}
         </div>
-        <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", getFileColorBg(file.name))}>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDoubleClick?.(file); }}
+          className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform active:scale-95", getFileColorBg(file.name))}
+          title="Vista previa"
+        >
           {getFileIcon(file.name, 18)}
-        </div>
+        </button>
         <div className="min-w-0">
           <p className={clsx("text-sm font-medium truncate", selected ? "text-blue-700" : "text-slate-800")}>{file.name}</p>
           {showFolder && (
@@ -565,10 +577,10 @@ const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, dragga
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       className={clsx(
-        "group flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all duration-150 border select-none",
+        "group flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer transition-all duration-150 border select-none shadow-sm",
         isDragTarget
           ? "border-blue-400 bg-blue-50 ring-2 ring-blue-300 scale-[1.02]"
-          : "bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-sm"
+          : "bg-white border-slate-200/90 hover:border-slate-300 hover:shadow-md hover:-translate-y-px"
       )}
     >
       <div className={clsx("w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors", style.bg, style.hoverBg)}>
@@ -671,64 +683,6 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
             <Trash2 size={14} /> Eliminar
           </button>
         )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ─── FILE PREVIEW MODAL ───────────────────────
-const FilePreviewModal = ({ file, onClose, onDownload }: { file: DriveFile; onClose: () => void; onDownload: () => void }) => {
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  const isImage = ['jpg', 'jpeg', 'png', 'svg', 'webp', 'gif'].includes(ext);
-  const isPdf = ext === 'pdf';
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-5xl h-[88vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-white flex-shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            {getFileIcon(file.name, 18)}
-            <span className="text-sm font-semibold text-slate-800 truncate">{file.name}</span>
-            <span className="text-xs text-slate-400 font-mono flex-shrink-0">{formatFileSize(file.size)}</span>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={onDownload} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">
-              <Download size={13} /> Descargar
-            </button>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-hidden relative">
-          {!file.url ? (
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 size={36} className="animate-spin text-blue-500" />
-              <p className="text-sm text-slate-500">Cargando vista previa...</p>
-            </div>
-          ) : isImage ? (
-            <img src={file.url} alt="Preview" className="max-w-full max-h-full object-contain shadow-lg rounded-lg" />
-          ) : isPdf ? (
-            <object data={file.url} type="application/pdf" className="w-full h-full absolute inset-0 z-10">
-              <iframe 
-                src={`https://docs.google.com/gview?url=${encodeURIComponent(file.url)}&embedded=true`} 
-                className="w-full h-full border-none absolute inset-0 z-0" 
-                title="PDF Preview Fallback" 
-              />
-            </object>
-          ) : (
-            <div className="text-center">
-              <div className={clsx("w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-5", getFileColorBg(file.name))}>
-                {getFileIcon(file.name, 52)}
-              </div>
-              <p className="text-slate-500 text-sm mb-5">Vista previa no disponible para este tipo de archivo.</p>
-              <button onClick={onDownload} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
-                Descargar para ver
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1314,12 +1268,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     [path, currentUserData, user, showToast, loadContent]
   );
 
-  const handlePreview = async (file: DriveFile) => {
-    setPreviewFile({ ...file, url: '' });
-    try {
-      const url = file.url || await getDownloadURL(ref(storage, file.fullPath));
-      setPreviewFile({ ...file, url });
-    } catch (e) { showToast("No se pudo cargar la vista previa", 'error'); setPreviewFile(null); }
+  const resolvePreviewUrl = useCallback(async (file: DriveFile) => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return file.url || await getDownloadURL(ref(storage, file.fullPath));
+      } catch (err) {
+        lastError = err;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+    throw lastError;
+  }, []);
+
+  const handlePreview = (file: DriveFile) => {
+    setPreviewFile({ ...file, url: file.url || "" });
   };
 
   // ── Batch delete ──
@@ -1537,8 +1500,25 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const handleDownload = async (file: DriveFile) => {
-    try { window.open(await getDownloadURL(ref(storage, file.fullPath)), '_blank'); }
-    catch (e) { showToast("No se pudo descargar", 'error'); }
+    try {
+      const url = file.url || (await getDownloadURL(ref(storage, file.fullPath)));
+      try {
+        const blob = await (await fetch(url, { mode: "cors", cache: "no-store" })).blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = blobUrl;
+        anchor.download = file.name;
+        anchor.rel = "noopener";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch {
+      showToast("No se pudo descargar", "error");
+    }
   };
 
   const updateNotes = async (file: DriveFile, notes: string) => {
@@ -1803,8 +1783,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               ))}
             </div>
           ) : (
-            <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
-              <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-sm">
+              <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-slate-50/90 border-b border-slate-200/80 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                 <div className="col-span-12 md:col-span-5 flex items-center gap-2">
                   <div className="w-5" />
                   Nombre
@@ -1894,7 +1874,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 {filesLoading && <Loader2 size={12} className="animate-spin text-blue-500" />}
               </h2>
               {selectedIds.size > 0 && (
-                <div className="flex items-center gap-2 animate-in slide-in-from-right fade-in duration-150">
+                <div className="fixed md:relative bottom-4 md:bottom-auto left-3 right-3 md:left-auto md:right-auto z-20 flex items-center gap-2 animate-in slide-in-from-bottom md:slide-in-from-right fade-in duration-150 bg-white md:bg-transparent border md:border-0 border-slate-200 rounded-2xl md:rounded-none shadow-lg md:shadow-none px-3 py-2 md:p-0">
                   <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
                     {selectedIds.size} seleccionado{selectedIds.size > 1 ? 's' : ''}
                   </span>
@@ -1955,7 +1935,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // RENDER
   // ─────────────────────────────────────────
   return (
-    <div className="flex h-full w-full bg-[#f0f2f5] text-slate-800 font-sans overflow-hidden relative" onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}>
+    <div className="flex h-full w-full bg-[#f8f9fa] text-slate-800 font-sans overflow-hidden relative" onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}>
       {dragActive && !draggingItem && (
         <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-[3px] border-dashed border-blue-400 m-3 rounded-3xl flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center">
@@ -2034,11 +2014,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       </aside>
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
-        <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white/90 backdrop-blur-md sticky top-0 z-30 flex-shrink-0">
+        <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white sticky top-0 z-30 flex-shrink-0 shadow-sm">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
           <div className="relative flex-1 max-w-lg group">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input type="text" placeholder="Buscar en AG Drive..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100 hover:bg-slate-100/80 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-transparent focus:border-blue-500 rounded-xl py-2 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400" />
+            <input type="text" placeholder="Buscar en AG Drive..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-slate-200/60 focus:border-blue-400 rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
             {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors"><X size={13} /></button>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -2094,7 +2074,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           })()}
         </div>
       </div>
-      {previewFile && ( <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} onDownload={() => handleDownload(previewFile)} /> )}
+      {previewFile && (
+        <DrivePreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+          onDownload={() => handleDownload(previewFile)}
+          onResolveUrl={resolvePreviewUrl}
+        />
+      )}
       {contextMenu && (() => {
         const isFolder = !!contextMenu.folder;
         const estimatedHeight = isFolder ? 200 : 380;
