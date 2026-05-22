@@ -313,27 +313,36 @@ export const agbotRegenerarPDF = functions.firestore
 // ==================================================================
 export const enviarNotificacionCalidad = functions.firestore
     .document('notificaciones/{notificacionId}')
-    .onCreate(async (snap, context) => {
-        const nuevaNotificacion = snap.data();
-        
-        if (nuevaNotificacion.tipo !== 'asignacion_calidad') {
-            return null; 
+    .onWrite(async (change, context) => {
+        if (!change.after.exists) return null;
+
+        const nuevaNotificacion = change.after.data();
+        if (!nuevaNotificacion || nuevaNotificacion.tipo !== 'asignacion_calidad') {
+            return null;
+        }
+
+        if (nuevaNotificacion.fcmSent === true) {
+            return null;
         }
 
         const { usuarioId, titulo, mensaje, servicioId } = nuevaNotificacion;
+        if (!usuarioId) return null;
 
         try {
             const userDoc = await db.collection('usuarios').doc(usuarioId).get();
             if (!userDoc.exists) return null;
 
             const userData = userDoc.data();
-            
-            // MAGIA: Leer el MAPA de tokens para enviarlo a la Tablet Y a la PC de Abraham al mismo tiempo
             const tokensObj = userData?.fcmTokens || {};
+            const activeFromMap = Object.keys(tokensObj).filter((token) => tokensObj[token] === true);
+            const legacyToken =
+                typeof userData?.fcmToken === 'string' && userData.fcmToken.length > 0
+                    ? userData.fcmToken
+                    : null;
             const tokensArray = [
                 ...new Set([
-                    ...Object.keys(tokensObj).filter(token => tokensObj[token] === true),
-                    ...(userData?.fcmToken ? [userData.fcmToken] : []),
+                    ...activeFromMap,
+                    ...(legacyToken && !activeFromMap.includes(legacyToken) ? [legacyToken] : []),
                 ]),
             ];
 
@@ -343,43 +352,64 @@ export const enviarNotificacionCalidad = functions.firestore
             }
 
             const servicioTag = servicioId || 'asignacion';
+            const title = String(titulo || 'Aviso AG');
+            const body = String(mensaje || '');
+
+            // Solo data: el SW / cliente muestran UNA notificación (sin auto-display del navegador).
             const payload = {
-                notification: {
-                    title: titulo,
-                    body: mensaje,
-                },
                 data: {
-                    url: `/calendario`,
+                    title,
+                    body,
+                    url: '/calendario',
                     servicioId: servicioId || '',
                     tipo: 'asignacion_calidad',
+                    tag: servicioTag,
                 },
                 android: {
+                    priority: 'high' as const,
                     notification: {
-                        tag: servicioTag,
-                    },
-                },
-                webpush: {
-                    notification: {
+                        title,
+                        body,
                         tag: servicioTag,
                     },
                 },
                 apns: {
                     payload: {
                         aps: {
+                            alert: { title, body },
                             'thread-id': servicioTag,
                         },
+                    },
+                },
+                webpush: {
+                    headers: { Urgency: 'high' },
+                    data: {
+                        title,
+                        body,
+                        url: '/calendario',
+                        servicioId: servicioId || '',
+                        tipo: 'asignacion_calidad',
                     },
                 },
                 tokens: tokensArray,
             };
 
             const response = await admin.messaging().sendEachForMulticast(payload);
-            console.log(`Push enviada a ${usuarioId}. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`);
-            
-            return null;
+            console.log(
+                `Push asignación ${context.params.notificacionId} → ${usuarioId}. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`
+            );
 
+            await change.after.ref.set(
+                {
+                    fcmSent: true,
+                    fcmSentAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+
+            return null;
         } catch (error) {
-            console.error("Error crítico al enviar Push Notification Multicast:", error);
+            console.error('Error crítico al enviar Push Notification Multicast:', error);
             return null;
         }
     });

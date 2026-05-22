@@ -26,6 +26,7 @@ import parseISO from 'date-fns/parseISO';
 import es from 'date-fns/locale/es';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
+import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
 import { getUserTeamColor } from '../utils/teamAvatarColor';
 import TeamColorPickerModal from './TeamColorPickerModal';
 
@@ -1442,33 +1443,28 @@ const FridayServiciosScreen: React.FC = () => {
       }
 
       const autorNombre = currentUserData?.nombre || currentUserData?.name || 'Calidad';
-      for (const uid of [...new Set(personasANotificar)]) {
-        const tituloPush = isNew ? '🗓️ Nueva asignación de servicio' : '✏️ Servicio actualizado';
-        const mensajeBody = buildMensajeAsignacionServicio({
-          titulo: data.titulo,
-          cliente: data.cliente,
-          fecha: data.fecha,
-          horaInicio: data.horaInicio,
-        });
+      const evento = isNew ? 'nueva' : 'actualizada';
+      const tituloPush = isNew ? '🗓️ Nueva asignación de servicio' : '✏️ Servicio actualizado';
+      const mensajeBody = buildMensajeAsignacionServicio({
+        titulo: data.titulo,
+        cliente: data.cliente,
+        fecha: data.fecha,
+        horaInicio: data.horaInicio,
+      });
 
-        await addDoc(collection(db, 'notificaciones'), {
-            type: 'info',
-            title: tituloPush,
-            body: mensajeBody,
-            destinatarios: [uid],
-            readBy: [],
-            timestamp: serverTimestamp(),
-            autorNombre,
-            autorUid: currentUserData?.id || '',
-            usuarioId: uid,
+      await Promise.all(
+        [...new Set(personasANotificar)].map((uid) =>
+          crearNotificacionAsignacion({
+            uid,
+            servicioId: savedServiceId,
             titulo: tituloPush,
             mensaje: mensajeBody,
-            leido: false,
-            fecha: new Date().toISOString(),
-            tipo: 'asignacion_calidad',
-            servicioId: savedServiceId
-        });
-      }
+            evento,
+            autorNombre,
+            autorUid: currentUserData?.id || '',
+          })
+        )
+      );
 
       setIsFormOpen(false);
     } catch (error) {

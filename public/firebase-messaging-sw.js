@@ -12,25 +12,34 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+function parseFcmPayload(payload) {
+    const data = payload.data || {};
+    return {
+        title: data.title || payload?.notification?.title || 'Notificación de AG-APP',
+        body: data.body || payload?.notification?.body || '',
+        servicioId: data.servicioId || '',
+        url: data.url || '/calendario',
+    };
+}
+
+// Data-only desde Cloud Functions: una sola showNotification (evita duplicado con auto-display FCM).
 messaging.onBackgroundMessage(function (payload) {
     console.log('[SW] Recibido:', payload);
-    
-    const title = payload?.notification?.title || "Notificación de AG-APP";
-    const servicioId = payload?.data?.servicioId || '';
+    const { title, body, servicioId, url } = parseFcmPayload(payload);
     const options = {
-        body: payload?.notification?.body || "",
+        body,
         icon: '/bell.png',
         badge: '/bell.png',
         tag: servicioId ? `asignacion-${servicioId}` : 'ag-aviso',
-        renotify: true,
+        renotify: false,
         vibrate: [200, 100, 200],
-        data: payload.data || {},
+        data: { ...(payload.data || {}), url, servicioId },
         actions: [
             { action: 'open', title: 'Ver Detalles' }
         ]
     };
 
-    self.registration.showNotification(title, options);
+    return self.registration.showNotification(title, options);
 });
 
 // Al hacer click en la notificación

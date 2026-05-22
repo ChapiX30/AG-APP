@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { getFcmToken, subscribeForegroundMessage } from '../utils/firebase';
 import { setDoc, doc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import { parseFcmDisplayPayload } from '../utils/pushNotificationDisplay';
 
 export function usePushNotifications(uid: string, email: string) {
     useEffect(() => {
@@ -33,10 +34,10 @@ export function usePushNotifications(uid: string, email: string) {
 
             unsubscribeForeground = await subscribeForegroundMessage((payload) => {
                 if (Notification.permission !== 'granted') return;
-                const servicioId = payload?.data?.servicioId || '';
-                const tag = servicioId ? `asignacion-${servicioId}` : undefined;
-                new Notification(payload?.notification?.title || 'Aviso AG', {
-                    body: payload?.notification?.body,
+                if (document.visibilityState === 'hidden') return;
+                const { title, body, tag } = parseFcmDisplayPayload(payload);
+                new Notification(title, {
+                    body,
                     icon: '/bell.png',
                     tag,
                 });

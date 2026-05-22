@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
+import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
 
 // --- 1. CONFIGURACIÓN, TEMAS Y CONSTANTES ---
 
@@ -28,22 +29,14 @@ const localizer = dateFnsLocalizer({
 });
 
 async function notifyAsignacionServicio(uid: string, titulo: string, mensaje: string, servicioId: string) {
-  await addDoc(collection(db, 'notificaciones'), {
-    type: 'info',
-    title: titulo,
-    body: mensaje,
-    destinatarios: [uid],
-    readBy: [],
-    timestamp: serverTimestamp(),
-    autorNombre: 'Calendario',
-    autorUid: '',
-    usuarioId: uid,
+  await crearNotificacionAsignacion({
+    uid,
+    servicioId,
     titulo,
     mensaje,
-    leido: false,
-    fecha: new Date().toISOString(),
-    tipo: 'asignacion_calidad',
-    servicioId,
+    evento: 'nueva',
+    autorNombre: 'Calendario',
+    autorUid: '',
   });
 }
 
