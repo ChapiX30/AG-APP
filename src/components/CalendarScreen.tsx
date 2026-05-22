@@ -18,6 +18,7 @@ import {
   Upload, ExternalLink, Loader2
 } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 
 // --- 1. CONFIGURACIÓN, TEMAS Y CONSTANTES ---
 
@@ -229,11 +230,16 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                 await updateDoc(doc(db, 'servicios', event.id), { ...basePayload, elemento: formData.titulo });
                 const oldPersonas = event?.personas || [];
                 const newPersonas = formData.personas.filter(pId => !oldPersonas.includes(pId));
+                const mensajeAsignacion = buildMensajeAsignacionServicio({
+                    titulo: formData.titulo,
+                    cliente: basePayload.cliente,
+                    fecha: formData.fecha,
+                });
                 for (const uid of newPersonas) {
                     await notifyAsignacionServicio(
                         uid,
-                        'Nueva Asignación en Calendario',
-                        `Fuiste programado para "${formData.titulo}". Ingresa al calendario para confirmar de enterado.`,
+                        'Nueva asignación en calendario',
+                        `${mensajeAsignacion} Ingresa al calendario para confirmar de enterado.`,
                         event.id
                     );
                 }
@@ -246,21 +252,31 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                         await addDoc(collection(db, 'servicios'), { ...newPayload, enterados: [] });
                         curStart = addDaysNative(curEnd, 1); 
                     }
+                    const mensajePt = buildMensajeAsignacionServicio({
+                        titulo: `Estudio PT — ${formData.magnitudPT || formData.titulo}`,
+                        cliente: basePayload.cliente,
+                        fecha: formData.fecha,
+                    });
                     for (const uid of formData.personas) {
                         await notifyAsignacionServicio(
                             uid,
-                            'Nuevo Estudio PT Asignado',
-                            `Se generó el estudio PT para "${formData.magnitudPT}". Revisa el Gantt para ver las fechas de tus actividades.`,
+                            'Nuevo estudio PT asignado',
+                            `${mensajePt} Revisa el Gantt para ver las fechas de tus actividades.`,
                             'pt_group'
                         );
                     }
                 } else {
-                    const newDoc = await addDoc(collection(db, 'servicios'), { ...basePayload, elemento: formData.titulo, enterados: [] }); 
+                    const newDoc = await addDoc(collection(db, 'servicios'), { ...basePayload, elemento: formData.titulo, enterados: [] });
+                    const mensajeNuevo = buildMensajeAsignacionServicio({
+                        titulo: formData.titulo,
+                        cliente: basePayload.cliente,
+                        fecha: formData.fecha,
+                    });
                     for (const uid of formData.personas) {
                         await notifyAsignacionServicio(
                             uid,
-                            'Nueva Asignación en Calendario',
-                            `Fuiste programado para "${formData.titulo}". Ingresa para confirmar de enterado.`,
+                            'Nueva asignación en calendario',
+                            `${mensajeNuevo} Ingresa al calendario para confirmar de enterado.`,
                             newDoc.id
                         );
                     }

@@ -25,6 +25,7 @@ import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import es from 'date-fns/locale/es';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { getUserTeamColor } from '../utils/teamAvatarColor';
 import TeamColorPickerModal from './TeamColorPickerModal';
 
@@ -1443,8 +1444,12 @@ const FridayServiciosScreen: React.FC = () => {
       const autorNombre = currentUserData?.nombre || currentUserData?.name || 'Calidad';
       for (const uid of personasANotificar) {
         const tituloPush = isNew ? '🗓️ Nueva asignación de servicio' : '✏️ Servicio actualizado';
-        const fechaFormateada = data.fecha ? formatDateRelative(data.fecha) : 'fecha por definir';
-        const mensajeBody = `Fuiste programado para "${data.titulo}" el ${fechaFormateada}.`;
+        const mensajeBody = buildMensajeAsignacionServicio({
+          titulo: data.titulo,
+          cliente: data.cliente,
+          fecha: data.fecha,
+          horaInicio: data.horaInicio,
+        });
 
         await addDoc(collection(db, 'notificaciones'), {
             type: 'info',
