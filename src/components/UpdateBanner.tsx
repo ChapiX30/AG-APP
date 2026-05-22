@@ -1,37 +1,35 @@
 import React from "react";
-import { useSWUpdate } from "./useSWUpdate"; // Asegúrate de la ruta correcta
+import { X } from "lucide-react";
+import { useSWUpdate } from "./useSWUpdate";
 
 const UpdateBanner: React.FC = () => {
-  const { showReload, reloadPage } = useSWUpdate();
+  const { showReload, reloadPage, dismiss } = useSWUpdate();
 
   if (!showReload) return null;
 
   return (
     <div
-      style={{
-        position: "fixed",
-        bottom: 24,
-        left: 0,
-        right: 0,
-        margin: "auto",
-        width: "fit-content",
-        zIndex: 9999,
-        background: "linear-gradient(90deg,#0050d8 60%,#51b5ff 100%)",
-        color: "#fff",
-        borderRadius: 14,
-        boxShadow: "0 4px 18px rgba(80,80,180,0.14)",
-        padding: "18px 30px",
-        fontSize: 18,
-        fontWeight: 600,
-        display: "flex",
-        alignItems: "center",
-        gap: 16,
-        cursor: "pointer",
-      }}
-      onClick={reloadPage}
+      role="status"
+      className="fixed bottom-5 right-5 z-[9999] flex max-w-sm items-center gap-3 rounded-lg border border-blue-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-lg"
     >
-      <span style={{ marginRight: 10 }}>🔄</span>
-      ¡Nueva versión disponible! Presiona aquí para actualizar
+      <button
+        type="button"
+        onClick={reloadPage}
+        className="flex-1 text-left font-medium text-blue-700 hover:text-blue-900"
+      >
+        Nueva versión disponible. Toca para actualizar.
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          dismiss();
+        }}
+        className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        aria-label="Cerrar aviso de actualización"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 };

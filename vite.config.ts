@@ -10,10 +10,11 @@ export default defineConfig({
     plugins: [
         react(),
         VitePWA({
-            registerType: 'prompt', // Actualización solo cuando el usuario lo confirma (evita recargas en bucle en tablet)
+            registerType: 'prompt',
+            injectRegister: null,
             manifest: {
-                name: 'AG App',
-                short_name: 'AGApp',
+                name: 'AG Solutions',
+                short_name: 'AG Solutions',
                 description: 'Tu app de metrología profesional',
                 start_url: '/',
                 display: 'standalone',
@@ -21,22 +22,31 @@ export default defineConfig({
                 theme_color: '#0050d8',
                 icons: [
                     {
-                        src: '/lab_logo.png',
+                        src: 'pwa-192.png',
                         sizes: '192x192',
-                        type: 'image/png'
+                        type: 'image/png',
+                        purpose: 'any',
                     },
                     {
-                        src: '/logo512.png',
+                        src: 'pwa-512.png',
                         sizes: '512x512',
-                        type: 'image/png'
-                    }
-                ]
+                        type: 'image/png',
+                        purpose: 'any',
+                    },
+                    {
+                        src: 'pwa-512.png',
+                        sizes: '512x512',
+                        type: 'image/png',
+                        purpose: 'maskable',
+                    },
+                ],
             },
+            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png'],
             workbox: {
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,
-                // Sin skipWaiting: el SW nuevo espera hasta que el usuario pulse "Actualizar"
-            }
+                skipWaiting: false,
+            },
         })
     ]
 })
