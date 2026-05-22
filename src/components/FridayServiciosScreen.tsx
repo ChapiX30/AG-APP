@@ -1442,7 +1442,7 @@ const FridayServiciosScreen: React.FC = () => {
       }
 
       const autorNombre = currentUserData?.nombre || currentUserData?.name || 'Calidad';
-      for (const uid of personasANotificar) {
+      for (const uid of [...new Set(personasANotificar)]) {
         const tituloPush = isNew ? '🗓️ Nueva asignación de servicio' : '✏️ Servicio actualizado';
         const mensajeBody = buildMensajeAsignacionServicio({
           titulo: data.titulo,

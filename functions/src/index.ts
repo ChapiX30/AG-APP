@@ -330,27 +330,47 @@ export const enviarNotificacionCalidad = functions.firestore
             
             // MAGIA: Leer el MAPA de tokens para enviarlo a la Tablet Y a la PC de Abraham al mismo tiempo
             const tokensObj = userData?.fcmTokens || {};
-            const tokensArray = Object.keys(tokensObj).filter(token => tokensObj[token] === true);
-
-            if (tokensArray.length === 0 && userData?.fcmToken) {
-                tokensArray.push(userData.fcmToken);
-            }
+            const tokensArray = [
+                ...new Set([
+                    ...Object.keys(tokensObj).filter(token => tokensObj[token] === true),
+                    ...(userData?.fcmToken ? [userData.fcmToken] : []),
+                ]),
+            ];
 
             if (tokensArray.length === 0) {
                 console.log(`El usuario ${usuarioId} no tiene dispositivos registrados.`);
                 return null;
             }
 
+            const servicioTag = servicioId || 'asignacion';
             const payload = {
                 notification: {
                     title: titulo,
                     body: mensaje,
                 },
                 data: {
-                    url: `/calendario`, 
-                    servicioId: servicioId || ''
+                    url: `/calendario`,
+                    servicioId: servicioId || '',
+                    tipo: 'asignacion_calidad',
                 },
-                tokens: tokensArray 
+                android: {
+                    notification: {
+                        tag: servicioTag,
+                    },
+                },
+                webpush: {
+                    notification: {
+                        tag: servicioTag,
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            'thread-id': servicioTag,
+                        },
+                    },
+                },
+                tokens: tokensArray,
             };
 
             const response = await admin.messaging().sendEachForMulticast(payload);

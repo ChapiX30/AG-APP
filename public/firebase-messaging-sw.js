@@ -16,12 +16,15 @@ messaging.onBackgroundMessage(function (payload) {
     console.log('[SW] Recibido:', payload);
     
     const title = payload?.notification?.title || "Notificación de AG-APP";
+    const servicioId = payload?.data?.servicioId || '';
     const options = {
         body: payload?.notification?.body || "",
         icon: '/bell.png',
-        badge: '/bell.png', // Icono pequeño para la barra de estado
+        badge: '/bell.png',
+        tag: servicioId ? `asignacion-${servicioId}` : 'ag-aviso',
+        renotify: true,
         vibrate: [200, 100, 200],
-        data: payload.data, // Guardamos los datos para abrirlos al hacer click
+        data: payload.data || {},
         actions: [
             { action: 'open', title: 'Ver Detalles' }
         ]

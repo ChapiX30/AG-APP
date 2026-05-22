@@ -79,16 +79,38 @@ export async function getFcmToken(vapidKey: string) {
     }
 }
 
+let foregroundUnsubscribe: (() => void) | null = null;
+
 /**
- * Listener para mensajes recibidos con la app en primer plano.
- * Úsalo para mostrar un banner/toast además de la notificación nativa.
+ * Un solo listener de primer plano (evita duplicados si varios componentes montan el hook).
+ * Devuelve función de limpieza para useEffect.
  */
-export async function onForegroundMessage(cb: (payload: any) => void) {
+export async function subscribeForegroundMessage(
+    cb: (payload: any) => void
+): Promise<() => void> {
     try {
         const messaging = await messagingPromise;
-        if (!messaging) return;
-        onMessage(messaging, cb);
+        if (!messaging) return () => {};
+
+        if (foregroundUnsubscribe) {
+            foregroundUnsubscribe();
+            foregroundUnsubscribe = null;
+        }
+
+        foregroundUnsubscribe = onMessage(messaging, cb);
+        return () => {
+            if (foregroundUnsubscribe) {
+                foregroundUnsubscribe();
+                foregroundUnsubscribe = null;
+            }
+        };
     } catch (e) {
-        console.warn("onForegroundMessage error:", e);
+        console.warn("subscribeForegroundMessage error:", e);
+        return () => {};
     }
+}
+
+/** @deprecated Usar subscribeForegroundMessage (retorna cleanup). */
+export async function onForegroundMessage(cb: (payload: any) => void) {
+    await subscribeForegroundMessage(cb);
 }

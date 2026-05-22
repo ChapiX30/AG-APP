@@ -25,7 +25,6 @@ import {
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { usePushNotifications } from '../hooks/usePushNotifications';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
 import { isUserOnline } from '../hooks/usePresence';
 
@@ -980,11 +979,6 @@ export const MainMenu: React.FC = () => {
   const { prefs, setPrefs, loading: loadingPrefs } = useUserPrefs(uid);
   const viewMode = prefs.viewMode;
   const setViewMode = (v: 'grid' | 'list') => setPrefs({ viewMode: v });
-
-  // ─── PUSH NOTIFICATIONS ────────────────────────────────────────────────────
-  // Registra el SW, pide permiso al usuario y guarda el token FCM en Firestore.
-  // A partir de aquí, los avisos llegan aunque la app esté cerrada o bloqueada.
-  usePushNotifications(uid, email);
 
   useEffect(() => {
     if (user) setLocalUser({
