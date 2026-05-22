@@ -25,7 +25,12 @@ import { QRCodeSVG } from 'qrcode.react';
 // --- IMPORTS DE CAPACITOR ---
 import { Capacitor } from '@capacitor/core';
 import EpsonLabel from '../utils/EpsonPlugin';
-import { extractMagnitudFromConsecutivo, toWorksheetMagnitud } from "../utils/magnitudWorksheet";
+import { extractMagnitudFromConsecutivo, toWorksheetMagnitud, WORKSHEET_MAGNITUDES } from "../utils/magnitudWorksheet";
+import {
+  saveWorksheetDraft,
+  loadWorksheetDraft,
+  clearWorksheetDraft,
+} from "../utils/worksheetDraftAutosave";
 import { generateTemplatePDF, getTechnicianFolderName } from "../utils/worksheetPdfGenerator";
 
 // ====================================================================
@@ -388,6 +393,214 @@ const removeFromOfflineQueue = (id: string) => {
   saveOfflineQueue(q);
 };
 
+const sanitizeWorksheetText = (str: string) => str.replace(/<script.*?>.*?<\/script>/gi, "").trim();
+
+// ====================================================================
+// BACKGROUND SAVE QUEUE (serializa guardados sin bloquear UI)
+// ====================================================================
+interface BackgroundSaveJob {
+  id: string;
+  state: WorksheetState;
+  electricalValues: Record<string, { patron: string; instrumento: string }>;
+  localExc: { p1: string; p2: string; p3: string; p4: string; p5: string };
+  user: { id?: string } | null;
+  worksheetId?: string;
+}
+
+type BgSaveToastFn = (t: { message: string; type: "success" | "error" | "warning" }) => void;
+
+let bgSaveQueue: BackgroundSaveJob[] = [];
+let bgSaveRunning = false;
+let bgSaveToast: BgSaveToastFn | null = null;
+
+const enqueueBackgroundSave = (job: BackgroundSaveJob, onToast: BgSaveToastFn) => {
+  bgSaveToast = onToast;
+  bgSaveQueue.push(job);
+  void drainBackgroundSaveQueue();
+};
+
+async function drainBackgroundSaveQueue() {
+  if (bgSaveRunning) return;
+  bgSaveRunning = true;
+  while (bgSaveQueue.length > 0) {
+    const job = bgSaveQueue.shift()!;
+    try {
+      await persistWorksheetJob(job);
+      clearWorksheetDraft();
+      localStorage.removeItem("backup_worksheet_data");
+      bgSaveToast?.({ message: "✅ Hoja de trabajo guardada correctamente.", type: "success" });
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message === "OFFLINE_QUEUED") {
+        bgSaveToast?.({
+          message: "Sin conexión. La hoja se guardó en cola para sincronizar.",
+          type: "warning",
+        });
+        continue;
+      }
+      console.error("Error guardado en segundo plano:", e);
+      localStorage.setItem("backup_worksheet_data", JSON.stringify(job.state));
+      saveWorksheetDraft(job.state as unknown as Record<string, unknown>);
+      bgSaveToast?.({
+        message: "Error al guardar. Se conservó borrador y respaldo local.",
+        type: "warning",
+      });
+    }
+  }
+  bgSaveRunning = false;
+}
+
+function mergeJobState(job: BackgroundSaveJob): WorksheetState {
+  let merged = { ...job.state };
+  if (merged.magnitud === "Masa") {
+    const str = `1 (Centro): ${job.localExc.p1}\n2 (Inf Izq): ${job.localExc.p2}\n3 (Sup Izq): ${job.localExc.p3}\n4 (Sup Der): ${job.localExc.p4}\n5 (Inf Der): ${job.localExc.p5}`;
+    merged = { ...merged, excentricidad: str };
+  }
+  if (merged.magnitud === "Electrica") {
+    let textoPatron = "";
+    let textoInstrumento = "";
+    merged.unidad.forEach((u) => {
+      const vals = job.electricalValues[u] || { patron: "", instrumento: "" };
+      if (vals.patron) textoPatron += `${u}:\n${vals.patron}\n\n`;
+      if (vals.instrumento) textoInstrumento += `${u}:\n${vals.instrumento}\n\n`;
+    });
+    merged = {
+      ...merged,
+      medicionPatron: textoPatron.trim(),
+      medicionInstrumento: textoInstrumento.trim(),
+    };
+  }
+  return merged;
+}
+
+async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void> {
+  const state = mergeJobState(job);
+  const user = job.user;
+  const worksheetId = job.worksheetId;
+
+  const { jsPDF } = await import("jspdf");
+  const pdfDoc = generateTemplatePDF(state, jsPDF as Parameters<typeof generateTemplatePDF>[1]);
+  const blob = pdfDoc.output("blob");
+  const technicianName = getTechnicianFolderName(user);
+  const nombreArchivo = `worksheets/${technicianName}/${state.certificado}_${state.id || "SINID"}.pdf`;
+
+  let finalDocId: string | null = worksheetId || null;
+  let existingData: Record<string, unknown> | null = null;
+
+  if (!finalDocId && navigator.onLine) {
+    const qDupe = query(
+      collection(db, "hojasDeTrabajo"),
+      where("id", "==", state.id.trim()),
+      where("cliente", "==", state.cliente)
+    );
+    const dupeDocs = await getDocs(qDupe);
+    let bestMatchDate = -1;
+    dupeDocs.forEach((d) => {
+      const data = d.data();
+      if (
+        !data.pdfURL ||
+        data.status_certificado === "Pendiente de Certificado" ||
+        data.status_equipo === "Desconocido" ||
+        data.status_equipo === "Recepción"
+      ) {
+        const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
+        if (docTime > bestMatchDate) {
+          bestMatchDate = docTime;
+          finalDocId = d.id;
+          existingData = data;
+        }
+      }
+    });
+  }
+
+  const sanitizedState: WorksheetState = { ...state, magnitud: toWorksheetMagnitud(state.magnitud) };
+  for (const key in sanitizedState) {
+    if (typeof sanitizedState[key as keyof WorksheetState] === "string") {
+      sanitizedState[key as keyof WorksheetState] = sanitizeWorksheetText(
+        sanitizedState[key as keyof WorksheetState] as string
+      ) as never;
+    }
+  }
+
+  const { fotoEquipoBase64, ...stateForFirestore } = sanitizedState;
+  const lugarNormalizado = stateForFirestore.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
+
+  const fullData: Record<string, unknown> = {
+    ...stateForFirestore,
+    lugarCalibracion: lugarNormalizado,
+    folio: stateForFirestore.certificado,
+    serie: stateForFirestore.numeroSerie,
+    status: "completed",
+    priority: "medium",
+    status_equipo: "Calibrado",
+    status_certificado: "Generado",
+    cargado_drive: "Pendiente",
+    timestamp: Date.now(),
+    createdAt: (existingData?.createdAt as string) || new Date().toISOString(),
+    userId: user?.id || "unknown",
+  };
+
+  if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
+    fullData.fechaRecepcion = existingData.fechaEntrada;
+    fullData.fechaEntrada = existingData.fechaEntrada;
+  }
+
+  const pdfBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  if (!navigator.onLine) {
+    addToOfflineQueue({
+      id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      timestamp: Date.now(),
+      data: fullData,
+      pdfBlob: pdfBase64,
+      nombreArchivo,
+      finalDocId,
+      worksheetId,
+    });
+    throw new Error("OFFLINE_QUEUED");
+  }
+
+  let docRefId = finalDocId;
+  if (docRefId) {
+    await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
+  } else {
+    const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+    docRefId = newDoc.id;
+  }
+
+  const updates: Record<string, string> = {};
+  if (fotoEquipoBase64) {
+    const imgData = fotoEquipoBase64.startsWith("data:")
+      ? fotoEquipoBase64
+      : `data:image/jpeg;base64,${fotoEquipoBase64}`;
+    const imgBlob = await fetch(imgData).then((r) => r.blob());
+    const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
+    await uploadBytes(fotoRef, imgBlob);
+    updates.fotoEquipoURL = await getDownloadURL(fotoRef);
+  }
+
+  const pdfRef = ref(storage, nombreArchivo);
+  const uploadResult = await uploadBytes(pdfRef, blob);
+  updates.pdfURL = await getDownloadURL(pdfRef);
+  try {
+    await writeDriveFileMetadata(nombreArchivo, uploadResult, technicianName, {
+      ubicacion_real: lugarNormalizado === "sitio" ? "Servicio en Sitio" : "Laboratorio",
+      workDate: state.fecha,
+    });
+  } catch (metaErr) {
+    console.error("[WorkSheet] Error al registrar metadata en Drive:", metaErr);
+  }
+  updates.cargado_drive = "Si";
+
+  if (docRefId) {
+    await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
+  }
+}
+
 // ====================================================================
 // COMPONENTE SEARCH SELECT 
 // ====================================================================
@@ -397,9 +610,10 @@ interface ClienteSearchSelectProps {
     onSelect: (cliente: string) => void;
     currentValue: string;
     hasError?: boolean;
+    onBlurDraft?: () => void;
 }
 
-const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onSelect, currentValue, hasError }) => {
+const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onSelect, currentValue, hasError, onBlurDraft }) => {
     const [localSearch, setLocalSearch] = useState(currentValue);
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -463,7 +677,8 @@ const ClienteSearchSelect: React.FC<ClienteSearchSelectProps> = ({ clientes, onS
                     type="text" 
                     value={localSearch} 
                     onChange={handleChange} 
-                    onFocus={() => setIsOpen(true)} 
+                    onFocus={() => setIsOpen(true)}
+                    onBlur={() => onBlurDraft?.()}
                     placeholder="Buscar o seleccionar cliente..."
                     className={`w-full p-4 border rounded-lg pr-12 outline-none transition-all duration-200 bg-white text-gray-900 font-semibold shadow-inner ${
                         isOpen 
@@ -526,10 +741,6 @@ const getLocalISODate = () => {
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
-
-const magnitudesDisponibles = [
-  "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Humedad", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion"
-];
 
 const unidadesPorMagnitud: Record<string, any> = {
   Acustica: ["dB", "Hz", "Pa"], Dimensional: ["m", "cm", "mm", "in", "min", "°", "µm"], Fuerza: ["N", "kgf", "lbf"],
@@ -653,6 +864,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [state, dispatch] = useReducer(worksheetReducer, initialState, initWorksheet);
   
   const [isSaving, setIsSaving] = useState(false);
+  const lastDraftSaveRef = useRef(0);
+  const draftRestoredRef = useRef(false);
+  const DRAFT_AUTOSAVE_MS = 45000;
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
@@ -870,16 +1084,22 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       if (warning) { setMetrologyWarning(warning.trim()); } else { setMetrologyWarning(null); }
   }, [state.tempAmbiente, state.humedadRelativa, state.magnitud]);
 
+  const flushDraftNow = useCallback(() => {
+    if (worksheetId) return;
+    if (!state.certificado && !state.id && !state.cliente) return;
+    saveWorksheetDraft(state as unknown as Record<string, unknown>);
+    lastDraftSaveRef.current = Date.now();
+  }, [state, worksheetId]);
+
   useEffect(() => {
-    const backup = localStorage.getItem('backup_worksheet_data');
-    if (backup && !worksheetId) { 
-      try {
-        const parsedBackup = JSON.parse(backup) as WorksheetState;
-        if (window.confirm("Se encontró una hoja de trabajo no guardada. ¿Desea restaurarla?")) { dispatch({ type: 'RESTORE_BACKUP', payload: parsedBackup }); }
-        localStorage.removeItem('backup_worksheet_data'); 
-      } catch (e) { console.error("Error al restaurar respaldo", e); localStorage.removeItem('backup_worksheet_data'); }
-    }
-  }, [worksheetId]);
+    if (worksheetId) return;
+    const hasContent = Boolean(state.certificado || state.id || state.cliente);
+    if (!hasContent) return;
+    const now = Date.now();
+    if (now - lastDraftSaveRef.current < DRAFT_AUTOSAVE_MS) return;
+    lastDraftSaveRef.current = now;
+    saveWorksheetDraft(state as unknown as Record<string, unknown>);
+  }, [state, worksheetId]);
 
   const validarIdEnPeriodo = useCallback(async () => {
     dispatch({ type: 'CLEAR_ID_BLOCK' });
@@ -955,6 +1175,39 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     if (magnitudFromCert) return;
     dispatch({ type: 'SET_MAGNITUD', payload: selectedMagnitude });
   }, [selectedMagnitude, currentConsecutive]);
+
+  useEffect(() => {
+    if (worksheetId || draftRestoredRef.current) return;
+
+    const backup = localStorage.getItem("backup_worksheet_data");
+    if (backup) {
+      try {
+        const parsedBackup = JSON.parse(backup) as WorksheetState;
+        if (window.confirm("Se encontró una hoja de trabajo no guardada (respaldo de error). ¿Desea restaurarla?")) {
+          dispatch({ type: "RESTORE_BACKUP", payload: parsedBackup });
+        }
+        localStorage.removeItem("backup_worksheet_data");
+      } catch (e) {
+        console.error("Error al restaurar respaldo", e);
+        localStorage.removeItem("backup_worksheet_data");
+      }
+      draftRestoredRef.current = true;
+      return;
+    }
+
+    const draft = loadWorksheetDraft();
+    if (!draft?.state) return;
+    const draftCert = String(draft.certificado || "");
+    const navCert = currentConsecutive || "";
+    if (navCert && draftCert && draftCert !== navCert) return;
+
+    dispatch({ type: "RESTORE_BACKUP", payload: draft.state as WorksheetState });
+    draftRestoredRef.current = true;
+    setToast({
+      message: "Se restauró automáticamente el borrador local de la hoja.",
+      type: "warning",
+    });
+  }, [worksheetId, currentConsecutive]);
 
   const unidadesDisponibles = React.useMemo(() => {
     if (state.magnitud === "Electrica") return [...unidadesPorMagnitud.Electrica.DC, ...unidadesPorMagnitud.Electrica.AC, ...unidadesPorMagnitud.Electrica.Otros] as string[];
@@ -1070,8 +1323,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     const camposAValidar: { campo: string; valor: string; nombre: string }[] = [];
 
     if (state.magnitud === "Masa") {
+      const excStr = `1 (Centro): ${localExc.p1}\n2 (Inf Izq): ${localExc.p2}\n3 (Sup Izq): ${localExc.p3}\n4 (Sup Der): ${localExc.p4}\n5 (Inf Der): ${localExc.p5}`;
       camposAValidar.push(
-        { campo: "excentricidad", valor: state.excentricidad, nombre: "Excentricidad" },
+        { campo: "excentricidad", valor: excStr, nombre: "Excentricidad" },
         { campo: "linealidad", valor: state.linealidad, nombre: "Linealidad" },
         { campo: "repetibilidad", valor: state.repetibilidad, nombre: "Repetibilidad" }
       );
@@ -1176,7 +1430,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             const nextAllowed = calcularSiguienteFecha(format(maxFecha, "yyyy-MM-dd"), frecuenciaAnterior);
             const fechaReferencia = parseWorksheetDate(state.fecha);
             if (nextAllowed && isBefore(fechaReferencia, nextAllowed)) {
-              setIsSaving(false);
               setToast({
                 message: "⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.",
                 type: "error",
@@ -1187,159 +1440,38 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         }
       }
 
-      const { jsPDF } = await import("jspdf");
-      const pdfDoc = generateTemplatePDF(state, jsPDF as any);
-      const blob = pdfDoc.output("blob");
-      const technicianName = getTechnicianFolderName(user);
-      const nombreArchivo = `worksheets/${technicianName}/${state.certificado}_${state.id || "SINID"}.pdf`;
-
-      let finalDocId: string | null = worksheetId || null;
-      let existingData: Record<string, unknown> | null = null;
-
-      if (!finalDocId && navigator.onLine) {
+      if (!worksheetId && navigator.onLine) {
         const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
-        if (!(await getDocs(qCert)).empty && !worksheetId) {
-          setIsSaving(false);
+        if (!(await getDocs(qCert)).empty) {
           setToast({ message: "El número de certificado ya existe.", type: "error" });
           return;
         }
-
-        const qDupe = query(
-          collection(db, "hojasDeTrabajo"),
-          where("id", "==", state.id.trim()),
-          where("cliente", "==", state.cliente)
-        );
-        const dupeDocs = await getDocs(qDupe);
-        let bestMatchDate = -1;
-        dupeDocs.forEach((d) => {
-          const data = d.data();
-          if (
-            !data.pdfURL ||
-            data.status_certificado === "Pendiente de Certificado" ||
-            data.status_equipo === "Desconocido" ||
-            data.status_equipo === "Recepción"
-          ) {
-            const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
-            if (docTime > bestMatchDate) {
-              bestMatchDate = docTime;
-              finalDocId = d.id;
-              existingData = data;
-            }
-          }
-        });
       }
 
-      const sanitizedState: WorksheetState = { ...state, magnitud: toWorksheetMagnitud(state.magnitud) };
-      for (const key in sanitizedState) {
-        if (typeof sanitizedState[key as keyof WorksheetState] === "string") {
-          sanitizedState[key as keyof WorksheetState] = sanitize(
-            sanitizedState[key as keyof WorksheetState] as string
-          ) as never;
-        }
-      }
-
-      const { fotoEquipoBase64, ...stateForFirestore } = sanitizedState;
-      const lugarNormalizado = stateForFirestore.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
-
-      const fullData: Record<string, unknown> = {
-        ...stateForFirestore,
-        lugarCalibracion: lugarNormalizado,
-        folio: stateForFirestore.certificado,
-        serie: stateForFirestore.numeroSerie,
-        status: "completed",
-        priority: "medium",
-        status_equipo: "Calibrado",
-        status_certificado: "Generado",
-        cargado_drive: "Pendiente",
-        timestamp: Date.now(),
-        createdAt: (existingData?.createdAt as string) || new Date().toISOString(),
-        userId: user?.id || "unknown",
-      };
-
-      if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
-        fullData.fechaRecepcion = existingData.fechaEntrada;
-        fullData.fechaEntrada = existingData.fechaEntrada;
-      }
-
-      const pdfBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      if (!navigator.onLine) {
-        addToOfflineQueue({
-          id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          timestamp: Date.now(),
-          data: fullData,
-          pdfBlob: pdfBase64,
-          nombreArchivo,
-          finalDocId,
+      setToast({ message: "Guardando en segundo plano...", type: "warning" });
+      enqueueBackgroundSave(
+        {
+          id: `save_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          state: { ...state },
+          electricalValues: { ...electricalValues },
+          localExc: { ...localExc },
+          user,
           worksheetId,
-        });
-        setPendingUploads(getOfflineQueue().length);
-        setToast({ message: "Sin conexión. La hoja se guardó en cola para sincronizar.", type: "warning" });
-        setIsSaving(false);
-        return;
-      }
-
-      let docRefId = finalDocId;
-      if (docRefId) {
-        await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
-      } else {
-        const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
-        docRefId = newDoc.id;
-      }
-
-      const updates: Record<string, string> = {};
-      if (fotoEquipoBase64) {
-        const imgData = fotoEquipoBase64.startsWith("data:")
-          ? fotoEquipoBase64
-          : `data:image/jpeg;base64,${fotoEquipoBase64}`;
-        const imgBlob = await fetch(imgData).then((r) => r.blob());
-        const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
-        await uploadBytes(fotoRef, imgBlob);
-        updates.fotoEquipoURL = await getDownloadURL(fotoRef);
-      }
-
-      const pdfRef = ref(storage, nombreArchivo);
-      const uploadResult = await uploadBytes(pdfRef, blob);
-      updates.pdfURL = await getDownloadURL(pdfRef);
-      try {
-        await writeDriveFileMetadata(nombreArchivo, uploadResult, technicianName, {
-          ubicacion_real:
-            lugarNormalizado === "sitio" ? "Servicio en Sitio" : "Laboratorio",
-          workDate: state.fecha,
-        });
-      } catch (metaErr) {
-        console.error("[WorkSheet] Error al registrar metadata en Drive:", metaErr);
-      }
-      updates.cargado_drive = "Si";
-
-      if (docRefId) {
-        await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
-      }
-
-      localStorage.removeItem("backup_worksheet_data");
-
-      try {
-        await generateAndPrintLabel(hiddenLabelRef, tapeSize, buildLabelData());
-      } catch (printError) {
-        console.error("Error al imprimir:", printError);
-        setToast({ message: "Guardado OK, pero falló la impresión de etiqueta.", type: "warning" });
-        setIsSaving(false);
-        goBack();
-        return;
-      }
-
-      setToast({ message: "✅ Hoja de trabajo guardada e impresa correctamente.", type: "success" });
-      setIsSaving(false);
+        },
+        (t) => {
+          setToast(t);
+          if (t.type === "success" || t.type === "warning") {
+            setPendingUploads(getOfflineQueue().length);
+          }
+        }
+      );
       goBack();
     } catch (e: unknown) {
-      console.error("Error al guardar:", e);
+      console.error("Error al validar/guardar:", e);
       localStorage.setItem("backup_worksheet_data", JSON.stringify(state));
-      setToast({ message: "Error al guardar. Se conservó una copia local de respaldo.", type: "warning" });
+      saveWorksheetDraft(state as unknown as Record<string, unknown>);
+      setToast({ message: "Error al guardar. Se conservó borrador y respaldo local.", type: "warning" });
+    } finally {
       setIsSaving(false);
     }
   }, [
@@ -1348,10 +1480,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     goBack,
     worksheetId,
     electricalValues,
+    localExc,
     syncElectricalToGlobalState,
     syncMasaToGlobalState,
-    tapeSize,
-    buildLabelData,
   ]);
 
   const slaInfo = React.useMemo(() => {
@@ -1526,7 +1657,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label>
-                    <ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} />
+                    <ClienteSearchSelect clientes={listaClientes} onSelect={(v) => { dispatch({ type: 'SET_CLIENTE', payload: v }); if(validationErrors.cliente) setValidationErrors({...validationErrors, cliente: false}); }} currentValue={state.cliente} hasError={validationErrors.cliente} onBlurDraft={flushDraftNow} />
                   </div>
                   
                   <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
@@ -1536,7 +1667,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           type="text" 
                           value={state.id} 
                           onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
-                          onBlur={handleIdBlur} 
+                          onBlur={(e) => { handleIdBlur(e); flushDraftNow(); }}
                           className={`flex-1 p-4 border rounded-lg transition-all text-gray-900 font-semibold shadow-inner bg-white ${
                               state.idBlocked 
                                   ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
@@ -1590,7 +1721,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Wrench className="w-4 h-4 text-yellow-500" /><span>Equipo*</span></label>
-                    <input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} readOnly={state.fieldsLocked} className={inputClass('equipo')} />
+                    <input type="text" value={state.equipo} onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'equipo', payload: e.target.value }); if(validationErrors.equipo) setValidationErrors({...validationErrors, equipo: false}); }} onBlur={flushDraftNow} readOnly={state.fieldsLocked} className={inputClass('equipo')} />
                   </div>
                   <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Tag className="w-4 h-4 text-pink-500" /><span>Marca*</span></label>
@@ -1616,23 +1747,21 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3">
                       <Tag className="w-4 h-4 text-blue-500" /><span>Magnitud*</span>
                     </label>
-                    {selectedMagnitude ? (
-                      <div className="relative">
-                        <input type="text" value={state.magnitud} readOnly 
-                          className="w-full p-4 border border-slate-300 rounded-lg bg-gray-100 text-gray-900 font-bold shadow-inner" />
-                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">Auto</div>
-                      </div>
-                    ) : (
-                      <select value={state.magnitud} 
-                        onChange={(e) => { 
-                          dispatch({ type: 'SET_MAGNITUD', payload: e.target.value }); 
-                          if(validationErrors.magnitud) setValidationErrors({...validationErrors, magnitud: false}); 
-                        }} 
+                    {selectedMagnitude && (
+                      <p className="text-xs text-slate-500 mb-2">
+                        Sugerida por navegación: {toWorksheetMagnitud(selectedMagnitude)} — puede cambiarla abajo.
+                      </p>
+                    )}
+                    <select value={state.magnitud}
+                        onChange={(e) => {
+                          dispatch({ type: 'SET_MAGNITUD', payload: e.target.value });
+                          if(validationErrors.magnitud) setValidationErrors({...validationErrors, magnitud: false});
+                        }}
+                        onBlur={flushDraftNow}
                         className={`w-full p-4 border rounded-lg outline-none bg-white text-gray-900 font-semibold shadow-inner appearance-none cursor-pointer ${validationErrors.magnitud ? "border-red-500 ring-1 ring-red-500" : "border-slate-300 focus:ring-2 focus:ring-blue-500"}`}>
                         <option value="" className="text-gray-400">Seleccionar...</option>
-                        {magnitudesDisponibles.map(m => <option key={m} value={m} className="text-gray-900">{m}</option>)}
+                        {WORKSHEET_MAGNITUDES.map((m) => <option key={m} value={m} className="text-gray-900">{m}</option>)}
                       </select>
-                    )}
                   </div>
 
                   <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
@@ -1698,7 +1827,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                         onChange={e => {
                              dispatch({ type: 'SET_FIELD', field: 'alcance', payload: e.target.value });
                              if(validationErrors.alcance) setValidationErrors({...validationErrors, alcance: false});
-                        }} 
+                        }}
+                        onBlur={flushDraftNow}
                     />
                   </div>
                   <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
@@ -1710,7 +1840,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                         onChange={e => {
                              dispatch({ type: 'SET_FIELD', field: 'resolucion', payload: e.target.value });
                              if(validationErrors.resolucion) setValidationErrors({...validationErrors, resolucion: false});
-                        }} 
+                        }}
+                        onBlur={flushDraftNow}
                     />
                   </div>
                 </div>
@@ -2058,7 +2189,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800'}`}
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{isSaving ? "Guardando e imprimiendo..." : "Guardar e Imprimir"}</span>
+              <span>{isSaving ? "Validando..." : "Guardar"}</span>
             </button>
           </div>
         </div>

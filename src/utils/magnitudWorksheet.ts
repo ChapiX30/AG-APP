@@ -61,6 +61,11 @@ export function toWorksheetMagnitud(magnitud: string): string {
   return WORKSHEET_ALIASES[trimmed] ?? trimmed;
 }
 
+/** Canonical magnitudes for worksheet UI (matches unidadesPorMagnitud keys). */
+export const WORKSHEET_MAGNITUDES = [
+  "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Humedad", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion",
+] as const;
+
 export function extractMagnitudFromConsecutivo(consecutivo: string): string {
   if (!consecutivo) return "";
 
