@@ -1529,7 +1529,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const labelData = buildLabelData();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 relative">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 to-blue-50 relative">
       
       {toast && <ToastNotification message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 

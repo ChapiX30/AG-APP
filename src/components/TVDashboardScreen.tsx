@@ -43,14 +43,14 @@ const TVDashboardScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="h-full min-h-0 flex-1 flex items-center justify-center bg-slate-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
       </div>
     );
   }
 
   return (
-    <div className={`h-screen ${CALIBRATION_COLORS.background} text-white font-sans overflow-hidden flex flex-col`}>
+    <div className={`h-full min-h-0 flex-1 flex flex-col ${CALIBRATION_COLORS.background} text-white font-sans overflow-hidden`}>
       <header className="bg-slate-900/90 backdrop-blur-lg border-b border-white/5 px-4 lg:px-6 py-3 flex flex-wrap justify-between items-center gap-3 shrink-0 z-40">
         <div className="flex items-center gap-3">
           <button

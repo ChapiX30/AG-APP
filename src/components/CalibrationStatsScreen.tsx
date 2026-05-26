@@ -281,7 +281,7 @@ const CalibrationStatsScreen: React.FC = () => {
   const dateLabel = useMemo(() => viewMode === 'year' ? `AÑO ${currentDate.getFullYear()}` : currentDate.toLocaleString("es-MX", { month: "long", year: "numeric" }).toUpperCase(), [currentDate, viewMode]);
 
   return (
-    <div className={`min-h-screen ${COLORS.background} text-white font-sans selection:bg-blue-500/30 pb-12`}>
+    <div className={`min-h-full flex-shrink-0 flex flex-col ${COLORS.background} text-white font-sans selection:bg-blue-500/30 pb-12`}>
       <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-6 py-4 flex flex-col md:flex-row justify-between items-center shadow-lg gap-4">
         <div className="flex items-center gap-4 w-full md:w-auto">
           <button onClick={() => navigateTo("mainmenu")} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ArrowLeft className="w-6 h-6 text-gray-300" /></button>

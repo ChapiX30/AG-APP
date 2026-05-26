@@ -1,129 +1,84 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import logo from "../assets/lab_logo.png";
+import labLogo from "../assets/lab_logo.png";
 
-// --- Constantes ---
-const BRAND_NAME = "EQUIPOS Y SERVICIOS AG";
-const SUBTITLE = "SISTEMA DE GESTIÓN METROLÓGICA";
+const BRAND_NAME = "Equipos y Servicios AG";
+const SUBTITLE = "Sistema de gestión metrológica";
+const BRAND_BLUE = "#0050d8";
+/** Mínimo visible solo si `ready` ya es true; salida inmediata cuando auth no bloquea. */
+const MIN_VISIBLE_MS = 450;
+const EXIT_DURATION_S = 0.35;
 
-export const SplashScreen: React.FC = () => {
-  const [loadingText, setLoadingText] = useState("Iniciando sistema...");
-  const [progress, setProgress] = useState(0);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
-  const navigate = useNavigate();
+export interface SplashScreenProps {
+  /** Cuando true, el splash puede cerrarse (p. ej. auth sin loading). */
+  ready?: boolean;
+  onComplete: () => void;
+}
+
+export const SplashScreen: React.FC<SplashScreenProps> = ({
+  ready = true,
+  onComplete,
+}) => {
+  const [shouldExit, setShouldExit] = useState(false);
+  const mountedAt = useRef(Date.now());
 
   useEffect(() => {
-    const initializeSystem = async () => {
-      try {
-        // --- PASO 1: Inicio ---
-        setLoadingText("Verificando credenciales...");
-        setProgress(10);
-        await new Promise(r => setTimeout(r, 800));
-
-        // --- PASO 2: Carga de Datos ---
-        setLoadingText("Cargando perfil de usuario...");
-        setProgress(40);
-        await new Promise(r => setTimeout(r, 1000));
-
-        // --- PASO 3: Sincronización ---
-        setLoadingText("Sincronizando catálogos...");
-        setProgress(70);
-        await new Promise(r => setTimeout(r, 1200));
-
-        // --- FINALIZACIÓN ---
-        setLoadingText("Preparando entorno...");
-        setProgress(100);
-        
-        // Pequeña pausa y redirección
-        setTimeout(() => {
-          // 🚨 CAMBIO IMPORTANTE: Redirigir a la raíz "/" en lugar de "/MainMenu"
-          navigate("/"); 
-        }, 500);
-
-      } catch (error) {
-        console.error("Error fatal de inicialización:", error);
-        setErrorMessage("Error de conexión. Contacte a TI.");
-      }
-    };
-
-    initializeSystem();
-  }, [navigate]);
-
-  if (errorMessage) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh', 
-        background: '#0f172a', 
-        color: '#ef4444' 
-      }}>
-        <p>⚠️ {errorMessage}</p>
-      </div>
-    );
-  }
+    if (!ready || shouldExit) return;
+    const elapsed = Date.now() - mountedAt.current;
+    const delay = Math.max(0, MIN_VISIBLE_MS - elapsed);
+    const timer = window.setTimeout(() => setShouldExit(true), delay);
+    return () => window.clearTimeout(timer);
+  }, [ready, shouldExit]);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "linear-gradient(to bottom right, #0f172a, #1e293b)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "'Inter', sans-serif",
-        color: "#f8fafc",
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8 }}
-        style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2rem", width: "90%", maxWidth: "500px" }}
-      >
-        <img src={logo} alt="Logo" style={{ width: "120px", height: "auto", filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.2))" }} />
-        
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: "700", marginBottom: "0.5rem", background: "linear-gradient(to right, #fff, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            {BRAND_NAME}
-          </h1>
-          <p style={{ fontSize: "0.875rem", color: "#94a3b8", fontWeight: "500", letterSpacing: "0.1em" }}>
-            {SUBTITLE}
-          </p>
-        </div>
-
-        <div style={{ width: "100%", marginTop: "2rem" }}>
-          <div style={{ height: "4px", width: "100%", background: "rgba(255,255,255,0.1)", borderRadius: "2px", overflow: "hidden", marginBottom: "1rem" }}>
-            <motion.div
-              initial={{ width: "0%" }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.5, ease: "easeInOut" }}
-              style={{ height: "100%", background: "#3b82f6", borderRadius: "2px" }}
+    <AnimatePresence onExitComplete={onComplete}>
+      {!shouldExit && (
+        <motion.div
+          key="splash"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: EXIT_DURATION_S }}
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50 font-sans"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col items-center gap-8 w-[90%] max-w-md px-4"
+          >
+            <img
+              src={labLogo}
+              alt={BRAND_NAME}
+              className="w-[120px] h-auto drop-shadow-lg"
             />
-          </div>
 
-          <div style={{ height: "24px", position: "relative", overflow: "hidden" }}>
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={loadingText}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
-                style={{ fontSize: "0.75rem", color: "#64748b", textAlign: "center", width: "100%", position: "absolute" }}
-              >
-                {loadingText}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-        </div>
-      </motion.div>
-    </div>
+            <div className="text-center space-y-2">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4d8fff] to-[#0050d8]">
+                  {BRAND_NAME}
+                </span>
+              </h1>
+              <p className="text-sm text-slate-400 font-medium tracking-wide">
+                {SUBTITLE}
+              </p>
+            </div>
+
+            <div className="w-full mt-2">
+              <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ backgroundColor: BRAND_BLUE }}
+                  initial={{ width: "0%" }}
+                  animate={{ width: ready ? "100%" : "35%" }}
+                  transition={{ duration: ready ? 0.4 : 0.8, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 

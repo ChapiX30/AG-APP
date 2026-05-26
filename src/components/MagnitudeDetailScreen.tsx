@@ -212,7 +212,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const anterior = isCurrentYear(consecutivos[1]) ? consecutivos[1] : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-50 text-slate-900 font-sans">
       
       {/* Header Fijo */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">

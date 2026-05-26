@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
 import { isUserOnline } from '../hooks/usePresence';
+import { COLLECTION_PATRONES, countPatronesEnAlerta, isCalidadRole } from '../utils/patronCalibracion';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 interface Service {
@@ -56,10 +57,10 @@ interface AppNotification {
 }
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
-const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#3b82f6', viewMode: 'grid' };
+const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#0050d8', viewMode: 'grid' };
 
 const PRESET_COLORS = [
-  { hex: '#3b82f6', label: 'Azul' },
+  { hex: '#0050d8', label: 'Azul' },
   { hex: '#ec4899', label: 'Rosa' },
   { hex: '#8b5cf6', label: 'Violeta' },
   { hex: '#10b981', label: 'Esmeralda' },
@@ -72,6 +73,28 @@ const PRESET_COLORS = [
   { hex: '#14b8a6', label: 'Teal' },
   { hex: '#6366f1', label: 'Índigo' },
 ];
+
+const prefetchedChunks = new Set<string>();
+
+/** Prefetch lazy chunks on hover/focus (paths match MainApp lazy imports). */
+const prefetchMenuScreen = (menuId: string) => {
+  if (prefetchedChunks.has(menuId)) return;
+  const loaders: Record<string, () => Promise<unknown>> = {
+    drive: () => import('./DriveScreen'),
+    friday: () => import('./FridayScreen'),
+    calendario: () => import('./CalendarScreen'),
+    empresas: () => import('./EmpresasScreen'),
+    consecutivos: () =>
+      Promise.all([
+        import('./ConsecutivosScreen'),
+        import('./WorkSheetScreen'),
+      ]),
+  };
+  const load = loaders[menuId];
+  if (!load) return;
+  prefetchedChunks.add(menuId);
+  void load();
+};
 
 const MENU_ITEMS = [
   { id: 'friday', title: 'Friday Projects', icon: Activity, category: 'Gestión' },
@@ -132,7 +155,7 @@ const applyTheme = (prefs: UserPrefs) => {
 const ThemeStyle = () => (
   <style>{`
     :root {
-      --acc: #3b82f6; --acc-rgb: 59 130 246;
+      --acc: #0050d8; --acc-rgb: 0 80 216;
       --bg: #030712; --surface: #0f172a; --surface-hi: #1e293b;
       --border-color: rgba(255,255,255,0.07);
       --text: #f1f5f9; --text-muted: #94a3b8; --text-faint: #334155;
@@ -899,8 +922,8 @@ const activateMenuItem = (
 };
 
 const MenuGridCard = ({
-  item, index, isDisabled, onNavigate, hideCategory,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean }) => (
+  item, index, isDisabled, onNavigate, hideCategory, badgeCount,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number }) => (
   <motion.div
     key={item.id}
     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.025 }}
@@ -910,6 +933,8 @@ const MenuGridCard = ({
     aria-disabled={isDisabled}
     aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
     onClick={() => !isDisabled && onNavigate(item.id)}
+    onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
+    onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
     onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
     className={`group relative rounded-2xl border p-4 cursor-pointer card-interact ag-card overflow-hidden
       ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
@@ -917,6 +942,11 @@ const MenuGridCard = ({
   >
     {isDisabled && (
       <span className="absolute top-2 right-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
+    )}
+    {!isDisabled && badgeCount != null && badgeCount > 0 && (
+      <span className="absolute top-2 right-2 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
+        {badgeCount > 99 ? '99+' : badgeCount}
+      </span>
     )}
     {!isDisabled && (
       <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl"
@@ -937,8 +967,8 @@ const MenuGridCard = ({
 );
 
 const MenuListRow = ({
-  item, index, isDisabled, onNavigate,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void }) => (
+  item, index, isDisabled, onNavigate, badgeCount,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number }) => (
   <motion.div
     initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.015 }}
     whileTap={isDisabled ? {} : { scale: 0.99 }}
@@ -947,6 +977,8 @@ const MenuListRow = ({
     aria-disabled={isDisabled}
     aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
     onClick={() => !isDisabled && onNavigate(item.id)}
+    onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
+    onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
     onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
     className={`group flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer card-interact ag-card
       ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
@@ -956,6 +988,11 @@ const MenuListRow = ({
       <item.icon className="w-4 h-4 ag-muted ci-icon transition-colors" />
     </div>
     <span className="flex-1 text-sm font-medium ag-text">{item.title}</span>
+    {!isDisabled && badgeCount != null && badgeCount > 0 && (
+      <span className="min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white">
+        {badgeCount > 99 ? '99+' : badgeCount}
+      </span>
+    )}
     <span className="text-[10px] uppercase font-bold ag-faint hidden sm:inline">{item.category}</span>
     {!isDisabled && <ChevronRight className="w-4 h-4 ag-faint group-hover:acc-text transition-colors opacity-60 group-hover:opacity-100 flex-shrink-0" />}
   </motion.div>
@@ -972,6 +1009,14 @@ export const MainMenu: React.FC = () => {
   const [assignedServices, setAssignedServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [patronAlertCount, setPatronAlertCount] = useState(0);
+  const [patronBannerDismissed, setPatronBannerDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem('patronAlertBannerDismissed') === new Date().toISOString().slice(0, 10);
+    } catch {
+      return false;
+    }
+  });
 
   const uid   = (user as any)?.uid   || (user as any)?.id    || '';
   const email = (user as any)?.email || '';
@@ -1005,6 +1050,33 @@ export const MainMenu: React.FC = () => {
       err => console.error('Notificaciones:', err)
     );
   }, [uid]);
+
+  const isAdmin      = useMemo(() => !!(localUser && (localUser.role.includes('admin') || localUser.role.includes('administrativo') || SUPER_ADMINS.includes(localUser.email))), [localUser]);
+  const isCalidad    = useMemo(() => !!(localUser?.role.includes('calidad')), [localUser]);
+  const isJefe       = useMemo(() => !!(localUser?.role.includes('admin') || localUser?.role.includes('gerente')), [localUser]);
+  const canSeePatronAlerts = useMemo(
+    () => isCalidadRole(localUser?.role) || isJefe || isCalidad,
+    [localUser, isJefe, isCalidad],
+  );
+
+  useEffect(() => {
+    if (!canSeePatronAlerts) {
+      setPatronAlertCount(0);
+      return;
+    }
+    getDocs(query(collection(db, COLLECTION_PATRONES)))
+      .then(snap => {
+        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setPatronAlertCount(countPatronesEnAlerta(rows));
+      })
+      .catch(() => setPatronAlertCount(0));
+  }, [canSeePatronAlerts]);
+
+  const dismissPatronBanner = useCallback(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    try { sessionStorage.setItem('patronAlertBannerDismissed', today); } catch { /* ignore */ }
+    setPatronBannerDismissed(true);
+  }, []);
 
   const handleMarkRead = useCallback(async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
@@ -1044,9 +1116,6 @@ export const MainMenu: React.FC = () => {
     return () => window.clearInterval(intervalId);
   }, [assignedServices, uid]);
 
-  const isAdmin      = useMemo(() => !!(localUser && (localUser.role.includes('admin') || localUser.role.includes('administrativo') || SUPER_ADMINS.includes(localUser.email))), [localUser]);
-  const isCalidad    = useMemo(() => !!(localUser?.role.includes('calidad')), [localUser]);
-  const isJefe       = useMemo(() => !!(localUser?.role.includes('admin') || localUser?.role.includes('gerente')), [localUser]);
   const isSuperAdmin = useMemo(() => SUPER_ADMINS.includes(localUser?.email || ''), [localUser]);
   const canBroadcast = isAdmin || isCalidad || isSuperAdmin;
 
@@ -1079,7 +1148,7 @@ export const MainMenu: React.FC = () => {
   const formattedDate = today.charAt(0).toUpperCase() + today.slice(1);
 
   if (!localUser || loadingPrefs) return (
-    <div className="min-h-screen ag-bg flex items-center justify-center">
+    <div className="min-h-full flex-shrink-0 ag-bg flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
         <Loader2 className="animate-spin w-8 h-8 acc-text" />
         <p className="text-sm ag-muted">Cargando...</p>
@@ -1090,18 +1159,18 @@ export const MainMenu: React.FC = () => {
   return (
     <>
       <ThemeStyle />
-      <div className="min-h-screen font-sans ag-bg ag-text transition-colors" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div className="min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-text transition-colors" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
         {/* HEADER */}
         <header className="sticky top-0 z-40 border-b ag-header" style={{ backdropFilter: 'blur(16px)' }}>
           <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl border ag-border overflow-hidden flex items-center justify-center ag-surface">
-                <img src={labLogo} className="w-6 h-6 object-contain" alt="AG" onError={e => (e.currentTarget.style.display = 'none')} />
+                <img src={labLogo} className="w-6 h-6 object-contain" alt="Equipos y Servicios AG" onError={e => (e.currentTarget.style.display = 'none')} />
               </div>
               <div className="hidden md:block">
-                <p className="text-sm font-bold ag-text">AG Solutions</p>
-                <p className="text-[10px] ag-faint">Laboratorio</p>
+                <p className="text-sm font-bold ag-text">Equipos y Servicios AG</p>
+                <p className="text-[10px] ag-faint">Sistema de gestión metrológica</p>
               </div>
             </div>
 
@@ -1179,9 +1248,36 @@ export const MainMenu: React.FC = () => {
           </div>
         </header>
 
+        {canSeePatronAlerts && patronAlertCount > 0 && !patronBannerDismissed && (
+          <div className="max-w-7xl mx-auto px-4 pt-3 w-full">
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-500/10 px-4 py-3 text-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold ag-text">
+                  {patronAlertCount} patrón{patronAlertCount !== 1 ? 'es' : ''} requieren atención de calibración
+                </p>
+                <p className="text-xs ag-muted mt-0.5">
+                  Revisa el calendario para vencimientos (avisos a 30, 15, 7, 3 y 1 día).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateTo('calendario')}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold acc text-white"
+                style={{ background: 'var(--accent)' }}
+              >
+                Ver calendario
+              </button>
+              <button type="button" onClick={dismissPatronBanner} className="p-1 ag-muted hover:ag-text shrink-0" aria-label="Cerrar aviso">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* MAIN */}
-        <main className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex flex-col lg:flex-row gap-6">
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-6 w-full">
+          <div className="flex flex-col lg:flex-row gap-6 lg:items-stretch lg:min-h-full">
             <div className="flex-1">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
                 <div className="flex-1">
@@ -1247,6 +1343,7 @@ export const MainMenu: React.FC = () => {
                               hideCategory={!isSearching}
                               isDisabled={item.id === 'formatos' && !isAdmin}
                               onNavigate={navigateTo}
+                              badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
                             />
                           ))}
                         </div>
@@ -1288,21 +1385,14 @@ export const MainMenu: React.FC = () => {
                     {filteredMenu.map((item, i) => {
                       const isDisabled = item.id === 'formatos' && !isAdmin;
                       return (
-                        <motion.div key={item.id}
-                          initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.015 }}
-                          whileTap={isDisabled ? {} : { scale: 0.99 }}
-                          onClick={() => !isDisabled && navigateTo(item.id)}
-                          className={`group flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer card-interact ag-card
-                            ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
-                          `}
-                        >
-                          <div className="p-2 rounded-lg ag-surface-hi">
-                            <item.icon className="w-4 h-4 ag-muted ci-icon transition-colors" />
-                          </div>
-                          <span className="flex-1 text-sm font-medium ag-text">{item.title}</span>
-                          <span className="text-[10px] uppercase font-bold ag-faint">{item.category}</span>
-                          {!isDisabled && <ChevronRight className="w-4 h-4 ag-faint group-hover:acc-text transition-colors opacity-0 group-hover:opacity-100" />}
-                        </motion.div>
+                        <MenuListRow
+                          key={item.id}
+                          item={item}
+                          index={i}
+                          isDisabled={isDisabled}
+                          onNavigate={navigateTo}
+                          badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
+                        />
                       );
                     })}
                   </motion.div>
@@ -1311,7 +1401,7 @@ export const MainMenu: React.FC = () => {
             </div>
 
             {/* WIDGETS */}
-            <div className="lg:w-72 flex flex-col gap-4">
+            <div className="lg:w-72 flex flex-col gap-4 lg:self-stretch">
               {(isCalidad || isAdmin || isSuperAdmin) && (
                 <><KpiWidget navigateTo={navigateTo} />
                   <PatronesWidget navigateTo={navigateTo} />

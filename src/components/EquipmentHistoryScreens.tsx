@@ -83,7 +83,7 @@ export const DirectorioEmpresasScreen = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-full flex-shrink-0 bg-slate-50 flex flex-col">
       {/* HEADER */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-4">
@@ -203,7 +203,7 @@ export const EquiposPorEmpresaScreen = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-full flex-shrink-0 bg-slate-50 flex flex-col">
       {/* HEADER */}
       <div className="bg-slate-900 border-b border-slate-800 px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center gap-4 text-white">
@@ -315,7 +315,7 @@ export const DetalleEquipoScreen = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-full flex-shrink-0 bg-slate-50 flex flex-col">
       {pdfToView && <PdfViewerModal pdfUrl={pdfToView} onClose={() => setPdfToView(null)} />}
 
       {/* HEADER DEGRADADO */}

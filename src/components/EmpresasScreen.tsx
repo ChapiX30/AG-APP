@@ -832,7 +832,7 @@ const EmpresasScreen = () => {
   const openDetail = (empresa: Empresa) => setViewingEmpresa(empresa);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-100 via-gray-50 to-white font-sans text-gray-900 selection:bg-blue-100">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-b from-slate-100 via-gray-50 to-white font-sans text-gray-900 selection:bg-blue-100">
       <Toaster position="bottom-center" toastOptions={{ style: { borderRadius: '12px', background: '#1f2937', color: '#fff', fontSize: '14px' } }} />
       
       {/* Navbar */}

@@ -569,14 +569,14 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({
   /* --- Loading states --- */
   if (loadingUser || loadingFiles) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-full flex-shrink-0 flex items-center justify-center bg-slate-50">
         <div className="animate-pulse text-gray-600">Cargando…</div>
       </div>
     );
   }
   if (!currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-full flex-shrink-0 flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <Shield className="w-12 h-12 mx-auto text-gray-400 mb-3" />
           <div className="text-gray-700 font-semibold">Inicia sesión para gestionar formatos</div>
@@ -587,7 +587,7 @@ const CalibrationManager: React.FC<CalibrationManagerProps> = ({
 
   /* --- Render --- */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Toaster position="top-right" toastOptions={{ duration: 3000, style: { borderRadius: 12 } }} />
 
       <div className="max-w-7xl mx-auto p-4 sm:p-6">

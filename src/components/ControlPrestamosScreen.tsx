@@ -226,7 +226,7 @@ export const ControlPrestamosScreen: React.FC = () => {
   }, [isScannerOpen, handleScanResult]);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-50 pb-20 font-sans">
       
       {/* --- HEADER --- */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 py-4 shadow-sm flex items-center justify-between">

@@ -1503,7 +1503,7 @@ const FridayServiciosScreen: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-50/50 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50/50 font-sans text-slate-900 overflow-hidden">
       <main className="flex-1 flex flex-col h-full min-w-0 relative">
 
         <header className="bg-white/95 backdrop-blur-md border-b border-gray-200/80 z-10 sticky top-0 shadow-sm">

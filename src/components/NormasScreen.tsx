@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
@@ -11,12 +11,17 @@ import {
   Camera, X, Save, FileText, Briefcase, Info, Printer
 } from 'lucide-react'; 
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
+import {
+  COLLECTION_PATRONES,
+  formatPatronNombre,
+  isPatronUnavailable,
+} from '../utils/patronLink';
 
 // ==================================================================
 // --- 1. CONFIGURACIÓN Y ESTILOS ---
 // ==================================================================
 
-const COLLECTION_NAME_PATRONES = "patronesCalibracion"; 
+const COLLECTION_NAME_PATRONES = COLLECTION_PATRONES;
 
 const styles = `
   :root { --primary: #2563eb; --bg-page: #f8fafc; --text-main: #1e293b; }
@@ -309,6 +314,7 @@ const NormasScreen = () => {
   const [patronesScannerMap, setPatronesScannerMap] = useState<Map<string, PatronBase>>(new Map());
   const [isSavingBatch, setIsSavingBatch] = useState(false); 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
@@ -327,8 +333,63 @@ const NormasScreen = () => {
   const watchedManualTools = watch('manualTools');
   const watchedUsuario = watch('usuario');
   const usuarioOwnerKey = useMemo(() => resolveOwnerKeyForUsuario(watchedUsuario || ''), [watchedUsuario]);
+  const buildPatronMaps = (patronesSnap: Awaited<ReturnType<typeof getDocs>>) => {
+    const mapDropdown = new Map<string, PatronBase>();
+    const mapScanner = new Map<string, PatronBase>();
 
-  // Lógica para combinar mochilas y herramientas manuales
+    patronesSnap.forEach((docSnap) => {
+      const d = docSnap.data() as Record<string, string | undefined>;
+      const fechaReal = d.fecha || d.fechaVencimiento || '';
+      const p: PatronBase = {
+        id: docSnap.id,
+        noControl: d.noControl || 'S/N',
+        nombre: formatPatronNombre(d.noControl || 'S/N', d.descripcion, d.nombre),
+        marca: d.marca || '',
+        modelo: d.modelo || '',
+        serie: d.serie || '',
+        fechaVencimiento: fechaReal,
+        status: getVencimientoStatus(fechaReal),
+        estadoProceso: (d.estadoProceso as PatronBase['estadoProceso']) || 'operativo',
+        usuarioEnUso: d.usuarioEnUso || d.usuarioAsignado,
+      };
+      if (p.nombre) mapDropdown.set(p.nombre, p);
+      if (p.noControl !== 'S/N') mapScanner.set(p.noControl, p);
+    });
+
+    return { mapDropdown, mapScanner };
+  };
+
+  const reloadPatrones = async () => {
+    const patronesSnap = await getDocs(query(collection(db, COLLECTION_NAME_PATRONES)));
+    const { mapDropdown, mapScanner } = buildPatronMaps(patronesSnap);
+    setPatronesMap(mapDropdown);
+    setPatronesScannerMap(mapScanner);
+    return { mapDropdown, mapScanner };
+  };
+
+  const appendPatronToForm = useCallback((p: PatronBase, sourceLabel: string) => {
+    const manualTools = getValues('manualTools') || [];
+    if (manualTools.some(t => t.herramienta === p.nombre)) {
+      setLinkNotice(`El patrón ${p.noControl} ya está en la lista.`);
+      return;
+    }
+    if (isPatronUnavailable(p.estadoProceso)) {
+      setLinkNotice(`El patrón ${p.noControl} no está disponible (${p.estadoProceso.replace(/_/g, ' ')}).`);
+      return;
+    }
+    append({
+      herramienta: p.nombre,
+      qty: '1',
+      marca: p.marca,
+      modelo: p.modelo,
+      serie: p.serie,
+      isVencida: p.status === 'vencido' || p.status === 'critico',
+      isUnavailable: false,
+      estadoProceso: p.estadoProceso,
+    });
+    setLinkNotice(`${sourceLabel}: ${p.noControl} agregado a la hoja.`);
+  }, [append, getValues]);
+
   const aggregatedTools = useMemo(() => aggregateTools(watchedBackpacks || []), [watchedBackpacks]);
   const isAnyPatronVencido = useMemo(() => watchedManualTools.some(tool => tool.isVencida), [watchedManualTools]);
 
@@ -362,25 +423,7 @@ const NormasScreen = () => {
         setMetrologos(usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre)));
 
         const patronesSnap = await getDocs(query(collection(db, COLLECTION_NAME_PATRONES)));
-        const mapDropdown = new Map<string, PatronBase>();
-        const mapScanner = new Map<string, PatronBase>();
-
-        patronesSnap.forEach((doc) => {
-          const d = doc.data() as any;
-          const fechaReal = d.fecha || d.fechaVencimiento || '';
-          const p: PatronBase = {
-              id: doc.id,
-              noControl: d.noControl || 'S/N',
-              nombre: `${d.noControl} - ${d.descripcion || d.nombre}`,
-              marca: d.marca || '', modelo: d.modelo || '', serie: d.serie || '',
-              fechaVencimiento: fechaReal,
-              status: getVencimientoStatus(fechaReal),
-              estadoProceso: d.estadoProceso || 'operativo',
-              usuarioEnUso: d.usuarioEnUso || d.usuarioAsignado
-          };
-          if (p.nombre) mapDropdown.set(p.nombre, p);
-          if (p.noControl !== 'S/N') mapScanner.set(p.noControl, p);
-        });
+        const { mapDropdown, mapScanner } = buildPatronMaps(patronesSnap);
         setPatronesMap(mapDropdown);
         setPatronesScannerMap(mapScanner);
       } catch (e) { console.error("Error carga inicial", e); }
@@ -420,17 +463,28 @@ const NormasScreen = () => {
   const handleScan = (code: string) => {
     if (!code) return;
     const p = patronesScannerMap.get(code);
-    if (!p) return alert(`No encontrado: ${code}`);
+    if (!p) {
+      setLinkNotice(`Patrón no encontrado: ${code}. Escanea el No. de Control registrado en Programa.`);
+      return;
+    }
     stopScan();
     
-    if (watchedManualTools.some(t => t.herramienta === p.nombre)) return alert('Ya está en lista');
-    if (['en_servicio', 'en_prestamo', 'fuera_servicio'].includes(p.estadoProceso)) return alert(`NO DISPONIBLE: ${p.estadoProceso}`);
+    if (watchedManualTools.some(t => t.herramienta === p.nombre)) {
+      setLinkNotice(`El patrón ${p.noControl} ya está en la lista.`);
+      return;
+    }
+    if (isPatronUnavailable(p.estadoProceso)) {
+      setLinkNotice(`NO DISPONIBLE: ${p.noControl} está ${p.estadoProceso.replace(/_/g, ' ')}.`);
+      return;
+    }
 
     append({
         herramienta: p.nombre, qty: '1', marca: p.marca, modelo: p.modelo, serie: p.serie,
         isVencida: p.status === 'vencido' || p.status === 'critico',
-        isUnavailable: false
+        isUnavailable: false,
+        estadoProceso: p.estadoProceso,
     });
+    setLinkNotice(`Patrón ${p.noControl} agregado desde escaneo.`);
   };
 
   const stopScan = () => {
@@ -473,14 +527,16 @@ const NormasScreen = () => {
             }
         });
         await batch.commit();
+        await reloadPatrones();
         alert('Salida registrada correctamente en Firebase.');
         setValue('manualTools', []);
+        setLinkNotice('Salida registrada. Los estados se sincronizaron con Programa de Calibración.');
     } catch (e) { alert('Error al guardar en base de datos.'); } 
     finally { setIsSavingBatch(false); }
   };
 
   return (
-    <>
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-[#f8fafc]">
       <style>{styles}</style>
       
       {/* DATALIST con filtro para ocultar los ya seleccionados */}
@@ -507,18 +563,32 @@ const NormasScreen = () => {
       )}
 
       <div className="layout-container">
+        {linkNotice && (
+          <div className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <span>{linkNotice}</span>
+            <button type="button" onClick={() => setLinkNotice(null)} className="text-blue-600 hover:text-blue-800 shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {/* HEADER */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 rounded-2xl bg-[#0050d8] text-white px-5 py-4 shadow-md">
            <div className="flex items-center gap-4">
-              <button className="btn btn-secondary rounded-full p-3" onClick={() => navigateTo('/')}><ArrowLeft size={24} /></button>
+              <button className="rounded-full p-3 bg-white/15 hover:bg-white/25 transition-colors" onClick={() => navigateTo('menu')} aria-label="Volver al menú">
+                <ArrowLeft size={22} />
+              </button>
               <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Registro de Salida</h1>
-                  <p className="text-gray-500 text-sm">Laboratorio de Metrología</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Equipos y Servicios AG</p>
+                  <h1 className="text-2xl font-bold">Hoja de Herramienta</h1>
+                  <p className="text-white/80 text-sm">Registro de salida · Laboratorio de Metrología</p>
               </div>
            </div>
-           <div className="text-right hidden sm:block bg-white px-4 py-2 rounded-lg border">
-              <span className="text-xs font-bold text-gray-400 block uppercase">Hoy</span>
-              <div className="font-mono font-bold text-lg text-gray-800">{new Date().toLocaleDateString()}</div>
+           <div className="flex items-center gap-3">
+             <div className="text-right hidden sm:block bg-white/10 px-4 py-2 rounded-lg border border-white/20">
+                <span className="text-xs font-bold text-white/70 block uppercase">Hoy</span>
+                <div className="font-mono font-bold text-lg">{new Date().toLocaleDateString()}</div>
+             </div>
            </div>
         </div>
 
@@ -714,10 +784,13 @@ const NormasScreen = () => {
                                                     field.onChange(e.target.value);
                                                     const p = patronesMap.get(e.target.value);
                                                     if (p) {
+                                                        if (isPatronUnavailable(p.estadoProceso)) {
+                                                          setLinkNotice(`Atención: ${p.noControl} está ${p.estadoProceso.replace(/_/g, ' ')}.`);
+                                                        }
                                                         setValue(`manualTools.${index}.marca`, p.marca);
                                                         setValue(`manualTools.${index}.modelo`, p.modelo);
                                                         setValue(`manualTools.${index}.serie`, p.serie);
-                                                        setValue(`manualTools.${index}.isVencida`, p.status === 'vencido');
+                                                        setValue(`manualTools.${index}.isVencida`, p.status === 'vencido' || p.status === 'critico');
                                                         setValue(`manualTools.${index}.estadoProceso`, p.estadoProceso);
                                                     } else {
                                                         setValue(`manualTools.${index}.isVencida`, false);
@@ -798,7 +871,7 @@ const NormasScreen = () => {
             </div>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 

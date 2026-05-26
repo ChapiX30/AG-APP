@@ -13,8 +13,8 @@ export default defineConfig({
             registerType: 'prompt',
             injectRegister: null,
             manifest: {
-                name: 'AG Solutions',
-                short_name: 'AG Solutions',
+                name: 'Equipos y Servicios AG',
+                short_name: 'Equipos AG',
                 description: 'Tu app de metrología profesional',
                 start_url: '/',
                 display: 'standalone',

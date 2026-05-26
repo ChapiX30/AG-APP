@@ -48,6 +48,9 @@ import {
 } from "../utils/pendingReviewDrive";
 import DrivePreviewModal from "./DrivePreviewModal";
 
+const BRAND_NAME = 'Equipos y Servicios AG';
+const BRAND_SUBTITLE = 'Sistema de gestión metrológica';
+
 // ─────────────────────────────────────────────
 // INTERFACES
 // ─────────────────────────────────────────────
@@ -776,7 +779,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
 };
 
 // ─── DIALOG ───────────────────────────────────
-const Dialog = ({ title, children, onClose, onConfirm, confirmLabel = "Confirmar", confirmClass = "bg-blue-600 hover:bg-blue-700 text-white", confirmDisabled = false, confirmLoading = false }: any) => (
+const Dialog = ({ title, children, onClose, onConfirm, confirmLabel = "Confirmar", confirmClass = "bg-[#0050d8] hover:bg-[#1a66e0] text-white", confirmDisabled = false, confirmLoading = false }: any) => (
   <div className="fixed inset-0 z-[210] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
       <div className="px-5 py-4 border-b border-slate-100">
@@ -815,14 +818,14 @@ const SidebarItem = ({ icon, label, active, onClick, badge, className }: any) =>
     onClick={onClick}
     className={clsx(
       "w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-between group",
-      active ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+      active ? "bg-[#0050d8]/10 text-[#0050d8]" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
     )}
   >
     <div className="flex items-center gap-3">
-      <span className={clsx("flex-shrink-0 transition-colors", className || (active ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"))}>{icon}</span>
+      <span className={clsx("flex-shrink-0 transition-colors", className || (active ? "text-[#0050d8]" : "text-slate-400 group-hover:text-slate-600"))}>{icon}</span>
       {label}
     </div>
-    {badge && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />}
+    {badge && <div className="w-2 h-2 bg-[#0050d8] rounded-full flex-shrink-0" />}
   </button>
 );
 
@@ -1869,7 +1872,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           const possibleId = extractWorksheetLinkId(file.name);
           const wsDoc = await resolveWorksheetDoc(possibleId);
           if (!wsDoc) return;
-          const updateData: any = { lastUpdated: new Date().toISOString() };
+          type WorksheetStatusUpdate = {
+            lastUpdated: string;
+            status_certificado?: string;
+            cargado_drive?: string;
+          };
+          const updateData: WorksheetStatusUpdate = {
+            lastUpdated: new Date().toISOString(),
+          };
           if (field === 'completed') {
             if (value) {
               updateData.status_certificado = "Generado";
@@ -1903,22 +1913,41 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setFiles((prev) =>
       prev.map((f) => {
         if (!pathSet.has(f.fullPath)) return f;
-        const reviewedByName = field === "reviewed" ? (value ? name : null) : f.reviewedByName;
-        const completedByName = field === "completed" ? (value ? name : null) : f.completedByName;
-        return { ...f, [field]: value, reviewedByName, completedByName } as any;
+        if (field === "reviewed") {
+          return {
+            ...f,
+            reviewed: value,
+            reviewedByName: value ? name : null,
+          };
+        }
+        return {
+          ...f,
+          completed: value,
+          completedByName: value ? name : null,
+        };
       })
     );
     if (previewFile && pathSet.has(previewFile.fullPath)) {
-      const reviewedByName = field === "reviewed" ? (value ? name : null) : previewFile.reviewedByName;
-      const completedByName = field === "completed" ? (value ? name : null) : previewFile.completedByName;
-      setPreviewFile({ ...previewFile, [field]: value, reviewedByName, completedByName } as any);
+      if (field === "reviewed") {
+        setPreviewFile({
+          ...previewFile,
+          reviewed: value,
+          reviewedByName: value ? name : null,
+        });
+      } else {
+        setPreviewFile({
+          ...previewFile,
+          completed: value,
+          completedByName: value ? name : null,
+        });
+      }
     }
 
     try {
       await commitWriteBatches(targets, (batch, fullPath) => {
         const metaId = fullPath.replace(/\//g, "_");
         const metaRef = doc(db, "fileMetadata", metaId);
-        const data: any = { [field]: value };
+        const data: Record<string, unknown> = { [field]: value };
         if (field === "reviewed") data.reviewedByName = value ? name : null;
         if (field === "completed") data.completedByName = value ? name : null;
         batch.set(metaRef, data, { merge: true });
@@ -1956,7 +1985,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       setSelectedIds(new Set());
       setDetailsOpen(false);
       setContextMenu(null);
-    } catch (e) {
+    } catch {
       showToast("Error de conexión", "error");
       loadContent();
     }
@@ -2279,7 +2308,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   <button
                     onClick={() =>
                       handleBatchUpdateStatus("completed", true, {
-                        toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como realizado`,
+                        toastSuccess: `${selectedIds.size} archivos marcados como realizados`,
                       })
                     }
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm"
@@ -2291,7 +2320,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     <button
                       onClick={() =>
                         handleBatchUpdateStatus("reviewed", true, {
-                          toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como revisado`,
+                          toastSuccess: `${selectedIds.size} archivos marcados como revisados`,
                         })
                       }
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-all shadow-sm"
@@ -2307,20 +2336,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     {isZipping ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                     Descargar
                   </button>
-                  <button
-                    onClick={() => handleBatchUpdateStatus('completed', true, { toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como realizados` })}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm"
-                  >
-                    <FileCheck size={13} /> Realizado
-                  </button>
-                  {isQuality && (
-                    <button
-                      onClick={() => handleBatchUpdateStatus('reviewed', true, { toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como revisados` })}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-all shadow-sm"
-                    >
-                      <CheckCircle2 size={13} /> Revisado
-                    </button>
-                  )}
                   {isQuality && (
                     <>
                       <button
@@ -2371,7 +2386,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // RENDER
   // ─────────────────────────────────────────
   return (
-    <div className="flex h-full w-full bg-[#f8f9fa] text-slate-800 font-sans overflow-hidden relative" onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}>
+    <div className="relative flex h-full min-h-0 w-full flex-1 bg-[#f8f9fa] font-sans text-slate-800 overflow-hidden" onClick={() => { setContextMenu(null); setSortMenuOpen(false); }}>
       {dragActive && !draggingItem && (
         <div className="absolute inset-0 z-[100] bg-blue-500/10 backdrop-blur-sm border-[3px] border-dashed border-blue-400 m-3 rounded-3xl flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center">
@@ -2384,14 +2399,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       <div className="absolute inset-0 z-0" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} />
       {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />}
       <aside className={clsx(
-        "fixed inset-y-0 left-0 z-50 w-60 bg-white border-r border-slate-200/80 flex flex-col transition-transform duration-300 shadow-xl md:shadow-none",
-        "md:relative md:translate-x-0", sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        "fixed inset-y-0 left-0 z-50 flex h-full w-60 flex-col bg-white border-r border-slate-200/80 transition-transform duration-300 shadow-xl md:shadow-none",
+        "md:relative md:translate-x-0 md:h-full", sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="px-5 py-5 flex items-center gap-3 border-b border-slate-100">
-          <img src={labLogo} alt="Logo" className="w-8 h-8 object-contain" />
-          <div>
-            <h1 className="text-sm font-bold text-slate-800 tracking-tight leading-none">AG Drive</h1>
-            <p className="text-[10px] text-slate-400 mt-0.5">Gestión Documental</p>
+          <img src={labLogo} alt={BRAND_NAME} className="w-8 h-8 object-contain" />
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-slate-800 tracking-tight leading-tight">{BRAND_NAME}</h1>
+            <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">{BRAND_SUBTITLE}</p>
           </div>
         </div>
         <div className="px-4 py-4 border-b border-slate-100">
@@ -2401,14 +2416,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               className="w-40 flex items-center justify-start pl-5 gap-3 py-4 mb-2 bg-white text-slate-700 rounded-full text-[15px] font-medium hover:bg-slate-50 hover:shadow-md transition-all shadow-sm border border-slate-200 active:scale-95"
             >
               <div className="w-8 h-8 flex items-center justify-center -ml-2 rounded-full">
-                <Plus size={24} className="text-blue-600" strokeWidth={2.5} /> 
+                <Plus size={24} className="text-[#0050d8]" strokeWidth={2.5} /> 
               </div>
               Nuevo
             </button>
             {newFileMenuOpen && (
               <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 w-56">
                 <button onClick={() => { fileInputRef.current?.click(); setNewFileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-                  <UploadCloud size={15} className="text-blue-500" /> Subir archivos
+                  <UploadCloud size={15} className="text-[#0050d8]" /> Subir archivos
                 </button>
                 {isQuality && (
                   <button onClick={() => { setCreateFolderOpen(true); setNewFileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">
@@ -2434,11 +2449,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             </>
           )}
         </nav>
-        <div className="px-4 py-4 border-t border-slate-100">
+        <div className="mt-auto flex-shrink-0 border-t border-slate-100 px-4 py-4">
           {currentUserData && (
             <div className="flex items-center gap-3 mb-3 px-2">
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-blue-600">{(currentUserData.name || 'U').charAt(0).toUpperCase()}</span>
+              <div className="w-8 h-8 rounded-full bg-[#0050d8]/10 flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-[#0050d8]">{(currentUserData.name || 'U').charAt(0).toUpperCase()}</span>
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-700 truncate">{currentUserData.name}</p>
@@ -2449,32 +2464,32 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <button onClick={handleBack} className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all text-sm font-medium"><LogOut size={15} /> Salir al Menú</button>
         </div>
       </aside>
-      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white sticky top-0 z-30 flex-shrink-0 shadow-sm">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
           <div className="relative flex-1 max-w-lg group">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input type="text" placeholder="Buscar por nombre, ID equipo, certificado o folio..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-slate-200/60 focus:border-blue-400 rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#0050d8] transition-colors" />
+            <input type="text" placeholder="Buscar por nombre, ID equipo, certificado o folio..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#0050d8]/30 border border-slate-200/60 focus:border-[#0050d8] rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
             {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors"><X size={13} /></button>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isSyncing && <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-blue-500 animate-pulse"><RefreshCw size={11} className="animate-spin" /> Sincronizando...</div>}
+            {isSyncing && <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#0050d8] animate-pulse"><RefreshCw size={11} className="animate-spin" /> Sincronizando...</div>}
             <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95">{isUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}Subir</button>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
             <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-0.5">
-              <button onClick={() => setView('list')} className={clsx("p-1.5 rounded-lg transition-all", view === 'list' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}><Rows3 size={15} /></button>
-              <button onClick={() => setView('grid')} className={clsx("p-1.5 rounded-lg transition-all", view === 'grid' ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-700")}><Grid3X3 size={15} /></button>
+              <button onClick={() => setView('list')} className={clsx("p-1.5 rounded-lg transition-all", view === 'list' ? "bg-white text-[#0050d8] shadow-sm" : "text-slate-400 hover:text-slate-700")}><Rows3 size={15} /></button>
+              <button onClick={() => setView('grid')} className={clsx("p-1.5 rounded-lg transition-all", view === 'grid' ? "bg-white text-[#0050d8] shadow-sm" : "text-slate-400 hover:text-slate-700")}><Grid3X3 size={15} /></button>
             </div>
-            <button onClick={() => setDetailsOpen(v => !v)} className={clsx("p-2 rounded-xl border transition-all", detailsOpen ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300")} title="Información"><Info size={15} /></button>
+            <button onClick={() => setDetailsOpen(v => !v)} className={clsx("p-2 rounded-xl border transition-all", detailsOpen ? "bg-[#0050d8]/10 text-[#0050d8] border-[#0050d8]/25" : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300")} title="Información"><Info size={15} /></button>
           </div>
         </header>
         <div className="relative z-40 h-10 border-b border-slate-200/60 flex items-center justify-between px-4 md:px-6 bg-white/80 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-1 text-xs overflow-hidden min-w-0">
             {activeFilter !== 'all' ? (
-              <span className="flex items-center gap-1.5 font-semibold text-blue-600"><Filter size={11} />{filterLabels[activeFilter]}
-                {groupView && ( <div className="flex items-center ml-1"><ChevronRight size={11} className="text-slate-400 mr-1" /><span className="text-slate-700 bg-white border border-blue-100 px-2 py-0.5 rounded-md flex items-center gap-1">{groupView}<button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700"><X size={10} /></button></span></div> )}
+              <span className="flex items-center gap-1.5 font-semibold text-[#0050d8]"><Filter size={11} />{filterLabels[activeFilter]}
+                {groupView && ( <div className="flex items-center ml-1"><ChevronRight size={11} className="text-slate-400 mr-1" /><span className="text-slate-700 bg-white border border-[#0050d8]/20 px-2 py-0.5 rounded-md flex items-center gap-1">{groupView}<button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700"><X size={10} /></button></span></div> )}
               </span>
-            ) : debouncedSearch ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-blue-500" />Resultados para "{debouncedSearch}"</span> ) : (
+            ) : debouncedSearch ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-[#0050d8]" />Resultados para "{debouncedSearch}"</span> ) : (
               <nav className="flex items-center gap-1 text-slate-500"><button onClick={() => setPath([])} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", path.length === 0 ? "text-slate-800 font-semibold" : "")}><Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}</button>
                 {path.map((folder, i) => ( <React.Fragment key={folder}><ChevronRight size={11} className="text-slate-300" /><button onClick={() => setPath(path.slice(0, i + 1))} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === path.length - 1 ? "text-slate-800 font-semibold" : "")}>{folder}</button></React.Fragment> ))}
               </nav>
@@ -2482,7 +2497,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           </div>
           <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={() => setSortMenuOpen(v => !v)} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"><ArrowUpWideNarrow size={13} /><span className="hidden sm:inline">Ordenar</span><ChevronDown size={11} className={clsx("transition-transform", sortMenuOpen ? "rotate-180" : "")} /></button>
-            {sortMenuOpen && ( <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">{sortOptions.map(opt => ( <button key={opt.key} onClick={() => { setSortBy(opt.key as SortType); setSortMenuOpen(false); }} className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors", sortBy === opt.key ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-600 hover:bg-slate-50")}>{opt.icon} {opt.label}{sortBy === opt.key && <CheckCircle2 size={11} className="ml-auto text-blue-500" />}</button> ))}</div> )}
+            {sortMenuOpen && ( <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">{sortOptions.map(opt => ( <button key={opt.key} onClick={() => { setSortBy(opt.key as SortType); setSortMenuOpen(false); }} className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors", sortBy === opt.key ? "bg-[#0050d8]/10 text-[#0050d8] font-semibold" : "text-slate-600 hover:bg-slate-50")}>{opt.icon} {opt.label}{sortBy === opt.key && <CheckCircle2 size={11} className="ml-auto text-[#0050d8]" />}</button> ))}</div> )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto flex min-h-0">
@@ -2568,7 +2583,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     handleBatchUpdateStatus(
                       "completed",
                       next,
-                      { toastSuccess: next ? `${selectedIds.size} archivo(s) marcado(s) como realizado` : `${selectedIds.size} archivo(s) marcado(s) como pendiente` }
+                        {
+                          toastSuccess: next
+                            ? `${selectedIds.size} archivos marcados como realizados`
+                            : `${selectedIds.size} archivos marcados como pendientes`,
+                        }
                     );
                     setContextMenu(null);
                   } else {
@@ -2587,7 +2606,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                       handleBatchUpdateStatus(
                         "reviewed",
                         next,
-                        { toastSuccess: next ? `${selectedIds.size} archivo(s) marcado(s) como revisado` : `${selectedIds.size} archivo(s) invalidado(s) por calidad` }
+                        {
+                          toastSuccess: next
+                            ? `${selectedIds.size} archivos marcados como revisados`
+                            : `${selectedIds.size} archivos invalidados por calidad`,
+                        }
                       );
                       setContextMenu(null);
                     } else {
@@ -2611,7 +2634,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><FolderSymlink size={16} className="text-blue-500" />{moveTargetFolder ? `Mover "${moveTargetFolder.name}"` : `Mover ${moveTargetFiles.length > 1 ? `${moveTargetFiles.length} archivos` : `"${moveTargetFiles[0]?.name}"`}`}</h3><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><X size={15} className="text-slate-400" /></button></div>
             <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2"><button disabled={moveToPath.length === 0} onClick={() => setMoveToPath(prev => prev.slice(0, -1))} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all flex-shrink-0" title="Subir"><ArrowUp size={13} /></button><div className="flex items-center gap-1 text-xs text-slate-600 overflow-hidden flex-1 min-w-0"><Home size={12} className="text-slate-400 flex-shrink-0" /><span className="text-slate-400">/</span>{moveToPath.map((p, i) => <span key={i} className="font-medium text-slate-700">{p} /</span>)}</div><button type="button" title="Nueva carpeta" onClick={() => { setMoveNewFolderName(""); setMoveCreateFolderOpen(true); }} disabled={isMoving || isCreatingMoveFolder} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-all flex-shrink-0"><FolderPlus size={13} className="text-amber-500" /></button></div>
             <div className="flex-1 overflow-y-auto py-2 min-h-[180px]">{moveFolderContent.length === 0 ? ( <div className="flex flex-col items-center justify-center py-10 text-slate-400"><FolderOpen size={28} strokeWidth={1.5} className="mb-2 opacity-50" /><p className="text-xs">Sin subcarpetas</p></div> ) : ( <div className="px-2 space-y-0.5">{moveFolderContent.map((folder, i) => { const style = getFolderVisualStyle(folder.name); return ( <button key={i} onClick={() => setMoveToPath([...moveToPath, folder.name])} disabled={moveTargetFolder?.name === folder.name} className={clsx("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors", moveTargetFolder?.name === folder.name ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50")}><div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", style.bg)}><Folder size={16} className={clsx(style.icon, style.fill)} /></div><span className="text-sm text-slate-700 font-medium flex-1 truncate">{folder.name}</span><ChevronRight size={14} className="text-slate-300" /></button> ); })}</div> )}</div>
-            <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2"><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button><button onClick={handleModalMove} disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all">{isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}Mover aquí</button></div>
+            <div className="px-4 pb-4 pt-3 border-t border-slate-100 flex justify-end gap-2"><button onClick={() => { setMoveDialogOpen(false); setMoveCreateFolderOpen(false); setMoveNewFolderName(""); }} disabled={isMoving} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-medium transition-colors">Cancelar</button><button onClick={handleModalMove} disabled={(moveTargetFiles.length === 0 && !moveTargetFolder) || isMoving} className="px-5 py-2 bg-[#0050d8] hover:bg-[#1a66e0] text-white rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all">{isMoving ? <Loader2 size={14} className="animate-spin" /> : <FolderSymlink size={14} />}Mover aquí</button></div>
           </div>
         </div>
       )}

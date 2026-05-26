@@ -6,6 +6,8 @@ import startOfWeek from 'date-fns/startOfWeek';
 import getDay from 'date-fns/getDay';
 import es from 'date-fns/locale/es';
 import parseISO from 'date-fns/parseISO';
+import differenceInDays from 'date-fns/differenceInDays';
+import isValid from 'date-fns/isValid';
 import { collection, onSnapshot, query, getDocs, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
@@ -20,6 +22,19 @@ import {
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
+import {
+  COLLECTION_PATRONES,
+  countPatronesEnAlerta,
+  getPatronFechaVencimiento,
+  getPatronUrgency,
+  getPatronUrgencyHex,
+  getPatronUrgencyLabel,
+  PATRON_ALERT_DAYS,
+  sortPatronesPorVencimiento,
+  isCalidadRole,
+  type PatronCalibracionRow,
+  type PatronUrgency,
+} from '../utils/patronCalibracion';
 
 // --- 1. CONFIGURACIÓN, TEMAS Y CONSTANTES ---
 
@@ -126,6 +141,9 @@ const calculateAvance = (ev: any) => {
 };
 
 const getEventHexColor = (event: any) => {
+    if (event.esVencimientoPatron && event.patronUrgency) {
+      return getPatronUrgencyHex(event.patronUrgency as PatronUrgency);
+    }
     if (event.esAlertaAutomatica || event.cliente === 'Perry Johnson Labs') return '#db2777';
     
     if (event.tipo === 'intralaboratorio' || event.tipo === 'interlaboratorio') {
@@ -747,7 +765,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
 
 const CustomEvent = ({ event }: any) => {
     const isPJLA = event.esAlertaAutomatica || event.cliente === 'Perry Johnson Labs';
-    const Icon = isPJLA ? Bell : (CONSTANTS.estados.find(e => e.value === event.estado)?.icon || CalendarIcon);
+    const Icon = event.esVencimientoPatron ? Settings : isPJLA ? Bell : (CONSTANTS.estados.find(e => e.value === event.estado)?.icon || CalendarIcon);
     
     // Calcular el color de fondo para saber si el texto debe ser oscuro o claro
     const hexColor = getEventHexColor(event);
@@ -806,9 +824,22 @@ export const CalendarScreen: React.FC = () => {
         return puesto.includes('calidad') || puesto.includes('admin') || puesto.includes('gerente');
     }, [currentUserData]);
 
+    const userRole = useMemo(() => {
+        if (!currentUserData) return '';
+        return String(currentUserData.puesto || currentUserData.role || currentUserData.position || '').trim().toLowerCase();
+    }, [currentUserData]);
+
+    const canSeePatronAlerts = useMemo(() => {
+        const isCalidadRoleFlag = userRole.includes('calidad');
+        const isJefe = userRole.includes('admin') || userRole.includes('gerente');
+        return isCalidadRole(userRole) || isJefe || isCalidadRoleFlag;
+    }, [userRole]);
+
     const [viewMode, setViewMode] = useState<'calendar' | 'gantt_pt'>('calendar'); 
     const [events, setEvents] = useState<any[]>([]);
+    const [patrones, setPatrones] = useState<PatronCalibracionRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showPatronPanel, setShowPatronPanel] = useState(true);
     const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
     const [initialModalData, setInitialModalData] = useState<any | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -858,6 +889,68 @@ export const CalendarScreen: React.FC = () => {
         return () => unsub();
     }, []);
 
+    useEffect(() => {
+        if (!canSeePatronAlerts) {
+            setPatrones([]);
+            return;
+        }
+        getDocs(query(collection(db, COLLECTION_PATRONES)))
+            .then(snap => {
+                const rows: PatronCalibracionRow[] = [];
+                snap.forEach(d => rows.push({ id: d.id, ...d.data() } as PatronCalibracionRow));
+                setPatrones(rows);
+            })
+            .catch(err => console.error('Patrones calendario:', err));
+    }, [canSeePatronAlerts]);
+
+    const patronCalendarEvents = useMemo(() => {
+        const today = new Date();
+        return patrones
+            .map(p => {
+                const f = getPatronFechaVencimiento(p);
+                if (!f) return null;
+                let start: Date;
+                try {
+                    const parsed = parseISO(f);
+                    if (!isValid(parsed)) return null;
+                    start = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0);
+                } catch {
+                    return null;
+                }
+                const urgency = getPatronUrgency(p, today);
+                const days = differenceInDays(start, today);
+                const label = getPatronUrgencyLabel(urgency);
+                const desc = p.descripcion || p.nombre || '';
+                return {
+                    id: `patron-venc-${p.id || p.noControl}`,
+                    title: `⏱ ${p.noControl} — ${desc}`.slice(0, 80),
+                    start,
+                    end: start,
+                    allDay: true,
+                    esVencimientoPatron: true,
+                    patronUrgency: urgency,
+                    patronDays: days,
+                    patronNoControl: p.noControl,
+                    cliente: 'Patrones AG',
+                    tipo: 'mtto_patrones',
+                    estado: urgency === 'vencido' ? 'en_proceso' : 'programado',
+                    descripcion: `Vencimiento calibración · ${label}${days >= 0 ? ` (${days} d)` : ''}`,
+                };
+            })
+            .filter(Boolean) as any[];
+    }, [patrones]);
+
+    const upcomingPatrones = useMemo(() => {
+        return sortPatronesPorVencimiento(
+            patrones.filter(p => {
+                const u = getPatronUrgency(p);
+                return u !== 'ok' && u !== 'sin-fecha';
+            }),
+        ).slice(0, 12);
+    }, [patrones]);
+
+    const patronAlertCount = useMemo(() => countPatronesEnAlerta(patrones), [patrones]);
+
     const handleUploadEvidenciaPT = async (servicioId: string, file: File) => {
         await uploadEvidenciaServicio(servicioId, file);
     };
@@ -873,7 +966,7 @@ export const CalendarScreen: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const filteredEvents = useMemo(() => {
+    const filteredServicioEvents = useMemo(() => {
         return events.filter(ev => {
             const isPJLA = ev.esAlertaAutomatica || ev.cliente === 'Perry Johnson Labs';
             
@@ -885,6 +978,16 @@ export const CalendarScreen: React.FC = () => {
             return matchStatus && matchSearch;
         });
     }, [events, filterStatus, searchText, isCalidad]);
+
+    const filteredEvents = useMemo(() => {
+        if (!canSeePatronAlerts) return filteredServicioEvents;
+        const patronFiltered = patronCalendarEvents.filter(ev => {
+            if (!searchText) return true;
+            const q = searchText.toLowerCase();
+            return ev.title.toLowerCase().includes(q) || (ev.patronNoControl || '').toLowerCase().includes(q);
+        });
+        return [...filteredServicioEvents, ...patronFiltered];
+    }, [filteredServicioEvents, patronCalendarEvents, searchText, canSeePatronAlerts]);
 
     const stats = useMemo(() => ({
         total: filteredEvents.length,
@@ -906,7 +1009,7 @@ export const CalendarScreen: React.FC = () => {
     }, []);
 
     return (
-        <div className="flex h-screen bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
+        <div className="flex h-full min-h-0 flex-1 flex-col bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
             <main className="flex-1 flex flex-col h-full relative min-h-0">
                 
                 {/* --- HEADER --- */}
@@ -917,6 +1020,11 @@ export const CalendarScreen: React.FC = () => {
                             <h2 className="text-lg md:text-xl font-black text-slate-900 tracking-tighter leading-none">PLAN MAESTRO 2026</h2>
                             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.1em] mt-0.5">Metrología y Control Normativo AG</p>
                         </div>
+                        {canSeePatronAlerts && patronAlertCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200">
+                                <Bell size={10} /> {patronAlertCount} patrón{patronAlertCount !== 1 ? 'es' : ''}
+                            </span>
+                        )}
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2 flex-1">
                         {viewMode === 'calendar' && (
@@ -961,13 +1069,50 @@ export const CalendarScreen: React.FC = () => {
 
                 {/* --- ÁREA PRINCIPAL DE CONTENIDO --- */}
                 <div className="flex-1 p-2 sm:p-4 overflow-hidden bg-slate-50/50 flex flex-col min-h-0">
+                    {viewMode === 'calendar' && canSeePatronAlerts && upcomingPatrones.length > 0 && showPatronPanel && (
+                        <div className="mb-3 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50">
+                                <div className="flex items-center gap-2">
+                                    <ShieldCheck size={14} className="text-amber-600" />
+                                    <span className="text-xs font-black text-slate-800 uppercase tracking-wide">Próximos vencimientos — patrones</span>
+                                    {isCalidad && (
+                                        <span className="text-[9px] text-slate-500 font-medium">Avisos: {PATRON_ALERT_DAYS.join(', ')} días antes</span>
+                                    )}
+                                </div>
+                                <button type="button" onClick={() => setShowPatronPanel(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg" aria-label="Ocultar lista">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                            <ul className="max-h-28 overflow-y-auto custom-scrollbar divide-y divide-slate-100">
+                                {upcomingPatrones.map(p => {
+                                    const f = getPatronFechaVencimiento(p);
+                                    const urgency = getPatronUrgency(p);
+                                    const hex = getPatronUrgencyHex(urgency);
+                                    let days = 0;
+                                    try {
+                                        if (f && isValid(parseISO(f))) days = differenceInDays(parseISO(f), new Date());
+                                    } catch { /* ignore */ }
+                                    return (
+                                        <li key={p.id || p.noControl} className="flex items-center gap-3 px-3 py-2 text-xs">
+                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hex }} />
+                                            <span className="font-mono font-bold text-slate-700">{p.noControl}</span>
+                                            <span className="flex-1 truncate text-slate-600">{p.descripcion || p.nombre || '—'}</span>
+                                            <span className="font-semibold shrink-0" style={{ color: hex }}>{getPatronUrgencyLabel(urgency)}</span>
+                                            <span className="text-slate-400 shrink-0 tabular-nums">{f || '—'}{days >= 0 ? ` (${days}d)` : ''}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
+
                     {loading ? (
                         <div className="h-full flex items-center justify-center flex-col gap-3"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div><p className="text-slate-400 font-bold text-xs">Sincronizando...</p></div>
                     ) : viewMode === 'calendar' ? (
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col min-h-0 overflow-hidden">
                             {/* CALENDARIO */}
                             <div className="p-2 sm:p-4 flex-1 min-h-0">
-                                <Calendar localizer={localizer} events={filteredEvents} culture='es' startAccessor="start" endAccessor="end" components={{ toolbar: CustomToolbar, event: CustomEvent }} onSelectEvent={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} eventPropGetter={eventPropGetter} views={['month', 'week', 'day', 'agenda']} />
+                                <Calendar localizer={localizer} events={filteredEvents} culture='es' startAccessor="start" endAccessor="end" components={{ toolbar: CustomToolbar, event: CustomEvent }} onSelectEvent={ev => { if (!ev.esVencimientoPatron) { setSelectedEvent(ev); setIsModalOpen(true); } }} eventPropGetter={eventPropGetter} views={['month', 'week', 'day', 'agenda']} />
                             </div>
                             
                             {/* SIMBOLOGÍA INFERIOR */}
@@ -979,6 +1124,17 @@ export const CalendarScreen: React.FC = () => {
                                         <span className="text-[10px] font-bold text-slate-700">{t.label}</span>
                                     </div>
                                 ))}
+                                {canSeePatronAlerts && (
+                                    <>
+                                        <div className="w-px h-4 bg-slate-300" />
+                                        {(['vencido', 'urgente7', 'proximo30', 'ok'] as PatronUrgency[]).map(u => (
+                                            <div key={u} className="flex items-center gap-1.5">
+                                                <div className="w-3.5 h-3.5 rounded shadow-sm border border-black/10" style={{ backgroundColor: getPatronUrgencyHex(u) }} />
+                                                <span className="text-[10px] font-bold text-slate-700">Patrón {getPatronUrgencyLabel(u)}</span>
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
                             </div>
                         </div>
                     ) : (

@@ -8,7 +8,7 @@ import {
   Activity, Wrench, ArrowLeft, X,
   User, FileText, ChevronRight, Truck, ClipboardCheck, Ban,
   DollarSign, History, Edit3, UploadCloud, ExternalLink, AlertOctagon, File,
-  FileBarChart // <--- ESTE FALTABA
+  FileBarChart
 } from 'lucide-react';
 
 import { useNavigation } from '../hooks/useNavigation';
@@ -66,6 +66,31 @@ const COLLECTION_NAME = "patronesCalibracion";
 const getFechaVencimiento = (item: RegistroPatron): string => item.fecha || item.fechaVencimiento || '';
 const getUbicacion = (item: RegistroPatron): string => item.ubicacionActual || item.ubicacion || 'Laboratorio';
 const getUsuario = (item: RegistroPatron): string => item.usuarioEnUso || item.usuarioAsignado || 'Sin Asignar';
+
+type CalibracionUrgency = 'vencido' | 'proximo' | 'ok' | 'sin-fecha';
+
+const getCalibracionUrgency = (item: RegistroPatron): CalibracionUrgency => {
+  if (['en_mantenimiento', 'con_falla', 'en_calibracion'].includes(item.estadoProceso)) {
+    return 'proximo';
+  }
+  const f = getFechaVencimiento(item);
+  if (!f) return 'sin-fecha';
+  try {
+    const days = differenceInDays(parseISO(f), new Date());
+    if (days < 0) return 'vencido';
+    if (days <= 30) return 'proximo';
+    return 'ok';
+  } catch {
+    return 'sin-fecha';
+  }
+};
+
+const urgencyRowClass: Record<CalibracionUrgency, string> = {
+  vencido: 'border-l-4 border-l-red-500 bg-red-50/40',
+  proximo: 'border-l-4 border-l-amber-400 bg-amber-50/30',
+  ok: 'border-l-4 border-l-emerald-400',
+  'sin-fecha': 'border-l-4 border-l-slate-200',
+};
 
 // --- 2. LÓGICA DE NEGOCIO ---
 
@@ -378,28 +403,25 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-10">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gray-50 font-sans text-gray-800 pb-10">
       
       {/* HEADER */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+      <header className="bg-[#0050d8] border-b border-[#0046c0] sticky top-0 z-20 shadow-md">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-white/10 rounded-full text-white/90 transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Gestión de Metrología</h1>
-              <p className="text-xs text-gray-500">Control de Calibraciones y Mantenimiento</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Equipos y Servicios AG</p>
+              <h1 className="text-xl font-bold text-white">Programa de Calibración</h1>
+              <p className="text-xs text-white/75 hidden sm:block">Patrones, vencimientos y mantenimiento</p>
             </div>
           </div>
-          <button className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-md transition-all">
-            <Plus className="w-4 h-4" /> Nuevo Activo
-          </button>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        
         {/* DASHBOARD KPIS */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <KPICard title="Inventario Total" value={stats.total} icon={FileBarChart} color="blue" />
@@ -445,11 +467,12 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                        <tr><td colSpan={5} className="p-8 text-center text-gray-400">Cargando inventario...</td></tr>
                   ) : filteredData.map((item) => {
                     const fechaVenc = getFechaVencimiento(item);
+                    const urgency = getCalibracionUrgency(item);
                     return (
                         <tr 
                             key={item.id || item.noControl} 
                             onClick={() => setSelectedItem(item)}
-                            className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
+                            className={`hover:bg-blue-50/50 cursor-pointer transition-colors group ${urgencyRowClass[urgency]}`}
                         >
                         <td className="px-6 py-4">
                             <div className="font-semibold text-gray-900">{item.descripcion}</div>
@@ -465,7 +488,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                              {fechaVenc ? (isValid(parseISO(fechaVenc)) ? format(parseISO(fechaVenc), 'dd MMM yyyy', {locale: es}) : '-') : '-'}
                         </td>
                         <td className="px-6 py-4 text-right">
-                             <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
+                             <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#0050d8] ml-auto" />
                         </td>
                         </tr>
                     );
@@ -480,7 +503,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       <SidePanel 
         selectedItem={selectedItem} 
         onClose={() => setSelectedItem(null)} 
-        onAction={setWorkflowAction} 
+        onAction={setWorkflowAction}
       />
 
       {/* --- MODAL DE FLUJO --- */}

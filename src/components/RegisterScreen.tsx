@@ -66,7 +66,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
   };
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4 bg-[#0a1128]">
+    <div className="h-full min-h-full w-full relative overflow-hidden flex items-center justify-center p-4 bg-[#0a1128]">
       
       {/* 1. FONDO TÉCNICO AVANZADO */}
       <div className="absolute inset-0 z-0">
@@ -96,10 +96,12 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
         <div className="hidden lg:flex flex-1 p-16 flex-col justify-between relative overflow-hidden bg-gradient-to-br from-blue-600/10 to-transparent">
           <div className="relative z-10">
             <div className="flex items-center gap-4 mb-12">
-              <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/40">
+              <div className="w-12 h-12 bg-[#0050d8] rounded-xl flex items-center justify-center shadow-lg shadow-[#0050d8]/40">
                 <Microscope className="w-6 h-6 text-white" />
               </div>
-              <span className="text-2xl font-bold text-white tracking-tighter">ESE <span className="text-blue-400">AG</span></span>
+              <span className="text-2xl font-bold text-white tracking-tight">
+                Equipos y Servicios <span className="text-[#4d8fff]">AG</span>
+              </span>
             </div>
             
             <h2 className="text-6xl font-bold text-white mb-6 leading-[1.1]">
@@ -234,7 +236,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
                 disabled={isLoading}
                 whileHover={{ scale: 1.01, boxShadow: "0 0 20px rgba(59, 130, 246, 0.4)" }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-3 overflow-hidden relative group"
+                className="w-full bg-[#0050d8] hover:bg-[#1a66e0] text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-[#0050d8]/20 flex items-center justify-center gap-3 overflow-hidden relative group"
               >
                 {isLoading ? (
                   <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
@@ -253,7 +255,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigateToLogi
                   className="text-white/40 hover:text-white transition-colors text-sm font-medium flex items-center justify-center mx-auto gap-2 group"
                 >
                   <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> 
-                  ¿Ya tienes acceso? <span className="text-blue-400">Inicia sesión</span>
+                  ¿Ya tienes acceso? <span className="text-[#4d8fff]">Inicia sesión</span>
                 </button>
               </div>
             </form>

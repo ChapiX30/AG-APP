@@ -1,12 +1,12 @@
-import { useState, createContext, useContext, ReactNode } from 'react';
+import { useState, createContext, useContext, ReactNode, useMemo, useCallback } from 'react';
 
-type Screen = 'login' | 'register' | 'menu' | 'consecutivos' | 'magnitude-detail' | 'work-sheet' | 'friday';
+export type Screen = string;
 
 interface NavigationContextType {
   currentScreen: Screen;
   selectedMagnitude: string | null;
   currentConsecutive: string | null;
-  navigateTo: (screen: Screen, data?: any) => void;
+  navigateTo: (screen: Screen, data?: Record<string, unknown>) => void;
   goBack: () => void;
 }
 
@@ -26,34 +26,37 @@ export const NavigationProvider = ({ children }: { children: ReactNode }) => {
   const [currentConsecutive, setCurrentConsecutive] = useState<string | null>(null);
   const [screenStack, setScreenStack] = useState<Screen[]>(['login']);
 
-  const navigateTo = (screen: Screen, data?: any) => {
+  const navigateTo = useCallback((screen: Screen, data?: Record<string, unknown>) => {
     setScreenStack(prev => [...prev, screen]);
     setCurrentScreen(screen);
-    
+
     if (data?.magnitude) {
-      // Ensure we store only the name string, not the entire object
-      setSelectedMagnitude(typeof data.magnitude === 'string' ? data.magnitude : data.magnitude.name);
+      setSelectedMagnitude(typeof data.magnitude === 'string' ? data.magnitude : (data.magnitude as { name?: string }).name ?? null);
     }
     if (data?.consecutive) {
-      setCurrentConsecutive(data.consecutive);
+      setCurrentConsecutive(String(data.consecutive));
     }
-  };
+  }, []);
 
-  const goBack = () => {
-    if (screenStack.length > 1) {
-      const newStack = screenStack.slice(0, -1);
-      setScreenStack(newStack);
+  const goBack = useCallback(() => {
+    setScreenStack(prev => {
+      if (prev.length <= 1) return prev;
+      const newStack = prev.slice(0, -1);
       setCurrentScreen(newStack[newStack.length - 1]);
-    }
-  };
+      return newStack;
+    });
+  }, []);
 
-  const value = {
-    currentScreen,
-    selectedMagnitude,
-    currentConsecutive,
-    navigateTo,
-    goBack
-  };
+  const value = useMemo(
+    () => ({
+      currentScreen,
+      selectedMagnitude,
+      currentConsecutive,
+      navigateTo,
+      goBack,
+    }),
+    [currentScreen, selectedMagnitude, currentConsecutive, navigateTo, goBack],
+  );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
 };

@@ -194,7 +194,7 @@ export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
 
   // ========== RENDER ===============
   return (
-    <div className="h-full w-full p-4 md:p-8 bg-gradient-to-br from-zinc-100 via-white to-indigo-50 dark:from-zinc-900 dark:via-zinc-950 dark:to-indigo-950 transition-all">
+    <div className="min-h-full flex-shrink-0 flex flex-col w-full p-4 md:p-8 bg-gradient-to-br from-zinc-100 via-white to-indigo-50 dark:from-zinc-900 dark:via-zinc-950 dark:to-indigo-950 transition-all">
       {/* Header */}
       <div className="flex items-center mb-6 gap-2">
         <button

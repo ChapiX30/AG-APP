@@ -211,7 +211,7 @@ export const PermisosTrabajoScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-slate-200 selection:bg-blue-500/30 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 font-sans">
+    <div className="min-h-full flex-shrink-0 w-full bg-slate-950 text-slate-200 selection:bg-blue-500/30 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 font-sans">
       
       <header className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4 shrink-0">
         <div className="flex items-center gap-4">

@@ -211,7 +211,7 @@ export const FormatosScreen: React.FC = () => {
   const currentCategoryData = CATEGORIAS.find(c => c.id === categoriaActual);
 
   return (
-    <div className="flex-1 h-full bg-[#0B1120] text-slate-200 flex flex-col relative selection:bg-blue-500/30 overflow-hidden">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-[#0B1120] text-slate-200 relative selection:bg-blue-500/30 overflow-hidden">
       
       {/* --- BACKGROUND EFFECTS (Professional Look) --- */}
       <div className="absolute top-0 left-0 w-full h-96 bg-blue-900/10 rounded-full blur-[120px] -translate-y-1/2 pointer-events-none" />

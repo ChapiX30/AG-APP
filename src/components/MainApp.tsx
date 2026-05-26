@@ -8,8 +8,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LoginScreen } from './LoginScreen';
 import { Layout } from './Layout';
 import { MainMenu } from './MainMenu';
-import { ConsecutivosScreen } from './ConsecutivosScreen';
-import { MagnitudeDetailScreen } from './MagnitudeDetailScreen';
+import { ScreenSuspenseFallback } from './ui/ScreenSkeletons';
+import { ScreenTransition } from './ui/ScreenTransition';
 
 // --- IMPORT DE LA NUEVA PANTALLA PÚBLICA ---
 const ShareView = lazy(() => import('./ShareView').then(module => ({ default: module.ShareView })));
@@ -44,12 +44,24 @@ const DirectorioEmpresasScreen = lazy(() => import('./EquipmentHistoryScreens').
 const EquiposPorEmpresaScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.EquiposPorEmpresaScreen })));
 const DetalleEquipoScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.DetalleEquipoScreen })));
 
+const ConsecutivosScreen = lazy(() =>
+  import('./ConsecutivosScreen').then(module => ({ default: module.ConsecutivosScreen })),
+);
+const MagnitudeDetailScreen = lazy(() =>
+  import('./MagnitudeDetailScreen').then(module => ({ default: module.MagnitudeDetailScreen })),
+);
+
 const Loader = () => (
-  <div className="w-full h-full flex flex-col items-center justify-center min-h-screen bg-slate-950 z-50 fixed top-0 left-0">
-    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-    <span className="mt-4 text-blue-400 text-sm font-medium tracking-wider">CARGANDO...</span>
+  <div className="w-full flex flex-col items-center justify-center py-16 min-h-[12rem]">
+    <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#0050d8] border-t-transparent" />
+    <span className="mt-3 text-slate-500 text-xs font-medium tracking-wide">Cargando…</span>
   </div>
 );
+
+const authScreenTransition = {
+  duration: 0.28,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
 
 export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
@@ -83,10 +95,10 @@ export const MainApp: React.FC = () => {
           {currentScreen === 'register' ? (
             <motion.div
               key="register"
-              initial={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              initial={{ opacity: 0, scale: 1.02 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={authScreenTransition}
               className="absolute inset-0 w-full h-full z-10"
             >
               <Suspense fallback={<Loader />}>
@@ -96,10 +108,10 @@ export const MainApp: React.FC = () => {
           ) : (
             <motion.div
               key="login"
-              initial={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              initial={{ opacity: 0, scale: 1.02 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={authScreenTransition}
               className="absolute inset-0 w-full h-full z-10"
             >
               <LoginScreen onNavigateToRegister={() => navigateTo('register')} />
@@ -114,9 +126,13 @@ export const MainApp: React.FC = () => {
   // --- PRIORIDAD 3: APP PRINCIPAL (USUARIO LOGUEADO) ---
   return (
     <Layout>
-      <Suspense fallback={<Loader />}>
-        {renderScreen(currentScreen, user)}
-      </Suspense>
+      <div className="flex min-h-0 flex-1 flex-col h-full">
+        <Suspense fallback={<ScreenSuspenseFallback />}>
+          <ScreenTransition screenKey={currentScreen}>
+            {renderScreen(currentScreen, user)}
+          </ScreenTransition>
+        </Suspense>
+      </div>
     </Layout>
   );
 };

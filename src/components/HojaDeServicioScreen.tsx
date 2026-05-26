@@ -1103,7 +1103,7 @@ Gracias.`;
     }));
 
     return (
-      <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+      <div className="min-h-full flex-shrink-0 flex flex-col bg-gray-50 p-4 sm:p-8">
         <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
           <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-6 sm:p-8">
             <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -1265,7 +1265,7 @@ Gracias.`;
   const currentRating = qualityMap[campos.calidadServicio] || 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50/50 to-purple-50 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-blue-50 via-indigo-50/50 to-purple-50 p-4 sm:p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">

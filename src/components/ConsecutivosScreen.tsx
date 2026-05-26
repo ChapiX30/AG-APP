@@ -102,7 +102,7 @@ export const ConsecutivosScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">

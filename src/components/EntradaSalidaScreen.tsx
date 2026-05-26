@@ -447,7 +447,7 @@ export const EntradaSalidaScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 pb-28">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-100 pb-28">
       <header className="bg-white border-b sticky top-0 z-20 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col items-center text-center gap-3">
           <img src={labLogo} alt="Logo laboratorio" className="h-16 w-auto object-contain" />

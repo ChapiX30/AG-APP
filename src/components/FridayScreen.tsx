@@ -1454,7 +1454,7 @@ const FridayScreen: React.FC = () => {
 
     return (
         /* ¡MAGIA AQUÍ! El fixed inset-0 z-[100] ocultará tu sidebar lateral aplastando el layout superior */
-        <div className="fixed inset-0 z-[100] flex h-screen bg-[#f6f7fb] font-sans text-[#323338] w-full overflow-hidden">
+        <div className="flex h-full min-h-0 flex-1 flex-col bg-[#f6f7fb] font-sans text-[#323338] w-full overflow-hidden">
             <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all w-full">
                 
                 {/* --- BARRA SUPERIOR --- */}
