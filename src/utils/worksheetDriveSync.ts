@@ -4,12 +4,12 @@ import {
   getDoc,
   getDocs,
   query,
-  updateDoc,
   where,
   writeBatch,
   type DocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { getTechnicianFolderFromWorksheet } from "./worksheetPdfGenerator";
 
 /** Evita enlazar Drive con filas cuyo id/folio/certificado están vacíos (matcheo masivo). */
 export const isLinkableWorksheetId = (id: string): boolean => {
@@ -137,6 +137,79 @@ export interface ReconcileWorksheetDriveResult {
   previews: ReconcileRowPreview[];
 }
 
+/** True when the worksheet row has no PDF in Firebase Storage yet. */
+export const worksheetLacksDrivePdf = (row: Record<string, unknown>): boolean => {
+  const pdfURL = String(row.pdfURL ?? "").trim();
+  return !pdfURL.includes("firebasestorage.googleapis.com");
+};
+
+/** Lookup by Firestore doc id or by id / certificado / folio field. */
+export const resolveWorksheetBySearchTerm = async (
+  term: string
+): Promise<DocumentSnapshot | null> => {
+  const t = term.trim();
+  if (t.length < 2) return null;
+
+  if (t.length >= 12 && /^[A-Za-z0-9]+$/.test(t)) {
+    const direct = await getDoc(doc(db, "hojasDeTrabajo", t));
+    if (direct.exists()) return direct;
+  }
+
+  return resolveWorksheetDoc(t);
+};
+
+export interface PendingWorksheetDriveEntry {
+  name: string;
+  rawName: string;
+  url: string;
+  fullPath: string;
+  updated: string;
+  created: string;
+  parentFolder: string;
+  isPendingWorksheet: true;
+  worksheetDocId: string;
+  notas?: string;
+  keywords?: string[];
+  size: number;
+  contentType: string;
+  uploadedBy?: string;
+  workDate?: string;
+}
+
+/** Virtual Drive row shown only when search matches a worksheet without PDF. */
+export const buildPendingWorksheetDriveEntry = (
+  wsDoc: DocumentSnapshot
+): PendingWorksheetDriveEntry | null => {
+  const data = wsDoc.data() as Record<string, unknown> | undefined;
+  if (!data || !worksheetLacksDrivePdf(data)) return null;
+
+  const cert = String(data.certificado || data.folio || "SIN-CERT").trim();
+  const equipmentId = String(data.id || "").trim() || "SINID";
+  const rawName = `${cert}_${equipmentId}.pdf`;
+  const technician = getTechnicianFolderFromWorksheet(data);
+  const cliente = String(data.cliente || "").trim();
+  const equipo = String(data.equipo || "").trim();
+  const folio = String(data.folio || "").trim();
+
+  return {
+    name: `${cert}_${equipmentId}`,
+    rawName,
+    url: "",
+    fullPath: `pending-worksheet/${wsDoc.id}`,
+    updated: String(data.lastUpdated || data.fecha || new Date().toISOString()),
+    created: String(data.createdAt || data.fechaEntrada || data.fecha || ""),
+    parentFolder: technician,
+    isPendingWorksheet: true,
+    worksheetDocId: wsDoc.id,
+    notas: `Hoja sin PDF — ${cliente || "—"} / ${equipo || "—"}`,
+    keywords: [equipmentId, cert, folio, wsDoc.id].filter(Boolean),
+    size: 0,
+    contentType: "application/pdf",
+    uploadedBy: technician,
+    workDate: String(data.fecha || data.fecha_calib || "").trim() || undefined,
+  };
+};
+
 /** Resuelve una única hoja; evita actualizar filas con id/folio vacíos. */
 export const resolveWorksheetDoc = async (
   possibleId: string
@@ -147,6 +220,11 @@ export const resolveWorksheetDoc = async (
     query(collection(db, "hojasDeTrabajo"), where("id", "==", possibleId)),
     query(collection(db, "hojasDeTrabajo"), where("folio", "==", possibleId)),
   ];
+  if (/^\d+$/.test(possibleId)) {
+    tryQueries.push(
+      query(collection(db, "hojasDeTrabajo"), where("id", "==", Number(possibleId)))
+    );
+  }
   for (const q of tryQueries) {
     const snap = await getDocs(q);
     if (snap.size === 1) return snap.docs[0];

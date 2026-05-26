@@ -9,6 +9,7 @@ import {
 import type { jsPDF } from "jspdf"; 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { writeDriveFileMetadata } from "../utils/driveFileMetadata";
+import { markDriveFileCompletedForWorksheet } from "../utils/markDriveCompleted";
 import { useAuth } from "../hooks/useAuth";
 import { storage, db, firebaseConfig } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
@@ -593,6 +594,15 @@ async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void> {
     });
   } catch (metaErr) {
     console.error("[WorkSheet] Error al registrar metadata en Drive:", metaErr);
+  }
+  try {
+    await markDriveFileCompletedForWorksheet(
+      { ...fullData, docId: docRefId },
+      technicianName,
+      { worksheetDocId: docRefId }
+    );
+  } catch (notifyErr) {
+    console.error("[WorkSheet] notify calidad:", notifyErr);
   }
   updates.cargado_drive = "Si";
 

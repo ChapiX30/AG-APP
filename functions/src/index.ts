@@ -317,7 +317,11 @@ export const enviarNotificacionCalidad = functions.firestore
         if (!change.after.exists) return null;
 
         const nuevaNotificacion = change.after.data();
-        if (!nuevaNotificacion || nuevaNotificacion.tipo !== 'asignacion_calidad') {
+        const tipo = nuevaNotificacion?.tipo;
+        if (
+            !nuevaNotificacion ||
+            (tipo !== 'asignacion_calidad' && tipo !== 'revision_calidad')
+        ) {
             return null;
         }
 
@@ -325,13 +329,9 @@ export const enviarNotificacionCalidad = functions.firestore
             return null;
         }
 
-        const { usuarioId, titulo, mensaje, servicioId } = nuevaNotificacion;
-        if (!usuarioId) return null;
-
-        try {
+        const collectTokensForUser = async (usuarioId: string): Promise<string[]> => {
             const userDoc = await db.collection('usuarios').doc(usuarioId).get();
-            if (!userDoc.exists) return null;
-
+            if (!userDoc.exists) return [];
             const userData = userDoc.data();
             const tokensObj = userData?.fcmTokens || {};
             const activeFromMap = Object.keys(tokensObj).filter((token) => tokensObj[token] === true);
@@ -339,30 +339,57 @@ export const enviarNotificacionCalidad = functions.firestore
                 typeof userData?.fcmToken === 'string' && userData.fcmToken.length > 0
                     ? userData.fcmToken
                     : null;
-            const tokensArray = [
+            return [
                 ...new Set([
                     ...activeFromMap,
                     ...(legacyToken && !activeFromMap.includes(legacyToken) ? [legacyToken] : []),
                 ]),
             ];
+        };
 
+        const recipientIds: string[] =
+            tipo === 'revision_calidad'
+                ? Array.isArray(nuevaNotificacion.destinatarios)
+                    ? nuevaNotificacion.destinatarios.filter(
+                          (id: unknown) => typeof id === 'string' && id.length > 0
+                      )
+                    : []
+                : nuevaNotificacion.usuarioId
+                  ? [nuevaNotificacion.usuarioId]
+                  : [];
+
+        if (recipientIds.length === 0) return null;
+
+        try {
+            const tokenSet = new Set<string>();
+            for (const uid of recipientIds) {
+                const tokens = await collectTokensForUser(uid);
+                tokens.forEach((t) => tokenSet.add(t));
+            }
+
+            const tokensArray = [...tokenSet];
             if (tokensArray.length === 0) {
-                console.log(`El usuario ${usuarioId} no tiene dispositivos registrados.`);
+                console.log(
+                    `Notificación ${context.params.notificacionId}: sin tokens FCM para destinatarios.`
+                );
                 return null;
             }
 
-            const servicioTag = servicioId || 'asignacion';
-            const title = String(titulo || 'Aviso AG');
-            const body = String(mensaje || '');
+            const servicioId = nuevaNotificacion.servicioId || nuevaNotificacion.worksheetDocId || '';
+            const servicioTag = servicioId || context.params.notificacionId;
+            const title = String(
+                nuevaNotificacion.title || nuevaNotificacion.titulo || 'Aviso AG'
+            );
+            const body = String(nuevaNotificacion.body || nuevaNotificacion.mensaje || '');
+            const url = tipo === 'revision_calidad' ? '/drive' : '/calendario';
 
-            // Solo data: el SW / cliente muestran UNA notificación (sin auto-display del navegador).
             const payload = {
                 data: {
                     title,
                     body,
-                    url: '/calendario',
+                    url,
                     servicioId: servicioId || '',
-                    tipo: 'asignacion_calidad',
+                    tipo,
                     tag: servicioTag,
                 },
                 android: {
@@ -386,9 +413,9 @@ export const enviarNotificacionCalidad = functions.firestore
                     data: {
                         title,
                         body,
-                        url: '/calendario',
+                        url,
                         servicioId: servicioId || '',
-                        tipo: 'asignacion_calidad',
+                        tipo,
                     },
                 },
                 tokens: tokensArray,
@@ -396,7 +423,7 @@ export const enviarNotificacionCalidad = functions.firestore
 
             const response = await admin.messaging().sendEachForMulticast(payload);
             console.log(
-                `Push asignación ${context.params.notificacionId} → ${usuarioId}. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`
+                `Push ${tipo} ${context.params.notificacionId}. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`
             );
 
             await change.after.ref.set(

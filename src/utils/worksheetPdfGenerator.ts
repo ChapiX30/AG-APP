@@ -4,6 +4,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import logoAg from "../assets/lab_logo.png";
 import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
+import { markDriveFileCompletedForWorksheet } from "./markDriveCompleted";
 import { toWorksheetMagnitud } from "./magnitudWorksheet";
 
 /** Fields consumed by generateTemplatePDF (shared with WorkSheetScreen). */
@@ -648,6 +649,14 @@ export async function generateWorksheetPdfFromFirestore(
       });
     } catch (metaErr) {
       console.error("[worksheetPdfGenerator] fileMetadata:", metaErr);
+    }
+
+    try {
+      await markDriveFileCompletedForWorksheet(raw, uploadedBy, {
+        worksheetDocId: docId,
+      });
+    } catch (notifyErr) {
+      console.error("[worksheetPdfGenerator] notify calidad:", notifyErr);
     }
 
     const patch: Record<string, string> = {

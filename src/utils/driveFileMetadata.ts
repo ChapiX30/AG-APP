@@ -77,6 +77,55 @@ export async function enrichFilesWithWorkDates<
   });
 }
 
+export async function enrichFilesWithWorksheetInfo<
+  T extends {
+    rawName?: string;
+    name: string;
+    fullPath: string;
+    completedByName?: string;
+    uploadedBy?: string;
+    parentFolder?: string;
+  } & DriveWorksheetEnrichment
+>(files: T[]): Promise<T[]> {
+  const missing = files.filter((f) => !f.worksheetCliente && !f.worksheetId);
+  if (missing.length === 0) return files;
+
+  const resolved = new Map<string, DriveWorksheetEnrichment>();
+
+  await Promise.all(
+    missing.map(async (f) => {
+      try {
+        const possibleId = extractWorksheetLinkId(f.rawName || f.name);
+        const wsDoc = await resolveWorksheetDoc(possibleId);
+        if (!wsDoc) return;
+        const data = wsDoc.data() as Record<string, unknown>;
+        resolved.set(f.fullPath, {
+          worksheetId: String(data.id || possibleId).trim(),
+          worksheetCliente: String(data.cliente || "").trim(),
+          worksheetEquipo: String(data.equipo || "").trim(),
+          worksheetFecha: String(
+            data.fecha || data.fecha_calib || data.fechaEntrada || ""
+          ).trim(),
+          worksheetTechnician: String(
+            data.nombre || data.assignedTo || f.completedByName || f.uploadedBy || f.parentFolder || ""
+          ).trim(),
+          worksheetCargadoDrive: String(data.cargado_drive || "").trim(),
+          worksheetDocId: wsDoc.id,
+        });
+      } catch {
+        /* optional enrichment */
+      }
+    })
+  );
+
+  if (resolved.size === 0) return files;
+
+  return files.map((f) => {
+    const info = resolved.get(f.fullPath);
+    return info ? { ...f, ...info } : f;
+  });
+}
+
 const normalizeText = (text: string) =>
   text ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
 
@@ -101,12 +150,27 @@ const cleanFileName = (rawName: string) => {
   return name;
 };
 
+export interface DriveWorksheetEnrichment {
+  worksheetId?: string;
+  worksheetCliente?: string;
+  worksheetEquipo?: string;
+  worksheetFecha?: string;
+  worksheetTechnician?: string;
+  worksheetCargadoDrive?: string;
+  worksheetDocId?: string;
+}
+
 /** Writes fileMetadata after Storage upload (same shape as DriveScreen.processFiles). */
 export async function writeDriveFileMetadata(
   fullPath: string,
   uploadResult: UploadResult,
   uploadedBy: string,
-  options?: { ubicacion_real?: string; workDate?: string }
+  options?: {
+    ubicacion_real?: string;
+    workDate?: string;
+    /** When true, marks file as realizado (Por Revisar) for calidad. */
+    markCompleted?: boolean;
+  }
 ): Promise<void> {
   const fileName = fullPath.split("/").pop() || fullPath;
   const docId = fullPath.replace(/\//g, "_");
@@ -127,8 +191,10 @@ export async function writeDriveFileMetadata(
         : normalizeDriveDate(meta.timeCreated || meta.updated),
       uploadedBy: uploadedBy || "Desconocido",
       keywords: generateSearchTokens(cleanFileName(fileName)),
-      completed: existingData.completed || false,
-      completedByName: existingData.completedByName || null,
+      completed: options?.markCompleted ? true : existingData.completed || false,
+      completedByName: options?.markCompleted
+        ? uploadedBy
+        : existingData.completedByName || null,
       reviewed: existingData.reviewed || false,
       reviewedByName: existingData.reviewedByName || null,
       notas: existingData.notas || "",

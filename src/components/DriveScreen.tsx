@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where } from "firebase/firestore";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where, writeBatch } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
@@ -22,9 +22,12 @@ import {
 import clsx from "clsx";
 import labLogo from '../assets/lab_logo.png';
 import {
+  buildPendingWorksheetDriveEntry,
   extractWorksheetLinkId,
   isLinkableWorksheetId,
+  resolveWorksheetBySearchTerm,
   resolveWorksheetDoc,
+  type PendingWorksheetDriveEntry,
 } from "../utils/worksheetDriveSync";
 import {
   generateWorksheetPdfFromFirestore,
@@ -32,7 +35,17 @@ import {
 } from "../utils/worksheetPdfGenerator";
 import { getFolderVisualStyle } from "../utils/fileUtils";
 import { parseDateRobust } from "../utils/calibrationShared";
-import { normalizeDriveDate, resolveFileWorkDate, enrichFilesWithWorkDates, extractWorkDateFromWorksheet } from "../utils/driveFileMetadata";
+import { normalizeDriveDate, resolveFileWorkDate, enrichFilesWithWorkDates, enrichFilesWithWorksheetInfo, extractWorkDateFromWorksheet } from "../utils/driveFileMetadata";
+import { notificarCalidadRevisionPendiente } from "../utils/notificacionesRevisionCalidad";
+import {
+  isMetadataPendingReview,
+  isWorksheetCargadoDrive,
+  normalizeDriveFullPath,
+  PENDING_REVIEW_METADATA_LIMIT,
+  resolveTechnicianGroupKey,
+  syncPendingReviewFromWorksheets,
+  syncSingleFilePendingReviewFromWorksheet,
+} from "../utils/pendingReviewDrive";
 import DrivePreviewModal from "./DrivePreviewModal";
 
 // ─────────────────────────────────────────────
@@ -59,6 +72,15 @@ interface DriveFile {
   ubicacion?: string;
   ubicacion_real?: string;
   workDate?: string;
+  /** Virtual row: hoja en Firestore sin PDF en Storage (solo vía búsqueda por ID). */
+  isPendingWorksheet?: boolean;
+  worksheetDocId?: string;
+  worksheetId?: string;
+  worksheetCliente?: string;
+  worksheetEquipo?: string;
+  worksheetFecha?: string;
+  worksheetTechnician?: string;
+  worksheetCargadoDrive?: string;
 }
 
 interface DriveFolder {
@@ -375,13 +397,29 @@ const groupFilesByUbicacion = (files: DriveFile[]) => {
 const isWorksheetPdfFile = (file: DriveFile) =>
   (file.rawName || file.name).toLowerCase().endsWith(".pdf");
 
+const ReviewMetaLine = ({ file }: { file: DriveFile }) => {
+  const id = file.worksheetId || extractWorksheetLinkId(file.rawName || file.name);
+  const fecha = file.worksheetFecha || file.workDate || "";
+  const cliente = file.worksheetCliente || "";
+  const tecnico = file.worksheetTechnician || file.completedByName || file.uploadedBy || file.parentFolder || "";
+  if (!id && !cliente && !fecha) return null;
+  return (
+    <p className="text-[10px] text-blue-700/90 mt-1 line-clamp-2 leading-snug">
+      <span className="font-semibold">ID {id || "—"}</span>
+      {fecha ? ` · ${formatDate(fecha)}` : ""}
+      {cliente ? ` · ${cliente}` : ""}
+      {tecnico ? ` · ${tecnico}` : ""}
+    </p>
+  );
+};
+
 // ─── FILE CARD (Grid) ─────────────────────────
-const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onStar }: any) => {
+const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onStar, showReviewMeta }: any) => {
   const isReadyForReview = file.completed && !file.reviewed;
   const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
   const isNoExpiration = file.fullPath?.toLowerCase().includes('hojas de servicio') || file.name?.toUpperCase().startsWith('HSDG');
   const { status } = getDeadlineInfo(getFileWorkDate(file));
-  const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration;
+  const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration && !file.isPendingWorksheet;
 
   return (
     <div
@@ -394,7 +432,8 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
           ? "ring-2 ring-blue-500 border-blue-200 shadow-md shadow-blue-100/40 -translate-y-0.5"
           : "border-slate-200/90 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5",
         isOverdue && !selected ? "border-red-200 shadow-red-50/50" : "",
-        isReadyForReview && !isOverdue && !selected ? "border-blue-200 shadow-blue-50/50" : ""
+        isReadyForReview && !isOverdue && !selected ? "border-blue-200 shadow-blue-50/50" : "",
+        file.isPendingWorksheet && !selected ? "border-amber-200 shadow-amber-50/50" : ""
       )}
     >
         <div
@@ -432,6 +471,11 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
         </button>
 
         <div className="absolute bottom-2 right-2 flex items-center gap-1">
+          {file.isPendingWorksheet && (
+            <div className="bg-amber-500 text-white px-1.5 py-0.5 rounded-md text-[9px] font-bold shadow-sm" title="Sin PDF en Drive">
+              Sin PDF
+            </div>
+          )}
           {file.reviewed && (
             <div className="bg-emerald-500 text-white p-1 rounded-full shadow-sm" title="Validado">
               <CheckCircle2 size={10} />
@@ -468,6 +512,12 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
               <span className="truncate">{file.parentFolder}</span>
             </div>
           )}
+          {file.isPendingWorksheet && file.notas && (
+            <p className="text-[10px] text-amber-700 mt-1 line-clamp-2">{file.notas}</p>
+          )}
+          {showReviewMeta && file.completed && !file.reviewed && (
+            <ReviewMetaLine file={file} />
+          )}
         </div>
 
         <div className="mt-auto space-y-2">
@@ -487,11 +537,11 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
 });
 
 // ─── FILE LIST ROW ────────────────────────────
-const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onDownload, onStar }: any) => {
+const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onDownload, onStar, showReviewMeta }: any) => {
   const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
   const isNoExpiration = file.fullPath?.toLowerCase().includes('hojas de servicio') || file.name?.toUpperCase().startsWith('HSDG');
   const { status } = getDeadlineInfo(getFileWorkDate(file));
-  const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration;
+  const isOverdue = status === 'overdue' && !file.completed && !isNoExpiration && !file.isPendingWorksheet;
 
   return (
     <div
@@ -521,6 +571,12 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
         </button>
         <div className="min-w-0">
           <p className={clsx("text-sm font-medium truncate", selected ? "text-blue-700" : "text-slate-800")}>{file.name}</p>
+          {file.isPendingWorksheet && (
+            <span className="text-[10px] font-semibold text-amber-600">Sin PDF — use «Generar PDF»</span>
+          )}
+          {showReviewMeta && file.completed && !file.reviewed && (
+            <ReviewMetaLine file={file} />
+          )}
           {showFolder && (
             <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
               <FolderOpen size={9} /> {file.parentFolder}
@@ -593,7 +649,7 @@ const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, dragga
 };
 
 // ─── DETAILS PANEL ────────────────────────────
-const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes, onRegeneratePdf, isGeneratingPdf, showRegeneratePdf }: any) => {
+const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes, onRegeneratePdf, isGeneratingPdf, showRegeneratePdf, isPendingWorksheet }: any) => {
   const [notes, setNotes] = React.useState(file.notas || "");
   React.useEffect(() => { setNotes(file.notas || ""); }, [file]);
 
@@ -619,6 +675,11 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Detalles</h4>
           {[
             { label: 'Fecha de trabajo', value: formatDate(getFileWorkDate(file)) },
+            ...(file.worksheetId ? [{ label: 'ID equipo', value: file.worksheetId }] : []),
+            ...(file.worksheetCliente ? [{ label: 'Cliente', value: file.worksheetCliente }] : []),
+            ...(file.worksheetTechnician || file.completedByName
+              ? [{ label: 'Técnico', value: file.worksheetTechnician || file.completedByName }]
+              : []),
             { label: 'Subido', value: formatDate(file.created) },
             { label: 'Modificado', value: formatDate(file.updated) },
             { label: 'Subido por', value: file.uploadedBy || '—' },
@@ -634,6 +695,8 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
 
         <div className="space-y-3">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estado del Proceso</h4>
+          {!isPendingWorksheet ? (
+            <>
           <div className={clsx("flex items-center justify-between p-3 rounded-xl border transition-all", file.completed ? "bg-blue-50 border-blue-200" : "bg-slate-50 border-slate-200")}>
             <div>
               <p className="text-xs font-semibold text-slate-700">Metrólogo</p>
@@ -648,8 +711,15 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
             </div>
             <ProSwitch checked={file.reviewed} disabled={!isQualityUser} activeColor="bg-emerald-500" onChange={() => onToggleStatus(file, 'reviewed', !file.reviewed)} />
           </div>
+            </>
+          ) : (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              Hoja registrada en Firestore sin PDF en Drive. Genere el PDF para continuar el flujo normal.
+            </p>
+          )}
         </div>
 
+        {!isPendingWorksheet && (
         <div className="space-y-2">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notas</h4>
           <textarea
@@ -661,6 +731,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
           />
           <p className="text-[10px] text-slate-300">Se incluirá en búsquedas globales</p>
         </div>
+        )}
       </div>
 
       <div className="px-5 py-4 border-t border-slate-100 flex flex-col gap-2 flex-shrink-0">
@@ -668,17 +739,32 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
           <button
             onClick={() => onRegeneratePdf(file)}
             disabled={isGeneratingPdf}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-800 border border-slate-900 rounded-xl hover:bg-slate-900 text-xs font-semibold text-white transition-all disabled:opacity-60"
+            className={clsx(
+              "w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-60",
+              isPendingWorksheet
+                ? "bg-amber-600 border border-amber-700 hover:bg-amber-700"
+                : "bg-slate-800 border border-slate-900 hover:bg-slate-900"
+            )}
           >
-            {isGeneratingPdf ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {isGeneratingPdf ? "Regenerando PDF..." : "Regenerar PDF"}
+            {isGeneratingPdf ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : isPendingWorksheet ? (
+              <FilePlus2 size={14} />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+            {isGeneratingPdf
+              ? isPendingWorksheet ? "Generando PDF..." : "Regenerando PDF..."
+              : isPendingWorksheet ? "Generar PDF" : "Regenerar PDF"}
           </button>
         )}
         <div className="flex gap-2">
+        {!isPendingWorksheet && (
         <button onClick={() => onDownload(file)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-all">
           <Eye size={14} /> Vista Previa
         </button>
-        {isQualityUser && (
+        )}
+        {isQualityUser && !isPendingWorksheet && (
           <button onClick={() => onDelete(file)} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 text-xs font-semibold text-red-600 transition-all">
             <Trash2 size={14} /> Eliminar
           </button>
@@ -809,6 +895,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [renameTargetFolder, setRenameTargetFolder] = useState<DriveFolder | null>(null);
   const [newName, setNewName] = useState("");
   const [generatingPdfLinkId, setGeneratingPdfLinkId] = useState<string | null>(null);
+  const [pendingWorksheetFile, setPendingWorksheetFile] = useState<PendingWorksheetDriveEntry | null>(null);
 
   const handleBack = () => { onBack ? onBack() : goBack(); };
 
@@ -895,8 +982,37 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       if (isGlobalView) {
         setLoading(true);
         setFilesLoading(false);
-        const q = query(collection(db, 'fileMetadata'), orderBy('created', 'desc'), limit(400));
-        const snap = await getDocs(q);
+
+        if (activeFilter === 'pending_review' && currentRoot === 'worksheets') {
+          setIsSyncing(true);
+          void syncPendingReviewFromWorksheets(currentRoot, { maxWrites: 150 })
+            .catch((e) => console.error("syncPendingReviewFromWorksheets", e))
+            .finally(() => setIsSyncing(false));
+        }
+
+        const pendingReviewQ = query(
+          collection(db, 'fileMetadata'),
+          where('completed', '==', true),
+          orderBy('created', 'desc'),
+          limit(PENDING_REVIEW_METADATA_LIMIT)
+        );
+        const defaultQ = query(
+          collection(db, 'fileMetadata'),
+          orderBy('created', 'desc'),
+          limit(activeFilter === 'pending_review' ? PENDING_REVIEW_METADATA_LIMIT : 400)
+        );
+
+        let snap;
+        if (activeFilter === 'pending_review') {
+          try {
+            snap = await getDocs(pendingReviewQ);
+          } catch (indexErr) {
+            console.warn("pending_review indexed query failed, using fallback", indexErr);
+            snap = await getDocs(defaultQ);
+          }
+        } else {
+          snap = await getDocs(defaultQ);
+        }
         const results: DriveFile[] = [];
         const myName = normalizeText(currentUserData?.name || "");
         const searchTerms = debouncedSearch ? normalizeText(debouncedSearch).split(/[\s\-]+/).filter(t => t.length > 0) : [];
@@ -904,9 +1020,9 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         snap.forEach((docSnap) => {
           const data = docSnap.data();
           const rawName = data.name || docSnap.id;
-          const fullPath = data.filePath || `${currentRoot}/${rawName}`;
+          const fullPath = normalizeDriveFullPath(data.filePath, rawName, currentRoot);
 
-          if (!fullPath.startsWith(currentRoot)) return;
+          if (!fullPath.startsWith(`${currentRoot}/`)) return;
 
           if (!isQuality) {
             const isUploader = normalizeText(data.uploadedBy || "") === myName;
@@ -914,7 +1030,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           }
 
           if (activeFilter === 'starred' && data.starred !== true) return;
-          if (activeFilter === 'pending_review' && !(data.completed === true && data.reviewed !== true)) return;
+          if (activeFilter === 'pending_review' && !isMetadataPendingReview(data)) return;
           if (activeFilter === 'completed' && data.reviewed !== true) return;
           if (activeFilter === 'recent') {
             const recentDate = parseDateRobust(resolveFileWorkDate(data, [data.updated, data.created]));
@@ -932,7 +1048,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             reviewed: data.reviewed, reviewedByName: data.reviewedByName,
             completed: data.completed, completedByName: data.completedByName,
             starred: data.starred, uploadedBy: data.uploadedBy,
-            parentFolder: getParentFolderName(fullPath),
+            parentFolder: getParentFolderName(fullPath) !== "Raíz"
+              ? getParentFolderName(fullPath)
+              : resolveTechnicianGroupKey({
+                  fullPath,
+                  completedByName: data.completedByName,
+                  uploadedBy: data.uploadedBy,
+                }),
             keywords: data.keywords, notas: data.notas,
             ubicacion: data.ubicacion, ubicacion_real: data.ubicacion_real
           };
@@ -943,7 +1065,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             results.push(fileObj);
           }
         });
-        setFiles(await enrichFilesWithWorkDates(results));
+        const enriched = await enrichFilesWithWorksheetInfo(
+          await enrichFilesWithWorkDates(results)
+        );
+        setFiles(
+          enriched.map((f) => ({
+            ...f,
+            parentFolder: resolveTechnicianGroupKey(f),
+          }))
+        );
         setFolders([]);
       } else {
         setLoading(true);
@@ -1065,9 +1195,40 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           } as DriveFile;
         });
 
-        const loaded = await enrichFilesWithWorkDates(
-          (await Promise.all(filePromises)).filter(Boolean) as DriveFile[]
+        let loaded = await enrichFilesWithWorksheetInfo(
+          await enrichFilesWithWorkDates(
+            (await Promise.all(filePromises)).filter(Boolean) as DriveFile[]
+          )
         );
+
+        loaded = await Promise.all(
+          loaded.map(async (f) => {
+            if (f.completed === true || f.reviewed === true) return f;
+            if (!isWorksheetCargadoDrive(f.worksheetCargadoDrive)) return f;
+
+            const techName =
+              f.worksheetTechnician?.trim() ||
+              f.parentFolder?.trim() ||
+              path[path.length - 1]?.trim() ||
+              "";
+
+            let wsRow: Record<string, unknown> | null = null;
+            if (f.worksheetDocId) {
+              const wsSnap = await getDoc(doc(db, "hojasDeTrabajo", f.worksheetDocId));
+              if (wsSnap.exists()) wsRow = { ...wsSnap.data(), docId: wsSnap.id };
+            }
+            if (wsRow) {
+              void syncSingleFilePendingReviewFromWorksheet(f.fullPath, wsRow);
+            }
+
+            return {
+              ...f,
+              completed: true,
+              completedByName: f.completedByName || techName || undefined,
+            };
+          })
+        );
+
         setFiles(loaded);
         setFilesLoading(false);
 
@@ -1080,35 +1241,61 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           ).finally(() => setIsSyncing(false));
         }
       }
-    } catch (e) { console.error(e); }
-    finally {
+    } catch (e) {
+      console.error("loadContent", e);
+      showToast("Error al cargar el Drive. Intenta de nuevo.", "error");
+    } finally {
       setLoading(false);
       setFilesLoading(false);
     }
-  }, [path, activeFilter, currentUserData, debouncedSearch, isQuality, currentRoot]);
+  }, [path, activeFilter, currentUserData, debouncedSearch, isQuality, currentRoot, showToast]);
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
-  // ── Keyboard shortcuts ──
+  // ── Búsqueda: hoja sin PDF por ID de equipo, certificado, folio o doc Firestore ──
   useEffect(() => {
-    const handle = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') { e.preventDefault(); setSelectedIds(new Set(processedFiles.map(f => f.fullPath))); }
-      if (e.key === 'Escape') {
-        if (previewFile) setPreviewFile(null);
-        else if (selectedIds.size > 0) setSelectedIds(new Set());
-        else if (debouncedSearch) setSearchQuery("");
+    let cancelled = false;
+
+    const lookupPendingWorksheet = async () => {
+      const term = debouncedSearch.trim();
+      if (
+        !term ||
+        term.length < 3 ||
+        !currentUserData ||
+        currentRoot !== "worksheets"
+      ) {
+        setPendingWorksheetFile(null);
+        return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0 && isQuality) handleBatchDelete();
-      if (e.key === ' ' && selectedIds.size === 1) {
-        e.preventDefault();
-        const f = files.find(fi => fi.fullPath === Array.from(selectedIds)[0]);
-        if (f) handlePreview(f);
+
+      try {
+        const wsDoc = await resolveWorksheetBySearchTerm(term);
+        if (cancelled) return;
+        if (!wsDoc) {
+          setPendingWorksheetFile(null);
+          return;
+        }
+
+        const data = wsDoc.data() as Record<string, unknown>;
+        if (!isQuality) {
+          const myName = normalizeText(currentUserData?.name || "");
+          const assigned = normalizeText(String(data.nombre || data.assignedTo || ""));
+          if (assigned !== myName) {
+            setPendingWorksheetFile(null);
+            return;
+          }
+        }
+
+        setPendingWorksheetFile(buildPendingWorksheetDriveEntry(wsDoc));
+      } catch (e) {
+        console.error("[Drive] pending worksheet lookup:", e);
+        if (!cancelled) setPendingWorksheetFile(null);
       }
     };
-    window.addEventListener('keydown', handle);
-    return () => window.removeEventListener('keydown', handle);
-  }, [selectedIds, files, previewFile, isQuality]);
+
+    lookupPendingWorksheet();
+    return () => { cancelled = true; };
+  }, [debouncedSearch, currentUserData, isQuality, currentRoot]);
 
   // ── Close menus on outside click / scroll ──
   useEffect(() => {
@@ -1137,6 +1324,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // ── Sorted/filtered files ──
   const processedFiles = useMemo(() => {
     let result = [...files];
+    if (pendingWorksheetFile && debouncedSearch.trim().length >= 3) {
+      const linkId = extractWorksheetLinkId(pendingWorksheetFile.rawName);
+      const alreadyListed = result.some(
+        (f) =>
+          !f.isPendingWorksheet &&
+          extractWorksheetLinkId(f.rawName || f.name) === linkId
+      );
+      if (!alreadyListed) result.unshift(pendingWorksheetFile);
+    }
     result.sort((a, b) => {
       switch (sortBy) {
         case 'nameAsc': return a.name.localeCompare(b.name);
@@ -1149,7 +1345,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
     });
     return result;
-  }, [files, sortBy]);
+  }, [files, pendingWorksheetFile, debouncedSearch, sortBy]);
 
   const isMetrologistFolderView = useMemo(
     () =>
@@ -1174,7 +1370,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (activeFilter !== 'completed' && activeFilter !== 'pending_review') return {};
     const groups: Record<string, DriveFile[]> = {};
     processedFiles.forEach(f => {
-      const k = f.parentFolder || getParentFolderName(f.fullPath);
+      const k = resolveTechnicianGroupKey(f);
       if (!groups[k]) groups[k] = [];
       groups[k].push(f);
     });
@@ -1202,8 +1398,83 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   // ── Preview ──
+  const runWorksheetPdfGeneration = useCallback(
+    async (docId: string, technicianFolder: string, uploadedBy: string, allowIncomplete: boolean) => {
+      setGeneratingPdfLinkId(docId);
+      try {
+        const result = await generateWorksheetPdfFromFirestore(docId, {
+          technicianFolder,
+          uploadedBy,
+          allowIncomplete,
+        });
+
+        if (!result.ok) {
+          if (!allowIncomplete && result.error?.includes("mediciones")) {
+            const proceed = window.confirm(
+              `${result.error}\n\nEl PDF se generará con encabezado e identificación, pero las tablas de medición quedarán vacías.\n\n¿Continuar?`
+            );
+            if (proceed) {
+              setGeneratingPdfLinkId(null);
+              return runWorksheetPdfGeneration(docId, technicianFolder, uploadedBy, true);
+            }
+          } else {
+            const detail = result.missing?.length
+              ? ` Faltan: ${result.missing.join(", ")}.`
+              : "";
+            showToast(`${result.error || "No se pudo generar el PDF."}${detail}`, "error");
+          }
+          return false;
+        }
+
+        const warnNote =
+          result.warnings && result.warnings.length > 0
+            ? " (PDF parcial — revise campos vacíos)"
+            : "";
+        showToast(`PDF generado y subido a Drive${warnNote}`, "success");
+        setSelectedIds(new Set());
+        setDetailsOpen(false);
+        setPendingWorksheetFile(null);
+        setSearchQuery("");
+        await loadContent();
+        return true;
+      } catch (err) {
+        console.error("[Drive] generate PDF:", err);
+        showToast("Error inesperado al generar el PDF.", "error");
+        return false;
+      } finally {
+        setGeneratingPdfLinkId(null);
+      }
+    },
+    [showToast, loadContent]
+  );
+
+  const handleGenerateWorksheetPdf = useCallback(
+    async (file: DriveFile, allowIncomplete = false) => {
+      const docId = file.worksheetDocId;
+      if (!docId) {
+        showToast("No se encontró el registro de la hoja de trabajo.", "error");
+        return;
+      }
+
+      const technicianFolder =
+        file.parentFolder?.trim() ||
+        path[path.length - 1]?.trim() ||
+        getTechnicianFolderName({ name: currentUserData?.name, email: currentUserData?.email });
+      const uploadedBy =
+        currentUserData?.name || user?.displayName || user?.email?.split("@")[0] || "Usuario";
+
+      await runWorksheetPdfGeneration(docId, technicianFolder, uploadedBy, allowIncomplete);
+    },
+    [path, currentUserData, user, showToast, runWorksheetPdfGeneration]
+  );
+
   const handleRegeneratePdf = useCallback(
     async (file: DriveFile, allowIncomplete = false) => {
+      if (file.isPendingWorksheet) {
+        await handleGenerateWorksheetPdf(file, allowIncomplete);
+        return;
+      }
+
       const possibleId = extractWorksheetLinkId(file.rawName || file.name);
       if (!isLinkableWorksheetId(possibleId)) {
         showToast("No se encontró hoja de trabajo vinculada a este PDF.", "error");
@@ -1217,55 +1488,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
 
       const docId = wsDoc.id;
-      setGeneratingPdfLinkId(possibleId);
       const technicianFolder =
         path[path.length - 1]?.trim() ||
         getTechnicianFolderName({ name: currentUserData?.name, email: currentUserData?.email });
       const uploadedBy =
         currentUserData?.name || user?.displayName || user?.email?.split("@")[0] || "Usuario";
 
-      try {
-        const result = await generateWorksheetPdfFromFirestore(docId, {
-          technicianFolder,
-          uploadedBy,
-          allowIncomplete,
-        });
-
-        if (!result.ok) {
-          if (!allowIncomplete && result.error?.includes("mediciones")) {
-            const proceed = window.confirm(
-              `${result.error}\n\nEl PDF se regenerará con encabezado e identificación, pero las tablas de medición quedarán vacías.\n\n¿Continuar?`
-            );
-            if (proceed) {
-              setGeneratingPdfLinkId(null);
-              await handleRegeneratePdf(file, true);
-              return;
-            }
-          } else {
-            const detail = result.missing?.length
-              ? ` Faltan: ${result.missing.join(", ")}.`
-              : "";
-            showToast(`${result.error || "No se pudo regenerar el PDF."}${detail}`, "error");
-          }
-          return;
-        }
-
-        const warnNote =
-          result.warnings && result.warnings.length > 0
-            ? " (PDF parcial — revise campos vacíos)"
-            : "";
-        showToast(`PDF regenerado y subido a Drive${warnNote}`, "success");
-        setSelectedIds(new Set());
-        setDetailsOpen(false);
-        await loadContent();
-      } catch (err) {
-        console.error("[Drive] regenerate PDF:", err);
-        showToast("Error inesperado al regenerar el PDF.", "error");
-      } finally {
-        setGeneratingPdfLinkId(null);
-      }
+      await runWorksheetPdfGeneration(docId, technicianFolder, uploadedBy, allowIncomplete);
     },
-    [path, currentUserData, user, showToast, loadContent]
+    [path, currentUserData, user, showToast, handleGenerateWorksheetPdf, runWorksheetPdfGeneration]
   );
 
   const resolvePreviewUrl = useCallback(async (file: DriveFile) => {
@@ -1282,6 +1513,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, []);
 
   const handlePreview = (file: DriveFile) => {
+    if (file.isPendingWorksheet) {
+      showToast("Esta hoja aún no tiene PDF. Selecciónela y use «Generar PDF».", "info");
+      setSelectedIds(new Set([file.fullPath]));
+      setDetailsOpen(true);
+      return;
+    }
     setPreviewFile({ ...file, url: file.url || "" });
   };
 
@@ -1291,19 +1528,39 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (!confirm(`¿Eliminar ${selectedIds.size} archivo(s)? Esta acción no se puede deshacer.`)) return;
     let count = 0;
     for (const id of Array.from(selectedIds)) {
-      const f = files.find(fi => fi.fullPath === id);
-      if (f) {
-        try {
-          await deleteObject(ref(storage, f.fullPath));
-          await deleteDoc(doc(db, 'fileMetadata', f.fullPath.replace(/\//g, '_')));
-          count++;
-        } catch (e) { console.error(e); }
-      }
+      const f = processedFiles.find(fi => fi.fullPath === id);
+      if (!f || f.isPendingWorksheet) continue;
+      try {
+        await deleteObject(ref(storage, f.fullPath));
+        await deleteDoc(doc(db, 'fileMetadata', f.fullPath.replace(/\//g, '_')));
+        count++;
+      } catch (e) { console.error(e); }
     }
     showToast(`${count} archivo(s) eliminados`, 'success');
     setSelectedIds(new Set());
     loadContent();
   };
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handle = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') { e.preventDefault(); setSelectedIds(new Set(processedFiles.map(f => f.fullPath))); }
+      if (e.key === 'Escape') {
+        if (previewFile) setPreviewFile(null);
+        else if (selectedIds.size > 0) setSelectedIds(new Set());
+        else if (debouncedSearch) setSearchQuery("");
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0 && isQuality) handleBatchDelete();
+      if (e.key === ' ' && selectedIds.size === 1) {
+        e.preventDefault();
+        const f = processedFiles.find(fi => fi.fullPath === Array.from(selectedIds)[0]);
+        if (f) handlePreview(f);
+      }
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, [selectedIds, processedFiles, previewFile, isQuality, debouncedSearch, handleBatchDelete, handlePreview]);
 
   // ── Batch download ──
   const handleBatchDownload = async () => {
@@ -1538,12 +1795,38 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setFiles(prev => prev.map(f => f.fullPath === file.fullPath ? updated : f));
     if (previewFile?.fullPath === file.fullPath) setPreviewFile(updated);
     try {
+      const metaId = file.fullPath.replace(/\//g, '_');
+      const metaRef = doc(db, 'fileMetadata', metaId);
+      const existingSnap = await getDoc(metaRef);
+      const wasCompleted = existingSnap.data()?.completed === true;
+
       const data: any = { [field]: value };
       if (field === 'reviewed') data.reviewedByName = value ? name : null;
       if (field === 'completed') data.completedByName = value ? name : null;
-      await setDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')), data, { merge: true });
+      await setDoc(metaRef, data, { merge: true });
       if (field === 'reviewed' && value) showToast("Validación guardada", 'success');
-      if (field === 'completed' && value) showToast("Marcado como completado", 'success');
+      if (field === 'completed' && value) {
+        showToast("Marcado como completado", 'success');
+        if (!wasCompleted) {
+          try {
+            const linkId = extractWorksheetLinkId(file.rawName || file.name);
+            const wsDoc = await resolveWorksheetDoc(linkId);
+            const wsData = (wsDoc?.data() || {}) as Record<string, unknown>;
+            await notificarCalidadRevisionPendiente({
+              worksheetDocId: wsDoc?.id || metaId,
+              equipmentId: String(wsData.id || file.worksheetId || linkId).trim(),
+              cliente: String(wsData.cliente || file.worksheetCliente || "").trim(),
+              fecha: String(
+                wsData.fecha || wsData.fecha_calib || wsData.fechaEntrada || file.worksheetFecha || file.workDate || ""
+              ).trim(),
+              tecnicoNombre: name,
+              metaId,
+            });
+          } catch (notifyErr) {
+            console.error("[Drive] notify calidad:", notifyErr);
+          }
+        }
+      }
       if (field === 'completed' || field === 'reviewed') {
         const possibleId = extractWorksheetLinkId(file.name);
         const wsDoc = await resolveWorksheetDoc(possibleId);
@@ -1566,6 +1849,117 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         }
       }
     } catch (e) { showToast("Error de conexión", 'error'); loadContent(); }
+  };
+
+  const commitWriteBatches = async (paths: string[], write: (batch: ReturnType<typeof writeBatch>, fullPath: string) => void) => {
+    const chunkSize = 450; // conservador vs 500
+    for (let i = 0; i < paths.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      const slice = paths.slice(i, i + chunkSize);
+      slice.forEach((p) => write(batch, p));
+      await batch.commit();
+    }
+  };
+
+  const updateWorksheetStatusesForFiles = async (targetFiles: DriveFile[], field: 'completed' | 'reviewed', value: boolean) => {
+    // Mantiene el comportamiento existente (sin bloquear si falla).
+    await Promise.all(
+      targetFiles.map(async (file) => {
+        try {
+          const possibleId = extractWorksheetLinkId(file.name);
+          const wsDoc = await resolveWorksheetDoc(possibleId);
+          if (!wsDoc) return;
+          const updateData: any = { lastUpdated: new Date().toISOString() };
+          if (field === 'completed') {
+            if (value) {
+              updateData.status_certificado = "Generado";
+              updateData.cargado_drive = "Si";
+            } else {
+              updateData.status_certificado = "Pendiente de Certificado";
+              updateData.cargado_drive = "No";
+            }
+          }
+          if (field === 'reviewed' && value) updateData.status_certificado = "Firmado";
+          await updateDoc(wsDoc.ref, updateData);
+        } catch {
+          /* best-effort */
+        }
+      })
+    );
+  };
+
+  const handleBatchUpdateStatus = async (field: 'completed' | 'reviewed', value: boolean, opts?: { toastSuccess?: string }) => {
+    if (selectedIds.size === 0) return;
+    if (field === 'reviewed' && !isQuality) { showToast("Solo calidad puede marcar revisado", "error"); return; }
+
+    const name = currentUserData?.name || user?.displayName || "Usuario";
+    const selectedPaths = Array.from(selectedIds);
+    const selectedFiles = processedFiles.filter((f) => selectedIds.has(f.fullPath) && !f.isPendingWorksheet);
+    const pathSet = new Set(selectedFiles.map((f) => f.fullPath));
+    const targets = selectedPaths.filter((p) => pathSet.has(p));
+    if (targets.length === 0) { showToast("No hay archivos válidos seleccionados", "warning"); return; }
+
+    // UI optimistic
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (!pathSet.has(f.fullPath)) return f;
+        const reviewedByName = field === "reviewed" ? (value ? name : null) : f.reviewedByName;
+        const completedByName = field === "completed" ? (value ? name : null) : f.completedByName;
+        return { ...f, [field]: value, reviewedByName, completedByName } as any;
+      })
+    );
+    if (previewFile && pathSet.has(previewFile.fullPath)) {
+      const reviewedByName = field === "reviewed" ? (value ? name : null) : previewFile.reviewedByName;
+      const completedByName = field === "completed" ? (value ? name : null) : previewFile.completedByName;
+      setPreviewFile({ ...previewFile, [field]: value, reviewedByName, completedByName } as any);
+    }
+
+    try {
+      await commitWriteBatches(targets, (batch, fullPath) => {
+        const metaId = fullPath.replace(/\//g, "_");
+        const metaRef = doc(db, "fileMetadata", metaId);
+        const data: any = { [field]: value };
+        if (field === "reviewed") data.reviewedByName = value ? name : null;
+        if (field === "completed") data.completedByName = value ? name : null;
+        batch.set(metaRef, data, { merge: true });
+      });
+
+      // Notificar a calidad (solo cuando se marca completado=true y antes estaba pendiente en UI)
+      if (field === "completed" && value) {
+        const newlyCompleted = selectedFiles.filter((f) => f.completed !== true);
+        if (newlyCompleted.length > 0) {
+          // Igual que single: evitamos spam, notificamos 1 vez por acción.
+          const file = newlyCompleted[0];
+          try {
+            const metaId = file.fullPath.replace(/\//g, "_");
+            const linkId = extractWorksheetLinkId(file.rawName || file.name);
+            const wsDoc = await resolveWorksheetDoc(linkId);
+            const wsData = (wsDoc?.data() || {}) as Record<string, unknown>;
+            await notificarCalidadRevisionPendiente({
+              worksheetDocId: wsDoc?.id || metaId,
+              equipmentId: String(wsData.id || file.worksheetId || linkId).trim(),
+              cliente: String(wsData.cliente || file.worksheetCliente || "").trim(),
+              fecha: String(
+                wsData.fecha || wsData.fecha_calib || wsData.fechaEntrada || file.worksheetFecha || file.workDate || ""
+              ).trim(),
+              tecnicoNombre: name,
+              metaId,
+            });
+          } catch (notifyErr) {
+            console.error("[Drive] notify calidad (batch):", notifyErr);
+          }
+        }
+      }
+
+      await updateWorksheetStatusesForFiles(selectedFiles, field, value);
+      showToast(opts?.toastSuccess || `${targets.length} archivo(s) actualizado(s)`, "success");
+      setSelectedIds(new Set());
+      setDetailsOpen(false);
+      setContextMenu(null);
+    } catch (e) {
+      showToast("Error de conexión", "error");
+      loadContent();
+    }
   };
 
   const handleToggleStar = async (file: DriveFile) => {
@@ -1758,6 +2152,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     const siteFiles = metrologistFileGroups?.site ?? [];
     const otherFiles = isMetrologistFolderView ? [] : displayFiles;
 
+    const showReviewMeta = activeFilter === 'pending_review';
+
     const renderFilesBlock = (title: string | null, filesToRender: DriveFile[]) => {
       if (filesToRender.length === 0) return null;
       return (
@@ -1779,6 +2175,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   onContextMenu={onCardContextMenu}
                   onDoubleClick={onCardDoubleClick}
                   onStar={onCardStar}
+                  showReviewMeta={showReviewMeta}
                 />
               ))}
             </div>
@@ -1804,6 +2201,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   onDoubleClick={onCardDoubleClick}
                   onDownload={onCardDownload}
                   onStar={onCardStar}
+                  showReviewMeta={showReviewMeta}
                 />
               ))}
             </div>
@@ -1879,12 +2277,50 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                     {selectedIds.size} seleccionado{selectedIds.size > 1 ? 's' : ''}
                   </span>
                   <button
+                    onClick={() =>
+                      handleBatchUpdateStatus("completed", true, {
+                        toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como realizado`,
+                      })
+                    }
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm"
+                  >
+                    <FileCheck size={13} />
+                    Realizado
+                  </button>
+                  {isQuality && (
+                    <button
+                      onClick={() =>
+                        handleBatchUpdateStatus("reviewed", true, {
+                          toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como revisado`,
+                        })
+                      }
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-all shadow-sm"
+                    >
+                      <CheckCircle2 size={13} />
+                      Revisado
+                    </button>
+                  )}
+                  <button
                     onClick={handleBatchDownload} disabled={isZipping}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm"
                   >
                     {isZipping ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                     Descargar
                   </button>
+                  <button
+                    onClick={() => handleBatchUpdateStatus('completed', true, { toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como realizados` })}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm"
+                  >
+                    <FileCheck size={13} /> Realizado
+                  </button>
+                  {isQuality && (
+                    <button
+                      onClick={() => handleBatchUpdateStatus('reviewed', true, { toastSuccess: `${selectedIds.size} archivo(s) marcado(s) como revisados` })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-all shadow-sm"
+                    >
+                      <CheckCircle2 size={13} /> Revisado
+                    </button>
+                  )}
                   {isQuality && (
                     <>
                       <button
@@ -2018,7 +2454,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
           <div className="relative flex-1 max-w-lg group">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input type="text" placeholder="Buscar en AG Drive..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-slate-200/60 focus:border-blue-400 rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
+            <input type="text" placeholder="Buscar por nombre, ID equipo, certificado o folio..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-500/30 border border-slate-200/60 focus:border-blue-400 rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
             {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors"><X size={13} /></button>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -2054,9 +2490,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {loading ? <LoadingSkeleton /> : renderContent()}
           </div>
           {detailsOpen && selectedIds.size === 1 && (() => {
-            const file = files.find(f => f.fullPath === Array.from(selectedIds)[0]);
+            const file = processedFiles.find(f => f.fullPath === Array.from(selectedIds)[0]);
             const linkId = file ? extractWorksheetLinkId(file.rawName || file.name) : "";
-            const showRegenerate = !!file && currentRoot === "worksheets" && isWorksheetPdfFile(file);
+            const showPdfAction = !!file && currentRoot === "worksheets" && (isWorksheetPdfFile(file) || file.isPendingWorksheet);
+            const pdfBusyKey = file?.isPendingWorksheet ? file.worksheetDocId : linkId;
             return file ? (
               <DetailsPanel
                 file={file}
@@ -2066,9 +2503,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 onUpdateNotes={updateNotes}
                 onDownload={handlePreview}
                 onDelete={handleDelete}
-                onRegeneratePdf={showRegenerate ? handleRegeneratePdf : undefined}
-                showRegeneratePdf={showRegenerate}
-                isGeneratingPdf={generatingPdfLinkId === linkId}
+                onRegeneratePdf={showPdfAction ? handleRegeneratePdf : undefined}
+                showRegeneratePdf={showPdfAction}
+                isPendingWorksheet={!!file.isPendingWorksheet}
+                isGeneratingPdf={generatingPdfLinkId === pdfBusyKey}
               />
             ) : null;
           })()}
@@ -2093,21 +2531,75 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <div className="context-menu-container fixed bg-white/95 backdrop-blur-xl border border-slate-200 shadow-2xl rounded-2xl py-2 w-56 z-[150] text-sm animate-in fade-in zoom-in-95 duration-100 max-h-[75vh] overflow-y-auto" style={{ top: topPos, left: leftPos }} onClick={e => e.stopPropagation()}>
             <div className="px-3 py-2 border-b border-slate-100 mb-1"><p className="text-xs font-semibold text-slate-700 truncate">{contextMenu.file?.name ?? contextMenu.folder?.name}</p>{contextMenu.file && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatFileSize(contextMenu.file.size)}</p>}</div>
             {contextMenu.file && ( <>
-              <MenuOption icon={<Eye size={14} />} label="Vista previa" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
-              {currentRoot === "worksheets" && isWorksheetPdfFile(contextMenu.file) && (
+              {!contextMenu.file.isPendingWorksheet && (
+                <MenuOption icon={<Eye size={14} />} label="Vista previa" onClick={() => { if (contextMenu.file) handlePreview(contextMenu.file); setContextMenu(null); }} />
+              )}
+              {currentRoot === "worksheets" && (isWorksheetPdfFile(contextMenu.file) || contextMenu.file.isPendingWorksheet) && (
                 <MenuOption
-                  icon={generatingPdfLinkId === extractWorksheetLinkId(contextMenu.file.rawName || contextMenu.file.name) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  label={generatingPdfLinkId === extractWorksheetLinkId(contextMenu.file.rawName || contextMenu.file.name) ? "Regenerando PDF..." : "Regenerar PDF"}
+                  icon={
+                    generatingPdfLinkId === (contextMenu.file.isPendingWorksheet ? contextMenu.file.worksheetDocId : extractWorksheetLinkId(contextMenu.file.rawName || contextMenu.file.name))
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : contextMenu.file.isPendingWorksheet ? <FilePlus2 size={14} /> : <RefreshCw size={14} />
+                  }
+                  label={
+                    generatingPdfLinkId === (contextMenu.file.isPendingWorksheet ? contextMenu.file.worksheetDocId : extractWorksheetLinkId(contextMenu.file.rawName || contextMenu.file.name))
+                      ? contextMenu.file.isPendingWorksheet ? "Generando PDF..." : "Regenerando PDF..."
+                      : contextMenu.file.isPendingWorksheet ? "Generar PDF" : "Regenerar PDF"
+                  }
                   onClick={() => { if (contextMenu.file) handleRegeneratePdf(contextMenu.file); setContextMenu(null); }}
                 />
               )}
               <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
-              <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
-              <MenuOption icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />} label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"} onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }} />
+              {!contextMenu.file.isPendingWorksheet && (
+                <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
+              )}
+              {!contextMenu.file.isPendingWorksheet && (
+                <MenuOption icon={<Star size={14} className={contextMenu.file.starred ? "fill-amber-500 text-amber-500" : ""} />} label={contextMenu.file.starred ? "Quitar de destacados" : "Agregar a destacados"} onClick={() => { if (contextMenu.file) handleToggleStar(contextMenu.file); setContextMenu(null); }} />
+              )}
+              {!contextMenu.file.isPendingWorksheet && (
+                <>
               <div className="my-1 mx-2 border-t border-slate-100" />
-              <MenuOption icon={<FileCheck size={14} />} label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"} onClick={() => { updateFileStatus(contextMenu.file!, 'completed', !contextMenu.file!.completed); setContextMenu(null); }} />
-              {isQuality && ( <MenuOption icon={<CheckCircle2 size={14} />} label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"} onClick={() => { updateFileStatus(contextMenu.file!, 'reviewed', !contextMenu.file!.reviewed); setContextMenu(null); }} /> )}
+              <MenuOption
+                icon={<FileCheck size={14} />}
+                label={contextMenu.file.completed ? "Marcar como pendiente" : "Marcar como realizado"}
+                onClick={() => {
+                  const next = !contextMenu.file!.completed;
+                  if (selectedIds.has(contextMenu.file!.fullPath) && selectedIds.size > 1) {
+                    handleBatchUpdateStatus(
+                      "completed",
+                      next,
+                      { toastSuccess: next ? `${selectedIds.size} archivo(s) marcado(s) como realizado` : `${selectedIds.size} archivo(s) marcado(s) como pendiente` }
+                    );
+                    setContextMenu(null);
+                  } else {
+                    updateFileStatus(contextMenu.file!, 'completed', next);
+                    setContextMenu(null);
+                  }
+                }}
+              />
+              {isQuality && (
+                <MenuOption
+                  icon={<CheckCircle2 size={14} />}
+                  label={contextMenu.file.reviewed ? "Invalidar calidad" : "Validar calidad"}
+                  onClick={() => {
+                    const next = !contextMenu.file!.reviewed;
+                    if (selectedIds.has(contextMenu.file!.fullPath) && selectedIds.size > 1) {
+                      handleBatchUpdateStatus(
+                        "reviewed",
+                        next,
+                        { toastSuccess: next ? `${selectedIds.size} archivo(s) marcado(s) como revisado` : `${selectedIds.size} archivo(s) invalidado(s) por calidad` }
+                      );
+                      setContextMenu(null);
+                    } else {
+                      updateFileStatus(contextMenu.file!, 'reviewed', next);
+                      setContextMenu(null);
+                    }
+                  }}
+                />
+              )}
               {isQuality && ( <> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.file) { setRenameTargetFile(contextMenu.file); setRenameTargetFolder(null); setNewName(contextMenu.file.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.file) { setMoveTargetFiles(selectedIds.has(contextMenu.file.fullPath) && selectedIds.size > 1 ? files.filter(f => selectedIds.has(f.fullPath)) : [contextMenu.file]); setMoveTargetFolder(null); setMoveToPath([]); setMoveDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar" danger onClick={() => { if (contextMenu.file) handleDelete(contextMenu.file); setContextMenu(null); }} /> </> )}
+                </>
+              )}
             </> )}
             {contextMenu.folder && isQuality && ( <> <MenuOption icon={<FolderOpen size={14} />} label="Abrir" onClick={() => { if (contextMenu.folder) { setPath([...path, contextMenu.folder.name]); setContextMenu(null); } }} /> <MenuOption icon={<Edit size={14} />} label="Renombrar" onClick={() => { if (contextMenu.folder) { setRenameTargetFolder(contextMenu.folder); setRenameTargetFile(null); setNewName(contextMenu.folder.name); setRenameDialogOpen(true); setContextMenu(null); } }} /> <MenuOption icon={<FolderSymlink size={14} />} label="Mover a..." onClick={() => { if (contextMenu.folder) { setMoveTargetFolder(contextMenu.folder); setMoveTargetFiles([]); setMoveToPath([]); setMoveDialogOpen(true); setContextMenu(null); } }} /> <div className="my-1 mx-2 border-t border-slate-100" /> <MenuOption icon={<Trash2 size={14} />} label="Eliminar carpeta" danger onClick={() => { if (contextMenu.folder) executeDeleteFolder(contextMenu.folder); setContextMenu(null); }} /> </> )}
           </div>

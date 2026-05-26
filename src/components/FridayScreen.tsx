@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { db } from "../utils/firebase";
 import { reconcileWorksheetDriveFlags } from "../utils/worksheetDriveSync";
+import { isRealizadoValue, markDriveFileCompletedForWorksheet } from "../utils/markDriveCompleted";
+import { notificarCalidadRevisionPendiente } from "../utils/notificacionesRevisionCalidad";
 import { doc, collection, query, where, onSnapshot, setDoc, writeBatch, orderBy, addDoc, getDocs, updateDoc } from "firebase/firestore";
 import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
@@ -117,6 +119,13 @@ const isCronogramaComplete = (row: WorksheetData): boolean => {
 
 const getResponsableName = (row: WorksheetData) =>
     (row.nombre || row.assignedTo || "").trim();
+
+const isTechnicianOwnerOfRow = (row: WorksheetData, currentUserName: string): boolean => {
+    const me = normalizeText(currentUserName);
+    const owner = normalizeText(getResponsableName(row));
+    if (!me || !owner) return false;
+    return me === owner || owner.includes(me) || me.includes(owner);
+};
 
 const getResponsableRowBackground = (
     responsableName: string,
@@ -664,7 +673,7 @@ const AGBotWidget = ({ thoughts }: { thoughts: AGBotThought[] }) => {
 };
 
 // --- BOARD ROW ---
-const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, onOpenComments, index, groupId, onOpenHistory, onUpdateMetrologoColor }: any) => {
+const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, currentUserName, onOpenComments, index, groupId, onOpenHistory, onUpdateMetrologoColor }: any) => {
     
     const handleCellChange = useCallback((key: string, value: any) => { 
         let finalKey = key;
@@ -699,7 +708,9 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
             {columns.filter((c: Column) => !c.hidden).map((col: Column) => {
                 const style: React.CSSProperties = { width: col.width };
                 if (col.sticky) { style.position = 'sticky'; style.left = currentStickyLeft + 1.5; style.zIndex = 15; style.backgroundColor = rowBackgroundColor; currentStickyLeft += col.width; }
-                const canEdit = canEditBoard;
+                const canEdit =
+                    canEditBoard ||
+                    (col.key === "cargado_drive" && isTechnicianOwnerOfRow(row, currentUserName));
                 
                 let cellValue = row[col.key];
                 if (col.key === 'folio') { 
@@ -814,6 +825,7 @@ type BoardRowSharedProps = {
     onDrop: (e: React.DragEvent, target: DragItem) => void;
     onDragEnd: (e: React.DragEvent) => void;
     canEditBoard: boolean;
+    currentUserName: string;
     onOpenComments: (row: WorksheetData) => void;
     onOpenHistory: (row: WorksheetData) => void;
     onUpdateMetrologoColor: (userId: string, newColor: string) => void;
@@ -822,7 +834,7 @@ type BoardRowSharedProps = {
 function VirtualBoardRow({
     index, style, rows, groupId, groupColor, columns, selectedIds,
     onToggleSelect, onUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd,
-    canEditBoard, onOpenComments, onOpenHistory, onUpdateMetrologoColor,
+    canEditBoard, currentUserName, onOpenComments, onOpenHistory, onUpdateMetrologoColor,
 }: RowComponentProps<BoardRowSharedProps>) {
     const row = rows[index];
     if (!row) return null;
@@ -843,6 +855,7 @@ function VirtualBoardRow({
                 onDrop={onDrop}
                 onDragEnd={onDragEnd}
                 canEditBoard={canEditBoard}
+                currentUserName={currentUserName}
                 onOpenComments={onOpenComments}
                 onOpenHistory={onOpenHistory}
                 onUpdateMetrologoColor={onUpdateMetrologoColor}
@@ -875,6 +888,7 @@ const GroupRowsBody = React.memo(function GroupRowsBody(props: BoardRowSharedPro
                         onDrop={props.onDrop}
                         onDragEnd={props.onDragEnd}
                         canEditBoard={props.canEditBoard}
+                        currentUserName={props.currentUserName}
                         onOpenComments={props.onOpenComments}
                         onOpenHistory={props.onOpenHistory}
                         onUpdateMetrologoColor={props.onUpdateMetrologoColor}
@@ -1275,7 +1289,12 @@ const FridayScreen: React.FC = () => {
     }, [currentUserName, canEditBoard]);
 
     const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
-        if (!canEditBoard) return;
+        const targetRow = rows.find((r) => r.docId === rowId);
+        const canEditDriveAsTech =
+            key === "cargado_drive" &&
+            !!targetRow &&
+            isTechnicianOwnerOfRow(targetRow, currentUserName);
+        if (!canEditBoard && !canEditDriveAsTech) return;
         setRows(prevRows => prevRows.map(r => {
             if (r.docId === rowId) {
                 const updated = { ...r, [key]: value };
@@ -1293,6 +1312,28 @@ const FridayScreen: React.FC = () => {
             const historyRef = collection(db, `hojasDeTrabajo/${rowId}/history`); const historyDoc = doc(historyRef);
             batch.set(historyDoc, { field: key, oldValue: oldValue || "", newValue: value, user: currentUserName, timestamp: new Date().toISOString() });
             await batch.commit();
+
+            if (key === "cargado_drive" && isRealizadoValue(value)) {
+                const row = rows.find((r) => r.docId === rowId);
+                if (row) {
+                    const rowData = { ...row, [key]: value };
+                    const markedBy =
+                        String(rowData.nombre || rowData.assignedTo || "").trim() ||
+                        currentUserName;
+                    const synced = await markDriveFileCompletedForWorksheet(rowData, markedBy, {
+                        worksheetDocId: rowId,
+                    });
+                    if (!synced) {
+                        await notificarCalidadRevisionPendiente({
+                            worksheetDocId: rowId,
+                            equipmentId: String(row.id || "").trim(),
+                            cliente: String(row.cliente || "").trim(),
+                            fecha: String(row.fecha || row.fechaEntrada || "").trim(),
+                            tecnicoNombre: markedBy,
+                        });
+                    }
+                }
+            }
         } catch (error) { showToast("Error de conexión al guardar", 'error'); }
     }, [rows, currentUserName, canEditBoard]);
 
@@ -1403,10 +1444,11 @@ const FridayScreen: React.FC = () => {
         onDrop,
         onDragEnd,
         canEditBoard,
+        currentUserName,
         onOpenComments: setActiveCommentRow,
         onOpenHistory: setActiveHistoryRow,
         onUpdateMetrologoColor: handleUpdateMetrologoColor,
-    }), [columns, selectedIds, toggleSelect, handleUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, handleUpdateMetrologoColor]);
+    }), [columns, selectedIds, toggleSelect, handleUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, currentUserName, handleUpdateMetrologoColor]);
 
     let headerStickyOffset = 40;
 
