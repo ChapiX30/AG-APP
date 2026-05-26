@@ -17,6 +17,7 @@ import {
   FALLBACK_CHART_COLORS,
   MAGNITUDES_COLORS,
   getCalibrationWorkDate,
+  isVisibleServicioForDashboard,
 } from "../utils/calibrationShared.tsx";
 
 export function useCalibrationDashboardData(selectedDate: Date) {
@@ -71,11 +72,13 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       year: currentYear,
     });
 
-    const todayServices = servicios
+    const dashboardServicios = servicios.filter(isVisibleServicioForDashboard);
+
+    const todayServices = dashboardServicios
       .filter((s) => normalizeServicioDateKey(s.fecha) === todayKey)
       .sort((a, b) => (a.horaInicio || "").localeCompare(b.horaInicio || ""));
 
-    const programmedServices = servicios
+    const programmedServices = dashboardServicios
       .filter((s) => normalizeServicioDateKey(s.fecha) > todayKey)
       .sort((a, b) => {
         const fa = normalizeServicioDateKey(a.fecha);

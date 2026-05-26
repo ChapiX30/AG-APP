@@ -25,6 +25,7 @@ import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import es from 'date-fns/locale/es';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { shouldShowInFridayServicios } from '../utils/calibrationShared';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
 import { getUserTeamColor } from '../utils/teamAvatarColor';
@@ -1317,7 +1318,9 @@ const FridayServiciosScreen: React.FC = () => {
     const unsub = onSnapshot(
       serviciosQuery,
       (snap) => {
-        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+        const docs = snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Service))
+          .filter(shouldShowInFridayServicios);
         docs.sort((a, b) => {
           const ta = (a as any).fechaCreacion?.toMillis?.() ?? (a as any).fechaCreacion?.seconds ?? 0;
           const tb = (b as any).fechaCreacion?.toMillis?.() ?? (b as any).fechaCreacion?.seconds ?? 0;

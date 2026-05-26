@@ -79,6 +79,7 @@ export interface ServicioRow {
   titulo: string;
   cliente: string;
   estado: string;
+  estatus?: string;
   prioridad: string;
   tipo?: string;
   fecha: string;
@@ -87,6 +88,51 @@ export interface ServicioRow {
   ubicacion?: string;
   personas?: string[];
 }
+
+/** Tipos que cuentan como servicio operativo (Friday + calibración). Excluye juntas, vueltas, PJLA, PT, patrones. */
+export const SERVICIO_OPERATIVO_TIPOS = new Set([
+  "calibracion",
+  "mantenimiento",
+  "verificacion",
+  "reparacion",
+  "inspeccion",
+]);
+
+export const normalizeEstadoKey = (estado?: string): string => {
+  if (!estado) return "";
+  return estado
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s_-]+/g, "");
+};
+
+/** True si el documento está en estado reprogramado (variantes: reprogramacion, reprogramado, Reprogramado…). */
+export const isReprogramadoEstado = (estado?: string, estatus?: string): boolean => {
+  for (const raw of [estado, estatus]) {
+    if (!raw) continue;
+    const key = normalizeEstadoKey(raw);
+    if (key === "reprogramacion" || key === "reprogramado") return true;
+  }
+  return false;
+};
+
+/** True si el tipo cuenta para stats/TV de servicios (no junta, vuelta, PJLA, PT ni patrones). */
+export const isServicioOperativoTipo = (tipo?: string): boolean => {
+  if (!tipo) return true;
+  return SERVICIO_OPERATIVO_TIPOS.has(tipo.trim().toLowerCase());
+};
+
+/** Servicios visibles en calendario/TV: operativos y no reprogramados. */
+export const isVisibleServicioForDashboard = (s: {
+  tipo?: string;
+  estado?: string;
+  estatus?: string;
+}): boolean => isServicioOperativoTipo(s.tipo) && !isReprogramadoEstado(s.estado, s.estatus);
+
+/** Gestión de Servicios (FridayServiciosScreen): mismos criterios que TV/stats — sin juntas, PT, patrones ni reprogramados. */
+export const shouldShowInFridayServicios = isVisibleServicioForDashboard;
 
 export const getUsuarioDisplayName = (user?: UsuarioRow) =>
   user?.name || user?.nombre || "Usuario";
@@ -574,7 +620,9 @@ export const computeActivityDateKeys = (
     if (k) keys.add(k);
   });
   servicios.forEach((s) => {
-    if (s.fecha) keys.add(s.fecha.slice(0, 10));
+    if (s.fecha && !isReprogramadoEstado(s.estado, s.estatus)) {
+      keys.add(s.fecha.slice(0, 10));
+    }
   });
   return keys;
 };

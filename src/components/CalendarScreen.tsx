@@ -20,6 +20,7 @@ import {
   Upload, ExternalLink, Loader2
 } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import toast, { Toaster } from 'react-hot-toast';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
 import {
@@ -35,6 +36,15 @@ import {
   type PatronCalibracionRow,
   type PatronUrgency,
 } from '../utils/patronCalibracion';
+import {
+  canEditCalendarEvents,
+  canSeeAllCalendarEvents,
+  getEventCreatorDisplay,
+} from '../utils/calendarPermissions';
+import {
+  isReprogramadoEstado,
+  isServicioOperativoTipo,
+} from '../utils/calibrationShared.tsx';
 
 // --- 1. CONFIGURACIÓN, TEMAS Y CONSTANTES ---
 
@@ -85,9 +95,22 @@ const PLANTILLA_PT = [
 ];
 
 // --- HELPERS DE COLORES Y USUARIOS ---
+const isServicioOperativo = (tipo?: string) => isServicioOperativoTipo(tipo);
+
+const resolveEventLugar = (ev: { ubicacion?: string; lugar?: string; direccion?: string; destino?: string }) =>
+    (ev.ubicacion || ev.lugar || ev.direccion || ev.destino || '').trim();
+
+const isEventFinalizado = (ev: { estado?: string; finalizado?: boolean }) =>
+    ev.estado === 'finalizado' || ev.finalizado === true;
+
 const getUserName = (idOrName: string, usersList: any[]) => {
-    const user = usersList.find((u: any) => u.id === idOrName);
-    return user ? user.nombre : idOrName; 
+    const key = String(idOrName).toLowerCase();
+    const user = usersList.find((u: any) =>
+        u.id === idOrName
+        || String(u.email || u.correo || '').toLowerCase() === key
+        || String(u.nombre || u.name || '').toLowerCase() === key,
+    );
+    return user ? (user.nombre || user.name || idOrName) : idOrName;
 };
 
 const getInitials = (name: string) => name ? name.substring(0, 2).toUpperCase() : '??';
@@ -106,6 +129,22 @@ const addDaysNative = (dateStr: string, days: number) => {
     d.setDate(d.getDate() + days);
     return d.toISOString().split('T')[0];
 };
+
+
+/** Coincide uid de auth, id de documento usuarios o email en `personas`. */
+const isUserAssignedToEvent = (
+    user: { id?: string; email?: string } | null,
+    personas: string[] = [],
+    authUid?: string | null,
+) => {
+    if (!personas.length) return false;
+    const keys = new Set(
+        [user?.id, user?.email, authUid].filter(Boolean).map(s => String(s).toLowerCase()),
+    );
+    return personas.some(p => keys.has(String(p).toLowerCase()));
+};
+
+const getAckLabel = (tipo?: string) => (tipo === 'junta' ? 'De acuerdo' : 'Enterado');
 
 /** Avance mínimo al asignar responsable (personas no vacío) en filas PT. */
 const AVANCE_CON_RESPONSABLE = 35;
@@ -185,10 +224,11 @@ async function uploadEvidenciaServicio(servicioId: string, file: File) {
     return url;
 }
 
-const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff, isCalidad, currentUser }: any) => {
+const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff, isCalidad, canEdit, currentUser, authUid }: any) => {
     const [formData, setFormData] = useState({
         titulo: '', tipo: 'intralaboratorio', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', 
-        estado: 'programado', personas: [] as string[], magnitudPT: '', comentariosPT: '' 
+        estado: 'programado', personas: [] as string[], magnitudPT: '', comentariosPT: '',
+        ubicacion: '', horaInicio: '', horaFin: '',
     });
     const [usarPlantilla, setUsarPlantilla] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -196,28 +236,32 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const [uploadingEvidencia, setUploadingEvidencia] = useState(false);
 
     const isPJLA = event?.esAlertaAutomatica || event?.cliente === 'Perry Johnson Labs';
-    
-    // Solo lectura si no es calidad y el evento NO es ni junta ni vuelta
-    const isReadOnly = !isCalidad && event && event.tipo !== 'junta' && event.tipo !== 'vuelta';
+    const isAssigned = event ? isUserAssignedToEvent(currentUser, event.personas || [], authUid) : false;
+    const canFullEdit = canEdit && !!event && !isPJLA;
+    const showDetailView = !!event && (!canFullEdit || isPJLA);
+    const ackLabel = getAckLabel(event?.tipo);
+    const creatorDisplay = event ? getEventCreatorDisplay(event, technicalStaff) : null;
 
     const sustaitaId = technicalStaff.find((u: any) => u.nombre?.toLowerCase().includes('sustaita'))?.id || '';
 
     useEffect(() => {
         if (event) {
             setFormData({
-                titulo: event.title || '', tipo: event.tipo || 'intralaboratorio',
+                titulo: event.title || '',
+                tipo: event.tipo || (isCalidad ? 'intralaboratorio' : 'junta'),
                 fecha: event.start ? format(event.start, 'yyyy-MM-dd') : '',
                 fechaFin: event.end ? format(event.end, 'yyyy-MM-dd') : '',
                 destino: event.destino || '', laboratorioRef: event.laboratorioRef || '', descripcion: event.descripcion || '',
                 estado: event.estado || 'programado', personas: event.personas || [],
-                magnitudPT: event.magnitudPT || '', comentariosPT: event.comentariosPT || ''
+                magnitudPT: event.magnitudPT || '', comentariosPT: event.comentariosPT || '',
+                ubicacion: resolveEventLugar(event), horaInicio: event.horaInicio || '', horaFin: event.horaFin || '',
             });
             setUsarPlantilla(false);
         } else if (initialData) {
             setFormData(prev => ({ ...prev, ...initialData, tipo: initialData.tipo || (isCalidad ? 'intralaboratorio' : 'junta'), personas: initialData.tipo === 'mtto_patrones' && sustaitaId ? [sustaitaId] : [] }));
             setUsarPlantilla(false);
         } else {
-            setFormData({ titulo: '', tipo: isCalidad ? 'intralaboratorio' : 'junta', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', estado: 'programado', personas: [], magnitudPT: '', comentariosPT: '' });
+            setFormData({ titulo: '', tipo: isCalidad ? 'intralaboratorio' : 'junta', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', estado: 'programado', personas: [], magnitudPT: '', comentariosPT: '', ubicacion: '', horaInicio: '', horaFin: '' });
             setUsarPlantilla(false);
         }
     }, [event, initialData, isOpen, sustaitaId, isCalidad]);
@@ -226,14 +270,18 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        // Si no es calidad, solo puede guardar Juntas y Vueltas
-        if (!isCalidad && formData.tipo !== 'junta' && formData.tipo !== 'vuelta') return; 
+        // Sin permiso de edición: solo puede crear Juntas y Vueltas nuevas
+        if (!canEdit && formData.tipo !== 'junta' && formData.tipo !== 'vuelta') return;
+        if (event?.id && !canEdit) return; 
         
         setSaving(true);
         try {
+            const resolvedTipo =
+                formData.tipo || (isCalidad ? 'intralaboratorio' : 'junta');
             const basePayload = {
                 ...formData,
-                cliente: formData.tipo.includes('inter') ? 'Externo' : 'Interno AG',
+                tipo: resolvedTipo,
+                cliente: resolvedTipo.includes('inter') ? 'Externo' : 'Interno AG',
                 prioridad: 'alta'
             };
             
@@ -299,32 +347,48 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     };
 
     const handleDelete = async () => {
-        // Puede eliminar si es calidad, o si es un evento que no es de calidad (junta/vuelta)
-        const canDelete = isCalidad || event?.tipo === 'junta' || event?.tipo === 'vuelta';
-        if (canDelete && event?.id && window.confirm('¿Eliminar esta actividad?')) {
+        if (canEdit && event?.id && window.confirm('¿Eliminar esta actividad?')) {
             await deleteDoc(doc(db, 'servicios', event.id));
             onClose();
         }
     };
 
+    const resolveAckUserId = () => currentUser?.id || authUid || null;
+
+    const userHasAcknowledged = (enterados: string[] = []) => {
+        const uid = resolveAckUserId();
+        if (!uid) return false;
+        const keys = new Set([uid, currentUser?.email, authUid].filter(Boolean).map(s => String(s).toLowerCase()));
+        return enterados.some(e => keys.has(String(e).toLowerCase()));
+    };
+
     const handleMarcarEnterado = async () => {
-        if (!event?.id || !currentUser?.id) return;
+        const ackUserId = resolveAckUserId();
+        if (!event?.id || !ackUserId || !isAssigned) return;
         setMarking(true);
         try {
-            const enteradosActuales = event.enterados || [];
-            if (!enteradosActuales.includes(currentUser.id)) {
-                await updateDoc(doc(db, 'servicios', event.id), { enterados: [...enteradosActuales, currentUser.id] });
-                onClose(); 
+            const enteradosActuales: string[] = event.enterados || [];
+            if (!userHasAcknowledged(enteradosActuales)) {
+                const enteradosAt = { ...(event.enteradosAt || {}), [ackUserId]: new Date().toISOString() };
+                await updateDoc(doc(db, 'servicios', event.id), {
+                    enterados: [...enteradosActuales, ackUserId],
+                    enteradosAt,
+                });
+                toast.success(event.tipo === 'junta' ? 'Confirmación registrada (de acuerdo)' : 'Confirmación registrada (enterado)');
+                onClose();
             }
-        } catch (error) { console.error(error); }
+        } catch (error) {
+            console.error(error);
+            toast.error('No se pudo registrar la confirmación');
+        }
         finally { setMarking(false); }
     };
 
     const statusConfig = CONSTANTS.estados.find(e => e.value === (event?.estado || formData.estado)) || CONSTANTS.estados[0];
     const StatusIcon = statusConfig.icon;
-    const yaEstaEnterado = event?.enterados?.includes(currentUser?.id);
+    const yaEstaEnterado = userHasAcknowledged(event?.enterados);
     const isPT = event && (event.tipo === 'interlaboratorio' || event.tipo === 'intralaboratorio');
-    const canUploadEvidencia = isPT && event?.id && (isCalidad || event.personas?.includes(currentUser?.id));
+    const canUploadEvidencia = isPT && event?.id && (canEdit || isUserAssignedToEvent(currentUser, event.personas || [], authUid));
 
     const handleEvidenciaFile = async (file: File | undefined) => {
         if (!file || !event?.id) return;
@@ -340,28 +404,73 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
             <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
                 
-                <div className={`px-6 py-4 border-b flex justify-between items-center ${isPJLA ? 'bg-pink-50 border-pink-100' : isReadOnly ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50/50 border-slate-200'}`}>
+                <div className={`px-6 py-4 border-b flex justify-between items-center ${isPJLA ? 'bg-pink-50 border-pink-100' : showDetailView ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50/50 border-slate-200'}`}>
                     <div>
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                             {isPJLA && <span className="bg-pink-100 text-pink-700 border border-pink-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1"><Bell size={10}/> PJLA Alert</span>}
-                            {isReadOnly && !isPJLA && <span className="bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1"><Eye size={10}/> Solo Lectura</span>}
+                            {showDetailView && !isPJLA && <span className="bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1"><Eye size={10}/> Solo Lectura</span>}
+                            {event && isAssigned && !isPJLA && (
+                                yaEstaEnterado ? (
+                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1"><CheckCircle2 size={10}/> {ackLabel}</span>
+                                ) : (
+                                    <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1"><Clock size={10}/> Pendiente confirmación</span>
+                                )
+                            )}
                             {event && !isPJLA && (
                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${statusConfig.bg} ${statusConfig.color} ${statusConfig.border}`}>
                                     <StatusIcon size={10} /> {statusConfig.label}
                                 </span>
                             )}
                         </div>
-                        <h3 className="text-lg font-black text-slate-900 tracking-tight">{event ? (isReadOnly ? event.title : 'Editar Actividad') : 'Nueva Programación'}</h3>
+                        <h3 className="text-lg font-black text-slate-900 tracking-tight">{event ? (showDetailView ? event.title : 'Editar Actividad') : 'Nueva Programación'}</h3>
                     </div>
                     <div className="flex gap-2">
-                        {(!isReadOnly && event) && <button type="button" onClick={handleDelete} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={18}/></button>}
+                        {canFullEdit && <button type="button" onClick={handleDelete} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={18}/></button>}
                         <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-xl transition-colors"><X size={18}/></button>
                     </div>
                 </div>
 
                 <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
-                    {isReadOnly || isPJLA ? (
+                    {showDetailView ? (
                         <div className="space-y-4">
+                            {(isServicioOperativo(event.tipo) || resolveEventLugar(event) || event.horaInicio || event.horaFin) && (
+                                <div className="space-y-3">
+                                    {event.cliente && !['Interno', 'Interno AG'].includes(event.cliente) && (
+                                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Cliente</p>
+                                            <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
+                                                <Building2 size={14} className="text-blue-500"/> {event.cliente}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {resolveEventLugar(event) && (
+                                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Lugar</p>
+                                            <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
+                                                <MapPin size={14} className="text-rose-500 shrink-0"/> {resolveEventLugar(event)}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Hora inicio</p>
+                                            <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
+                                                <Clock size={14} className="text-blue-500 shrink-0"/> {event.horaInicio || '—'}
+                                            </div>
+                                        </div>
+                                        <div className={`p-3 rounded-2xl border ${isEventFinalizado(event) ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+                                            <p className={`text-[10px] font-bold uppercase mb-1 tracking-widest ${isEventFinalizado(event) ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                Hora fin{isEventFinalizado(event) ? ' (finalizado)' : ''}
+                                            </p>
+                                            <div className={`flex items-center gap-2 font-bold text-sm ${isEventFinalizado(event) ? 'text-emerald-800' : 'text-slate-700'}`}>
+                                                <CheckCircle2 size={14} className={`shrink-0 ${isEventFinalizado(event) ? 'text-emerald-500' : 'text-slate-400'}`}/>
+                                                {event.horaFin || '—'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Periodo</p>
@@ -419,6 +528,15 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 </>
                             )}
 
+                            {creatorDisplay && (
+                                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Creado por</p>
+                                    <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
+                                        <UserCheck size={14} className="text-indigo-500 shrink-0"/> {creatorDisplay}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Detalles</p>
                                 <div className="text-sm text-slate-700 whitespace-pre-wrap">{event.descripcion || 'Sin instrucciones adicionales.'}</div>
@@ -436,30 +554,55 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
                             {!isPJLA && (
                                 <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Personal Asignado</p>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {event.personas?.map((pId: string, i: number) => {
-                                            const enterado = event.enterados?.includes(pId);
-                                            const nombre = getUserName(pId, technicalStaff);
-                                            return (
-                                                <div key={i} className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-xl shadow-sm">
-                                                    <div className="flex items-center gap-2">
-                                                        <Avatar name={nombre} isEnterado={enterado} />
-                                                        <span className="text-xs font-bold text-slate-700 truncate max-w-[100px]">{nombre}</span>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Quiénes van</p>
+                                    {event.personas?.length ? (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {event.personas.map((pId: string, i: number) => {
+                                                const enterado = (event.enterados || []).some((e: string) => String(e).toLowerCase() === String(pId).toLowerCase());
+                                                const nombre = getUserName(pId, technicalStaff);
+                                                const ackAt = event.enteradosAt?.[pId]
+                                                    ?? Object.entries(event.enteradosAt || {}).find(([k]) =>
+                                                        String(k).toLowerCase() === String(pId).toLowerCase()
+                                                    )?.[1];
+                                                return (
+                                                    <div key={i} className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <Avatar name={nombre} isEnterado={enterado} />
+                                                            <div className="min-w-0">
+                                                                <span className="text-xs font-bold text-slate-700 truncate block max-w-[120px]">{nombre}</span>
+                                                                {isCalidad && enterado && ackAt && (
+                                                                    <span className="text-[9px] text-slate-400">{format(new Date(ackAt), 'dd/MM/yy HH:mm', { locale: es })}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        {enterado ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0"/> : <Clock size={14} className="text-amber-500 shrink-0"/>}
                                                     </div>
-                                                    {enterado ? <CheckCircle2 size={14} className="text-emerald-500"/> : <Clock size={14} className="text-amber-500"/>}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-500 italic p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                                            Sin técnicos asignados.
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
-                            {!isPJLA && currentUser?.id && event.personas?.includes(currentUser.id) && !yaEstaEnterado && (
+                            {!isPJLA && isAssigned && !yaEstaEnterado && (
                                 <button type="button" onClick={handleMarcarEnterado} disabled={marking} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-2">
                                     {marking ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <UserCheck size={18}/>}
-                                    Confirmar Enterado
+                                    Confirmar {ackLabel}
                                 </button>
+                            )}
+                            {!isPJLA && !isAssigned && !canEdit && event?.personas?.length > 0 && (
+                                <p className="text-xs text-slate-500 italic text-center py-2 border border-dashed border-slate-200 rounded-xl">
+                                    No estás asignado a esta actividad; solo lectura.
+                                </p>
+                            )}
+                            {!isPJLA && isAssigned && yaEstaEnterado && (
+                                <p className="text-xs text-emerald-700 font-bold text-center py-2 bg-emerald-50 border border-emerald-100 rounded-xl">
+                                    Ya confirmaste ({ackLabel.toLowerCase()}).
+                                </p>
                             )}
                         </div>
                     ) : (
@@ -505,6 +648,26 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                     <input type="date" required value={formData.fechaFin} onChange={e => setFormData({...formData, fechaFin: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" />
                                 </div>
                             </div>
+
+                            {isServicioOperativo(formData.tipo) && (
+                                <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-3">
+                                    <h4 className="text-[10px] font-bold text-indigo-800 uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> Servicio en campo</h4>
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Lugar / Ubicación</label>
+                                        <input value={formData.ubicacion} onChange={e => setFormData({...formData, ubicacion: e.target.value})} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none" placeholder="Planta, dirección..." />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Hora inicio</label>
+                                            <input type="time" value={formData.horaInicio} onChange={e => setFormData({...formData, horaInicio: e.target.value})} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Hora fin</label>
+                                            <input type="time" value={formData.horaFin} onChange={e => setFormData({...formData, horaFin: e.target.value})} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {(formData.tipo === 'interlaboratorio' || formData.tipo === 'intralaboratorio') && (
                                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
@@ -590,7 +753,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
 // --- 3. VISTA GANTT PT (INTERLABORATORIOS) MAYO - ABRIL ---
 
-const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalStaff, onUploadEvidencia, currentUser }: any) => {
+const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, canEdit, technicalStaff, onUploadEvidencia, currentUser, authUid }: any) => {
     const [uploadingId, setUploadingId] = useState<string | null>(null);
     const monthsPT = ['Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril'];
     const ptEvents = events.filter(e => e.tipo === 'intralaboratorio' || e.tipo === 'interlaboratorio');
@@ -677,7 +840,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
                                             ? ev.personas.map((id: string) => getUserName(id, technicalStaff)).join(', ')
                                             : '—';
                                         const avanceReal = calculateAvance(ev);
-                                        const puedeSubirEvidencia = isCalidad || (currentUser?.id && ev.personas?.includes(currentUser.id));
+                                        const puedeSubirEvidencia = canEdit || isUserAssignedToEvent(currentUser, ev.personas || [], authUid);
                                         const style = getActivityStyle(ev.title);
 
                                         return (
@@ -763,28 +926,37 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, technicalSt
 
 // --- 5. COMPONENTES DE DISEÑO DEL CALENDARIO ---
 
-const CustomEvent = ({ event }: any) => {
+const CustomEvent = ({ event, currentUser, authUid }: { event: any; currentUser?: any; authUid?: string | null }) => {
     const isPJLA = event.esAlertaAutomatica || event.cliente === 'Perry Johnson Labs';
     const Icon = event.esVencimientoPatron ? Settings : isPJLA ? Bell : (CONSTANTS.estados.find(e => e.value === event.estado)?.icon || CalendarIcon);
     
-    // Calcular el color de fondo para saber si el texto debe ser oscuro o claro
     const hexColor = getEventHexColor(event);
     const useDarkText = isColorLight(hexColor);
     const textColorClass = useDarkText ? 'text-slate-900' : 'text-white';
     const subColorClass = useDarkText ? 'text-slate-600 font-bold' : 'text-white/80';
 
+    const assigned = !event.esVencimientoPatron && !isPJLA && isUserAssignedToEvent(currentUser, event.personas || [], authUid);
+    const ackKeys = new Set([currentUser?.id, currentUser?.email, authUid].filter(Boolean).map(s => String(s).toLowerCase()));
+    const acknowledged = assigned && (event.enterados || []).some((e: string) => ackKeys.has(String(e).toLowerCase()));
+
     return (
       <div className="flex flex-col h-full justify-center px-1 py-0.5 overflow-hidden">
-        {/* Fila 1: Icono + Título de Actividad */}
         <div className="flex items-center gap-1 truncate">
           <Icon size={10} className={`${useDarkText ? 'text-slate-800' : 'text-white'} shrink-0`} />
-          <span className={`text-[10px] leading-tight font-black truncate ${textColorClass}`}>{event.title}</span>
+          <span className={`text-[10px] leading-tight font-black truncate flex-1 ${textColorClass}`}>{event.title}</span>
+          {assigned && (
+            <span
+              className={`shrink-0 text-[7px] font-black uppercase px-1 rounded ${acknowledged ? 'bg-emerald-500/90 text-white' : 'bg-amber-400 text-amber-950'}`}
+              title={acknowledged ? getAckLabel(event.tipo) : 'Pendiente confirmación'}
+            >
+              {acknowledged ? '✓' : '!'}
+            </span>
+          )}
         </div>
-        {/* Fila 2: NUEVO DETALLE - Planta / Destino */}
-        {event.destino && (
+        {resolveEventLugar(event) && (
           <div className={`text-[9px] leading-none opacity-90 truncate mt-0.5 flex items-center gap-0.5 ${subColorClass}`}>
             <MapPin size={8} className="shrink-0" />
-            <span className="truncate">{event.destino}</span>
+            <span className="truncate">{resolveEventLugar(event)}</span>
           </div>
         )}
       </div>
@@ -820,9 +992,18 @@ export const CalendarScreen: React.FC = () => {
 
     const isCalidad = useMemo(() => {
         if (!currentUserData) return false;
-        const puesto = (currentUserData.puesto || '').toLowerCase();
-        return puesto.includes('calidad') || puesto.includes('admin') || puesto.includes('gerente');
+        return isCalidadRole(String(currentUserData.puesto || currentUserData.role || '').toLowerCase());
     }, [currentUserData]);
+
+    const canSeeAllEvents = useMemo(
+        () => canSeeAllCalendarEvents(currentUserData),
+        [currentUserData],
+    );
+
+    const canEditEvents = useMemo(
+        () => canEditCalendarEvents(currentUserData),
+        [currentUserData],
+    );
 
     const userRole = useMemo(() => {
         if (!currentUserData) return '';
@@ -858,10 +1039,25 @@ export const CalendarScreen: React.FC = () => {
                     const data = doc.data();
                     let start = new Date(); let end = new Date();
                     
-                    if (data.fecha) { const [y, m, d] = data.fecha.split('-').map(Number); start = new Date(y, m - 1, d); end = new Date(start); }
-                    if (data.fechaFin) { const [y, m, d] = data.fechaFin.split('-').map(Number); end = new Date(y, m - 1, d); }
-                    else if (data.horaFin) { const [h, min] = data.horaFin.split(':').map(Number); end.setHours(h, min); }
+                    if (data.fecha) {
+                        const [y, m, d] = data.fecha.split('-').map(Number);
+                        start = new Date(y, m - 1, d);
+                        end = new Date(start);
+                        if (data.horaInicio) {
+                            const [h, min] = data.horaInicio.split(':').map(Number);
+                            if (!Number.isNaN(h) && !Number.isNaN(min)) start.setHours(h, min, 0, 0);
+                        }
+                    }
+                    if (data.fechaFin) {
+                        const [y, m, d] = data.fechaFin.split('-').map(Number);
+                        end = new Date(y, m - 1, d);
+                    }
+                    if (data.horaFin) {
+                        const [h, min] = data.horaFin.split(':').map(Number);
+                        if (!Number.isNaN(h) && !Number.isNaN(min)) end.setHours(h, min, 0, 0);
+                    }
 
+                    const ubicacion = data.ubicacion || data.lugar || data.direccion || '';
                     let pjlaUrl = data.url || null;
                     if (!pjlaUrl && data.archivos && data.archivos.length > 0 && typeof data.archivos[0] === 'string' && data.archivos[0].startsWith('http')) pjlaUrl = data.archivos[0];
                     if (!pjlaUrl && data.descripcion) {
@@ -871,15 +1067,25 @@ export const CalendarScreen: React.FC = () => {
                     
                     return {
                         id: doc.id, title: data.titulo || data.elemento || 'Sin título', start, end,
-                        cliente: data.cliente || 'Interno', estado: data.estado || 'programado', tipo: data.tipo || 'calibracion',
+                        cliente: data.cliente || 'Interno', estado: data.estado || 'programado', estatus: data.estatus,
+                        tipo: data.tipo || 'calibracion',
                         destino: data.destino || '', laboratorioRef: data.laboratorioRef || '', descripcion: data.descripcion,
-                        personas: data.personas || [], enterados: data.enterados || [], documentos: data.archivos || [],
+                        ubicacion, lugar: data.lugar || '', direccion: data.direccion || '',
+                        horaInicio: data.horaInicio || '', horaFin: data.horaFin || '',
+                        finalizado: data.finalizado === true || data.estado === 'finalizado',
+                        personas: data.personas || [], enterados: data.enterados || [], enteradosAt: data.enteradosAt || {},
+                        documentos: data.archivos || [],
                         pjlaUrl: pjlaUrl, esAlertaAutomatica: data.esAlertaAutomatica || false,
                         magnitudPT: data.magnitudPT || '', comentariosPT: data.comentariosPT || '',
                         evidenciaUrl: data.evidenciaUrl || null,
                         evidenciaNombre: data.evidenciaNombre || '',
                         evidenciaFecha: data.evidenciaFecha || null,
-                        evidenciaUrls: data.evidenciaUrls || []
+                        evidenciaUrls: data.evidenciaUrls || [],
+                        createdBy: data.createdBy || '',
+                        creadoPor: data.creadoPor || '',
+                        userId: data.userId || '',
+                        createdByEmail: data.createdByEmail || data.creadoPorEmail || '',
+                        creadoPorNombre: data.creadoPorNombre || data.createdByName || '',
                     };
                 });
                 setEvents(calendarEvents);
@@ -966,18 +1172,28 @@ export const CalendarScreen: React.FC = () => {
         setIsModalOpen(true);
     };
 
+    const roleVisibleEvents = useMemo(() => {
+        if (canSeeAllEvents) return events;
+        if (!currentUserData && !authUser?.uid) return [];
+        return events.filter(ev =>
+            isUserAssignedToEvent(currentUserData, ev.personas || [], authUser?.uid),
+        );
+    }, [events, canSeeAllEvents, currentUserData, authUser?.uid]);
+
     const filteredServicioEvents = useMemo(() => {
-        return events.filter(ev => {
+        return roleVisibleEvents.filter(ev => {
+            if (isReprogramadoEstado(ev.estado, ev.estatus)) return false;
+
             const isPJLA = ev.esAlertaAutomatica || ev.cliente === 'Perry Johnson Labs';
             
             // Si NO es de calidad, ocultamos los avisos de PJLA
-            if (!isCalidad && isPJLA) return false;
+            if (!canSeeAllEvents && isPJLA) return false;
 
             const matchStatus = filterStatus === 'todos' || ev.estado === filterStatus;
             const matchSearch = !searchText || ev.title.toLowerCase().includes(searchText.toLowerCase()) || ev.cliente.toLowerCase().includes(searchText.toLowerCase());
             return matchStatus && matchSearch;
         });
-    }, [events, filterStatus, searchText, isCalidad]);
+    }, [roleVisibleEvents, filterStatus, searchText, canSeeAllEvents]);
 
     const filteredEvents = useMemo(() => {
         if (!canSeePatronAlerts) return filteredServicioEvents;
@@ -989,11 +1205,14 @@ export const CalendarScreen: React.FC = () => {
         return [...filteredServicioEvents, ...patronFiltered];
     }, [filteredServicioEvents, patronCalendarEvents, searchText, canSeePatronAlerts]);
 
-    const stats = useMemo(() => ({
-        total: filteredEvents.length,
-        programado: filteredEvents.filter(e => e.estado === 'programado').length,
-        en_proceso: filteredEvents.filter(e => e.estado === 'en_proceso').length,
-    }), [filteredEvents]);
+    const stats = useMemo(() => {
+        const servicios = filteredServicioEvents.filter(ev => isServicioOperativoTipo(ev.tipo));
+        return {
+            total: servicios.length,
+            programado: servicios.filter(e => e.estado === 'programado').length,
+            en_proceso: servicios.filter(e => e.estado === 'en_proceso').length,
+        };
+    }, [filteredServicioEvents]);
 
     const eventPropGetter = useCallback((event: any) => {
         const hex = getEventHexColor(event);
@@ -1007,6 +1226,13 @@ export const CalendarScreen: React.FC = () => {
             } 
         };
     }, []);
+
+    const calendarEventComponent = useCallback(
+        (props: { event: any }) => (
+            <CustomEvent event={props.event} currentUser={currentUserData} authUid={authUser?.uid} />
+        ),
+        [currentUserData, authUser?.uid],
+    );
 
     return (
         <div className="flex h-full min-h-0 flex-1 flex-col bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
@@ -1112,7 +1338,7 @@ export const CalendarScreen: React.FC = () => {
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col min-h-0 overflow-hidden">
                             {/* CALENDARIO */}
                             <div className="p-2 sm:p-4 flex-1 min-h-0">
-                                <Calendar localizer={localizer} events={filteredEvents} culture='es' startAccessor="start" endAccessor="end" components={{ toolbar: CustomToolbar, event: CustomEvent }} onSelectEvent={ev => { if (!ev.esVencimientoPatron) { setSelectedEvent(ev); setIsModalOpen(true); } }} eventPropGetter={eventPropGetter} views={['month', 'week', 'day', 'agenda']} />
+                                <Calendar localizer={localizer} events={filteredEvents} culture='es' startAccessor="start" endAccessor="end" components={{ toolbar: CustomToolbar, event: calendarEventComponent }} onSelectEvent={ev => { if (!ev.esVencimientoPatron) { setSelectedEvent(ev); setIsModalOpen(true); } }} eventPropGetter={eventPropGetter} views={['month', 'week', 'day', 'agenda']} />
                             </div>
                             
                             {/* SIMBOLOGÍA INFERIOR */}
@@ -1138,11 +1364,12 @@ export const CalendarScreen: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                        <GanttPTView events={events} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} isCalidad={isCalidad} technicalStaff={users} onUploadEvidencia={handleUploadEvidenciaPT} currentUser={currentUserData} />
+                        <GanttPTView events={roleVisibleEvents} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} isCalidad={isCalidad} canEdit={canEditEvents} technicalStaff={users} onUploadEvidencia={handleUploadEvidenciaPT} currentUser={currentUserData} authUid={authUser?.uid} />
                     )}
                 </div>
 
-                <UnifiedEventModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} event={selectedEvent} initialData={initialModalData} technicalStaff={users} isCalidad={isCalidad} currentUser={currentUserData} />
+                <UnifiedEventModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} event={selectedEvent} initialData={initialModalData} technicalStaff={users} isCalidad={isCalidad} canEdit={canEditEvents} currentUser={currentUserData} authUid={authUser?.uid} />
+                <Toaster position="top-center" toastOptions={{ duration: 2800, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
             </main>
             
             <style>{`
