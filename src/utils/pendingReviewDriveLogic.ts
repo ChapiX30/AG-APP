@@ -1,16 +1,20 @@
-const isRealizadoValue = (value: unknown): boolean => {
-  const v = String(value ?? "")
+const normalizeCargadoDrive = (value: unknown): string =>
+  String(value ?? "")
     .trim()
     .toLowerCase();
+
+/** PDF en Drive (subida o marcado manual); no implica revisión de calidad. */
+export const isWorksheetUploadedToDrive = (value: unknown): boolean => {
+  const v = normalizeCargadoDrive(value);
   return v === "si" || v === "realizado";
 };
 
-export const isWorksheetCargadoDrive = (value: unknown): boolean => {
-  const v = String(value ?? "")
-    .trim()
-    .toLowerCase();
-  return v === "si" || isRealizadoValue(value);
-};
+/** Metrólogo declaró la hoja terminada (Por revisar). */
+export const isWorksheetRealizado = (value: unknown): boolean =>
+  normalizeCargadoDrive(value) === "realizado";
+
+/** @deprecated Prefer isWorksheetUploadedToDrive / isWorksheetRealizado */
+export const isWorksheetCargadoDrive = isWorksheetUploadedToDrive;
 
 export const isMetadataPendingReview = (data: Record<string, unknown>): boolean =>
   data.reviewed !== true && data.completed === true;
@@ -21,7 +25,7 @@ export const shouldTreatAsPendingReview = (
 ): boolean => {
   if (isMetadataPendingReview(meta)) return true;
   if (!worksheetRow || meta.reviewed === true) return false;
-  return isWorksheetCargadoDrive(worksheetRow.cargado_drive);
+  return isWorksheetRealizado(worksheetRow.cargado_drive);
 };
 
 /** Normaliza rutas guardadas sin prefijo `worksheets/` (común en metadatos antiguos). */

@@ -265,9 +265,25 @@ export const formatServicioScheduleBadge = (
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${short}`;
 };
 
+/** Metrólogo/técnico de campo para TV y servicios — excluye calidad, admin y jefatura. */
 export const isMetrologyRole = (user: UsuarioRow) => {
-  const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
-  return text.includes("metrólogo") || text.includes("metrologo") || text.includes("tecnico") || text.includes("técnico");
+  const text = ((user.puesto || "") + " " + (user.role || ""))
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (
+    text.includes("calidad") ||
+    text.includes("quality") ||
+    text.includes("admin") ||
+    text.includes("jefe") ||
+    text.includes("director") ||
+    text.includes("gerente") ||
+    text.includes("supervisor") ||
+    text.includes("coordinador")
+  ) {
+    return false;
+  }
+  return text.includes("metrologo") || text.includes("tecnico");
 };
 
 export const isQualityRole = (user: UsuarioRow) => {

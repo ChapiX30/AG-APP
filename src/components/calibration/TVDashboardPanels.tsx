@@ -12,7 +12,6 @@ import {
   Briefcase,
   Activity,
   UserCircle,
-  Users,
 } from "lucide-react";
 import {
   BarChart,
@@ -36,7 +35,7 @@ import {
   ServicioRow,
   UsuarioRow,
   resolveServicioAssignees,
-  CalibrationChartTooltip,
+  isMetrologyRole,
 } from "../../utils/calibrationShared.tsx";
 
 type CalendarValue = Date | [Date | null, Date | null] | null;
@@ -98,8 +97,9 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
 };
 
 /** ~20 px/s — legible en TV a distancia (intervalo 50 ms → 1 px/tick). */
-const TV_KIOSK_SCROLL_PX_PER_SEC = 20;
-const TV_KIOSK_SCROLL_TICK_MS = 50;
+const TV_KIOSK_SCROLL_PX_PER_SEC_DEFAULT = 20;
+const TV_KIOSK_SCROLL_TICK_MS_DEFAULT = 50;
+const TV_KIOSK_SCROLL_LOOP_DELAY_MS_DEFAULT = 700;
 
 function canScrollVertically(node: HTMLDivElement) {
   return node.scrollHeight > node.clientHeight + 2;
@@ -112,10 +112,24 @@ function useTvKioskAutoScroll(
   scrollRef: React.RefObject<HTMLDivElement | null>,
   enabled: boolean,
   pause: boolean,
-  options?: { force?: boolean; onStateChange?: (state: TvScrollState) => void }
+  options?: {
+    force?: boolean;
+    onStateChange?: (state: TvScrollState) => void;
+    pxPerSec?: number;
+    tickMs?: number;
+    loopDelayMs?: number;
+    /** Duplica contenido y reinicia scroll al llegar a `segmentRef` (bucle continuo). */
+    seamless?: boolean;
+    segmentRef?: React.RefObject<HTMLDivElement | null>;
+  }
 ) {
   const force = options?.force ?? false;
   const onStateChange = options?.onStateChange;
+  const pxPerSec = options?.pxPerSec ?? TV_KIOSK_SCROLL_PX_PER_SEC_DEFAULT;
+  const tickMs = options?.tickMs ?? TV_KIOSK_SCROLL_TICK_MS_DEFAULT;
+  const loopDelayMs = options?.loopDelayMs ?? TV_KIOSK_SCROLL_LOOP_DELAY_MS_DEFAULT;
+  const seamless = options?.seamless ?? false;
+  const segmentRef = options?.segmentRef;
 
   useEffect(() => {
     if (!enabled) {
@@ -130,10 +144,11 @@ function useTvKioskAutoScroll(
       return;
     }
 
-    const pxPerTick = (TV_KIOSK_SCROLL_PX_PER_SEC * TV_KIOSK_SCROLL_TICK_MS) / 1000;
+    const pxPerTick = (pxPerSec * tickMs) / 1000;
     let intervalId = 0;
     let resizeObserver: ResizeObserver | undefined;
     let overflowReady = false;
+    let loopUntilTs = 0;
 
     const publishState = () => {
       const node = scrollRef.current;
@@ -160,8 +175,32 @@ function useTvKioskAutoScroll(
       node.dataset.tvScrollOverflow = overflowReady ? "1" : "0";
 
       if (!pause && overflowReady) {
-        const atBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 2;
-        node.scrollTop = atBottom ? 0 : node.scrollTop + pxPerTick;
+        const now = performance.now();
+        const segmentHeight = seamless ? segmentRef?.current?.offsetHeight ?? 0 : 0;
+
+        if (seamless && segmentHeight > 0) {
+          let next = node.scrollTop + pxPerTick;
+          while (next >= segmentHeight) {
+            next -= segmentHeight;
+          }
+          node.scrollTop = next;
+        } else {
+          if (now < loopUntilTs) {
+            publishState();
+            return;
+          }
+
+          const maxScrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+          const next = Math.min(maxScrollTop, node.scrollTop + pxPerTick);
+          const atBottom = next >= maxScrollTop - 1;
+
+          if (atBottom) {
+            node.scrollTop = 0;
+            loopUntilTs = now + loopDelayMs;
+          } else {
+            node.scrollTop = next;
+          }
+        }
       }
       publishState();
     };
@@ -171,25 +210,30 @@ function useTvKioskAutoScroll(
       if (!node) return;
 
       node.dataset.tvScroll = "1";
+      node.dataset.tvScrollSeamless = seamless ? "1" : "0";
       resizeObserver?.disconnect();
       resizeObserver = new ResizeObserver(() => {
         overflowReady = canScrollVertically(node);
         node.dataset.tvScrollOverflow = overflowReady ? "1" : "0";
+        const segmentHeight = seamless ? segmentRef?.current?.offsetHeight ?? 0 : 0;
+        if (seamless && segmentHeight > 0 && node.scrollTop >= segmentHeight) {
+          node.scrollTop = node.scrollTop % segmentHeight;
+        }
         if (node.scrollTop > 0 && !overflowReady) {
           node.scrollTop = 0;
         }
         publishState();
       });
       resizeObserver.observe(node);
-      if (node.firstElementChild) {
-        resizeObserver.observe(node.firstElementChild);
-      }
+      const track = node.firstElementChild;
+      if (track) resizeObserver.observe(track);
+      if (segmentRef?.current) resizeObserver.observe(segmentRef.current);
 
       tick();
     };
 
     attach();
-    intervalId = window.setInterval(tick, TV_KIOSK_SCROLL_TICK_MS);
+    intervalId = window.setInterval(tick, tickMs);
     const layoutTimers = [150, 400, 900, 1800].map((ms) => window.setTimeout(attach, ms));
 
     const onMotionChange = () => {
@@ -209,10 +253,11 @@ function useTvKioskAutoScroll(
         delete node.dataset.tvScroll;
         delete node.dataset.tvScrollOverflow;
         delete node.dataset.tvScrollMode;
+        delete node.dataset.tvScrollSeamless;
       }
       onStateChange?.("idle");
     };
-  }, [scrollRef, enabled, pause, force, onStateChange]);
+  }, [scrollRef, segmentRef, enabled, pause, force, onStateChange, pxPerSec, tickMs, loopDelayMs, seamless]);
 }
 
 const AREA_HEADER_STYLES: Record<string, string> = {
@@ -319,6 +364,50 @@ interface CompanyArrivalsPanelProps {
   year: number;
 }
 
+const CompanyArrivalsBody: React.FC<{ areas: AreaCompanyArrivals[]; hasAny: boolean; year: number }> = ({
+  areas,
+  hasAny,
+  year,
+}) => {
+  if (!hasAny) {
+    return (
+      <div className="flex flex-col items-center justify-center text-gray-500 gap-2 py-10">
+        <CheckCircle2 className="w-10 h-10 text-emerald-500/80" />
+        <p className="text-sm font-medium">Sin equipos activos en {year}</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {areas.map((section) => {
+        if (section.groups.length === 0) return null;
+        const headerClass = AREA_HEADER_STYLES[section.areaLabel] || AREA_HEADER_STYLES["SIN ÁREA"];
+        return (
+          <div key={section.area} className="space-y-2.5">
+            <div
+              className={clsx(
+                "flex items-center justify-between rounded-lg border px-3 py-2",
+                headerClass
+              )}
+            >
+              <span className="text-xs font-black tracking-widest">{section.areaLabel}</span>
+              <span className="text-[10px] font-semibold opacity-80">
+                {section.totalArrived} activos · {section.totalPending} pend.
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              {section.groups.map((g) => (
+                <CompanyCard key={`${section.area}-${g.company}`} g={g} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
   areas,
   totalArrived,
@@ -327,11 +416,15 @@ export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
 }) => {
   const hasAny = areas.some((a) => a.groups.length > 0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const segmentRef = useRef<HTMLDivElement>(null);
   const [scrollPaused, setScrollPaused] = useState(false);
   const [scrollMode, setScrollMode] = useState<TvScrollState>("idle");
   useTvKioskAutoScroll(scrollRef, hasAny, scrollPaused, {
     force: true,
     onStateChange: setScrollMode,
+    pxPerSec: 16,
+    seamless: hasAny,
+    segmentRef,
   });
 
   return (
@@ -359,44 +452,21 @@ export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
         ref={scrollRef}
         data-tv-scroll="viewport"
         data-tv-scroll-mode={scrollMode}
-        className="flex-1 h-0 min-h-0 overflow-y-auto overflow-x-hidden hide-scrollbar p-3 tv-kiosk-scroll"
+        className="flex-1 h-0 min-h-0 overflow-y-auto overflow-x-hidden hide-scrollbar px-3 py-2.5 tv-kiosk-scroll"
         onMouseEnter={() => setScrollPaused(true)}
         onMouseLeave={() => setScrollPaused(false)}
         onFocus={() => setScrollPaused(true)}
         onBlur={() => setScrollPaused(false)}
       >
-        <div data-tv-scroll="content" className="space-y-4">
-        {!hasAny ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2 py-8">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500/80" />
-            <p className="text-sm font-medium">Sin equipos activos en {year}</p>
+        <div data-tv-scroll="track" className="space-y-0">
+          <div ref={segmentRef} data-tv-scroll="segment" className="space-y-4 pb-2">
+            <CompanyArrivalsBody areas={areas} hasAny={hasAny} year={year} />
           </div>
-        ) : (
-          areas.map((section) => {
-            if (section.groups.length === 0) return null;
-            const headerClass = AREA_HEADER_STYLES[section.areaLabel] || AREA_HEADER_STYLES["SIN ÁREA"];
-            return (
-              <div key={section.area} className="space-y-2 snap-start">
-                <div
-                  className={clsx(
-                    "sticky top-0 z-10 flex items-center justify-between rounded-lg border px-3 py-1.5",
-                    headerClass
-                  )}
-                >
-                  <span className="text-xs font-black tracking-widest">{section.areaLabel}</span>
-                  <span className="text-[10px] font-semibold opacity-80">
-                    {section.totalArrived} activos · {section.totalPending} pend.
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {section.groups.map((g) => (
-                    <CompanyCard key={`${section.area}-${g.company}`} g={g} />
-                  ))}
-                </div>
-              </div>
-            );
-          })
-        )}
+          {hasAny && (
+            <div aria-hidden className="space-y-4 pt-2 pb-1">
+              <CompanyArrivalsBody areas={areas} hasAny={hasAny} year={year} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -437,66 +507,79 @@ const ServicioTvCard: React.FC<{
           ? "bg-purple-500"
           : "bg-blue-500";
 
+  const tipoLabel = service.tipo
+    ? service.tipo.charAt(0).toUpperCase() + service.tipo.slice(1)
+    : null;
+
   return (
-    <div className="relative rounded-xl border border-white/10 bg-slate-900/70 p-2.5 text-sm overflow-hidden">
-      <span className={clsx("absolute top-0 left-0 w-1 h-full rounded-l-xl", statusAccent)} />
-      <div className="flex items-start gap-2 pl-1.5">
+    <div className="relative rounded-xl border border-white/10 bg-slate-900/70 p-3 text-sm overflow-hidden">
+      <span className={clsx("absolute top-0 left-0 w-1.5 h-full rounded-l-xl", statusAccent)} />
+      <div className="flex items-start gap-2.5 pl-2">
         <span
           className={clsx(
-            "w-2 h-2 rounded-full mt-1.5 shrink-0 ring-2 ring-slate-800",
+            "w-2.5 h-2.5 rounded-full mt-1 shrink-0 ring-2 ring-slate-800",
             PRIORITY_DOT[service.prioridad] || "bg-slate-500"
           )}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2 flex-wrap">
-            <p className="font-bold text-white leading-snug line-clamp-2 flex-1 min-w-0">{service.titulo}</p>
+            <p className="font-bold text-white text-base leading-snug line-clamp-2 flex-1 min-w-0">
+              {service.titulo}
+            </p>
             {showDateBadge && dateBadge && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 shrink-0">
+              <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 shrink-0">
                 {dateBadge}
               </span>
             )}
           </div>
-          <p className="text-xs text-blue-300 truncate flex items-center gap-1 mt-0.5">
-            <Building2 className="w-3 h-3 shrink-0" /> {service.cliente}
+          <p className="text-sm text-blue-300 truncate flex items-center gap-1.5 mt-1">
+            <Building2 className="w-3.5 h-3.5 shrink-0" /> {service.cliente}
           </p>
-          <div className="flex flex-wrap gap-2 mt-1 text-[10px] text-gray-400">
+          <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-gray-300">
+            {tipoLabel && (
+              <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-white/10 font-semibold capitalize">
+                {tipoLabel}
+              </span>
+            )}
             {(service.horaInicio || service.horaFin) && (
-              <span className="flex items-center gap-0.5">
-                <Clock className="w-3 h-3 shrink-0" />
+              <span className="flex items-center gap-1 font-medium">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
                 {service.horaInicio}
                 {service.horaFin ? ` – ${service.horaFin}` : ""}
               </span>
             )}
             {service.ubicacion && (
-              <span className="flex items-center gap-0.5 truncate max-w-[160px]">
-                <MapPin className="w-3 h-3 shrink-0" /> {service.ubicacion}
+              <span className="flex items-center gap-1 truncate max-w-[200px]">
+                <MapPin className="w-3.5 h-3.5 shrink-0" /> {service.ubicacion}
               </span>
             )}
           </div>
-          <div className="mt-1.5 flex items-start gap-1.5 flex-wrap">
-            <Users className="w-3.5 h-3.5 shrink-0 text-purple-300 mt-0.5" aria-hidden />
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-black uppercase tracking-wider text-purple-300/90 shrink-0">
+              Metrólogos
+            </span>
             {assignees.length > 0 ? (
               assignees.map((a) => (
                 <span
                   key={a.id}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/35 text-[11px] font-bold text-purple-100 max-w-full"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-400/40 text-sm font-bold text-purple-50"
                   title={a.name}
                 >
                   {a.color && (
                     <span
-                      className="w-2 h-2 rounded-full shrink-0 ring-1 ring-white/20"
+                      className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/25"
                       style={{ backgroundColor: a.color }}
                     />
                   )}
-                  <span className="truncate">{a.name}</span>
+                  <span className="truncate max-w-[180px]">{a.name}</span>
                 </span>
               ))
             ) : (
-              <span className="text-[11px] font-semibold text-amber-300/90 italic">Sin asignar</span>
+              <span className="text-sm font-semibold text-amber-300/90 italic">Sin asignar</span>
             )}
           </div>
         </div>
-        <span className={clsx("text-[10px] px-1.5 py-0.5 rounded border font-bold shrink-0", st.className)}>
+        <span className={clsx("text-xs px-2 py-1 rounded border font-bold shrink-0", st.className)}>
           {st.label}
         </span>
       </div>
@@ -511,6 +594,67 @@ interface ServicesDashboardPanelProps {
   todayKey: string;
 }
 
+const ServicesListBody: React.FC<{
+  todayServices: ServicioRow[];
+  programmedServices: ServicioRow[];
+  usuariosMetrologia: UsuarioRow[];
+  todayKey: string;
+  hasAny: boolean;
+}> = ({ todayServices, programmedServices, usuariosMetrologia, todayKey, hasAny }) => {
+  if (!hasAny) {
+    return (
+      <div className="flex flex-col items-center justify-center text-gray-500 py-10 text-sm">
+        Sin servicios para hoy ni programados
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <section>
+        <div className="flex items-center justify-between mb-2.5 px-1">
+          <h4 className="text-xs font-black uppercase tracking-widest text-purple-300">Servicios de hoy</h4>
+          <span className="text-[10px] text-gray-500">{todayServices.length}</span>
+        </div>
+        {todayServices.length === 0 ? (
+          <p className="text-xs text-gray-500 italic px-1 py-3">Ningún servicio para hoy</p>
+        ) : (
+          <div className="space-y-2.5">
+            {todayServices.map((s) => (
+              <ServicioTvCard key={s.id} service={s} usuarios={usuariosMetrologia} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-2.5 px-1">
+          <h4 className="text-xs font-black uppercase tracking-widest text-indigo-300">Servicios programados</h4>
+          <span className="text-[10px] text-gray-500">{programmedServices.length}</span>
+        </div>
+        {programmedServices.length === 0 ? (
+          <p className="text-xs text-gray-500 italic px-1 py-3">Sin fechas futuras</p>
+        ) : (
+          <div className="space-y-2.5">
+            {programmedServices.map((s) => {
+              const dateKey = normalizeServicioDateKey(s.fecha);
+              return (
+                <ServicioTvCard
+                  key={s.id}
+                  service={s}
+                  usuarios={usuariosMetrologia}
+                  showDateBadge
+                  dateBadge={formatServicioScheduleBadge(dateKey, todayKey)}
+                />
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </>
+  );
+};
+
 export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
   todayServices,
   programmedServices,
@@ -518,13 +662,22 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
   todayKey,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const segmentRef = useRef<HTMLDivElement>(null);
   const [scrollPaused, setScrollPaused] = useState(false);
   const [scrollMode, setScrollMode] = useState<TvScrollState>("idle");
   const hasAny = todayServices.length > 0 || programmedServices.length > 0;
 
+  const usuariosMetrologia = useMemo(
+    () => usuarios.filter((u) => isMetrologyRole(u)),
+    [usuarios]
+  );
+
   useTvKioskAutoScroll(scrollRef, hasAny, scrollPaused, {
     force: true,
     onStateChange: setScrollMode,
+    pxPerSec: 4.5,
+    seamless: hasAny,
+    segmentRef,
   });
 
   return (
@@ -552,64 +705,32 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
         ref={scrollRef}
         data-tv-scroll="viewport"
         data-tv-scroll-mode={scrollMode}
-        className="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-2 tv-kiosk-scroll"
+        className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-2.5 py-2 tv-kiosk-scroll"
         onMouseEnter={() => setScrollPaused(true)}
         onMouseLeave={() => setScrollPaused(false)}
         onFocus={() => setScrollPaused(true)}
         onBlur={() => setScrollPaused(false)}
       >
-        <div data-tv-scroll="content" className="space-y-4">
-          {!hasAny ? (
-            <div className="flex flex-col items-center justify-center text-gray-500 py-10 text-sm">
-              Sin servicios para hoy ni programados
+        <div data-tv-scroll="track">
+          <div ref={segmentRef} data-tv-scroll="segment" className="space-y-5 pb-2">
+            <ServicesListBody
+              todayServices={todayServices}
+              programmedServices={programmedServices}
+              usuariosMetrologia={usuariosMetrologia}
+              todayKey={todayKey}
+              hasAny={hasAny}
+            />
+          </div>
+          {hasAny && (
+            <div aria-hidden className="space-y-5 pt-2 pb-1">
+              <ServicesListBody
+                todayServices={todayServices}
+                programmedServices={programmedServices}
+                usuariosMetrologia={usuariosMetrologia}
+                todayKey={todayKey}
+                hasAny={hasAny}
+              />
             </div>
-          ) : (
-            <>
-              <section>
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-purple-300">
-                    Servicios de hoy
-                  </h4>
-                  <span className="text-[10px] text-gray-500">{todayServices.length}</span>
-                </div>
-                {todayServices.length === 0 ? (
-                  <p className="text-xs text-gray-500 italic px-1 py-3">Ningún servicio para hoy</p>
-                ) : (
-                  <div className="space-y-2">
-                    {todayServices.map((s) => (
-                      <ServicioTvCard key={s.id} service={s} usuarios={usuarios} />
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              <section>
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-indigo-300">
-                    Servicios programados
-                  </h4>
-                  <span className="text-[10px] text-gray-500">{programmedServices.length}</span>
-                </div>
-                {programmedServices.length === 0 ? (
-                  <p className="text-xs text-gray-500 italic px-1 py-3">Sin fechas futuras</p>
-                ) : (
-                  <div className="space-y-2">
-                    {programmedServices.map((s) => {
-                      const dateKey = normalizeServicioDateKey(s.fecha);
-                      return (
-                        <ServicioTvCard
-                          key={s.id}
-                          service={s}
-                          usuarios={usuarios}
-                          showDateBadge
-                          dateBadge={formatServicioScheduleBadge(dateKey, todayKey)}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            </>
           )}
         </div>
       </div>
@@ -714,52 +835,59 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
   );
 };
 
+export type MetrologoMonthChartRow = {
+  name: string;
+  total: number;
+  color: string;
+  carrying?: number;
+};
+
 interface MetrologosMonthChartProps {
-  data: { name: string; total: number; color: string }[];
+  data: MetrologoMonthChartRow[];
 }
 
-/** TV: pausa inicial, ciclo de resaltado lento, animación Recharts prolongada. */
-const METROLOGOS_CHART_FULL_DISPLAY_MS = 3000;
-const METROLOGOS_BAR_HIGHLIGHT_MS = 3500;
-const METROLOGOS_RECHARTS_ANIMATION_MS = 2400;
+const MetrologoMonthTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { value?: number; payload?: MetrologoMonthChartRow }[];
+  label?: string;
+}) => {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  const calibraciones = payload[0]?.value ?? row?.total ?? 0;
+  const enLab = row?.carrying ?? 0;
+  return (
+    <div className="bg-slate-800/95 border border-slate-700 p-3 rounded-lg shadow-xl">
+      <p className="text-slate-200 text-xs font-bold mb-1">{label}</p>
+      <p className="text-white text-sm font-black">{calibraciones} equipos calibrados (mes)</p>
+      {enLab > 0 && (
+        <p className="text-amber-200 text-xs mt-1 font-semibold">{enLab} en laboratorio ahora</p>
+      )}
+    </div>
+  );
+};
 
 export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data }) => {
-  const [glowIndex, setGlowIndex] = useState(-1);
-  const [highlightPhase, setHighlightPhase] = useState(false);
-
-  useEffect(() => {
-    if (data.length === 0) {
-      setGlowIndex(-1);
-      setHighlightPhase(false);
-      return;
-    }
-
-    setGlowIndex(-1);
-    setHighlightPhase(false);
-    let intervalId: ReturnType<typeof setInterval> | undefined;
-    const startId = setTimeout(() => {
-      setHighlightPhase(true);
-      setGlowIndex(0);
-      intervalId = setInterval(() => {
-        setGlowIndex((prev) => (prev >= data.length - 1 ? 0 : prev + 1));
-      }, METROLOGOS_BAR_HIGHLIGHT_MS);
-    }, METROLOGOS_CHART_FULL_DISPLAY_MS);
-
-    return () => {
-      clearTimeout(startId);
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [data]);
+  const leaderTotal = useMemo(
+    () => (data.length ? Math.max(...data.map((d) => d.total)) : 0),
+    [data]
+  );
 
   return (
     <div
       className={`h-full min-h-0 rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 p-3 flex flex-col overflow-hidden`}
     >
-      <h3 className="text-sm font-bold text-gray-300 mb-2 shrink-0">Calibraciones del mes</h3>
+      <div className="flex items-baseline justify-between gap-2 mb-2 shrink-0">
+        <h3 className="text-sm font-bold text-gray-300">Calibraciones del mes</h3>
+        <span className="text-[10px] text-gray-500">Solo metrólogos · número sobre barra</span>
+      </div>
       <div className="flex-1 min-h-[120px] w-full min-w-0">
         {data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-            <BarChart data={data} margin={{ top: 22, right: 8, left: 4, bottom: 4 }}>
+            <BarChart data={data} margin={{ top: 26, right: 8, left: 4, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
               <XAxis
                 dataKey="name"
@@ -779,31 +907,30 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
                 tick={{ fill: "#e2e8f0", fontWeight: 600 }}
                 width={32}
               />
-              <Tooltip content={<CalibrationChartTooltip />} />
+              <Tooltip content={<MetrologoMonthTooltip />} />
               <Bar
                 dataKey="total"
+                name="Equipos"
                 radius={[4, 4, 0, 0]}
-                maxBarSize={36}
-                isAnimationActive
-                animationDuration={METROLOGOS_RECHARTS_ANIMATION_MS}
-                animationEasing="ease-out"
+                maxBarSize={40}
+                isAnimationActive={false}
               >
                 <LabelList
                   dataKey="total"
                   position="top"
                   fill="#f8fafc"
-                  fontSize={13}
-                  fontWeight={800}
+                  fontSize={15}
+                  fontWeight={900}
                   formatter={(value: number) => (value > 0 ? String(value) : "")}
                 />
                 {data.map((e, i) => {
-                  const isActive = highlightPhase && i === glowIndex;
+                  const isLeader = e.total > 0 && e.total === leaderTotal;
                   return (
                     <Cell
                       key={`${e.name}-${i}`}
                       fill={e.color}
-                      fillOpacity={1}
-                      className={isActive ? "tv-metrologo-bar-active" : undefined}
+                      stroke={isLeader ? "#fbbf24" : undefined}
+                      strokeWidth={isLeader ? 2 : 0}
                     />
                   );
                 })}
@@ -811,24 +938,16 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <div className="h-full flex items-center justify-center text-gray-500 text-xs">Sin datos del mes</div>
+          <div className="h-full flex items-center justify-center text-gray-500 text-xs">
+            Sin calibraciones de metrólogos este mes
+          </div>
         )}
       </div>
       <style>{`
-        .tv-kiosk-scroll {
-          scroll-behavior: auto;
-          scroll-snap-type: y proximity;
-        }
-        .tv-kiosk-scroll .snap-start {
-          scroll-snap-align: start;
-        }
-        .tv-metrologo-bar-active {
-          filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.95));
-        }
         .recharts-label-list text {
           paint-order: stroke fill;
           stroke: #0f172a;
-          stroke-width: 3px;
+          stroke-width: 4px;
           stroke-linejoin: round;
         }
       `}</style>

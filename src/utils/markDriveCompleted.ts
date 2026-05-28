@@ -12,11 +12,12 @@ import {
 } from "./worksheetPdfGenerator";
 import { notificarCalidadRevisionPendiente } from "./notificacionesRevisionCalidad";
 
+/** Metrólogo terminó la hoja (no confundir con PDF subido → cargado_drive "Si"). */
 const isRealizadoValue = (value: unknown): boolean => {
   const v = String(value ?? "")
     .trim()
     .toLowerCase();
-  return v === "si" || v === "realizado";
+  return v === "realizado";
 };
 
 export async function findFileMetadataIdsForWorksheet(

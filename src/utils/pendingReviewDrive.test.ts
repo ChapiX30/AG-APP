@@ -3,6 +3,8 @@ import {
   getParentFolderFromPath,
   isMetadataPendingReview,
   isWorksheetCargadoDrive,
+  isWorksheetRealizado,
+  isWorksheetUploadedToDrive,
   normalizeDriveFullPath,
   resolveTechnicianGroupKey,
   shouldTreatAsPendingReview,
@@ -36,15 +38,25 @@ assert.equal(
   "Abraham Ginez"
 );
 
+assert.equal(isWorksheetUploadedToDrive("Si"), true);
+assert.equal(isWorksheetUploadedToDrive("Realizado"), true);
+assert.equal(isWorksheetUploadedToDrive("No"), false);
 assert.equal(isWorksheetCargadoDrive("Si"), true);
-assert.equal(isWorksheetCargadoDrive("Realizado"), true);
-assert.equal(isWorksheetCargadoDrive("No"), false);
+
+assert.equal(isWorksheetRealizado("Realizado"), true);
+assert.equal(isWorksheetRealizado("Si"), false);
+assert.equal(isWorksheetRealizado("No"), false);
 
 assert.equal(isMetadataPendingReview({ completed: true, reviewed: false }), true);
 assert.equal(isMetadataPendingReview({ completed: true, reviewed: true }), false);
 
 assert.equal(
   shouldTreatAsPendingReview({ completed: false }, { cargado_drive: "Si" }),
+  false
+);
+
+assert.equal(
+  shouldTreatAsPendingReview({ completed: false }, { cargado_drive: "Realizado" }),
   true
 );
 

@@ -39,7 +39,7 @@ import { normalizeDriveDate, resolveFileWorkDate, enrichFilesWithWorkDates, enri
 import { notificarCalidadRevisionPendiente } from "../utils/notificacionesRevisionCalidad";
 import {
   isMetadataPendingReview,
-  isWorksheetCargadoDrive,
+  isWorksheetRealizado,
   normalizeDriveFullPath,
   PENDING_REVIEW_METADATA_LIMIT,
   resolveTechnicianGroupKey,
@@ -1207,7 +1207,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         loaded = await Promise.all(
           loaded.map(async (f) => {
             if (f.completed === true || f.reviewed === true) return f;
-            if (!isWorksheetCargadoDrive(f.worksheetCargadoDrive)) return f;
+            const driveFlag = String(f.worksheetCargadoDrive || "").trim();
+            if (!isWorksheetRealizado(driveFlag)) return f;
 
             const techName =
               f.worksheetTechnician?.trim() ||
@@ -1220,7 +1221,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               const wsSnap = await getDoc(doc(db, "hojasDeTrabajo", f.worksheetDocId));
               if (wsSnap.exists()) wsRow = { ...wsSnap.data(), docId: wsSnap.id };
             }
-            if (wsRow) {
+            if (wsRow && isWorksheetRealizado(wsRow.cargado_drive)) {
               void syncSingleFilePendingReviewFromWorksheet(f.fullPath, wsRow);
             }
 

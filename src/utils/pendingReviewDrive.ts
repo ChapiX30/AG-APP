@@ -5,11 +5,13 @@ import {
   getTechnicianFolderFromWorksheet,
 } from "./worksheetPdfGenerator";
 import { normalizeDriveDate } from "./driveFileMetadata";
-import { isWorksheetCargadoDrive } from "./pendingReviewDriveLogic";
+import { isWorksheetRealizado } from "./pendingReviewDriveLogic";
 export {
   getParentFolderFromPath,
   isMetadataPendingReview,
   isWorksheetCargadoDrive,
+  isWorksheetRealizado,
+  isWorksheetUploadedToDrive,
   normalizeDriveFullPath,
   resolveTechnicianGroupKey,
   shouldTreatAsPendingReview,
@@ -74,7 +76,7 @@ async function writePendingReviewMetadata(
   };
 }
 
-/** Sincroniza fileMetadata.completed desde hojas con cargado_drive Si/Realizado. */
+/** Sincroniza fileMetadata.completed desde hojas con cargado_drive Realizado (no solo "Si"). */
 export async function syncPendingReviewFromWorksheets(
   storageRoot: string = "worksheets",
   options?: { maxWrites?: number }
@@ -83,27 +85,15 @@ export async function syncPendingReviewFromWorksheets(
   const patches: PendingReviewBackfillPatch[] = [];
 
   try {
-    const [siSnap, realizadoSnap] = await Promise.all([
-      getDocs(
-        query(collection(db, "hojasDeTrabajo"), where("cargado_drive", "==", "Si"), limit(500))
-      ),
-      getDocs(
-        query(
-          collection(db, "hojasDeTrabajo"),
-          where("cargado_drive", "==", "Realizado"),
-          limit(500)
-        )
-      ),
-    ]);
+    const realizadoSnap = await getDocs(
+      query(
+        collection(db, "hojasDeTrabajo"),
+        where("cargado_drive", "==", "Realizado"),
+        limit(500)
+      )
+    );
 
-    const rowsById = new Map<string, Record<string, unknown>>();
-    for (const snap of [siSnap, realizadoSnap]) {
-      snap.docs.forEach((d) => {
-        rowsById.set(d.id, { ...d.data(), docId: d.id });
-      });
-    }
-
-    const rows = Array.from(rowsById.values());
+    const rows = realizadoSnap.docs.map((d) => ({ ...d.data(), docId: d.id }));
     const BATCH_SIZE = 25;
 
     for (let i = 0; i < rows.length && patches.length < maxWrites; i += BATCH_SIZE) {
@@ -143,12 +133,12 @@ export async function syncPendingReviewFromWorksheets(
   }
 }
 
-/** Marca un archivo concreto como completado si su hoja tiene cargado_drive Si/Realizado. */
+/** Marca un archivo concreto como completado si su hoja tiene cargado_drive Realizado. */
 export async function syncSingleFilePendingReviewFromWorksheet(
   fullPath: string,
   row: Record<string, unknown>
 ): Promise<void> {
-  if (!isWorksheetCargadoDrive(row.cargado_drive)) return;
+  if (!isWorksheetRealizado(row.cargado_drive)) return;
 
   const metaId = fullPath.replace(/\//g, "_");
   const existing = await getDoc(doc(db, "fileMetadata", metaId));

@@ -17,8 +17,17 @@ import {
   FALLBACK_CHART_COLORS,
   MAGNITUDES_COLORS,
   getCalibrationWorkDate,
+  isInLabBacklog,
+  isRowInYear,
   isVisibleServicioForDashboard,
 } from "../utils/calibrationShared.tsx";
+
+export type MetrologoMonthStat = {
+  name: string;
+  total: number;
+  color: string;
+  carrying: number;
+};
 
 export function useCalibrationDashboardData(selectedDate: Date) {
   const [usuarios, setUsuarios] = useState<UsuarioRow[]>([]);
@@ -111,23 +120,39 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       usuarios.filter((u) => isMetrologyRole(u)).map((u) => cleanName(u.name || u.nombre))
     );
 
-    const statsMet: { name: string; total: number; color: string }[] = [];
+    const carryingByName: Record<string, number> = {};
+    hojasDeTrabajo.forEach((h) => {
+      if (!isInLabBacklog(h) || !isRowInYear(h, currentYear)) return;
+      const name = cleanName(h.nombre || h.assignedTo);
+      if (!name || !validMetrologosNames.has(name)) return;
+      carryingByName[name] = (carryingByName[name] || 0) + 1;
+    });
+
+    const statsMet: MetrologoMonthStat[] = [];
     METROLOGOS_ORDER_COLOR.forEach((m) => {
-      if (validMetrologosNames.has(cleanName(m.name))) {
-        statsMet.push({ name: m.name, total: countsMet[cleanName(m.name)] || 0, color: m.color });
-      }
+      const key = cleanName(m.name);
+      if (!validMetrologosNames.has(key)) return;
+      statsMet.push({
+        name: m.name,
+        total: countsMet[key] || 0,
+        color: m.color,
+        carrying: carryingByName[key] || 0,
+      });
     });
     Object.entries(countsMet).forEach(([cName, total]) => {
-      if (total > 0 && !statsMet.find((s) => cleanName(s.name) === cName)) {
-        const dbUser = usuarios.find((u) => cleanName(u.name || u.nombre) === cName);
-        statsMet.push({
-          name: dbUser?.name || dbUser?.nombre || cName,
-          total,
-          color: dbUser?.color || FALLBACK_CHART_COLORS[statsMet.length % FALLBACK_CHART_COLORS.length],
-        });
-      }
+      if (total <= 0 || statsMet.some((s) => cleanName(s.name) === cName)) return;
+      if (!validMetrologosNames.has(cName)) return;
+      const dbUser = usuarios.find((u) => cleanName(u.name || u.nombre) === cName);
+      if (!dbUser || !isMetrologyRole(dbUser)) return;
+      statsMet.push({
+        name: dbUser.name || dbUser.nombre || cName,
+        total,
+        color: dbUser.color || FALLBACK_CHART_COLORS[statsMet.length % FALLBACK_CHART_COLORS.length],
+        carrying: carryingByName[cName] || 0,
+      });
     });
-    statsMet.sort((a, b) => b.total - a.total);
+    statsMet.sort((a, b) => b.total - a.total || b.carrying - a.carrying);
+    const metrologosMonthFiltered = statsMet.filter((s) => s.total > 0);
 
     const magnitudesMonth = Object.entries(magGlobalMap)
       .map(([name, total], i) => ({
@@ -156,7 +181,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       activityDateKeys,
       totalArrivedToday,
       totalPendingToday,
-      metrologosMonth: statsMet,
+      metrologosMonth: metrologosMonthFiltered,
       magnitudesMonth,
       arrivalsForMonth,
     };

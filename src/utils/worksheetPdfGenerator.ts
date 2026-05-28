@@ -4,7 +4,6 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import logoAg from "../assets/lab_logo.png";
 import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
-import { markDriveFileCompletedForWorksheet } from "./markDriveCompleted";
 import { toWorksheetMagnitud } from "./magnitudWorksheet";
 
 /** Fields consumed by generateTemplatePDF (shared with WorkSheetScreen). */
@@ -193,21 +192,33 @@ export const generateTemplatePDF = (
   const marginBottom = 40;
   const marginLeft = 40;
   const marginRight = pageWidth - 40;
+  const contentWidth = marginRight - marginLeft;
 
   const tableWidth = 500;
   const tableX = (pageWidth - tableWidth) / 2;
 
+  const BRAND_R = 0;
+  const BRAND_G = 80;
+  const BRAND_B = 216;
+  const LABEL_GRAY_R = 55;
+  const LABEL_GRAY_G = 65;
+  const LABEL_GRAY_B = 81;
+  const LOGO_WIDTH = 55;
+  const LOGO_HEIGHT = LOGO_WIDTH * (408 / 454);
+
   let currentY = 60;
 
   const drawHeaderBase = () => {
-    doc.addImage(logoAg, "PNG", marginLeft, 25, 100, 45);
+    doc.addImage(logoAg, "PNG", marginLeft, 25, LOGO_WIDTH, LOGO_HEIGHT);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.setTextColor(0, 51, 153);
-    doc.text("Equipos y Servicios Especializados AG", marginLeft + 110, 50, { align: "left" });
+    doc.setTextColor(BRAND_R, BRAND_G, BRAND_B);
+    doc.text("Equipos y Servicios Especializados AG", marginLeft + LOGO_WIDTH + 15, 50, {
+      align: "left",
+    });
 
-    doc.setDrawColor(0, 51, 153);
+    doc.setDrawColor(BRAND_R, BRAND_G, BRAND_B);
     doc.setLineWidth(1);
     doc.line(marginLeft, 80, marginRight, 80);
 
@@ -223,8 +234,10 @@ export const generateTemplatePDF = (
       doc.setFontSize(9);
       doc.setFont("helvetica", "italic");
       doc.setTextColor(100);
-      doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
-      doc.text(`Página ${i} de ${totalPages}`, marginRight - 50, pageHeight - 20);
+      doc.text("Equipos y Servicios AG", marginLeft, pageHeight - 35);
+      doc.text("Documento generado electrónicamente", marginLeft, pageHeight - 25);
+      doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 15);
+      doc.text(`Página ${i} de ${totalPages}`, marginRight - 50, pageHeight - 15);
     }
   };
 
@@ -235,8 +248,8 @@ export const generateTemplatePDF = (
       currentY = 100;
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(11);
+      doc.setTextColor(BRAND_R, BRAND_G, BRAND_B);
       doc.text("Mediciones (Continuación)", marginLeft, currentY);
       currentY += 25;
 
@@ -268,17 +281,24 @@ export const generateTemplatePDF = (
   const col2X = pageWidth / 2 + 35;
 
   doc.setFillColor(245, 247, 250);
-  doc.rect(marginLeft, currentY - 12, pageWidth - 80, 25, "F");
+  doc.rect(marginLeft, currentY - 12, contentWidth, 25, "F");
 
-  doc.setFontSize(11);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
+  doc.setTextColor(LABEL_GRAY_R, LABEL_GRAY_G, LABEL_GRAY_B);
   doc.text("Nombre:", marginLeft + 10, currentY + 5);
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
   doc.text(formData.nombre || "-", marginLeft + 65, currentY + 5);
 
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
+  doc.setTextColor(LABEL_GRAY_R, LABEL_GRAY_G, LABEL_GRAY_B);
   doc.text("Fecha:", col2X, currentY + 5);
   doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
   doc.text(formData.fecha || "-", col2X + 45, currentY + 5);
 
   currentY += 35;
@@ -315,42 +335,73 @@ export const generateTemplatePDF = (
     },
   ];
 
-  doc.setFontSize(10);
-
-  const formatText = (text: unknown, maxLength: number) => {
-    const str = String(text || "-");
-    return str.length > maxLength ? str.substring(0, maxLength) + "..." : str;
-  };
+  const col1ValueX = col1X + 75;
+  const col1ValueMaxWidth = col2X - col1ValueX - 8;
+  const col2ValueX = col2X + 80;
+  const col2ValueMaxWidth = marginRight - col2ValueX;
+  const infoLineHeight = 12;
+  const infoMinRowHeight = 16;
 
   infoData.forEach((row, index) => {
-    checkPageBreak(20);
+    const isClienteRow = row.l === "Cliente:" || index === 0;
+    const v1Lines = doc.splitTextToSize(String(row.v || "-"), col1ValueMaxWidth);
+    const v2Lines = row.l2
+      ? doc.splitTextToSize(String(row.v2 || "-"), col2ValueMaxWidth)
+      : [];
+    const lineCount = Math.max(v1Lines.length, v2Lines.length, 1);
+    const rowHeight = Math.max(infoMinRowHeight, lineCount * infoLineHeight + 4);
+
+    checkPageBreak(rowHeight);
 
     if (index % 2 === 0) {
       doc.setFillColor(252, 252, 252);
-      doc.rect(marginLeft, currentY - 11, pageWidth - 80, 16, "F");
+      doc.rect(marginLeft, currentY - 11, contentWidth, rowHeight, "F");
     }
 
+    doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
+    doc.setTextColor(LABEL_GRAY_R, LABEL_GRAY_G, LABEL_GRAY_B);
     doc.text(row.l, col1X + 5, currentY + 1);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatText(row.v, 45), col1X + 75, currentY + 1);
 
-    doc.setFont("helvetica", "bold");
-    doc.text(row.l2, col2X, currentY + 1);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatText(row.v2, 40), col2X + 80, currentY + 1);
+    if (isClienteRow) {
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(BRAND_R, BRAND_G, BRAND_B);
+    } else {
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0);
+    }
+    v1Lines.forEach((line, lineIdx) => {
+      doc.text(line, col1ValueX, currentY + 1 + lineIdx * infoLineHeight);
+    });
 
-    currentY += 16;
+    if (row.l2) {
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(LABEL_GRAY_R, LABEL_GRAY_G, LABEL_GRAY_B);
+      doc.text(row.l2, col2X, currentY + 1);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0);
+      v2Lines.forEach((line, lineIdx) => {
+        doc.text(line, col2ValueX, currentY + 1 + lineIdx * infoLineHeight);
+      });
+    }
+
+    currentY += rowHeight;
   });
 
   currentY += 20;
 
   checkPageBreak(40);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
+  doc.setFontSize(11);
+  doc.setTextColor(BRAND_R, BRAND_G, BRAND_B);
   doc.setFillColor(230, 235, 245);
-  doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, "F");
+  doc.rect(marginLeft, currentY - 14, contentWidth, 20, "F");
   doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
+  doc.setTextColor(0, 0, 0);
   currentY += 25;
 
   const isMasa = formData.magnitud === "Masa";
@@ -406,7 +457,7 @@ export const generateTemplatePDF = (
     currentY += boxSize + 25;
 
     checkPageBreak(40);
-    doc.setFillColor(50, 80, 160);
+    doc.setFillColor(BRAND_R, BRAND_G, BRAND_B);
     doc.setTextColor(255, 255, 255);
     doc.rect(tableX, currentY, tableWidth, 20, "FD");
     doc.setFontSize(11);
@@ -440,7 +491,7 @@ export const generateTemplatePDF = (
     });
   } else {
     doc.setDrawColor(0);
-    doc.setFillColor(50, 80, 160);
+    doc.setFillColor(BRAND_R, BRAND_G, BRAND_B);
     doc.setTextColor(255, 255, 255);
     doc.setLineWidth(0.1);
 
@@ -499,9 +550,9 @@ export const generateTemplatePDF = (
     doc.setFillColor(255, 240, 240);
     doc.setDrawColor(200, 50, 50);
     doc.setLineWidth(0.5);
-    doc.rect(marginLeft, currentY, pageWidth - 80, 20, "FD");
+    doc.rect(marginLeft, currentY, contentWidth, 20, "FD");
     doc.setTextColor(180, 0, 0);
-    doc.text("⚠ Daño / Anomalía Detectada:", marginLeft + 8, currentY + 14);
+    doc.text("Observación — Daño / Anomalía detectada:", marginLeft + 8, currentY + 14);
     doc.setTextColor(0, 0, 0);
     currentY += 24;
     const danoLines = doc.splitTextToSize(formData.descripcionDano, tableWidth - 20);
@@ -553,7 +604,7 @@ export const generateTemplatePDF = (
   doc.setFillColor(250, 250, 250);
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.5);
-  doc.rect(marginLeft, notesY - 15, pageWidth - 80, notasHeight, "FD");
+  doc.rect(marginLeft, notesY - 15, contentWidth, notasHeight, "FD");
 
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
@@ -649,14 +700,6 @@ export async function generateWorksheetPdfFromFirestore(
       });
     } catch (metaErr) {
       console.error("[worksheetPdfGenerator] fileMetadata:", metaErr);
-    }
-
-    try {
-      await markDriveFileCompletedForWorksheet(raw, uploadedBy, {
-        worksheetDocId: docId,
-      });
-    } catch (notifyErr) {
-      console.error("[worksheetPdfGenerator] notify calidad:", notifyErr);
     }
 
     const patch: Record<string, string> = {
