@@ -9,6 +9,8 @@ import { collection, query, where, getDocs, doc, setDoc, getDoc } from 'firebase
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
+import { notificarPrestamoPatronPlanta } from '../utils/notificacionesPrestamoPatron';
+import toast, { Toaster } from 'react-hot-toast';
 
 // --- Interfaces ---
 export interface HistorialEntry {
@@ -147,6 +149,22 @@ export const ControlPrestamosScreen: React.FC = () => {
                   historial: [nuevaEntrada, ...(patronData.historial || [])]
               }, { merge: true });
 
+              try {
+                const tecnicoUid = metrologos.find((m) => m.nombre === usuarioSeleccionado)?.id;
+                await notificarPrestamoPatronPlanta({
+                  patronId,
+                  noControl: patronData.noControl,
+                  descripcion: patronData.descripcion,
+                  tecnicoNombre: usuarioSeleccionado,
+                  tecnicoUid,
+                  autorNombre: usuarioSeleccionado,
+                });
+                toast.success(`Préstamo registrado. Notificaciones enviadas al técnico y a calidad.`);
+              } catch (err) {
+                console.error('Error enviando notificaciones de préstamo:', err);
+                toast.error('Préstamo guardado, pero falló el envío de notificaciones.');
+              }
+
           } else {
               // Validaciones Entrada
               if (patronData.usuarioEnUso !== usuarioSeleccionado && patronData.usuarioEnUso) {
@@ -227,6 +245,7 @@ export const ControlPrestamosScreen: React.FC = () => {
 
   return (
     <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-50 pb-20 font-sans">
+      <Toaster position="top-center" toastOptions={{ duration: 3200, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
       
       {/* --- HEADER --- */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 py-4 shadow-sm flex items-center justify-between">

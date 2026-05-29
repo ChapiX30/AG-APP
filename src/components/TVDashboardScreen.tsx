@@ -193,7 +193,7 @@ const TVDashboardScreen: React.FC = () => {
           border-radius: 6px;
         }
         .tv-calendar-wrap .react-calendar__tile--active {
-          background: #2563eb !important;
+          background: #2464A3 !important;
           color: white;
           border-radius: 6px;
         }

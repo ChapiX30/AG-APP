@@ -57,10 +57,10 @@ interface AppNotification {
 }
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
-const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#0050d8', viewMode: 'grid' };
+const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#2464A3', viewMode: 'grid' };
 
 const PRESET_COLORS = [
-  { hex: '#0050d8', label: 'Azul' },
+  { hex: '#2464A3', label: 'Azul' },
   { hex: '#ec4899', label: 'Rosa' },
   { hex: '#8b5cf6', label: 'Violeta' },
   { hex: '#10b981', label: 'Esmeralda' },
@@ -155,7 +155,7 @@ const applyTheme = (prefs: UserPrefs) => {
 const ThemeStyle = () => (
   <style>{`
     :root {
-      --acc: #0050d8; --acc-rgb: 0 80 216;
+      --acc: #2464A3; --acc-rgb: 36 100 163;
       --bg: #030712; --surface: #0f172a; --surface-hi: #1e293b;
       --border-color: rgba(255,255,255,0.07);
       --text: #f1f5f9; --text-muted: #94a3b8; --text-faint: #334155;

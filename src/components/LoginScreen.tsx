@@ -175,7 +175,7 @@ export const LoginScreen: React.FC<{
           <div className="space-y-3">
             <h1 className="text-4xl xl:text-5xl font-bold tracking-tight leading-tight">
               Plataforma de{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4d8fff] to-[#0050d8]">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#5a93c9] to-[#2464A3]">
                 Calibración
               </span>
             </h1>
@@ -306,7 +306,7 @@ export const LoginScreen: React.FC<{
                   placeholder="usuario@ese-ag.com"
                   autoComplete="email"
                   required
-                  className="w-full pl-10 pr-9 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#0050d8] focus:bg-slate-800/80 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-9 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#2464A3] focus:bg-slate-800/80 transition-all disabled:opacity-50"
                 />
                 {fetching && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border-2 border-sky-400 border-t-transparent animate-spin" />
@@ -321,7 +321,7 @@ export const LoginScreen: React.FC<{
                   Contraseña
                 </label>
                 <button type="button" onClick={() => setShowReset(true)}
-                  className="text-[11px] text-[#4d8fff] hover:text-[#7aa8ff] transition-colors">
+                  className="text-[11px] text-[#5a93c9] hover:text-[#8bb5d9] transition-colors">
                   ¿Olvidaste tu contraseña?
                 </button>
               </div>
@@ -335,7 +335,7 @@ export const LoginScreen: React.FC<{
                   placeholder="••••••••"
                   autoComplete="current-password"
                   required
-                  className="w-full pl-10 pr-10 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#0050d8] focus:bg-slate-800/80 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-10 py-3.5 rounded-xl bg-slate-800/50 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#2464A3] focus:bg-slate-800/80 transition-all disabled:opacity-50"
                 />
                 <button type="button" onClick={() => setShowPass(p => !p)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors">
@@ -368,7 +368,7 @@ export const LoginScreen: React.FC<{
               type="submit"
               disabled={!email || !password || loading}
               whileTap={{ scale: 0.98 }}
-              className="group w-full flex items-center justify-center gap-2 rounded-xl bg-[#0050d8] text-white text-sm font-semibold py-3.5 mt-1 shadow-lg shadow-[#0050d8]/25 hover:bg-[#1a66e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group w-full flex items-center justify-center gap-2 rounded-xl bg-[#2464A3] text-white text-sm font-semibold py-3.5 mt-1 shadow-lg shadow-[#2464A3]/25 hover:bg-[#2d72b8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
@@ -383,7 +383,7 @@ export const LoginScreen: React.FC<{
             <p className="text-center text-[11px] text-slate-500 pt-1">
               ¿Primera vez aquí?{" "}
               <button type="button" onClick={onNavigateToRegister}
-                className="text-[#4d8fff] hover:text-[#7aa8ff] font-medium transition-colors">
+                className="text-[#5a93c9] hover:text-[#8bb5d9] font-medium transition-colors">
                 Crear cuenta
               </button>
             </p>
@@ -426,7 +426,7 @@ export const LoginScreen: React.FC<{
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={resetLoading}
                     placeholder="usuario@ese-ag.com"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#0050d8] transition-colors disabled:opacity-50"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#2464A3] transition-colors disabled:opacity-50"
                     autoFocus
                   />
                 </div>
@@ -450,7 +450,7 @@ export const LoginScreen: React.FC<{
                 </AnimatePresence>
 
                 <button type="submit" disabled={resetLoading}
-                  className="w-full rounded-xl bg-[#0050d8] text-white text-sm font-semibold py-3 hover:bg-[#1a66e0] transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                  className="w-full rounded-xl bg-[#2464A3] text-white text-sm font-semibold py-3 hover:bg-[#2d72b8] transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {resetLoading
                     ? <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
                     : "Enviar enlace"}

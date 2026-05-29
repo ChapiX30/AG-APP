@@ -117,8 +117,16 @@ const isCronogramaComplete = (row: WorksheetData): boolean => {
     return false;
 };
 
-const getResponsableName = (row: WorksheetData) =>
-    (row.nombre || row.assignedTo || "").trim();
+/** Responsable visible; no usar assignedTo si nombre fue desasignado explícitamente (""). */
+const getResponsableName = (row: WorksheetData) => {
+    if (row.nombre === "") return "";
+    return (row.nombre || row.assignedTo || "").trim();
+};
+
+const responsableFromFirestore = (data: { nombre?: string; assignedTo?: string }) => {
+    if (data.nombre === "") return "";
+    return (data.nombre || data.assignedTo || "").trim();
+};
 
 const isTechnicianOwnerOfRow = (row: WorksheetData, currentUserName: string): boolean => {
     const me = normalizeText(currentUserName);
@@ -438,7 +446,7 @@ const TextCell = React.memo(({ value, onChange, placeholder, disabled }: any) =>
   const handleBlur = () => { if (!disabled && localValue !== value) onChange(localValue); };
   const displayTitle = localValue ? String(localValue) : undefined;
   return (
-    <input ref={inputRef} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => { if(e.key === 'Enter') inputRef.current?.blur(); }} placeholder={placeholder} disabled={disabled} title={displayTitle} className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#0073ea] focus:z-10 transition-all text-[13px] truncate placeholder-gray-400 text-[#323338] disabled:cursor-not-allowed disabled:opacity-60" />
+    <input ref={inputRef} value={localValue} onChange={(e) => setLocalValue(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => { if(e.key === 'Enter') inputRef.current?.blur(); }} placeholder={placeholder} disabled={disabled} title={displayTitle} className="w-full h-full px-3 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-[#2464A3] focus:z-10 transition-all text-[13px] truncate placeholder-gray-400 text-[#323338] disabled:cursor-not-allowed disabled:opacity-60" />
   );
 });
 
@@ -495,10 +503,10 @@ const DropdownCell = React.memo(({ value, options, onChange, disabled }: any) =>
 const DateCell = React.memo(({ value, onChange, disabled }: any) => {
     const displayDate = value ? new Date(value + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
     const inputRef = useRef<HTMLInputElement>(null);
-    if (disabled) return <div className="w-full h-full flex items-center justify-center text-[13px] text-[#676879] cursor-not-allowed">{displayDate || "-"}</div>;
+    if (disabled) return <div className="w-full h-full flex items-center justify-center text-[13px] text-[#8B8D8C] cursor-not-allowed">{displayDate || "-"}</div>;
     return (
         <div className="w-full h-full flex items-center justify-center group relative cursor-pointer hover:bg-[#f5f6f8]" onClick={() => inputRef.current?.showPicker()} title={value ? String(displayDate) : undefined}>
-             {!value && <Calendar className="w-4 h-4 text-gray-300 group-hover:text-[#676879]" />}{value && <span className="text-[13px] text-[#323338]">{displayDate}</span>}
+             {!value && <Calendar className="w-4 h-4 text-gray-300 group-hover:text-[#8B8D8C]" />}{value && <span className="text-[13px] text-[#323338]">{displayDate}</span>}
              <input ref={inputRef} type="date" className="opacity-0 absolute inset-0 w-full h-full cursor-pointer" onChange={(e) => onChange(e.target.value)} />
         </div>
     );
@@ -557,13 +565,116 @@ const PersonCell = React.memo(({ value, metrologos, onChange, onUpdateMetrologoC
     );
 });
 
+const FridaySelectionBar = ({
+    count,
+    canEdit,
+    metrologos,
+    onAssign,
+    onDelete,
+    onClear,
+}: {
+    count: number;
+    canEdit: boolean;
+    metrologos: { id: string; name?: string; color?: string }[];
+    onAssign: (name: string) => void;
+    onDelete: () => void;
+    onClear: () => void;
+}) => {
+    if (count === 0 || typeof document === "undefined") return null;
+
+    return createPortal(
+        <div
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] pointer-events-none"
+            role="toolbar"
+            aria-label="Acciones de filas seleccionadas"
+        >
+            <div className="pointer-events-auto bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 animate-in slide-in-from-bottom-4">
+                <div className="flex items-center gap-3 border-r border-gray-200 pr-6">
+                    <div className="bg-[#2464A3] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">
+                        {count}
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">Seleccionados</span>
+                </div>
+                {canEdit ? (
+                    <>
+                        <BulkResponsablePicker metrologos={metrologos} onAssign={onAssign} />
+                        <button
+                            type="button"
+                            onClick={onDelete}
+                            className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            <span className="text-[10px]">Eliminar</span>
+                        </button>
+                    </>
+                ) : (
+                    <span className="text-xs text-gray-500">Modo lectura</span>
+                )}
+                <button type="button" onClick={onClear} className="ml-2 hover:bg-gray-100 p-1 rounded" title="Limpiar selección">
+                    <X className="w-4 h-4 text-gray-500" />
+                </button>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
+const BulkResponsablePicker = ({ metrologos, onAssign, disabled }: { metrologos: { id: string; name?: string; color?: string }[]; onAssign: (name: string) => void; disabled?: boolean }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const popoverRef = useRef<HTMLDivElement>(null);
+
+    const handleAssign = (name: string) => {
+        onAssign(name);
+        setIsOpen(false);
+    };
+
+    return (
+        <div className="relative">
+            <button
+                ref={triggerRef}
+                type="button"
+                disabled={disabled}
+                onClick={() => setIsOpen((o) => !o)}
+                className="flex flex-col items-center gap-1 text-gray-500 hover:text-[#2464A3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <UserCircle className="w-4 h-4" />
+                <span className="text-[10px]">Responsable</span>
+            </button>
+            <CellPopover
+                isOpen={isOpen}
+                triggerRef={triggerRef}
+                popoverRef={popoverRef}
+                onClose={() => setIsOpen(false)}
+                minWidth={260}
+                maxWidth={320}
+                align="left"
+                className="bg-white shadow-2xl rounded-lg border border-gray-200 p-2 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100"
+            >
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pb-1">Asignar responsable</p>
+                {metrologos.map((m) => (
+                    <div
+                        key={m.id}
+                        className="flex items-center gap-2 p-2 hover:bg-blue-50 rounded cursor-pointer min-w-0"
+                        onClick={() => handleAssign(m.name || "Sin Nombre")}
+                    >
+                        <div className="w-7 h-7 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0" style={{ backgroundColor: m.color || "#3b82f6" }}>{getInitials(m.name || "SN")}</div>
+                        <span className="flex-1 min-w-0 text-xs font-medium text-gray-700 truncate">{m.name || "Sin Nombre"}</span>
+                    </div>
+                ))}
+                <button type="button" onClick={() => handleAssign("")} className="w-full text-center text-red-500 text-xs py-2 hover:bg-red-50 border-t mt-1">Desasignar</button>
+            </CellPopover>
+        </div>
+    );
+};
+
 const ClientCell = React.memo(({ value, clientes, onChange, disabled }: any) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const triggerRef = useRef<HTMLDivElement>(null);
     const popoverRef = useRef<HTMLDivElement>(null);
     const filtered = useMemo(() => { if (!isOpen) return []; if (!searchTerm) return clientes; return clientes.filter((c:any) => (c.nombre || "").toLowerCase().includes(searchTerm.toLowerCase())); }, [clientes, searchTerm, isOpen]);
-    if (disabled) return <div className="w-full h-full px-3 flex items-center text-[13px] text-[#676879] truncate cursor-not-allowed select-none" title={value || undefined}>{value || "-"}</div>;
+    if (disabled) return <div className="w-full h-full px-3 flex items-center text-[13px] text-[#8B8D8C] truncate cursor-not-allowed select-none" title={value || undefined}>{value || "-"}</div>;
     return (
         <div className="w-full h-full relative group">
             <div
@@ -571,7 +682,7 @@ const ClientCell = React.memo(({ value, clientes, onChange, disabled }: any) => 
                 className="w-full h-full px-3 flex items-center cursor-pointer hover:bg-[#f5f6f8]"
                 onClick={(e) => { e.stopPropagation(); setIsOpen(true); setSearchTerm(""); }}
             >
-                {value ? <span className="text-[13px] text-[#323338] truncate font-medium flex items-center gap-2 min-w-0" title={value}><Building2 size={12} className="text-[#676879] shrink-0"/> <span className="truncate">{value}</span></span> : <span className="text-[13px] text-gray-400 flex items-center gap-1"><Plus className="w-3 h-3"/> Cliente</span>}
+                {value ? <span className="text-[13px] text-[#323338] truncate font-medium flex items-center gap-2 min-w-0" title={value}><Building2 size={12} className="text-[#8B8D8C] shrink-0"/> <span className="truncate">{value}</span></span> : <span className="text-[13px] text-gray-400 flex items-center gap-1"><Plus className="w-3 h-3"/> Cliente</span>}
             </div>
             <CellPopover
                 isOpen={isOpen}
@@ -702,7 +813,7 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
                         <button onClick={() => onOpenHistory(row)} className="p-1 hover:bg-purple-50 text-gray-500 hover:text-purple-600 rounded" title="Historial"><History size={14}/></button>
                     </div>
                     <button onClick={() => onOpenComments(row)} className={clsx("p-1 rounded text-gray-300 hover:text-blue-600 transition-colors", isSelected ? "hidden" : "block")}><MessageSquare size={14} /></button>
-                    <div className={clsx("absolute inset-0 items-center justify-center bg-inherit", isSelected ? "flex" : "hidden group-hover/control:flex")}><input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(row.docId)} className="rounded border-gray-300 text-[#0073ea] cursor-pointer w-4 h-4" /></div>
+                    <div className={clsx("absolute inset-0 items-center justify-center bg-inherit", isSelected ? "flex" : "hidden group-hover/control:flex")}><input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(row.docId)} className="rounded border-gray-300 text-[#2464A3] cursor-pointer w-4 h-4" /></div>
                  </div>
             </div>
             {columns.filter((c: Column) => !c.hidden).map((col: Column) => {
@@ -749,8 +860,9 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
         </div>
     );
 }, (prev, next) =>
-    prev.row === next.row &&
+    prev.row.docId === next.row.docId &&
     prev.isSelected === next.isSelected &&
+    getResponsableName(prev.row) === getResponsableName(next.row) &&
     prev.index === next.index &&
     prev.groupId === next.groupId &&
     prev.color === next.color &&
@@ -817,6 +929,7 @@ type BoardRowSharedProps = {
     groupColor: string;
     columns: Column[];
     selectedIds: Set<string>;
+    selectionSignature: string;
     onToggleSelect: (id: string) => void;
     onUpdateRow: (rowId: string, key: string, value: any) => void;
     metrologos: any[];
@@ -841,6 +954,7 @@ function VirtualBoardRow({
     return (
         <div style={style}>
             <BoardRow
+                key={`${row.docId}-${getResponsableName(row)}`}
                 row={row}
                 index={index}
                 groupId={groupId}
@@ -873,7 +987,7 @@ const GroupRowsBody = React.memo(function GroupRowsBody(props: BoardRowSharedPro
             <>
                 {rows.map((row, rIndex) => (
                     <BoardRow
-                        key={row.docId}
+                        key={`${row.docId}-${getResponsableName(row)}`}
                         row={row}
                         index={rIndex}
                         groupId={groupId}
@@ -948,12 +1062,14 @@ const FridayScreen: React.FC = () => {
     const [rows, setRows] = useState<WorksheetData[]>([]);
     const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
     const [groupsConfig, setGroupsConfig] = useState<GroupData[]>([
-        { id: "sitio", name: "Servicios en Sitio", color: "#0073ea", collapsed: false },
+        { id: "sitio", name: "Servicios en Sitio", color: "#2464A3", collapsed: false },
         { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false }
     ]);
     const [metrologos, setMetrologos] = useState<any[]>([]); 
     const [clientes, setClientes] = useState<any[]>([]); 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const selectedIdsRef = useRef(selectedIds);
+    selectedIdsRef.current = selectedIds;
     const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
     const dragItemRef = useRef<DragItem | null>(null); 
     const [isThinking, setIsThinking] = useState(false);
@@ -1051,7 +1167,7 @@ const FridayScreen: React.FC = () => {
 
                     if (recordYear === yearStr) {
                         const baseRow = { 
-                            ...data, docId: doc.id, id: data.id || "", nombre: data.nombre || data.assignedTo, fecha: data.fecha || data.fecha_calib, entregado: data.entregado === true, folioSalida: data.folioSalida 
+                            ...data, docId: doc.id, id: data.id || "", nombre: responsableFromFirestore(data), fecha: data.fecha || data.fecha_calib, entregado: data.entregado === true, folioSalida: data.folioSalida 
                         } as WorksheetData;
                         newRows.push(baseRow); 
                     }
@@ -1298,6 +1414,10 @@ const FridayScreen: React.FC = () => {
         setRows(prevRows => prevRows.map(r => {
             if (r.docId === rowId) {
                 const updated = { ...r, [key]: value };
+                if (key === "nombre") {
+                    updated.nombre = value;
+                    updated.assignedTo = value;
+                }
                 if (key === "ubicacion_real") { if (value === "Servicio en Sitio") updated.lugarCalibracion = "sitio"; if (value === "Laboratorio" || value === "Recepción") updated.lugarCalibracion = "laboratorio"; }
                 return updated;
             }
@@ -1306,6 +1426,9 @@ const FridayScreen: React.FC = () => {
         try {
             const batch = writeBatch(db); const rowRef = doc(db, "hojasDeTrabajo", rowId);
             let updates: any = { [key]: value, lastUpdated: new Date().toISOString() };
+            if (key === "nombre") {
+                updates = { nombre: value, assignedTo: value, lastUpdated: new Date().toISOString() };
+            }
             if (key === "ubicacion_real") { if (value === "Servicio en Sitio") updates.lugarCalibracion = "sitio"; else if (value === "Laboratorio" || value === "Recepción") updates.lugarCalibracion = "laboratorio"; }
             batch.update(rowRef, updates);
             const oldValue = rows.find(r => r.docId === rowId)?.[key];
@@ -1318,7 +1441,7 @@ const FridayScreen: React.FC = () => {
                 if (row) {
                     const rowData = { ...row, [key]: value };
                     const markedBy =
-                        String(rowData.nombre || rowData.assignedTo || "").trim() ||
+                        getResponsableName(rowData) ||
                         currentUserName;
                     const synced = await markDriveFileCompletedForWorksheet(rowData, markedBy, {
                         worksheetDocId: rowId,
@@ -1344,7 +1467,60 @@ const FridayScreen: React.FC = () => {
         setSelectedIds(new Set()); await batch.commit(); showToast("Elementos eliminados", 'success');
     };
 
-    const toggleSelect = useCallback((id: string) => { setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }, []);
+    const handleBulkAssignResponsable = useCallback(async (newResponsable: string) => {
+        if (!canEditBoard) return;
+        const ids = Array.from(selectedIdsRef.current);
+        if (ids.length === 0) return;
+        const idSet = new Set(ids);
+        const timestamp = new Date().toISOString();
+        const oldValuesById = new Map<string, string>();
+
+        setRows((prevRows) =>
+            prevRows.map((r) => {
+                if (!idSet.has(r.docId)) return r;
+                oldValuesById.set(r.docId, getResponsableName(r));
+                return { ...r, nombre: newResponsable, assignedTo: newResponsable, lastUpdated: timestamp };
+            })
+        );
+
+        try {
+            const CHUNK_SIZE = 200;
+            for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+                const chunk = ids.slice(i, i + CHUNK_SIZE);
+                const batch = writeBatch(db);
+                for (const rowId of chunk) {
+                    const oldValue = oldValuesById.get(rowId) ?? "";
+                    batch.update(doc(db, "hojasDeTrabajo", rowId), {
+                        nombre: newResponsable,
+                        assignedTo: newResponsable,
+                        lastUpdated: timestamp,
+                    });
+                    batch.set(doc(collection(db, `hojasDeTrabajo/${rowId}/history`)), {
+                        field: "nombre",
+                        oldValue: oldValue || "",
+                        newValue: newResponsable,
+                        user: currentUserName,
+                        timestamp,
+                    });
+                }
+                await batch.commit();
+            }
+            const label = newResponsable || "Sin asignar";
+            showToast(`Responsable actualizado en ${ids.length} fila(s): ${label}`, "success");
+        } catch {
+            showToast("Error al asignar responsable", "error");
+        }
+    }, [canEditBoard, currentUserName]);
+
+    const toggleSelect = useCallback((id: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            selectedIdsRef.current = next;
+            return next;
+        });
+    }, []);
     const startResize = (e: React.MouseEvent, colKey: string, currentWidth: number) => { if (!canEditBoard) return; e.preventDefault(); e.stopPropagation(); setIsResizing(true); resizingRef.current = { startX: e.clientX, startWidth: currentWidth, key: colKey }; document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp); };
     const handleMouseMove = useCallback((e: MouseEvent) => { if (!resizingRef.current) return; const { startX, startWidth, key } = resizingRef.current; const diff = e.clientX - startX; const newWidth = Math.max(50, startWidth + diff); setColumns(prevCols => prevCols.map(col => col.key === key ? { ...col, width: newWidth } : col)); }, []);
     const handleMouseUp = useCallback(async () => {
@@ -1433,9 +1609,15 @@ const FridayScreen: React.FC = () => {
         setSortConfig({ key: null, direction: "asc" });
     }, []);
 
+    const selectionSignature = useMemo(
+        () => Array.from(selectedIds).sort().join("\0"),
+        [selectedIds]
+    );
+
     const boardRowSharedProps: Omit<BoardRowSharedProps, "rows" | "groupId" | "groupColor"> = useMemo(() => ({
         columns,
         selectedIds,
+        selectionSignature,
         onToggleSelect: toggleSelect,
         onUpdateRow: handleUpdateRow,
         metrologos,
@@ -1448,7 +1630,7 @@ const FridayScreen: React.FC = () => {
         onOpenComments: setActiveCommentRow,
         onOpenHistory: setActiveHistoryRow,
         onUpdateMetrologoColor: handleUpdateMetrologoColor,
-    }), [columns, selectedIds, toggleSelect, handleUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, currentUserName, handleUpdateMetrologoColor]);
+    }), [columns, selectedIds, selectionSignature, toggleSelect, handleUpdateRow, metrologos, clientes, onDragStart, onDrop, onDragEnd, canEditBoard, currentUserName, handleUpdateMetrologoColor]);
 
     let headerStickyOffset = 40;
 
@@ -1470,8 +1652,8 @@ const FridayScreen: React.FC = () => {
                             <h1 className="text-xl font-semibold leading-tight flex items-center gap-2 text-[#323338] tracking-tight">
                                 Tablero de Calibración
                                 <div className="inline-flex bg-[#f5f6f8] rounded-lg p-0.5 ml-2 border border-[#e6e9ef]">
-                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2025 ? "bg-white text-[#0073ea] shadow-sm" : "text-[#676879] hover:text-[#323338]")}>2025</button>
-                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2026 ? "bg-white text-[#0073ea] shadow-sm" : "text-[#676879] hover:text-[#323338]")}>2026</button>
+                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2025 ? "bg-white text-[#2464A3] shadow-sm" : "text-[#8B8D8C] hover:text-[#323338]")}>2025</button>
+                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2026 ? "bg-white text-[#2464A3] shadow-sm" : "text-[#8B8D8C] hover:text-[#323338]")}>2026</button>
                                 </div>
                             </h1>
                         </div>
@@ -1479,7 +1661,7 @@ const FridayScreen: React.FC = () => {
                     <div className="flex gap-3 items-center">
                         <div className="relative">
                             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-                            <input placeholder="Buscar en tablero..." className="pl-9 pr-9 py-2 border border-[#e6e9ef] rounded-lg text-sm focus:border-[#0073ea] focus:ring-2 focus:ring-blue-100/80 outline-none transition-all bg-white w-72 shadow-sm" value={search} onChange={e => setSearch(e.target.value)} />
+                            <input placeholder="Buscar en tablero..." className="pl-9 pr-9 py-2 border border-[#e6e9ef] rounded-lg text-sm focus:border-[#2464A3] focus:ring-2 focus:ring-blue-100/80 outline-none transition-all bg-white w-72 shadow-sm" value={search} onChange={e => setSearch(e.target.value)} />
                             {search !== debouncedSearch && <Loader2 className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" />}
                         </div>
                         
@@ -1513,7 +1695,7 @@ const FridayScreen: React.FC = () => {
 
                 <div className="px-6 py-2 border-b border-[#e6e9ef] bg-[#f5f6f8] flex flex-wrap items-center gap-3 sticky top-[61px] z-[35]">
                     <span className="text-xs font-semibold text-gray-600">{visibleRowCount} elementos visibles</span>
-                    <span className="text-[10px] font-bold text-[#0073ea] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">Sitio {boardStats.sitio}</span>
+                    <span className="text-[10px] font-bold text-[#2464A3] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">Sitio {boardStats.sitio}</span>
                     <span className="text-[10px] font-bold text-[#a25ddc] bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">Lab {boardStats.laboratorio}</span>
                     {Object.entries(activeFilters).filter(([, v]) => v).map(([key, val]) => {
                         const col = columns.find((c) => c.key === key);
@@ -1534,14 +1716,14 @@ const FridayScreen: React.FC = () => {
 
                         <div className="flex border-b border-[#e6e9ef] sticky top-0 z-30 bg-[#f5f6f8] h-[40px]">
                             <div className="w-1.5 bg-[#f5f6f8] sticky left-0 z-30"></div>
-                            <div className="w-[40px] border-r border-[#e6e9ef] bg-[#f5f6f8] sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300 text-[#0073ea]" /></div>
+                            <div className="w-[40px] border-r border-[#e6e9ef] bg-[#f5f6f8] sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300 text-[#2464A3]" /></div>
                             
                             {visibleColumns.map((col, index) => {
                                 const style: React.CSSProperties = { width: col.width, zIndex: col.sticky ? 30 : undefined };
                                 if (col.sticky) { style.position = 'sticky'; style.left = headerStickyOffset + 1.5; headerStickyOffset += col.width; }
                                 const isLocked = col.permissions && col.permissions.length > 0 && !col.permissions.includes(userRole);
                                 return (
-                                <div key={col.key} draggable={canEditBoard && !col.sticky && !isResizing} onDragStart={(e) => onDragStart(e, { type: 'column', index })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => onDrop(e, { type: 'column', index })} style={style} className={clsx("px-3 text-[12px] font-semibold text-[#676879] flex items-center justify-center border-r border-[#e6e9ef] hover:bg-[#eceef3] select-none bg-[#f5f6f8] group hover:text-[#323338] transition-colors relative", col.sticky ? "shadow-[1px_0_3px_rgba(0,0,0,0.04)]" : "cursor-pointer")}>
+                                <div key={col.key} draggable={canEditBoard && !col.sticky && !isResizing} onDragStart={(e) => onDragStart(e, { type: 'column', index })} onDragOver={(e) => e.preventDefault()} onDragEnd={onDragEnd} onDrop={(e) => onDrop(e, { type: 'column', index })} style={style} className={clsx("px-3 text-[12px] font-semibold text-[#8B8D8C] flex items-center justify-center border-r border-[#e6e9ef] hover:bg-[#eceef3] select-none bg-[#f5f6f8] group hover:text-[#323338] transition-colors relative", col.sticky ? "shadow-[1px_0_3px_rgba(0,0,0,0.04)]" : "cursor-pointer")}>
                                     <span className="truncate flex items-center gap-1 flex-1 justify-center">{col.label} {isLocked && <Lock className="w-2.5 h-2.5 text-gray-300" />}{activeFilters[col.key] && <Filter size={10} className="text-blue-500 fill-blue-500"/>}</span>
                                     <button onClick={(e) => { e.stopPropagation(); setActiveColumnMenu(activeColumnMenu === col.key ? null : col.key); }} className="p-0.5 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity absolute right-1"><MoreHorizontal className="w-3 h-3 text-gray-500" /></button>
                                     {!col.sticky && (<div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-50 transition-colors opacity-0 hover:opacity-100" onMouseDown={(e) => startResize(e, col.key, col.width)} onClick={(e) => e.stopPropagation()}></div>)}
@@ -1562,9 +1744,9 @@ const FridayScreen: React.FC = () => {
                                     <div key={group.id} className="mb-10">
                                         <div className="flex items-center mb-2 group sticky left-0 z-10 px-3 py-2 rounded-lg hover:bg-white/80 transition-colors border border-[#e6e9ef] bg-white shadow-sm">
                                             <div className="w-1 h-6 rounded-full mr-2 shrink-0" style={{ backgroundColor: group.color }} />
-                                            <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-[#f5f6f8] text-[#676879]", group.collapsed && "-rotate-90", isPending && "opacity-50")} onClick={() => { startTransition(() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }); }} />
+                                            <ChevronDown className={clsx("w-5 h-5 transition-transform cursor-pointer p-0.5 rounded hover:bg-[#f5f6f8] text-[#8B8D8C]", group.collapsed && "-rotate-90", isPending && "opacity-50")} onClick={() => { startTransition(() => { const newConf = groupsConfig.map(g => g.id === group.id ? {...g, collapsed: !g.collapsed} : g); setGroupsConfig(newConf); }); }} />
                                             <h2 className="text-[15px] font-semibold ml-1 text-[#323338]">{group.name}</h2>
-                                            <span className="ml-3 text-[11px] text-[#676879] font-medium border border-[#e6e9ef] px-2.5 py-0.5 rounded-full bg-[#f5f6f8]">{group.rows.length}</span>
+                                            <span className="ml-3 text-[11px] text-[#8B8D8C] font-medium border border-[#e6e9ef] px-2.5 py-0.5 rounded-full bg-[#f5f6f8]">{group.rows.length}</span>
                                         </div>
                                         {!group.collapsed && (
                                             <div className="rounded-lg overflow-hidden border border-[#e6e9ef] bg-white min-h-[50px]">
@@ -1596,13 +1778,14 @@ const FridayScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {canEditBoard && selectedIds.size > 0 && (
-                   <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 z-50 animate-in slide-in-from-bottom-4">
-                       <div className="flex items-center gap-3 border-r border-gray-200 pr-6"><div className="bg-[#0073ea] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">{selectedIds.size}</div><span className="text-sm font-medium text-gray-700">Seleccionados</span></div>
-                       <button onClick={handleDeleteSelected} className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /><span className="text-[10px]">Eliminar</span></button>
-                       <button onClick={() => setSelectedIds(new Set())} className="ml-2 hover:bg-gray-100 p-1 rounded"><X className="w-4 h-4 text-gray-500" /></button>
-                   </div>
-                )}
+                <FridaySelectionBar
+                    count={selectedIds.size}
+                    canEdit={canEditBoard}
+                    metrologos={metrologos}
+                    onAssign={handleBulkAssignResponsable}
+                    onDelete={handleDeleteSelected}
+                    onClear={() => setSelectedIds(new Set())}
+                />
 
                 {canEditBoard && permissionMenu && (<PermissionMenu x={permissionMenu.x} y={permissionMenu.y} column={columns.find(c => c.key === permissionMenu.colKey)!} onClose={() => setPermissionMenu(null)} onTogglePermission={handleTogglePermission}/>)}
                 {activeCommentRow && (<CommentsPanel row={activeCommentRow} onClose={() => setActiveCommentRow(null)} canPost={canEditBoard} />)}

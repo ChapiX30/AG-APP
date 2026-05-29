@@ -20,7 +20,7 @@ export const TEAM_AVATAR_PALETTE: readonly string[] = [
   '#059669', // emerald
   '#0d9488', // teal
   '#0891b2', // cyan
-  '#2563eb', // blue
+  '#2464A3', // blue
   '#4f46e5', // indigo
   '#7c3aed', // violet
   '#9333ea', // purple

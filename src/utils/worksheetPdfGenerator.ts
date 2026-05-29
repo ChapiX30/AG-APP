@@ -197,12 +197,12 @@ export const generateTemplatePDF = (
   const tableWidth = 500;
   const tableX = (pageWidth - tableWidth) / 2;
 
-  const BRAND_R = 0;
-  const BRAND_G = 80;
-  const BRAND_B = 216;
-  const LABEL_GRAY_R = 55;
-  const LABEL_GRAY_G = 65;
-  const LABEL_GRAY_B = 81;
+  const BRAND_R = 36;
+  const BRAND_G = 100;
+  const BRAND_B = 163;
+  const LABEL_GRAY_R = 139;
+  const LABEL_GRAY_G = 141;
+  const LABEL_GRAY_B = 140;
   const LOGO_WIDTH = 55;
   const LOGO_HEIGHT = LOGO_WIDTH * (408 / 454);
 

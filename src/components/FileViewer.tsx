@@ -97,7 +97,7 @@ async function previewDocx(buffer: ArrayBuffer): Promise<string | null> {
 const downloadButtonStyle: React.CSSProperties = {
   marginTop: 16,
   padding: "10px 20px",
-  background: "#2563eb",
+  background: "#2464A3",
   color: "white",
   textDecoration: "none",
   borderRadius: 8,
@@ -356,7 +356,7 @@ const OfficeFilePreview: React.FC<{
       >
         <Loader2
           size={36}
-          color="#2563eb"
+          color="#2464A3"
           className="animate-spin"
         />
         <p style={{ marginTop: 12, color: "#666" }}>Cargando vista previa…</p>
@@ -604,7 +604,7 @@ export const FileViewer: React.FC<Props> = ({
               onLoadError={() => setNumPages(null)}
               loading={
                 <div style={{ padding: 20, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                  <Loader2 size={22} className="animate-spin" style={{ color: "#2563eb" }} />
+                  <Loader2 size={22} className="animate-spin" style={{ color: "#2464A3" }} />
                   Cargando PDF…
                 </div>
               }
@@ -625,7 +625,7 @@ export const FileViewer: React.FC<Props> = ({
                   renderAnnotationLayer={false}
                   loading={
                     <div style={{ padding: 16 }}>
-                      <Loader2 size={20} className="animate-spin" style={{ color: "#2563eb" }} />
+                      <Loader2 size={20} className="animate-spin" style={{ color: "#2464A3" }} />
                     </div>
                   }
                 />

@@ -12,10 +12,22 @@ import {
 } from 'lucide-react';
 
 import { useNavigation } from '../hooks/useNavigation';
-import { collection, getDocs, setDoc, doc, query } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'; 
-import { db } from '../utils/firebase';
-import { patronesData } from './patronesData'; 
+import { useAuth } from '../hooks/useAuth';
+import { collection, getDocs, setDoc, doc, query, deleteField } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
+import { db, storage } from '../utils/firebase';
+import {
+  buildCertificateStoragePath,
+  canUploadPatronCertificate,
+  canViewPatronCertificate,
+  patronHasCertificate,
+  validateCertificateFile,
+} from '../utils/certificateAccess';
+import { fetchPatronCertificadoSignedUrl } from '../utils/patronCertificadoUrl';
+import { patronesData } from './patronesData';
+import { notificarPrestamoPatronPlanta } from '../utils/notificacionesPrestamoPatron';
+import toast, { Toaster } from 'react-hot-toast';
+import labLogo from '../assets/lab_logo.png';
 
 // --- 1. DEFINICIÓN DE DATOS ---
 
@@ -46,7 +58,9 @@ export interface RegistroPatron {
   fechaVencimiento?: string; 
   fechaUltimaCalibracion?: string; 
   laboratorioCalibracion?: string; 
-  certificadoUrl?: string; 
+  certificadoUrl?: string;
+  /** Ruta privada en Storage (no URL con token de larga duración). */
+  certificadoStoragePath?: string;
   
   // Estado
   estadoProceso: EstadoProceso;
@@ -62,10 +76,38 @@ export interface RegistroPatron {
 
 const COLLECTION_NAME = "patronesCalibracion";
 
+const PLACEHOLDER_USUARIOS = new Set([
+  'usuario actual',
+  'usuario: actual',
+  'usuario desconocido',
+  'sistema',
+]);
+
+/** Nombre mostrado en historial; corrige registros legacy y extrae técnico de descripción si aplica. */
+export const resolveHistorialUsuario = (usuario?: string, descripcion?: string): string => {
+  const raw = (usuario || '').trim();
+  if (raw && !PLACEHOLDER_USUARIOS.has(raw.toLowerCase())) return raw;
+
+  const match = descripcion?.match(/(?:entregado a|asignado a|retirado por|usuario anterior:)\s*([^.,\n]+)/i);
+  if (match?.[1]?.trim()) return match[1].trim();
+
+  return raw || 'Registro anterior';
+};
+
+type ToastItem = { id: string; message: string; type: 'success' | 'info' | 'error' };
+
 // --- HELPERS SEGUROS ---
 const getFechaVencimiento = (item: RegistroPatron): string => item.fecha || item.fechaVencimiento || '';
 const getUbicacion = (item: RegistroPatron): string => item.ubicacionActual || item.ubicacion || 'Laboratorio';
 const getUsuario = (item: RegistroPatron): string => item.usuarioEnUso || item.usuarioAsignado || 'Sin Asignar';
+
+const formatHistorialUsuario = (usuario?: string): string => {
+  const value = (usuario || '').trim();
+  if (!value || value === 'Usuario Actual' || value === 'Usuario: Actual') {
+    return 'Registro anterior (usuario no capturado)';
+  }
+  return value;
+};
 
 type CalibracionUrgency = 'vencido' | 'proximo' | 'ok' | 'sin-fecha';
 
@@ -94,7 +136,7 @@ const urgencyRowClass: Record<CalibracionUrgency, string> = {
 
 // --- 2. LÓGICA DE NEGOCIO ---
 
-const usePatronesLogic = () => {
+const usePatronesLogic = (actorName: string) => {
   const [data, setData] = useState<RegistroPatron[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -137,7 +179,7 @@ const usePatronesLogic = () => {
       id: crypto.randomUUID(),
       fecha: new Date().toISOString(),
       titulo,
-      usuario: "Usuario Actual",
+      usuario: actorName || 'Sistema',
       tipo,
       descripcion,
       costo
@@ -214,27 +256,43 @@ const Badge = ({ color, icon: Icon, label }: any) => {
     );
 };
 
-const KPICard = ({ title, value, icon: Icon, color, subtext }: any) => (
-    <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-        <div>
-            <p className="text-sm text-gray-500 font-medium">{title}</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-            {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
+const KPICard = ({ title, value, icon: Icon, color, subtext }: any) => {
+    const iconStyles: Record<string, string> = {
+        blue: 'bg-blue-50 text-blue-600 shadow-inner',
+        red: 'bg-red-50 text-red-600 shadow-inner',
+        indigo: 'bg-indigo-50 text-indigo-600 shadow-inner',
+        green: 'bg-emerald-50 text-emerald-600 shadow-inner',
+    };
+    return (
+        <div className="group bg-white/90 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_20px_rgba(15,23,42,0.06)] flex items-center justify-between hover:shadow-[0_8px_30px_rgba(0,80,216,0.12)] hover:-translate-y-0.5 transition-all duration-300">
+            <div>
+                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{title}</p>
+                <p className="text-2xl font-extrabold text-slate-900 mt-1.5 tracking-tight">{value}</p>
+                {subtext && <p className="text-xs text-slate-400 mt-1.5">{subtext}</p>}
+            </div>
+            <div className={`p-3.5 rounded-xl ${iconStyles[color] || iconStyles.blue} group-hover:scale-105 transition-transform`}>
+                <Icon className="w-6 h-6" />
+            </div>
         </div>
-        <div className={`p-3 rounded-lg bg-${color}-50 text-${color}-600`}>
-            <Icon className="w-6 h-6" />
-        </div>
-    </div>
-);
+    );
+};
 
 // --- 4. COMPONENTES DE ARCHIVOS ---
 
-const FileUploader = ({ onFileSelect }: { onFileSelect: (f: File) => void }) => {
+const FileUploader = ({ onFileSelect }: { onFileSelect: (f: File | null) => void }) => {
     const [fileName, setFileName] = useState<string | null>(null);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
+            const validationError = validateCertificateFile(file);
+            if (validationError) {
+              toast.error(validationError);
+              e.target.value = '';
+              setFileName(null);
+              onFileSelect(null);
+              return;
+            }
             setFileName(file.name);
             onFileSelect(file);
         }
@@ -246,7 +304,7 @@ const FileUploader = ({ onFileSelect }: { onFileSelect: (f: File) => void }) => 
                 type="file" 
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 onChange={handleChange}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
             />
             <div className="bg-blue-50 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
                 <UploadCloud className={`w-6 h-6 ${fileName ? 'text-blue-600' : 'text-gray-400'}`} />
@@ -259,50 +317,82 @@ const FileUploader = ({ onFileSelect }: { onFileSelect: (f: File) => void }) => 
             ) : (
                 <div>
                     <p className="text-sm font-medium text-gray-700">Sube tu certificado aquí</p>
-                    <p className="text-xs text-gray-400 mt-1">Soporta PDF, Imagenes, Docs</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF o imagen, máx. 10 MB</p>
                 </div>
             )}
         </div>
     );
 };
 
-const FilePreviewModal = ({ url, onClose }: { url: string, onClose: () => void }) => {
-    return (
-        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-            <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white w-full h-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl" 
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="flex justify-between items-center p-4 border-b bg-gray-50">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText size={18}/> Visualizador de Documento</h3>
-                    <div className="flex gap-2">
-                        <a href={url} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2 font-medium">
-                            <ExternalLink size={14} /> Abrir en nueva pestaña
-                        </a>
-                        <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-lg text-gray-500 hover:text-red-500 transition-colors">
-                            <X size={20} />
-                        </button>
-                    </div>
-                </div>
-                <div className="flex-1 bg-gray-200 relative">
-                    <iframe 
-                        src={url} 
-                        className="w-full h-full" 
-                        title="Document Preview"
-                    />
-                </div>
-            </motion.div>
+const FilePreviewModal = ({
+  patronId,
+  onClose,
+}: {
+  patronId: string;
+  onClose: () => void;
+}) => {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = await fetchPatronCertificadoSignedUrl(patronId);
+        if (!cancelled) setPreviewUrl(url);
+      } catch {
+        if (!cancelled) {
+          setError('No se pudo cargar el certificado. Verifique permisos o conexión.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [patronId]);
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white w-full h-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center p-4 border-b bg-gray-50">
+          <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText size={18}/> Visualizador de Documento</h3>
+          <div className="flex gap-2">
+            {previewUrl && (
+              <a href={previewUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2 font-medium">
+                <ExternalLink size={14} /> Abrir en nueva pestaña
+              </a>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-lg text-gray-500 hover:text-red-500 transition-colors">
+              <X size={20} />
+            </button>
+          </div>
         </div>
-    );
+        <div className="flex-1 bg-gray-200 relative flex items-center justify-center">
+          {loading && <p className="text-sm text-gray-600">Cargando documento…</p>}
+          {error && <p className="text-sm text-red-600 px-6 text-center">{error}</p>}
+          {previewUrl && !loading && (
+            <iframe src={previewUrl} className="w-full h-full" title="Document Preview" />
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
 };
 
 // --- 5. PANTALLA PRINCIPAL ---
 
 export const ProgramaCalibracionScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
-  const { data, loading, stats, registrarEvento, editarDatosBase } = usePatronesLogic();
+  const { user } = useAuth();
+  const actorName = user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario';
+  const actorUid = user?.id || '';
+  const { data, loading, stats, registrarEvento, editarDatosBase } = usePatronesLogic(actorName);
   
   const [tab, setTab] = useState<'todo' | 'alertas' | 'servicio'>('alertas');
   const [busqueda, setBusqueda] = useState('');
@@ -345,20 +435,29 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
       let success = false;
       const today = format(new Date(), 'yyyy-MM-dd');
-      let fileUrl = formData.certificadoUrl;
+      let certificadoStoragePath: string | undefined = selectedItem.certificadoStoragePath;
 
-      // 1. SUBIDA DE ARCHIVO A FIREBASE STORAGE
       if (file) {
+        if (!canUploadPatronCertificate(user)) {
+          toast.error('No tiene permiso para subir certificados.');
+          return;
+        }
+        const validationError = validateCertificateFile(file);
+        if (validationError) {
+          toast.error(validationError);
+          return;
+        }
         try {
-            const storage = getStorage();
-            // Ruta: certificados/ID_PATRON/TIMESTAMP_NOMBRE
-            const storageRef = ref(storage, `certificados/${selectedItem.id}/${Date.now()}_${file.name}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            fileUrl = await getDownloadURL(snapshot.ref);
+          const storagePath = buildCertificateStoragePath(selectedItem.id!, file);
+          const storageRef = ref(storage, storagePath);
+          await uploadBytes(storageRef, file, {
+            contentType: file.type || 'application/pdf',
+          });
+          certificadoStoragePath = storagePath;
         } catch (error) {
-            console.error("Error subiendo archivo:", error);
-            alert("Error al subir el archivo. Verifica tu conexión.");
-            return;
+          console.error('Error subiendo certificado (sin URL en log)');
+          alert('Error al subir el archivo. Verifica su conexión y permisos.');
+          return;
         }
       }
 
@@ -366,16 +465,21 @@ export const ProgramaCalibracionScreen: React.FC = () => {
           case 'calibrar_envio':
               success = await registrarEvento(selectedItem, 'Envío a Calibración', `Proveedor: ${formData.proveedor}`, 'flujo', { estadoProceso: 'en_calibracion', ubicacionActual: 'Externo' });
               break;
-          case 'calibrar_recepcion':
-              success = await registrarEvento(selectedItem, 'Calibración Finalizada', `Lab: ${formData.laboratorio}`, 'calibracion', { 
-                  estadoProceso: 'operativo', 
+          case 'calibrar_recepcion': {
+              const recepcionUpdates: Partial<RegistroPatron> & { certificadoUrl?: ReturnType<typeof deleteField> } = {
+                  estadoProceso: 'operativo',
                   ubicacionActual: 'Laboratorio',
                   fechaVencimiento: formData.nuevaFecha,
                   fechaUltimaCalibracion: today,
                   laboratorioCalibracion: formData.laboratorio,
-                  certificadoUrl: fileUrl // URL generada
-              });
+              };
+              if (file && certificadoStoragePath) {
+                  recepcionUpdates.certificadoStoragePath = certificadoStoragePath;
+                  recepcionUpdates.certificadoUrl = deleteField();
+              }
+              success = await registrarEvento(selectedItem, 'Calibración Finalizada', `Lab: ${formData.laboratorio}`, 'calibracion', recepcionUpdates);
               break;
+          }
           case 'reportar_falla':
               success = await registrarEvento(selectedItem, 'Falla Reportada', `Detalle: ${formData.motivo}`, 'reporte', { estadoProceso: 'con_falla' });
               break;
@@ -387,6 +491,22 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                break;
           case 'asignar':
                success = await registrarEvento(selectedItem, 'Asignación Manual', `Entregado a: ${formData.usuario}`, 'flujo', { estadoProceso: 'en_servicio', usuarioAsignado: formData.usuario, ubicacionActual: 'Planta' });
+               if (success && selectedItem.id && formData.usuario?.trim()) {
+                 try {
+                   await notificarPrestamoPatronPlanta({
+                     patronId: selectedItem.id,
+                     noControl: selectedItem.noControl,
+                     descripcion: selectedItem.descripcion,
+                     tecnicoNombre: formData.usuario.trim(),
+                     autorNombre: actorName,
+                     autorUid,
+                   });
+                   toast.success(`Patrón asignado a ${formData.usuario}. Notificaciones enviadas al técnico y a calidad.`);
+                 } catch (err) {
+                   console.error('Error enviando notificaciones de préstamo:', err);
+                   toast.error('Equipo asignado, pero falló el envío de notificaciones.');
+                 }
+               }
                break;
           case 'liberar':
                success = await registrarEvento(selectedItem, 'Devolución de Equipo', 'Retornado a laboratorio.', 'flujo', { estadoProceso: 'operativo', usuarioAsignado: '', usuarioEnUso: '', ubicacionActual: 'Laboratorio' });
@@ -403,25 +523,37 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-gray-50 font-sans text-gray-800 pb-10">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-b from-slate-100 via-slate-50 to-white font-sans text-gray-800 pb-10">
+      <Toaster position="top-center" toastOptions={{ duration: 3200, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
       
       {/* HEADER */}
-      <header className="bg-[#0050d8] border-b border-[#0046c0] sticky top-0 z-20 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <header className="bg-gradient-to-r from-[#2464A3] via-[#2a70b4] to-[#1d5082] border-b border-[#1a5085]/40 sticky top-0 z-20 shadow-[0_4px_24px_rgba(29,80,130,0.35)]">
+        <div className="max-w-7xl mx-auto px-4 h-[4.25rem] flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-white/10 rounded-full text-white/90 transition-colors">
+            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-white/15 rounded-full text-white/90 transition-all hover:shadow-md" aria-label="Volver al menú">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Equipos y Servicios AG</p>
-              <h1 className="text-xl font-bold text-white">Programa de Calibración</h1>
-              <p className="text-xs text-white/75 hidden sm:block">Patrones, vencimientos y mantenimiento</p>
+            <div className="hidden sm:flex items-center justify-center w-11 h-11 rounded-xl bg-white/95 shadow-lg ring-1 ring-white/30 p-1.5">
+              <img
+                src={labLogo}
+                alt="Equipos y Servicios AG"
+                className="w-full h-full object-contain"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
             </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/75">Equipos y Servicios AG</p>
+              <h1 className="text-xl font-extrabold text-white tracking-tight">Programa de Calibración</h1>
+              <p className="text-xs text-white/80 hidden sm:block">Patrones, vencimientos y mantenimiento</p>
+            </div>
+          </div>
+          <div className="sm:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-white/90 shadow-md p-1">
+            <img src={labLogo} alt="Logo AG" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="max-w-7xl mx-auto px-4 py-7">
         {/* DASHBOARD KPIS */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <KPICard title="Inventario Total" value={stats.total} icon={FileBarChart} color="blue" />
@@ -431,18 +563,18 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         </div>
 
         {/* CONTROLES */}
-        <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 mb-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 mb-6 bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
           <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
              <TabButton active={tab === 'alertas'} onClick={() => setTab('alertas')} label="Prioridad / Alertas" count={stats.vencidos + stats.enMantenimiento} />
              <TabButton active={tab === 'servicio'} onClick={() => setTab('servicio')} label="En Planta" count={stats.enUso} />
              <TabButton active={tab === 'todo'} onClick={() => setTab('todo')} label="Todo el Inventario" />
           </div>
           <div className="relative w-full md:w-80">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
              <input 
                type="text" 
                placeholder="Buscar control, serie, descripción..." 
-               className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+               className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#2464A3]/30 focus:border-[#2464A3] outline-none shadow-inner transition-all"
                value={busqueda}
                onChange={e => setBusqueda(e.target.value)}
              />
@@ -450,10 +582,10 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         </div>
 
         {/* TABLA */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-[0_8px_30px_rgba(15,23,42,0.07)] border border-slate-200/80 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
+                <thead className="bg-gradient-to-r from-slate-50 to-slate-100/80 text-slate-600 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="px-6 py-4">Activo</th>
                     <th className="px-6 py-4">Estado</th>
@@ -462,9 +594,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                     <th className="px-6 py-4 text-right"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-slate-100">
                   {loading ? (
-                       <tr><td colSpan={5} className="p-8 text-center text-gray-400">Cargando inventario...</td></tr>
+                       <tr><td colSpan={5} className="p-10 text-center text-slate-400">Cargando inventario...</td></tr>
                   ) : filteredData.map((item) => {
                     const fechaVenc = getFechaVencimiento(item);
                     const urgency = getCalibracionUrgency(item);
@@ -472,11 +604,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                         <tr 
                             key={item.id || item.noControl} 
                             onClick={() => setSelectedItem(item)}
-                            className={`hover:bg-blue-50/50 cursor-pointer transition-colors group ${urgencyRowClass[urgency]}`}
+                            className={`hover:bg-blue-50/70 cursor-pointer transition-all duration-200 group ${urgencyRowClass[urgency]}`}
                         >
                         <td className="px-6 py-4">
-                            <div className="font-semibold text-gray-900">{item.descripcion}</div>
-                            <div className="text-xs text-gray-500">{item.marca} • <span className="font-mono bg-gray-100 px-1 rounded">{item.noControl}</span></div>
+                            <div className="font-semibold text-slate-900">{item.descripcion}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">{item.marca} • <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded-md">{item.noControl}</span></div>
                         </td>
                         <td className="px-6 py-4">
                             <StatusBadge fecha={fechaVenc} estado={item.estadoProceso} />
@@ -488,7 +620,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                              {fechaVenc ? (isValid(parseISO(fechaVenc)) ? format(parseISO(fechaVenc), 'dd MMM yyyy', {locale: es}) : '-') : '-'}
                         </td>
                         <td className="px-6 py-4 text-right">
-                             <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#0050d8] ml-auto" />
+                             <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#2464A3] ml-auto" />
                         </td>
                         </tr>
                     );
@@ -500,10 +632,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       </main>
 
       {/* --- PANEL LATERAL (EXPEDIENTE) --- */}
-      <SidePanel 
-        selectedItem={selectedItem} 
-        onClose={() => setSelectedItem(null)} 
+      <SidePanel
+        selectedItem={selectedItem}
+        onClose={() => setSelectedItem(null)}
         onAction={setWorkflowAction}
+        authUser={user}
       />
 
       {/* --- MODAL DE FLUJO --- */}
@@ -527,28 +660,30 @@ const LocationDisplay = ({ item }: { item: RegistroPatron }) => {
     if (item.estadoProceso === 'en_calibracion') {
         return <div className="flex items-center gap-1.5 text-blue-600"><Truck className="w-3.5 h-3.5" /> Externo</div>;
     }
-    if (['en_uso', 'en_servicio'].includes(item.estadoProceso)) {
-        return <div className="flex items-center gap-1.5 text-indigo-600"><User className="w-3.5 h-3.5" /> {getUsuario(item)}</div>;
+    if (['en_uso', 'en_servicio', 'en_prestamo'].includes(item.estadoProceso)) {
+        return <div className="flex items-center gap-1.5 text-indigo-600 font-medium"><User className="w-3.5 h-3.5" /> {getUsuario(item)}</div>;
     }
     return <span className="text-gray-500">{getUbicacion(item)}</span>;
 }
 
 // --- PANEL LATERAL CON TABS ---
-const SidePanel = ({ selectedItem, onClose, onAction }: any) => {
+const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
     const [panelTab, setPanelTab] = useState<'info' | 'calib' | 'mant'>('info');
     const [showPreview, setShowPreview] = useState(false);
+    const canViewCert = canViewPatronCertificate(authUser);
+    const hasCert = selectedItem ? patronHasCertificate(selectedItem) : false;
 
     return (
         <AnimatePresence>
         {selectedItem && (
             <>
-                <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
+                <div className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[2px] transition-opacity" onClick={onClose} />
                 <motion.div 
                     initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="fixed right-0 top-0 bottom-0 w-full md:w-[650px] bg-white z-50 shadow-2xl flex flex-col border-l border-gray-200"
+                    className="fixed right-0 top-0 bottom-0 w-full md:w-[650px] bg-white z-50 shadow-[-8px_0_40px_rgba(15,23,42,0.15)] flex flex-col border-l border-slate-200/80"
                 >
                     {/* Header Panel */}
-                    <div className="p-6 bg-white border-b border-gray-100 flex justify-between items-start sticky top-0 z-10">
+                    <div className="p-6 bg-gradient-to-r from-white to-slate-50 border-b border-slate-200 flex justify-between items-start sticky top-0 z-10 shadow-sm">
                         <div>
                             <div className="flex items-center gap-3 mb-1">
                                 <h2 className="text-2xl font-bold text-gray-900">{selectedItem.noControl}</h2>
@@ -564,24 +699,24 @@ const SidePanel = ({ selectedItem, onClose, onAction }: any) => {
                     </div>
 
                     {/* Action Bar */}
-                    <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                    <div className="px-6 py-4 bg-slate-50/90 border-b border-slate-200">
                         <SmartActionButton item={selectedItem} setAction={onAction} />
                     </div>
 
                     {/* Tabs Navigation */}
-                    <div className="flex border-b border-gray-200 px-6">
+                    <div className="flex border-b border-slate-200 px-6 bg-white">
                         <PanelTabBtn active={panelTab === 'info'} onClick={() => setPanelTab('info')} label="Ficha General" icon={FileText} />
                         <PanelTabBtn active={panelTab === 'calib'} onClick={() => setPanelTab('calib')} label="Calibraciones" icon={ClipboardCheck} />
                         <PanelTabBtn active={panelTab === 'mant'} onClick={() => setPanelTab('mant')} label="Mantenimiento" icon={Wrench} />
                     </div>
 
                     {/* Content Scrollable */}
-                    <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+                    <div className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-slate-50/80 to-white">
                         
                         {/* TAB 1: INFO GENERAL */}
                         {panelTab === 'info' && (
                             <div className="space-y-6">
-                                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Especificaciones</h3>
                                     <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
                                         <InfoRow label="Marca" val={selectedItem.marca} />
@@ -617,11 +752,11 @@ const SidePanel = ({ selectedItem, onClose, onAction }: any) => {
                                     />
                                 </div>
 
-                                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
                                     <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                                         <FileText className="w-4 h-4 text-blue-500"/> Certificado Vigente
                                     </h3>
-                                    {selectedItem.certificadoUrl ? (
+                                    {hasCert ? (
                                         <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100">
                                             <div className="flex items-center gap-3">
                                                 <div className="bg-white p-2 rounded text-blue-500 font-bold text-xs border border-blue-100 uppercase">
@@ -632,12 +767,16 @@ const SidePanel = ({ selectedItem, onClose, onAction }: any) => {
                                                     <p className="text-xs text-blue-600">Subido el {selectedItem.fechaUltimaCalibracion || 'recientemente'}</p>
                                                 </div>
                                             </div>
-                                            <button 
+                                            {canViewCert ? (
+                                              <button
                                                 onClick={() => setShowPreview(true)}
                                                 className="px-3 py-1.5 bg-white text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-50 transition shadow-sm flex items-center gap-1"
-                                            >
+                                              >
                                                 Ver Archivo
-                                            </button>
+                                              </button>
+                                            ) : (
+                                              <span className="text-xs text-gray-500 px-2">Sin permiso de visualización</span>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
@@ -668,7 +807,7 @@ const SidePanel = ({ selectedItem, onClose, onAction }: any) => {
                                     </button>
                                 </div>
 
-                                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)] flex items-center justify-between">
                                     <div>
                                         <p className="text-xs text-gray-500 uppercase font-bold">Costo Acumulado</p>
                                         <p className="text-2xl font-bold text-gray-900">${selectedItem.costoAcumuladoMantenimiento || 0}</p>
@@ -685,8 +824,8 @@ const SidePanel = ({ selectedItem, onClose, onAction }: any) => {
                     </div>
                     
                     {/* MODAL DE PREVISUALIZACIÓN */}
-                    {showPreview && selectedItem.certificadoUrl && (
-                        <FilePreviewModal url={selectedItem.certificadoUrl} onClose={() => setShowPreview(false)} />
+                    {showPreview && selectedItem.id && canViewCert && hasCert && (
+                        <FilePreviewModal patronId={selectedItem.id} onClose={() => setShowPreview(false)} />
                     )}
                 </motion.div>
             </>
@@ -708,26 +847,28 @@ const Timeline = ({ historial, filterType }: any) => {
     if (items.length === 0) return <p className="text-sm text-gray-400 italic">No hay registros disponibles.</p>;
 
     return (
-        <div className="relative pl-4 border-l-2 border-gray-200 space-y-6">
+        <div className="relative pl-4 border-l-2 border-slate-200 space-y-5">
             {items.map((h: any, i: number) => (
-                <div key={i} className="relative pl-6">
-                    <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white 
+                <div key={h.id || i} className="relative pl-6 pb-1">
+                    <div className={`absolute -left-[9px] top-2 w-4 h-4 rounded-full border-2 border-white shadow-sm
                         ${h.tipo === 'calibracion' ? 'bg-blue-500' : 
                           h.tipo === 'mantenimiento' ? 'bg-orange-500' : 
-                          h.tipo === 'reporte' ? 'bg-red-500' : 'bg-gray-400'}`} 
+                          h.tipo === 'reporte' ? 'bg-red-500' : 'bg-slate-400'}`} 
                     />
-                    <div className="flex justify-between items-start">
-                        <span className="text-sm font-bold text-gray-900">{h.titulo}</span>
-                        <span className="text-xs text-gray-400">{isValid(parseISO(h.fecha)) ? format(parseISO(h.fecha), 'dd MMM yy') : ''}</span>
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-3.5 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start gap-3">
+                        <span className="text-sm font-bold text-slate-900">{h.titulo}</span>
+                        <span className="text-xs text-slate-400 shrink-0">{isValid(parseISO(h.fecha)) ? format(parseISO(h.fecha), 'dd MMM yy', { locale: es }) : ''}</span>
                     </div>
-                    <p className="text-sm text-gray-600 mt-1">{h.descripcion}</p>
+                    <p className="text-sm text-slate-600 mt-1.5 leading-relaxed">{h.descripcion}</p>
                     {h.costo > 0 && (
-                        <div className="mt-1 inline-block bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded border border-green-100 font-mono">
+                        <div className="mt-2 inline-block bg-emerald-50 text-emerald-700 text-xs px-2 py-0.5 rounded-md border border-emerald-100 font-mono">
                             Costo: ${h.costo}
                         </div>
                     )}
-                    <div className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-                        <User className="w-3 h-3"/> {h.usuario}
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+                        <User className="w-3 h-3"/> {formatHistorialUsuario(h.usuario)}
+                    </div>
                     </div>
                 </div>
             ))}
@@ -738,7 +879,7 @@ const Timeline = ({ historial, filterType }: any) => {
 const PanelTabBtn = ({ active, onClick, label, icon: Icon }: any) => (
     <button 
         onClick={onClick}
-        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors ${active ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        className={`flex-1 py-3.5 text-sm font-semibold flex items-center justify-center gap-2 border-b-2 transition-all ${active ? 'border-[#2464A3] text-[#2464A3] bg-blue-50/40' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50/60'}`}
     >
         <Icon className="w-4 h-4" /> {label}
     </button>
@@ -752,7 +893,7 @@ const DateCard = ({ label, date, color, sub }: any) => {
         blue: 'bg-blue-50 text-blue-700 border-blue-200',
     };
     return (
-        <div className={`p-4 rounded-xl border ${colorClasses[color]} flex flex-col items-center text-center`}>
+        <div className={`p-4 rounded-2xl border shadow-sm ${colorClasses[color]} flex flex-col items-center text-center hover:shadow-md transition-shadow`}>
             <span className="text-xs font-bold uppercase opacity-70 mb-1">{label}</span>
             <span className="text-lg font-bold">{formatted}</span>
             {sub && <span className="text-xs mt-1 opacity-80">{sub}</span>}
@@ -799,15 +940,15 @@ const BigBtn = ({ onClick, icon: Icon, label, color, animate }: any) => {
         orange: 'bg-orange-600 hover:bg-orange-700 text-white',
     };
     return (
-        <button onClick={onClick} className={`w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-bold shadow-sm transition-all ${colors[color]} ${animate ? 'animate-pulse' : ''}`}>
+        <button onClick={onClick} className={`w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 font-bold shadow-md hover:shadow-lg transition-all hover:-translate-y-0.5 ${colors[color]} ${animate ? 'animate-pulse' : ''}`}>
             <Icon className="w-5 h-5" /> {label}
         </button>
     )
 };
 
 const TabButton = ({ active, onClick, label, count }: any) => (
-    <button onClick={onClick} className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${active ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}>
-        {label} {count > 0 && <span className="ml-1 bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full text-xs">{count}</span>}
+    <button onClick={onClick} className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${active ? 'bg-[#2464A3] text-white shadow-md shadow-blue-500/25' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
+        {label} {count > 0 && <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>{count}</span>}
     </button>
 );
 
@@ -905,9 +1046,9 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-                <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(15,23,42,0.25)] w-full max-w-md overflow-hidden border border-slate-200/80">
+                <div className="px-6 py-4 border-b bg-gradient-to-r from-slate-50 to-white flex justify-between items-center">
                     <h3 className="font-bold text-gray-800">{getTitle()}</h3>
                     <button onClick={onClose}><X className="w-5 h-5 text-gray-400"/></button>
                 </div>

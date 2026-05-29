@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
+    }
+
+    function userExists() {
+      return exists(userDocPath());
+    }
+
+    function userData() {
+      return userDocPath().data;
+    }
+
+    function roleText() {
+      let d = userData();
+      return (d.get('puesto', '') + ' ' + d.get('role', '')).lower();
+    }
+
+    function canReadPatronesCalibracion() {
+      return isSignedIn() && userExists() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico|logistica|ventas).*'
+      );
+    }
+
+    function canWritePatronesCalibracion() {
+      return isSignedIn() && userExists() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico).*'
+      );
+    }
+
+    // Metadatos de patrones (incl. certificadoStoragePath; sin URLs públicas nuevas)
+    match /patronesCalibracion/{patronId} {
+      allow read: if canReadPatronesCalibracion();
+      allow create, update: if canWritePatronesCalibracion();
+      allow delete: if isSignedIn() && roleText().matches('.*(admin|gerente|manager).*');
+    }
+
+    // Auditoría de acceso a certificados (solo escritura vía Functions Admin SDK)
+    match /certificadoAccesos/{entryId} {
+      allow read: if isSignedIn() && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
+      allow write: if false;
+    }
+
+    // Resto de colecciones: autenticación requerida (alinear con despliegue previo)
+    match /{document=**} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

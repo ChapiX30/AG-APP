@@ -23,6 +23,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import toast, { Toaster } from 'react-hot-toast';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
+import { notificarCalidadConfirmacionAsistencia } from '../utils/notificacionesConfirmacionJunta';
 import {
   COLLECTION_PATRONES,
   countPatronesEnAlerta,
@@ -75,7 +76,7 @@ const CONSTANTS = {
     { value: 'calibracion', label: 'Calibración', icon: Zap, color: 'text-indigo-600 bg-indigo-50', hex: '#4f46e5' },
     { value: 'mtto_patrones', label: 'Mtto. Patrones', icon: Settings, color: 'text-rose-600 bg-rose-50', hex: '#e11d48' },
     { value: 'intralaboratorio', label: 'Intralaboratorio', icon: Users, color: 'text-teal-600 bg-teal-50', hex: '#0d9488' },
-    { value: 'interlaboratorio', label: 'Interlaboratorio', icon: Building2, color: 'text-blue-600 bg-blue-50', hex: '#2563eb' },
+    { value: 'interlaboratorio', label: 'Interlaboratorio', icon: Building2, color: 'text-blue-600 bg-blue-50', hex: '#2464A3' },
     { value: 'actualizacion_norma', label: 'Aviso PJLA', icon: Bell, color: 'text-pink-600 bg-pink-50', hex: '#db2777' },
     { value: 'junta', label: 'Junta', icon: Users, color: 'text-purple-600 bg-purple-50', hex: '#9333ea' },
     { value: 'vuelta', label: 'Vuelta', icon: MapPin, color: 'text-orange-600 bg-orange-50', hex: '#ea580c' }
@@ -144,7 +145,12 @@ const isUserAssignedToEvent = (
     return personas.some(p => keys.has(String(p).toLowerCase()));
 };
 
-const getAckLabel = (tipo?: string) => (tipo === 'junta' ? 'De acuerdo' : 'Enterado');
+const getAckLabel = (tipo?: string) => (tipo === 'junta' ? 'Asistencia confirmada' : 'Enterado');
+const getAckActionLabel = (tipo?: string) => (tipo === 'junta' ? 'Confirmar asistencia' : 'Confirmar enterado');
+const getAckInviteMessage = (tipo?: string) =>
+    tipo === 'junta'
+        ? 'Ingresa al calendario para confirmar tu asistencia.'
+        : 'Ingresa al calendario para confirmar de enterado.';
 
 /** Avance mínimo al asignar responsable (personas no vacío) en filas PT. */
 const AVANCE_CON_RESPONSABLE = 35;
@@ -234,15 +240,21 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const [saving, setSaving] = useState(false);
     const [marking, setMarking] = useState(false);
     const [uploadingEvidencia, setUploadingEvidencia] = useState(false);
+    const [isEditingEvent, setIsEditingEvent] = useState(false);
 
     const isPJLA = event?.esAlertaAutomatica || event?.cliente === 'Perry Johnson Labs';
     const isAssigned = event ? isUserAssignedToEvent(currentUser, event.personas || [], authUid) : false;
-    const canFullEdit = canEdit && !!event && !isPJLA;
+    const canFullEdit = canEdit && !!event && !isPJLA && (!isCalidad || isEditingEvent);
     const showDetailView = !!event && (!canFullEdit || isPJLA);
     const ackLabel = getAckLabel(event?.tipo);
+    const ackActionLabel = getAckActionLabel(event?.tipo);
     const creatorDisplay = event ? getEventCreatorDisplay(event, technicalStaff) : null;
 
     const sustaitaId = technicalStaff.find((u: any) => u.nombre?.toLowerCase().includes('sustaita'))?.id || '';
+
+    useEffect(() => {
+        if (isOpen) setIsEditingEvent(false);
+    }, [isOpen, event?.id]);
 
     useEffect(() => {
         if (event) {
@@ -298,7 +310,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                     await notifyAsignacionServicio(
                         uid,
                         'Nueva asignación en calendario',
-                        `${mensajeAsignacion} Ingresa al calendario para confirmar de enterado.`,
+                        `${mensajeAsignacion} ${getAckInviteMessage(resolvedTipo)}`,
                         event.id
                     );
                 }
@@ -335,7 +347,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                         await notifyAsignacionServicio(
                             uid,
                             'Nueva asignación en calendario',
-                            `${mensajeNuevo} Ingresa al calendario para confirmar de enterado.`,
+                            `${mensajeNuevo} ${getAckInviteMessage(resolvedTipo)}`,
                             newDoc.id
                         );
                     }
@@ -374,7 +386,19 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                     enterados: [...enteradosActuales, ackUserId],
                     enteradosAt,
                 });
-                toast.success(event.tipo === 'junta' ? 'Confirmación registrada (de acuerdo)' : 'Confirmación registrada (enterado)');
+                const confirmadoNombre = getUserName(ackUserId, technicalStaff);
+                try {
+                    await notificarCalidadConfirmacionAsistencia({
+                        servicioId: event.id,
+                        eventoTitulo: event.title || formData.titulo || 'Actividad',
+                        eventoFecha: event.start ? format(event.start, 'dd/MM/yyyy', { locale: es }) : formData.fecha,
+                        confirmadoPorNombre: confirmadoNombre,
+                        confirmadoPorUid: ackUserId,
+                    });
+                } catch (notifyErr) {
+                    console.error('Error notificando confirmación a calidad:', notifyErr);
+                }
+                toast.success(event.tipo === 'junta' ? 'Asistencia confirmada' : 'Confirmación registrada (enterado)');
                 onClose();
             }
         } catch (error) {
@@ -425,6 +449,16 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                         <h3 className="text-lg font-black text-slate-900 tracking-tight">{event ? (showDetailView ? event.title : 'Editar Actividad') : 'Nueva Programación'}</h3>
                     </div>
                     <div className="flex gap-2">
+                        {showDetailView && isCalidad && canEdit && !isPJLA && (
+                            <button type="button" onClick={() => setIsEditingEvent(true)} className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors flex items-center gap-1">
+                                <Settings size={14}/> Editar
+                            </button>
+                        )}
+                        {canFullEdit && isCalidad && isEditingEvent && (
+                            <button type="button" onClick={() => setIsEditingEvent(false)} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors flex items-center gap-1">
+                                <Eye size={14}/> Ver detalle
+                            </button>
+                        )}
                         {canFullEdit && <button type="button" onClick={handleDelete} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={18}/></button>}
                         <button type="button" onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-xl transition-colors"><X size={18}/></button>
                     </div>
@@ -554,7 +588,16 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
                             {!isPJLA && (
                                 <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Quiénes van</p>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                            {event.tipo === 'junta' ? 'Confirmaciones de asistencia' : 'Quiénes van'}
+                                        </p>
+                                        {event.personas?.length > 0 && (
+                                            <span className="text-[10px] font-bold text-slate-500">
+                                                {(event.enterados || []).length}/{event.personas.length} confirmados
+                                            </span>
+                                        )}
+                                    </div>
                                     {event.personas?.length ? (
                                         <div className="grid grid-cols-2 gap-2">
                                             {event.personas.map((pId: string, i: number) => {
@@ -565,24 +608,30 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                                         String(k).toLowerCase() === String(pId).toLowerCase()
                                                     )?.[1];
                                                 return (
-                                                    <div key={i} className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                                    <div key={i} className={`flex items-center justify-between p-2 bg-white border rounded-xl shadow-sm ${enterado ? 'border-emerald-200' : 'border-slate-200'}`}>
                                                         <div className="flex items-center gap-2 min-w-0">
                                                             <Avatar name={nombre} isEnterado={enterado} />
                                                             <div className="min-w-0">
                                                                 <span className="text-xs font-bold text-slate-700 truncate block max-w-[120px]">{nombre}</span>
-                                                                {isCalidad && enterado && ackAt && (
-                                                                    <span className="text-[9px] text-slate-400">{format(new Date(ackAt), 'dd/MM/yy HH:mm', { locale: es })}</span>
+                                                                {enterado && ackAt ? (
+                                                                    <span className="text-[9px] text-emerald-600 font-semibold">{format(new Date(ackAt), 'dd/MM/yy HH:mm', { locale: es })}</span>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-amber-600 font-semibold">Pendiente</span>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        {enterado ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0"/> : <Clock size={14} className="text-amber-500 shrink-0"/>}
+                                                        {enterado ? (
+                                                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">✓</span>
+                                                        ) : (
+                                                            <Clock size={14} className="text-amber-500 shrink-0"/>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
                                         </div>
                                     ) : (
                                         <p className="text-xs text-slate-500 italic p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl">
-                                            Sin técnicos asignados.
+                                            Sin participantes asignados.
                                         </p>
                                     )}
                                 </div>
@@ -591,7 +640,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                             {!isPJLA && isAssigned && !yaEstaEnterado && (
                                 <button type="button" onClick={handleMarcarEnterado} disabled={marking} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-2">
                                     {marking ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <UserCheck size={18}/>}
-                                    Confirmar {ackLabel}
+                                    {ackActionLabel}
                                 </button>
                             )}
                             {!isPJLA && !isAssigned && !canEdit && event?.personas?.length > 0 && (
@@ -601,7 +650,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                             )}
                             {!isPJLA && isAssigned && yaEstaEnterado && (
                                 <p className="text-xs text-emerald-700 font-bold text-center py-2 bg-emerald-50 border border-emerald-100 rounded-xl">
-                                    Ya confirmaste ({ackLabel.toLowerCase()}).
+                                    {event.tipo === 'junta' ? 'Ya confirmaste tu asistencia.' : `Ya confirmaste (${ackLabel.toLowerCase()}).`}
                                 </p>
                             )}
                         </div>
@@ -801,7 +850,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, canEdit, te
         if (t.includes('envió') || t.includes('envio')) return { backgroundColor: '#fdfb23', color: '#000' }; 
         if (t.includes('interna') || t.includes('informe')) return { backgroundColor: '#8bd980', color: '#000' }; 
         if (t.includes('estudio')) return { backgroundColor: '#2ced2f', color: '#000' }; 
-        return { backgroundColor: '#2563eb', color: '#fff' }; 
+        return { backgroundColor: '#2464A3', color: '#fff' }; 
     };
 
     return (

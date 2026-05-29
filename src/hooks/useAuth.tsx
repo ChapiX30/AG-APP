@@ -38,7 +38,7 @@ const loadUserProfile = async (uid: string, email: string): Promise<User> => {
   let role = "";
   if (docSnap.exists()) {
     const data = docSnap.data();
-    name = data.nombre || name;
+    name = data.name || data.nombre || name;
     role = data.puesto || "";
   }
   return { id: uid, name, email, role };

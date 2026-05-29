@@ -185,8 +185,8 @@ async function generarPDFFormal({
   const jsPDF = (await import('jspdf')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   
-  const azulPrimario = [104, 131, 145];
-  const azulSecundario = [52, 144, 220];
+  const azulPrimario = [36, 100, 163];
+  const azulSecundario = [45, 114, 184];
   const grisTexto = [60, 60, 60];
   const grisClaro = [240, 242, 247];
   const rojoRechazo = [200, 0, 0]; 
@@ -536,7 +536,7 @@ async function generarPDFFormal({
   doc.rect(10, pieY, 190, 8, 'F');
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(52, 60, 130);
+  doc.setTextColor(29, 80, 130);
   doc.text('AG-CAL-F10-00', 12, 285);
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');

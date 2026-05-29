@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return firestore.get(
+        /databases/(default)/documents/usuarios/$(request.auth.uid)
+      ).data;
+    }
+
+    function roleText() {
+      let d = userProfile();
+      return (d.get('puesto', '') + ' ' + d.get('role', '')).lower();
+    }
+
+    function canAccessPatronCertificates() {
+      return isSignedIn() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico|logistica).*'
+      );
+    }
+
+    function canWritePatronCertificates() {
+      return isSignedIn() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico).*'
+      );
+    }
+
+    function isAllowedCertificateUpload() {
+      return request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches(
+          'application/pdf|image/jpeg|image/png|image/webp'
+        );
+    }
+
+    // Certificados de patrones — rutas nuevas (UUID, no adivinables)
+    match /calibraciones/{patronId}/{fileName} {
+      allow read: if canAccessPatronCertificates();
+      allow create, update: if canWritePatronCertificates()
+        && isAllowedCertificateUpload();
+      allow delete: if canWritePatronCertificates()
+        && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
+    }
+
+    // Legacy: certificados/{patronId}/{archivo}
+    match /certificados/{patronId}/{fileName} {
+      allow read: if canAccessPatronCertificates();
+      allow create, update: if canWritePatronCertificates()
+        && isAllowedCertificateUpload();
+      allow delete: if canWritePatronCertificates()
+        && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
+    }
+
+    // Drive interno bajo certificados/ (subcarpetas; no confundir con patronId/uuid)
+    match /certificados/{folder}/{segment}/{rest=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /certificados/{folder}/.keep {
+      allow read, write: if isSignedIn();
+    }
+
+    // Hojas de trabajo / Drive worksheets
+    match /worksheets/{allPaths=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /servicios/{allPaths=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /formatos_master/{allPaths=**} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

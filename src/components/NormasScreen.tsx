@@ -24,14 +24,14 @@ import {
 const COLLECTION_NAME_PATRONES = COLLECTION_PATRONES;
 
 const styles = `
-  :root { --primary: #2563eb; --bg-page: #f8fafc; --text-main: #1e293b; }
+  :root { --primary: #2464A3; --bg-page: #f8fafc; --text-main: #1e293b; }
   body { background: var(--bg-page); color: var(--text-main); font-family: sans-serif; }
   .layout-container { max-width: 1200px; margin: 0 auto; padding: 20px; padding-bottom: 100px; }
   .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
   
   .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; gap: 8px; transition: all 0.2s; }
-  .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.3); }
-  .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+  .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(36, 100, 163, 0.3); }
+  .btn-primary:hover { background: #1d5082; transform: translateY(-1px); }
   .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
 
   .btn-success { background: #10b981; color: white; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3); }
@@ -43,7 +43,7 @@ const styles = `
   .btn-secondary:hover { background: #f1f5f9; border-color: #94a3b8; }
   
   .input-control { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-top: 5px; background-color: #ffffff !important; color: #1e293b !important; font-size: 0.95rem; }
-  .input-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+  .input-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36, 100, 163, 0.1); }
   label { font-weight: 600; color: #475569; font-size: 0.85rem; margin-bottom: 4px; display: block; }
   
   .modern-table { width: 100%; border-collapse: separate; border-spacing: 0; }
@@ -573,7 +573,7 @@ const NormasScreen = () => {
         )}
 
         {/* HEADER */}
-        <div className="flex items-center justify-between mb-8 rounded-2xl bg-[#0050d8] text-white px-5 py-4 shadow-md">
+        <div className="flex items-center justify-between mb-8 rounded-2xl bg-[#2464A3] text-white px-5 py-4 shadow-md">
            <div className="flex items-center gap-4">
               <button className="rounded-full p-3 bg-white/15 hover:bg-white/25 transition-colors" onClick={() => navigateTo('menu')} aria-label="Volver al menú">
                 <ArrowLeft size={22} />

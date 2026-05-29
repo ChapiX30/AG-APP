@@ -4,7 +4,7 @@ import labLogo from "../assets/lab_logo.png";
 
 const BRAND_NAME = "Equipos y Servicios AG";
 const SUBTITLE = "Sistema de gestión metrológica";
-const BRAND_BLUE = "#0050d8";
+const BRAND_BLUE = "#2464A3";
 /** Mínimo visible solo si `ready` ya es true; salida inmediata cuando auth no bloquea. */
 const MIN_VISIBLE_MS = 450;
 const EXIT_DURATION_S = 0.35;
@@ -55,7 +55,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
             <div className="text-center space-y-2">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4d8fff] to-[#0050d8]">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#5a93c9] to-[#2464A3]">
                   {BRAND_NAME}
                 </span>
               </h1>

@@ -4,8 +4,11 @@ import * as nodemailer from "nodemailer";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { jsPDF } from "jspdf";
+import { getPatronCertificadoUrl } from "./certificadoAccess";
 
 admin.initializeApp();
+
+export { getPatronCertificadoUrl };
 const db = admin.firestore();
 
 // ==================================================================

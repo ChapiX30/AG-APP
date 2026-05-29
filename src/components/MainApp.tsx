@@ -53,7 +53,7 @@ const MagnitudeDetailScreen = lazy(() =>
 
 const Loader = () => (
   <div className="w-full flex flex-col items-center justify-center py-16 min-h-[12rem]">
-    <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#0050d8] border-t-transparent" />
+    <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#2464A3] border-t-transparent" />
     <span className="mt-3 text-slate-500 text-xs font-medium tracking-wide">Cargando…</span>
   </div>
 );
