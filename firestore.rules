@@ -26,13 +26,13 @@ service cloud.firestore {
 
     function canReadPatronesCalibracion() {
       return isSignedIn() && userExists() && roleText().matches(
-        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico|logistica|ventas).*'
+        '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico|logistica|ventas).*'
       );
     }
 
     function canWritePatronesCalibracion() {
       return isSignedIn() && userExists() && roleText().matches(
-        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico).*'
+        '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico).*'
       );
     }
 

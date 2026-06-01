@@ -38,10 +38,11 @@ import { parseDateRobust } from "../utils/calibrationShared";
 import { normalizeDriveDate, resolveFileWorkDate, enrichFilesWithWorkDates, enrichFilesWithWorksheetInfo, extractWorkDateFromWorksheet } from "../utils/driveFileMetadata";
 import { notificarCalidadRevisionPendiente } from "../utils/notificacionesRevisionCalidad";
 import {
-  isMetadataPendingReview,
+  isServiceSheetDrivePath,
   isWorksheetRealizado,
   normalizeDriveFullPath,
   PENDING_REVIEW_METADATA_LIMIT,
+  qualifiesForPendingReviewList,
   resolveTechnicianGroupKey,
   syncPendingReviewFromWorksheets,
   syncSingleFilePendingReviewFromWorksheet,
@@ -167,6 +168,130 @@ const getParentFolderName = (fullPath: string) => {
   }
   return "Raíz";
 };
+
+const isStoragePermissionError = (err: unknown): boolean => {
+  const code = String((err as { code?: string })?.code || "");
+  return (
+    code.includes("storage/unauthorized") ||
+    code.includes("storage/unauthenticated") ||
+    code.includes("permission-denied")
+  );
+};
+
+/** Respaldo cuando listAll de Storage falla (p. ej. reglas certificados/ sin list). */
+async function buildDriveBrowseFromMetadata(
+  currentRoot: "worksheets" | "certificados",
+  path: string[],
+  options: {
+    debouncedSearch: string;
+    isQuality: boolean;
+    myName: string;
+  }
+): Promise<{ files: DriveFile[]; folders: DriveFolder[] }> {
+  const snap = await getDocs(
+    query(collection(db, "fileMetadata"), orderBy("created", "desc"), limit(600))
+  );
+  const basePath = [currentRoot, ...path].join("/");
+  const basePrefix = `${basePath}/`;
+  const folderNames = new Set<string>();
+  const files: DriveFile[] = [];
+  const searchTerm = options.debouncedSearch
+    ? normalizeText(options.debouncedSearch)
+    : "";
+
+  snap.forEach((docSnap) => {
+    const data = docSnap.data();
+    const rawName = data.name || docSnap.id;
+    const fullPath = normalizeDriveFullPath(data.filePath, rawName, currentRoot);
+    if (!fullPath.startsWith(`${currentRoot}/`)) return;
+
+    if (!options.isQuality) {
+      const isUploader = normalizeText(String(data.uploadedBy || "")) === options.myName;
+      if (
+        !fullPath.toLowerCase().includes(options.myName) &&
+        !isUploader
+      ) {
+        return;
+      }
+    }
+
+    if (path.length === 0) {
+      const relative = fullPath.slice(currentRoot.length + 1);
+      const segments = relative.split("/").filter(Boolean);
+      if (segments.length === 0) return;
+      if (segments.length === 1) {
+        if (searchTerm && !normalizeText(rawName).includes(searchTerm)) return;
+        files.push(metadataToDriveFile(data, rawName, fullPath));
+        return;
+      }
+      const folder = segments[0];
+      if (!options.isQuality && path.length === 0) {
+        if (!normalizeText(folder).includes(options.myName)) return;
+      }
+      if (searchTerm && !normalizeText(folder).includes(searchTerm)) return;
+      folderNames.add(folder);
+      return;
+    }
+
+    if (!fullPath.startsWith(basePrefix)) return;
+    const relative = fullPath.slice(basePrefix.length);
+    const segments = relative.split("/").filter(Boolean);
+    if (segments.length === 0) return;
+    if (segments.length === 1) {
+      if (searchTerm && !normalizeText(rawName).includes(searchTerm)) return;
+      files.push(metadataToDriveFile(data, rawName, fullPath));
+      return;
+    }
+    const folder = segments[0];
+    if (searchTerm && !normalizeText(folder).includes(searchTerm)) return;
+    folderNames.add(folder);
+  });
+
+  const folders: DriveFolder[] = [...folderNames]
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({
+      name,
+      fullPath: `${basePath}/${name}`,
+    }));
+
+  return { files, folders };
+}
+
+function metadataToDriveFile(
+  data: Record<string, unknown>,
+  rawName: string,
+  fullPath: string
+): DriveFile {
+  return {
+    name: cleanFileName(rawName),
+    rawName,
+    url: "",
+    fullPath,
+    updated: normalizeDriveDate(data.updated),
+    created: normalizeDriveDate(data.created || data.updated),
+    workDate: resolveFileWorkDate(data, [data.created, data.updated]),
+    size: Number(data.size) || 0,
+    contentType: String(data.contentType || "unknown"),
+    reviewed: data.reviewed as boolean | undefined,
+    reviewedByName: data.reviewedByName as string | undefined,
+    completed: data.completed as boolean | undefined,
+    completedByName: data.completedByName as string | undefined,
+    starred: data.starred as boolean | undefined,
+    uploadedBy: data.uploadedBy as string | undefined,
+    parentFolder:
+      getParentFolderName(fullPath) !== "Raíz"
+        ? getParentFolderName(fullPath)
+        : resolveTechnicianGroupKey({
+            fullPath,
+            completedByName: data.completedByName as string | undefined,
+            uploadedBy: data.uploadedBy as string | undefined,
+          }),
+    keywords: data.keywords as string[] | undefined,
+    notas: data.notas as string | undefined,
+    ubicacion: data.ubicacion as string | undefined,
+    ubicacion_real: data.ubicacion_real as string | undefined,
+  };
+}
 
 const addBusinessDays = (startDate: Date, daysToAdd: number) => {
   let currentDate = new Date(startDate);
@@ -860,6 +985,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [groupView, setGroupView] = useState<string | null>(null);
   const [newFileMenuOpen, setNewFileMenuOpen] = useState(false);
   const newFileMenuRef = useRef<HTMLDivElement>(null);
+  const pendingReviewSyncAtRef = useRef(0);
+  const loadRequestIdRef = useRef(0);
+  const downloadUrlCacheRef = useRef(new Map<string, { url: string; at: number }>());
+  const PENDING_REVIEW_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
+  const DOWNLOAD_URL_CACHE_TTL_MS = 12 * 60 * 1000;
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -974,6 +1104,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ── Load content ──
   const loadContent = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setContextMenu(null);
     setSelectedIds(new Set());
     setLastSelectedId(null);
@@ -987,10 +1118,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         setFilesLoading(false);
 
         if (activeFilter === 'pending_review' && currentRoot === 'worksheets') {
-          setIsSyncing(true);
-          void syncPendingReviewFromWorksheets(currentRoot, { maxWrites: 150 })
-            .catch((e) => console.error("syncPendingReviewFromWorksheets", e))
-            .finally(() => setIsSyncing(false));
+          const now = Date.now();
+          if (now - pendingReviewSyncAtRef.current > PENDING_REVIEW_SYNC_COOLDOWN_MS) {
+            pendingReviewSyncAtRef.current = now;
+            setIsSyncing(true);
+            void syncPendingReviewFromWorksheets(currentRoot, { maxWrites: 80 })
+              .catch((e) => console.error("syncPendingReviewFromWorksheets", e))
+              .finally(() => setIsSyncing(false));
+          }
         }
 
         const pendingReviewQ = query(
@@ -1033,7 +1168,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           }
 
           if (activeFilter === 'starred' && data.starred !== true) return;
-          if (activeFilter === 'pending_review' && !isMetadataPendingReview(data)) return;
+          if (
+            activeFilter === 'pending_review' &&
+            !qualifiesForPendingReviewList(data, fullPath, rawName)
+          ) {
+            return;
+          }
           if (activeFilter === 'completed' && data.reviewed !== true) return;
           if (activeFilter === 'recent') {
             const recentDate = parseDateRobust(resolveFileWorkDate(data, [data.updated, data.created]));
@@ -1068,8 +1208,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             results.push(fileObj);
           }
         });
+        const isGlobalPendingOrCompleted =
+          activeFilter === "pending_review" || activeFilter === "completed";
         const enriched = await enrichFilesWithWorksheetInfo(
-          await enrichFilesWithWorkDates(results)
+          await enrichFilesWithWorkDates(results, {
+            persist: !isGlobalPendingOrCompleted,
+          })
         );
         setFiles(
           enriched.map((f) => ({
@@ -1082,8 +1226,38 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         setLoading(true);
         setFiles([]);
         const pathStr = [currentRoot, ...path].join('/');
-        const res = await listAll(ref(storage, pathStr));
         const myName = normalizeText(currentUserData?.name || "");
+        let res;
+        try {
+          res = await listAll(ref(storage, pathStr));
+        } catch (listErr) {
+          if (
+            requestId === loadRequestIdRef.current &&
+            currentRoot === "certificados" &&
+            isStoragePermissionError(listErr)
+          ) {
+            console.warn("listAll certificados fallback to fileMetadata", listErr);
+            const fallback = await buildDriveBrowseFromMetadata(currentRoot, path, {
+              debouncedSearch,
+              isQuality,
+              myName,
+            });
+            if (requestId !== loadRequestIdRef.current) return;
+            const enriched = await enrichFilesWithWorksheetInfo(
+              await enrichFilesWithWorkDates(fallback.files, { persist: false })
+            );
+            setFolders(fallback.folders);
+            setFiles(enriched);
+            setLoading(false);
+            setFilesLoading(false);
+            showToast(
+              "Certificados cargados desde el catálogo. Si faltan archivos, pida desplegar reglas de Storage.",
+              "warning"
+            );
+            return;
+          }
+          throw listErr;
+        }
 
         let loadedFolders = res.prefixes.map(p => ({ name: p.name, fullPath: p.fullPath }));
         if (!isQuality && path.length === 0) {
@@ -1246,11 +1420,37 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         }
       }
     } catch (e) {
+      if (requestId !== loadRequestIdRef.current) return;
       console.error("loadContent", e);
+      if (currentRoot === "certificados" && isStoragePermissionError(e)) {
+        try {
+          const myName = normalizeText(currentUserData?.name || "");
+          const fallback = await buildDriveBrowseFromMetadata(currentRoot, path, {
+            debouncedSearch,
+            isQuality,
+            myName,
+          });
+          if (requestId !== loadRequestIdRef.current) return;
+          const enriched = await enrichFilesWithWorksheetInfo(
+            await enrichFilesWithWorkDates(fallback.files, { persist: false })
+          );
+          setFolders(fallback.folders);
+          setFiles(enriched);
+          showToast(
+            "Certificados cargados desde el catálogo. Despliegue storage.rules para acceso directo.",
+            "warning"
+          );
+          return;
+        } catch (fallbackErr) {
+          console.error("loadContent certificados fallback", fallbackErr);
+        }
+      }
       showToast("Error al cargar el Drive. Intenta de nuevo.", "error");
     } finally {
-      setLoading(false);
-      setFilesLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+        setFilesLoading(false);
+      }
     }
   }, [path, activeFilter, currentUserData, debouncedSearch, isQuality, currentRoot, showToast]);
 
@@ -1504,10 +1704,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   );
 
   const resolvePreviewUrl = useCallback(async (file: DriveFile) => {
+    if (file.url) return file.url;
+    const cached = downloadUrlCacheRef.current.get(file.fullPath);
+    if (cached && Date.now() - cached.at < DOWNLOAD_URL_CACHE_TTL_MS) {
+      return cached.url;
+    }
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        return file.url || await getDownloadURL(ref(storage, file.fullPath));
+        const url = await getDownloadURL(ref(storage, file.fullPath));
+        downloadUrlCacheRef.current.set(file.fullPath, { url, at: Date.now() });
+        return url;
       } catch (err) {
         lastError = err;
         if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
@@ -1523,8 +1730,43 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       setDetailsOpen(true);
       return;
     }
-    setPreviewFile({ ...file, url: file.url || "" });
+    const cached = downloadUrlCacheRef.current.get(file.fullPath);
+    const initialUrl =
+      file.url ||
+      (cached && Date.now() - cached.at < DOWNLOAD_URL_CACHE_TTL_MS ? cached.url : "");
+    setPreviewFile({ ...file, url: initialUrl });
+    if (!initialUrl) {
+      void resolvePreviewUrl(file).then((url) => {
+        setFiles((prev) =>
+          prev.map((f) => (f.fullPath === file.fullPath ? { ...f, url } : f))
+        );
+        setPreviewFile((prev) =>
+          prev?.fullPath === file.fullPath ? { ...prev, url } : prev
+        );
+      });
+    }
   };
+
+  useEffect(() => {
+    if (loading || files.length === 0) return;
+    const prefetch = files
+      .filter((f) => !f.isPendingWorksheet && !f.url)
+      .slice(0, 8);
+    let cancelled = false;
+    void (async () => {
+      for (const f of prefetch) {
+        if (cancelled) break;
+        try {
+          await resolvePreviewUrl(f);
+        } catch {
+          /* best-effort prefetch */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [files, loading, resolvePreviewUrl]);
 
   // ── Batch delete ──
   const handleBatchDelete = async () => {
@@ -1792,6 +2034,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const updateFileStatus = async (file: DriveFile, field: string, value: any) => {
+    if (
+      field === "completed" &&
+      value &&
+      isServiceSheetDrivePath(file.fullPath, file.rawName || file.name)
+    ) {
+      showToast("Las hojas de servicio (HSDG) no usan el flujo Por Revisar.", "info");
+      return;
+    }
     const name = currentUserData?.name || user?.displayName || "Usuario";
     const newReviewedBy = field === 'reviewed' && value ? name : (field === 'reviewed' ? null : file.reviewedByName);
     const newCompletedBy = field === 'completed' && value ? name : (field === 'completed' ? null : file.completedByName);
@@ -1905,7 +2155,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     const name = currentUserData?.name || user?.displayName || "Usuario";
     const selectedPaths = Array.from(selectedIds);
-    const selectedFiles = processedFiles.filter((f) => selectedIds.has(f.fullPath) && !f.isPendingWorksheet);
+    const selectedFiles = processedFiles.filter(
+      (f) =>
+        selectedIds.has(f.fullPath) &&
+        !f.isPendingWorksheet &&
+        !isServiceSheetDrivePath(f.fullPath, f.rawName || f.name)
+    );
     const pathSet = new Set(selectedFiles.map((f) => f.fullPath));
     const targets = selectedPaths.filter((p) => pathSet.has(p));
     if (targets.length === 0) { showToast("No hay archivos válidos seleccionados", "warning"); return; }

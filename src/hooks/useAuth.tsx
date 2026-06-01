@@ -13,6 +13,7 @@ interface User {
   name: string;
   email: string;
   role: string;
+  puesto: string;
 }
 
 interface AuthContextType {
@@ -35,13 +36,15 @@ export const useAuth = () => {
 const loadUserProfile = async (uid: string, email: string): Promise<User> => {
   const docSnap = await getDoc(doc(db, "usuarios", uid));
   let name = email;
+  let puesto = "";
   let role = "";
   if (docSnap.exists()) {
     const data = docSnap.data();
     name = data.name || data.nombre || name;
-    role = data.puesto || "";
+    puesto = typeof data.puesto === 'string' ? data.puesto.trim() : '';
+    role = typeof data.role === 'string' ? data.role.trim() : '';
   }
-  return { id: uid, name, email, role };
+  return { id: uid, name, email, puesto, role };
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {

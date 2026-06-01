@@ -16,8 +16,12 @@ const VIEW_ROLE_TOKENS = [
 
 const QUALITY_EMAIL_ALLOWLIST = ["eaaese07@gmail.com"];
 
+/** Alineado con certificateAccess.ts (cliente): minúsculas sin acentos. */
 function normalizeRoleText(puesto?: string, role?: string): string {
-    return `${puesto || ""} ${role || ""}`.toLowerCase();
+    return `${puesto || ""} ${role || ""}`
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
 }
 
 function canViewPatronCertificate(puesto: string, role: string, email: string): boolean {
@@ -36,6 +40,12 @@ function extractStoragePathFromDownloadUrl(url: string): string | null {
     } catch {
         return null;
     }
+}
+
+function isPatronCertificateStoragePath(storagePath: string): boolean {
+    const parts = storagePath.split("/").filter(Boolean);
+    if (parts.length !== 3) return false;
+    return parts[0] === "calibraciones" || parts[0] === "certificados";
 }
 
 function resolveCertificatePath(
@@ -81,10 +91,7 @@ export const getPatronCertificadoUrl = functions.https.onCall(async (data, conte
     }
 
     const storagePath = resolveCertificatePath(patronId, patronSnap.data());
-    const validPrefix =
-        storagePath?.startsWith(`calibraciones/${patronId}/`) ||
-        storagePath?.startsWith(`certificados/${patronId}/`);
-    if (!storagePath || !validPrefix) {
+    if (!storagePath || !isPatronCertificateStoragePath(storagePath)) {
         throw new functions.https.HttpsError("failed-precondition", "No hay certificado asociado.");
     }
 

@@ -3,6 +3,7 @@ import { getMetadata, type UploadResult } from "firebase/storage";
 import { parseDateRobust } from "./calibrationShared";
 import { db } from "./firebase";
 import { extractWorksheetLinkId, resolveWorksheetDoc } from "./worksheetDriveSync";
+import { isServiceSheetDrivePath } from "./pendingReviewDriveLogic";
 
 /** Normaliza Timestamp / ISO / Storage RFC3339 a string ISO para fileMetadata. */
 export function normalizeDriveDate(value: unknown, fallback = new Date()): string {
@@ -47,29 +48,37 @@ export async function fetchWorkDateFromWorksheetFileName(
 
 export async function enrichFilesWithWorkDates<
   T extends { rawName?: string; name: string; workDate?: string; fullPath: string }
->(files: T[]): Promise<T[]> {
-  const missing = files.filter((f) => !f.workDate);
+>(files: T[], options?: { persist?: boolean }): Promise<T[]> {
+  const missing = files.filter(
+    (f) => !f.workDate && !isServiceSheetDrivePath(f.fullPath, f.rawName || f.name)
+  );
   if (missing.length === 0) return files;
 
   const resolved = new Map<string, string>();
-  await Promise.all(
-    missing.map(async (f) => {
-      const workDate = await fetchWorkDateFromWorksheetFileName(f.rawName || f.name);
-      if (workDate) resolved.set(f.fullPath, workDate);
-    })
-  );
+  const batchSize = 12;
+  for (let i = 0; i < missing.length; i += batchSize) {
+    const slice = missing.slice(i, i + batchSize);
+    await Promise.all(
+      slice.map(async (f) => {
+        const workDate = await fetchWorkDateFromWorksheetFileName(f.rawName || f.name);
+        if (workDate) resolved.set(f.fullPath, workDate);
+      })
+    );
+  }
 
   if (resolved.size === 0) return files;
 
-  await Promise.all(
-    [...resolved.entries()].map(([fullPath, workDate]) =>
-      setDoc(
-        doc(db, "fileMetadata", fullPath.replace(/\//g, "_")),
-        { workDate },
-        { merge: true }
-      ).catch(() => {})
-    )
-  );
+  if (options?.persist !== false) {
+    await Promise.all(
+      [...resolved.entries()].map(([fullPath, workDate]) =>
+        setDoc(
+          doc(db, "fileMetadata", fullPath.replace(/\//g, "_")),
+          { workDate },
+          { merge: true }
+        ).catch(() => {})
+      )
+    );
+  }
 
   return files.map((f) => {
     const workDate = f.workDate || resolved.get(f.fullPath);
@@ -87,13 +96,21 @@ export async function enrichFilesWithWorksheetInfo<
     parentFolder?: string;
   } & DriveWorksheetEnrichment
 >(files: T[]): Promise<T[]> {
-  const missing = files.filter((f) => !f.worksheetCliente && !f.worksheetId);
+  const missing = files.filter(
+    (f) =>
+      !f.worksheetCliente &&
+      !f.worksheetId &&
+      !isServiceSheetDrivePath(f.fullPath, f.rawName || f.name)
+  );
   if (missing.length === 0) return files;
 
   const resolved = new Map<string, DriveWorksheetEnrichment>();
 
-  await Promise.all(
-    missing.map(async (f) => {
+  const batchSize = 10;
+  for (let i = 0; i < missing.length; i += batchSize) {
+    const slice = missing.slice(i, i + batchSize);
+    await Promise.all(
+      slice.map(async (f) => {
       try {
         const possibleId = extractWorksheetLinkId(f.rawName || f.name);
         const wsDoc = await resolveWorksheetDoc(possibleId);
@@ -116,7 +133,8 @@ export async function enrichFilesWithWorksheetInfo<
         /* optional enrichment */
       }
     })
-  );
+    );
+  }
 
   if (resolved.size === 0) return files;
 
@@ -177,6 +195,7 @@ export async function writeDriveFileMetadata(
   const existing = await getDoc(doc(db, "fileMetadata", docId));
   const existingData = existing.exists() ? existing.data() : {};
   const meta = await getMetadata(uploadResult.ref);
+  const isServiceSheet = isServiceSheetDrivePath(fullPath, fileName);
 
   await setDoc(
     doc(db, "fileMetadata", docId),
@@ -191,7 +210,11 @@ export async function writeDriveFileMetadata(
         : normalizeDriveDate(meta.timeCreated || meta.updated),
       uploadedBy: uploadedBy || "Desconocido",
       keywords: generateSearchTokens(cleanFileName(fileName)),
-      completed: options?.markCompleted ? true : existingData.completed || false,
+      completed: isServiceSheet
+        ? false
+        : options?.markCompleted
+          ? true
+          : existingData.completed || false,
       completedByName: options?.markCompleted
         ? uploadedBy
         : existingData.completedByName || null,

@@ -23,7 +23,11 @@ import {
   patronHasCertificate,
   validateCertificateFile,
 } from '../utils/certificateAccess';
-import { fetchPatronCertificadoSignedUrl } from '../utils/patronCertificadoUrl';
+import {
+  certificateLoadErrorMessage,
+  resolvePatronCertificadoPreviewUrl,
+  type PatronCertificateMeta,
+} from '../utils/patronCertificadoUrl';
 import { patronesData } from './patronesData';
 import { notificarPrestamoPatronPlanta } from '../utils/notificacionesPrestamoPatron';
 import toast, { Toaster } from 'react-hot-toast';
@@ -325,10 +329,10 @@ const FileUploader = ({ onFileSelect }: { onFileSelect: (f: File | null) => void
 };
 
 const FilePreviewModal = ({
-  patronId,
+  meta,
   onClose,
 }: {
-  patronId: string;
+  meta: PatronCertificateMeta;
   onClose: () => void;
 }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -339,18 +343,20 @@ const FilePreviewModal = ({
     let cancelled = false;
     (async () => {
       try {
-        const url = await fetchPatronCertificadoSignedUrl(patronId);
+        const url = await resolvePatronCertificadoPreviewUrl(meta);
         if (!cancelled) setPreviewUrl(url);
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setError('No se pudo cargar el certificado. Verifique permisos o conexión.');
+          const message = certificateLoadErrorMessage(err);
+          setError(message);
+          toast.error(message, { id: `cert-preview-${meta.patronId}` });
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [patronId]);
+  }, [meta.patronId, meta.certificadoStoragePath, meta.certificadoUrl]);
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -825,7 +831,14 @@ const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
                     
                     {/* MODAL DE PREVISUALIZACIÓN */}
                     {showPreview && selectedItem.id && canViewCert && hasCert && (
-                        <FilePreviewModal patronId={selectedItem.id} onClose={() => setShowPreview(false)} />
+                        <FilePreviewModal
+                          meta={{
+                            patronId: selectedItem.id,
+                            certificadoStoragePath: selectedItem.certificadoStoragePath,
+                            certificadoUrl: selectedItem.certificadoUrl,
+                          }}
+                          onClose={() => setShowPreview(false)}
+                        />
                     )}
                 </motion.div>
             </>

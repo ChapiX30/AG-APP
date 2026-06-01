@@ -16,8 +16,49 @@ export const isWorksheetRealizado = (value: unknown): boolean =>
 /** @deprecated Prefer isWorksheetUploadedToDrive / isWorksheetRealizado */
 export const isWorksheetCargadoDrive = isWorksheetUploadedToDrive;
 
+/** Hojas de servicio (HSDG) no pasan por revisión de calidad en Drive. */
+export const isServiceSheetDrivePath = (
+  fullPath: string,
+  fileName?: string
+): boolean => {
+  const path = String(fullPath || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\\/g, "/");
+  const name = String(fileName || "")
+    .trim()
+    .toUpperCase();
+  if (path.includes("hojas de servicio")) return true;
+  if (name.startsWith("HSDG-") || name.startsWith("HSDG.")) return true;
+  return false;
+};
+
 export const isMetadataPendingReview = (data: Record<string, unknown>): boolean =>
   data.reviewed !== true && data.completed === true;
+
+/** Solo certificados/hojas de trabajo pendientes de revisión de calidad. */
+export const qualifiesForPendingReviewList = (
+  data: Record<string, unknown>,
+  fullPath?: string,
+  fileName?: string
+): boolean => {
+  const path = String(fullPath || data.filePath || "");
+  const name = String(fileName || data.name || "");
+  if (isServiceSheetDrivePath(path, name)) return false;
+  return isMetadataPendingReview(data);
+};
+
+/** Pendiente de revisión solo para certificados/hojas de trabajo, no hojas de servicio. */
+export const isWorksheetPendingReviewFile = (
+  meta: Record<string, unknown>,
+  fullPath?: string,
+  fileName?: string
+): boolean => {
+  const path = String(fullPath || meta.filePath || "");
+  const name = String(fileName || meta.name || "");
+  if (isServiceSheetDrivePath(path, name)) return false;
+  return isMetadataPendingReview(meta);
+};
 
 export const shouldTreatAsPendingReview = (
   meta: Record<string, unknown>,

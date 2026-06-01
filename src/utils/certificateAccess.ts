@@ -15,13 +15,16 @@ const ALLOWED_CERTIFICATE_EXT = new Set(['pdf', 'jpg', 'jpeg', 'png', 'webp']);
 
 export type CertificateAuthUser = {
   role?: string;
+  puesto?: string;
   email?: string;
 } | null;
 
 const QUALITY_EMAIL_ALLOWLIST = ['eaaese07@gmail.com'];
 
-function normalizeRoleText(role?: string): string {
-  return (role || '')
+export function normalizeRoleText(...parts: (string | undefined)[]): string {
+  return parts
+    .filter(Boolean)
+    .join(' ')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
@@ -31,11 +34,16 @@ function roleMatchesAny(roleText: string, tokens: string[]): boolean {
   return tokens.some((t) => roleText.includes(t));
 }
 
+/** Texto de rol unificado (puesto + role), alineado con reglas Storage y Cloud Function. */
+export function getCertificateUserRoleText(user: CertificateAuthUser): string {
+  return normalizeRoleText(user?.puesto, user?.role);
+}
+
 /** Lectura / previsualización de certificado de patrón. */
 export function canViewPatronCertificate(user: CertificateAuthUser): boolean {
   const email = (user?.email || '').toLowerCase();
   if (QUALITY_EMAIL_ALLOWLIST.includes(email)) return true;
-  const roleText = normalizeRoleText(user?.role);
+  const roleText = getCertificateUserRoleText(user);
   return roleMatchesAny(roleText, [
     'calidad',
     'quality',
@@ -52,7 +60,7 @@ export function canViewPatronCertificate(user: CertificateAuthUser): boolean {
 export function canUploadPatronCertificate(user: CertificateAuthUser): boolean {
   const email = (user?.email || '').toLowerCase();
   if (QUALITY_EMAIL_ALLOWLIST.includes(email)) return true;
-  const roleText = normalizeRoleText(user?.role);
+  const roleText = getCertificateUserRoleText(user);
   return roleMatchesAny(roleText, [
     'calidad',
     'quality',
@@ -106,3 +114,67 @@ export function extractStoragePathFromDownloadUrl(url: string): string | null {
     return null;
   }
 }
+
+/** Rutas de certificado de patrón (excluye subárbol Drive certificados/a/b/...). */
+export function isPatronCertificateStoragePath(storagePath: string): boolean {
+  if (!storagePath || storagePath.includes('..')) return false;
+  const parts = storagePath.split('/').filter(Boolean);
+  if (parts.length !== 3) return false;
+  return parts[0] === CERT_STORAGE_PREFIX || parts[0] === LEGACY_CERT_STORAGE_PREFIX;
+}
+
+/** Validación más amplia para respaldo getDownloadURL (rutas legacy irregulares). */
+export function isReadablePatronCertificatePath(storagePath: string): boolean {
+  if (!storagePath || storagePath.includes('..')) return false;
+  const parts = storagePath.split('/').filter(Boolean);
+  if (parts.length < 2) return false;
+  if (parts[0] !== CERT_STORAGE_PREFIX && parts[0] !== LEGACY_CERT_STORAGE_PREFIX) return false;
+  if (parts[0] === LEGACY_CERT_STORAGE_PREFIX && parts.length >= 4) return false;
+  return true;
+}
+
+export function resolvePatronCertificateStoragePath(meta: {
+  certificadoStoragePath?: string;
+  certificadoUrl?: string;
+}): string | null {
+  const direct = meta.certificadoStoragePath?.trim();
+  if (direct) return direct;
+  const legacyUrl = meta.certificadoUrl?.trim();
+  if (!legacyUrl) return null;
+  return extractStoragePathFromDownloadUrl(legacyUrl);
+}
+
+export function isUsableLegacyCertificadoUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export type PatronCertificadoErrorCode =
+  | 'no-certificate'
+  | 'permission-denied'
+  | 'function-unavailable'
+  | 'storage-denied'
+  | 'network'
+  | 'unknown';
+
+export function patronCertificadoErrorMessage(code: PatronCertificadoErrorCode): string {
+  switch (code) {
+    case 'no-certificate':
+      return 'No hay certificado digital asociado a este patrón.';
+    case 'permission-denied':
+      return 'Sin permiso para ver certificados. Contacte a calidad o administración.';
+    case 'function-unavailable':
+      return 'El servicio de acceso seguro no está disponible. Verifique despliegue de funciones o conexión.';
+    case 'storage-denied':
+      return 'No se pudo acceder al archivo. Verifique permisos o reglas de Storage.';
+    case 'network':
+      return 'Error de conexión. Revise su red e intente de nuevo.';
+    default:
+      return 'No se pudo cargar el certificado. Verifique permisos o conexión.';
+  }
+}
+

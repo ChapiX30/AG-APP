@@ -15,6 +15,8 @@ export {
   normalizeDriveFullPath,
   resolveTechnicianGroupKey,
   shouldTreatAsPendingReview,
+  isServiceSheetDrivePath,
+  qualifiesForPendingReviewList,
   type DriveGroupingFields,
 } from "./pendingReviewDriveLogic";
 

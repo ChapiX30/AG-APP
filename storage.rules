@@ -20,13 +20,13 @@ service firebase.storage {
 
     function canAccessPatronCertificates() {
       return isSignedIn() && roleText().matches(
-        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico|logistica).*'
+        '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico|logistica).*'
       );
     }
 
     function canWritePatronCertificates() {
       return isSignedIn() && roleText().matches(
-        '.*(calidad|quality|admin|gerente|manager|metrologo|tecnico).*'
+        '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico).*'
       );
     }
 
@@ -38,6 +38,27 @@ service firebase.storage {
         );
     }
 
+    /** UUID de patrón en legacy certificados/{uuid}/… — no confundir con carpeta de técnico. */
+    function isPatronUuidFolder(name) {
+      return name.matches(
+        '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      );
+    }
+
+    // Drive PDF certificados — listar/leer (igual que worksheets; incluye raíz certificados/)
+    match /certificados/{allPaths=**} {
+      allow read, list: if isSignedIn();
+    }
+
+    // Drive PDF — escribir solo en carpetas de técnico (no UUID de patrón legacy)
+    match /certificados/{folder}/{allPaths=**} {
+      allow create, update, delete: if isSignedIn() && !isPatronUuidFolder(folder);
+    }
+
+    match /certificados/{folder} {
+      allow create, update, delete: if isSignedIn() && !isPatronUuidFolder(folder);
+    }
+
     // Certificados de patrones — rutas nuevas (UUID, no adivinables)
     match /calibraciones/{patronId}/{fileName} {
       allow read: if canAccessPatronCertificates();
@@ -47,22 +68,15 @@ service firebase.storage {
         && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
     }
 
-    // Legacy: certificados/{patronId}/{archivo}
+    // Legacy: certificados/{patronUuid}/{archivo} — certificados de patrones (no Drive técnico)
     match /certificados/{patronId}/{fileName} {
       allow read: if canAccessPatronCertificates();
       allow create, update: if canWritePatronCertificates()
-        && isAllowedCertificateUpload();
+        && isAllowedCertificateUpload()
+        && isPatronUuidFolder(patronId);
       allow delete: if canWritePatronCertificates()
-        && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
-    }
-
-    // Drive interno bajo certificados/ (subcarpetas; no confundir con patronId/uuid)
-    match /certificados/{folder}/{segment}/{rest=**} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /certificados/{folder}/.keep {
-      allow read, write: if isSignedIn();
+        && roleText().matches('.*(calidad|quality|admin|gerente|manager).*')
+        && isPatronUuidFolder(patronId);
     }
 
     // Hojas de trabajo / Drive worksheets

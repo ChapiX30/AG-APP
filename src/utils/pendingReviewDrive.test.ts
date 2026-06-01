@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import {
   getParentFolderFromPath,
   isMetadataPendingReview,
+  isServiceSheetDrivePath,
   isWorksheetCargadoDrive,
   isWorksheetRealizado,
   isWorksheetUploadedToDrive,
   normalizeDriveFullPath,
+  qualifiesForPendingReviewList,
   resolveTechnicianGroupKey,
   shouldTreatAsPendingReview,
 } from "./pendingReviewDriveLogic";
@@ -57,6 +59,25 @@ assert.equal(
 
 assert.equal(
   shouldTreatAsPendingReview({ completed: false }, { cargado_drive: "Realizado" }),
+  true
+);
+
+const HSDG_PATH = "worksheets/Hojas de Servicio/HSDG-0229.pdf";
+assert.equal(isServiceSheetDrivePath(HSDG_PATH, "HSDG-0229.pdf"), true);
+assert.equal(
+  qualifiesForPendingReviewList(
+    { completed: true, reviewed: false },
+    HSDG_PATH,
+    "HSDG-0229.pdf"
+  ),
+  false
+);
+assert.equal(
+  qualifiesForPendingReviewList(
+    { completed: true, reviewed: false },
+    ABRAHAM_PATH,
+    "CERT-001_EQ-123.pdf"
+  ),
   true
 );
 

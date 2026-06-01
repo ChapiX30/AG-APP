@@ -66,7 +66,7 @@ async function fetchPdfBytes(sourceUrl: string, retries = 2): Promise<Uint8Array
     try {
       const response = await fetch(sourceUrl, {
         mode: "cors",
-        cache: "no-store",
+        cache: "force-cache",
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return new Uint8Array(await response.arrayBuffer());
@@ -86,7 +86,7 @@ async function fetchImageBlobUrl(sourceUrl: string, retries = 2): Promise<string
     try {
       const response = await fetch(sourceUrl, {
         mode: "cors",
-        cache: "no-store",
+        cache: "force-cache",
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const blob = await response.blob();

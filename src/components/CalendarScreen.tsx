@@ -586,7 +586,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 </a>
                             )}
 
-                            {!isPJLA && (
+                            {!isPJLA && isCalidad && (
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -634,6 +634,32 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                             Sin participantes asignados.
                                         </p>
                                     )}
+                                </div>
+                            )}
+
+                            {!isPJLA && !isCalidad && isAssigned && (
+                                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Tu confirmación</p>
+                                    <div className={`flex items-center justify-between p-2.5 bg-white border rounded-xl ${yaEstaEnterado ? 'border-emerald-200' : 'border-amber-200'}`}>
+                                        <div className="flex items-center gap-2">
+                                            <Avatar name={getUserName(currentUser?.id || authUid || '', technicalStaff)} isEnterado={yaEstaEnterado} />
+                                            <div>
+                                                <span className="text-xs font-bold text-slate-700 block">
+                                                    {getUserName(currentUser?.id || authUid || '', technicalStaff)}
+                                                </span>
+                                                {yaEstaEnterado ? (
+                                                    <span className="text-[9px] text-emerald-600 font-semibold">{ackLabel}</span>
+                                                ) : (
+                                                    <span className="text-[9px] text-amber-600 font-semibold">Pendiente de confirmar</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {yaEstaEnterado ? (
+                                            <CheckCircle2 size={16} className="text-emerald-500 shrink-0"/>
+                                        ) : (
+                                            <Clock size={16} className="text-amber-500 shrink-0"/>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 

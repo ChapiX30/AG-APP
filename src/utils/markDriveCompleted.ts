@@ -11,6 +11,7 @@ import {
   getTechnicianFolderFromWorksheet,
 } from "./worksheetPdfGenerator";
 import { notificarCalidadRevisionPendiente } from "./notificacionesRevisionCalidad";
+import { isServiceSheetDrivePath } from "./pendingReviewDriveLogic";
 
 /** Metrólogo terminó la hoja (no confundir con PDF subido → cargado_drive "Si"). */
 const isRealizadoValue = (value: unknown): boolean => {
@@ -159,6 +160,9 @@ export async function markDriveFileCompletedByPath(
   completedByName: string,
   options?: { notify?: boolean }
 ): Promise<void> {
+  const fileName = fullPath.split("/").pop() || "";
+  if (isServiceSheetDrivePath(fullPath, fileName)) return;
+
   const metaId = fullPath.replace(/\//g, "_");
   const ref = doc(db, "fileMetadata", metaId);
   const existing = await getDoc(ref);
