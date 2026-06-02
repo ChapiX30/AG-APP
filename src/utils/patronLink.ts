@@ -23,3 +23,9 @@ export function isPatronUnavailable(estado?: string): boolean {
   if (!estado) return false;
   return (PATRONES_UNAVAILABLE_ESTADOS as readonly string[]).includes(estado);
 }
+
+/** ID estable de documento Firestore a partir del No. de control (p. ej. AG-001). */
+export function patronFirestoreDocId(noControl: string): string {
+  const normalized = (noControl || '').trim().toUpperCase().replace(/\//g, '-').replace(/\s+/g, '_');
+  return normalized || `patron-${crypto.randomUUID()}`;
+}

@@ -105,6 +105,49 @@ export function sortPatronesPorVencimiento(patrones: PatronCalibracionRow[]): Pa
   });
 }
 
+/** Sufijo numérico de códigos AG-### (null si no aplica). */
+export function parseAgNumero(noControl: string): number | null {
+  const m = (noControl || '').trim().match(/^AG-(\d+)$/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Siguiente código AG-### sugerido según el inventario actual. */
+export function suggestNextAgNoControl(patrones: { noControl?: string }[]): string {
+  let max = 0;
+  for (const p of patrones) {
+    const n = parseAgNumero(p.noControl || '');
+    if (n !== null && n > max) max = n;
+  }
+  return `AG-${String(max + 1).padStart(3, '0')}`;
+}
+
+function parsePatronControlSortKey(noControl: string): { prefix: string; num: number; raw: string } {
+  const raw = (noControl || '').trim().toUpperCase();
+  const match = raw.match(/^([A-Z]+S?)-?(\d+)$/);
+  if (match) {
+    return { prefix: match[1], num: parseInt(match[2], 10), raw };
+  }
+  const numMatch = raw.match(/(\d+)/);
+  return {
+    prefix: raw.replace(/\d+/g, '') || raw,
+    num: numMatch ? parseInt(numMatch[1], 10) : Number.MAX_SAFE_INTEGER,
+    raw,
+  };
+}
+
+/** Orden natural por código (AG-001, AG-002, … AG-063, luego otros prefijos). */
+export function comparePatronNoControl(a: string, b: string): number {
+  const ka = parsePatronControlSortKey(a);
+  const kb = parsePatronControlSortKey(b);
+  if (ka.prefix !== kb.prefix) return ka.prefix.localeCompare(kb.prefix);
+  if (ka.num !== kb.num) return ka.num - kb.num;
+  return ka.raw.localeCompare(kb.raw);
+}
+
+export function sortPatronesPorNoControl<T extends { noControl: string }>(patrones: T[]): T[] {
+  return [...patrones].sort((a, b) => comparePatronNoControl(a.noControl, b.noControl));
+}
+
 export function isCalidadRole(puestoOrRole: string | undefined): boolean {
   const p = (puestoOrRole || '').toLowerCase();
   return p.includes('calidad') || p.includes('admin') || p.includes('gerente');

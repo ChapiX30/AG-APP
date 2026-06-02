@@ -273,11 +273,11 @@ export const patronesData: RegistroPatron[] = [
     estadoProceso: 'operativo',
     historial: [],
   },
-  // Nota: AG-020 tiene dos entradas de "Calibración", se usará la segunda.
+  // AG-020: 25 masas 20 kg — 10 + 15, dos envíos a calibración
   {
     noControl: 'AG-020',
-    descripcion: 'Masa 20 kg',
-    serie: 'B02953 a B02967',
+    descripcion: 'Juego de masas 20 kg (25 piezas: 10 + 15)',
+    serie: 'B02953 a B02977',
     marca: 'Provimex Cientifica',
     modelo: 'PVE-20KM1',
     frecuencia: '12 Meses ± 5 Dias',
@@ -288,6 +288,25 @@ export const patronesData: RegistroPatron[] = [
     responsable: 'Jesús Sustaita',
     estadoProceso: 'operativo',
     historial: [],
+    partesCalibracion: [
+      {
+        id: 'parte-1',
+        etiqueta: 'Parte 1',
+        descripcion: 'Primer envío a calibración (10 masas)',
+        serie: 'B02953 a B02962',
+        cantidadMasas: 10,
+        fechaVencimiento: '2025-04-03',
+        estadoParte: 'operativo',
+      },
+      {
+        id: 'parte-2',
+        etiqueta: 'Parte 2',
+        descripcion: 'Segundo envío a calibración (15 masas)',
+        serie: 'B02963 a B02977',
+        cantidadMasas: 15,
+        estadoParte: 'operativo',
+      },
+    ],
   },
   {
     noControl: 'AG-021',

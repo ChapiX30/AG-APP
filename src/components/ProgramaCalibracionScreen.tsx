@@ -8,7 +8,7 @@ import {
   Activity, Wrench, ArrowLeft, X,
   User, FileText, ChevronRight, Truck, ClipboardCheck, Ban,
   DollarSign, History, Edit3, UploadCloud, ExternalLink, AlertOctagon, File,
-  FileBarChart
+  FileBarChart, Sparkles, Loader2
 } from 'lucide-react';
 
 import { useNavigation } from '../hooks/useNavigation';
@@ -30,6 +30,17 @@ import {
 } from '../utils/patronCertificadoUrl';
 import { patronesData } from './patronesData';
 import { notificarPrestamoPatronPlanta } from '../utils/notificacionesPrestamoPatron';
+import { sortPatronesPorNoControl, suggestNextAgNoControl } from '../utils/patronCalibracion';
+import { patronFirestoreDocId } from '../utils/patronLink';
+import { extractPatronCertificadoFromFile } from '../utils/patronCertificadoExtract';
+import {
+  type PatronParteCalibracion,
+  patronTienePartes,
+  getPatronFechaVencimientoEfectiva,
+  getPatronEstadoDesdePartes,
+  actualizarParteEnPatron,
+  parteEstaVencida,
+} from '../utils/patronPartes';
 import toast, { Toaster } from 'react-hot-toast';
 import labLogo from '../assets/lab_logo.png';
 
@@ -76,9 +87,72 @@ export interface RegistroPatron {
   // KPIs
   costoAcumuladoMantenimiento: number;
   historial: HistorialEntry[];
+  /** Patrones divididos (ej. AG-020: 25 masas en 2 envíos). */
+  partesCalibracion?: PatronParteCalibracion[];
 }
 
 const COLLECTION_NAME = "patronesCalibracion";
+
+const parseFrecuenciaMeses = (frecuencia?: string | number): number => {
+  if (typeof frecuencia === 'number' && frecuencia > 0) return frecuencia;
+  if (!frecuencia) return 12;
+  const m = String(frecuencia).match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 12;
+};
+
+const normalizePatron = (raw: Partial<RegistroPatron> & Record<string, unknown>): RegistroPatron => {
+  const noControl = String(raw.noControl || '').trim();
+  return {
+    noControl,
+    descripcion: String(raw.descripcion || ''),
+    marca: String(raw.marca || ''),
+    modelo: String(raw.modelo || ''),
+    serie: String(raw.serie || ''),
+    frecuenciaMeses: raw.frecuenciaMeses ?? parseFrecuenciaMeses(raw.frecuencia as string | number | undefined),
+    fecha: raw.fecha,
+    fechaVencimiento: raw.fechaVencimiento || raw.fecha,
+    fechaUltimaCalibracion: raw.fechaUltimaCalibracion,
+    laboratorioCalibracion: raw.laboratorioCalibracion,
+    certificadoUrl: raw.certificadoUrl,
+    certificadoStoragePath: raw.certificadoStoragePath,
+    estadoProceso: (raw.estadoProceso as EstadoProceso) || 'operativo',
+    ubicacionActual: raw.ubicacionActual || (raw.ubicacion as string | undefined),
+    ubicacion: raw.ubicacion as string | undefined,
+    usuarioAsignado: raw.usuarioAsignado,
+    usuarioEnUso: raw.usuarioEnUso,
+    costoAcumuladoMantenimiento: raw.costoAcumuladoMantenimiento ?? 0,
+    historial: raw.historial ?? [],
+    partesCalibracion: Array.isArray(raw.partesCalibracion)
+      ? (raw.partesCalibracion as PatronParteCalibracion[])
+      : undefined,
+    id: raw.id || (noControl ? patronFirestoreDocId(noControl) : undefined),
+  };
+};
+
+/** Catálogo local + Firestore; el remoto gana en campos en conflicto. */
+const mergePatronesInventario = (
+  firebaseItems: RegistroPatron[],
+  seed: RegistroPatron[],
+): RegistroPatron[] => {
+  const byKey = new Map<string, RegistroPatron>();
+  for (const raw of seed) {
+    const p = normalizePatron(raw);
+    const key = p.noControl.toUpperCase();
+    if (key) byKey.set(key, p);
+  }
+  for (const raw of firebaseItems) {
+    const p = normalizePatron(raw);
+    const key = p.noControl.toUpperCase();
+    if (!key) continue;
+    const prev = byKey.get(key);
+    byKey.set(key, {
+      ...prev,
+      ...p,
+      id: p.id || prev?.id || patronFirestoreDocId(p.noControl),
+    });
+  }
+  return sortPatronesPorNoControl([...byKey.values()]);
+};
 
 const PLACEHOLDER_USUARIOS = new Set([
   'usuario actual',
@@ -101,7 +175,7 @@ export const resolveHistorialUsuario = (usuario?: string, descripcion?: string):
 type ToastItem = { id: string; message: string; type: 'success' | 'info' | 'error' };
 
 // --- HELPERS SEGUROS ---
-const getFechaVencimiento = (item: RegistroPatron): string => item.fecha || item.fechaVencimiento || '';
+const getFechaVencimiento = (item: RegistroPatron): string => getPatronFechaVencimientoEfectiva(item);
 const getUbicacion = (item: RegistroPatron): string => item.ubicacionActual || item.ubicacion || 'Laboratorio';
 const getUsuario = (item: RegistroPatron): string => item.usuarioEnUso || item.usuarioAsignado || 'Sin Asignar';
 
@@ -164,11 +238,12 @@ const usePatronesLogic = (actorName: string) => {
       const q = query(collection(db, COLLECTION_NAME)); 
       const snapshot = await getDocs(q);
       const items: RegistroPatron[] = [];
-      snapshot.forEach(d => items.push({ id: d.id, ...d.data() } as RegistroPatron));
-      setData(items.length > 0 ? items : (patronesData as any));
+      snapshot.forEach(d => items.push(normalizePatron({ id: d.id, ...(d.data() as Record<string, unknown>) })));
+      setData(mergePatronesInventario(items, patronesData as RegistroPatron[]));
     } catch (error) {
       console.error("Error Firebase:", error);
-      setData(patronesData as any);
+      setData(mergePatronesInventario([], patronesData as RegistroPatron[]));
+      toast.error('No se pudo sincronizar con Firestore. Mostrando inventario local.');
     } finally {
       setLoading(false);
     }
@@ -177,7 +252,11 @@ const usePatronesLogic = (actorName: string) => {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const registrarEvento = async (patron: RegistroPatron, titulo: string, descripcion: string, tipo: HistorialEntry['tipo'], updates: Partial<RegistroPatron>, costo: number = 0) => {
-    if (!patron.id) return false;
+    const docId = patron.id || (patron.noControl ? patronFirestoreDocId(patron.noControl) : '');
+    if (!docId || !patron.noControl?.trim()) {
+      toast.error('No se puede actualizar: falta No. de control del patrón.');
+      return false;
+    }
     
     const nuevoHistorial: HistorialEntry = {
       id: crypto.randomUUID(),
@@ -201,11 +280,64 @@ const usePatronesLogic = (actorName: string) => {
     if (updates.ubicacionActual) updatePayload.ubicacion = updates.ubicacionActual;
 
     try {
-      await setDoc(doc(db, COLLECTION_NAME, patron.id), updatePayload, { merge: true });
+      await setDoc(doc(db, COLLECTION_NAME, docId), updatePayload, { merge: true });
       await fetchData(); 
       return true;
     } catch (e) {
-      alert("Error al guardar cambios");
+      toast.error('Error al guardar cambios. Verifique permisos y conexión.');
+      return false;
+    }
+  };
+
+  const agregarPatron = async (datos: Partial<RegistroPatron>): Promise<boolean> => {
+    const noControl = (datos.noControl || '').trim().toUpperCase();
+    if (!noControl) {
+      toast.error('El No. de control es obligatorio (ej. AG-064).');
+      return false;
+    }
+    if (!(datos.descripcion || '').trim()) {
+      toast.error('La descripción del patrón es obligatoria.');
+      return false;
+    }
+    if (data.some(p => p.noControl.trim().toUpperCase() === noControl)) {
+      toast.error(`Ya existe un patrón con No. de control ${noControl}.`);
+      return false;
+    }
+
+    const docId = patronFirestoreDocId(noControl);
+    const fechaVenc = datos.fechaVencimiento || datos.fecha || '';
+    const nuevo: RegistroPatron = normalizePatron({
+      noControl,
+      descripcion: (datos.descripcion || '').trim(),
+      marca: (datos.marca || '').trim(),
+      modelo: (datos.modelo || '').trim(),
+      serie: (datos.serie || '').trim(),
+      frecuenciaMeses: datos.frecuenciaMeses ?? 12,
+      fecha: fechaVenc || undefined,
+      fechaVencimiento: fechaVenc || undefined,
+      estadoProceso: 'operativo',
+      ubicacionActual: 'Laboratorio',
+      ubicacion: 'Laboratorio',
+      costoAcumuladoMantenimiento: 0,
+      historial: [{
+        id: crypto.randomUUID(),
+        fecha: new Date().toISOString(),
+        titulo: 'Alta en inventario',
+        usuario: actorName || 'Sistema',
+        tipo: 'sistema',
+        descripcion: `Patrón ${noControl} registrado en el programa de calibración.`,
+      }],
+      id: docId,
+    });
+
+    try {
+      await setDoc(doc(db, COLLECTION_NAME, docId), nuevo, { merge: true });
+      await fetchData();
+      toast.success(`Patrón ${noControl} agregado correctamente.`);
+      return true;
+    } catch (e) {
+      console.error('Error al agregar patrón:', e);
+      toast.error('No se pudo guardar el patrón. Verifique permisos y conexión.');
       return false;
     }
   };
@@ -217,10 +349,13 @@ const usePatronesLogic = (actorName: string) => {
           await setDoc(doc(db, COLLECTION_NAME, id), payload, { merge: true });
           await fetchData();
           return true;
-      } catch(e) { return false; }
+      } catch(e) {
+        toast.error('No se pudieron guardar los datos del patrón.');
+        return false;
+      }
   };
 
-  return { data, loading, stats, registrarEvento, editarDatosBase };
+  return { data, loading, stats, registrarEvento, editarDatosBase, agregarPatron };
 };
 
 // --- 3. COMPONENTES VISUALES ---
@@ -283,47 +418,97 @@ const KPICard = ({ title, value, icon: Icon, color, subtext }: any) => {
 
 // --- 4. COMPONENTES DE ARCHIVOS ---
 
-const FileUploader = ({ onFileSelect }: { onFileSelect: (f: File | null) => void }) => {
+const CertificadoFileUploader = ({
+  onFileSelect,
+  onExtracted,
+  frecuenciaMeses = 12,
+}: {
+  onFileSelect: (f: File | null) => void;
+  onExtracted?: (data: {
+    laboratorio?: string;
+    certificado?: string;
+    nuevaFecha?: string;
+    confianza: number;
+  }) => void;
+  frecuenciaMeses?: number;
+}) => {
     const [fileName, setFileName] = useState<string | null>(null);
+    const [scanning, setScanning] = useState(false);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            const validationError = validateCertificateFile(file);
-            if (validationError) {
-              toast.error(validationError);
-              e.target.value = '';
-              setFileName(null);
-              onFileSelect(null);
-              return;
+    const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files?.[0]) return;
+        const file = e.target.files[0];
+        const validationError = validateCertificateFile(file);
+        if (validationError) {
+          toast.error(validationError);
+          e.target.value = '';
+          setFileName(null);
+          onFileSelect(null);
+          return;
+        }
+        setFileName(file.name);
+        onFileSelect(file);
+
+        if (onExtracted) {
+          setScanning(true);
+          try {
+            const extracted = await extractPatronCertificadoFromFile(file, frecuenciaMeses);
+            if (extracted.confianza > 0) {
+              onExtracted({
+                laboratorio: extracted.laboratorio,
+                certificado: extracted.noCertificado,
+                nuevaFecha: extracted.fechaVencimiento,
+                confianza: extracted.confianza,
+              });
+              toast.success(
+                `Datos leídos del certificado (${extracted.confianza}% — ${extracted.metodo})`,
+                { duration: 4000 },
+              );
+            } else {
+              toast('No se detectaron datos claros. Complete los campos manualmente.', { icon: 'ℹ️' });
             }
-            setFileName(file.name);
-            onFileSelect(file);
+          } catch (err) {
+            console.warn('Lectura certificado:', err);
+            toast.error('No se pudo leer el archivo. Ingrese los datos manualmente.');
+          } finally {
+            setScanning(false);
+          }
         }
     };
 
     return (
-        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors cursor-pointer relative group">
-            <input 
-                type="file" 
+        <div className="relative">
+          <div className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center transition-colors cursor-pointer group [color-scheme:light] ${scanning ? 'border-[#2464A3] bg-blue-50/80' : 'border-slate-300 hover:border-[#2464A3] hover:bg-slate-50'}`}>
+            <input
+                type="file"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 onChange={handleChange}
+                disabled={scanning}
                 accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
             />
-            <div className="bg-blue-50 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                <UploadCloud className={`w-6 h-6 ${fileName ? 'text-blue-600' : 'text-gray-400'}`} />
+            <div className={`p-3 rounded-full mb-3 transition-transform ${scanning ? 'bg-[#2464A3]/15' : 'bg-blue-50 group-hover:scale-105'}`}>
+                {scanning ? (
+                  <Loader2 className="w-6 h-6 text-[#2464A3] animate-spin" />
+                ) : (
+                  <UploadCloud className={`w-6 h-6 ${fileName ? 'text-[#2464A3]' : 'text-slate-400'}`} />
+                )}
             </div>
-            {fileName ? (
+            {scanning ? (
+              <p className="text-sm font-semibold text-[#2464A3]">Leyendo certificado…</p>
+            ) : fileName ? (
                 <div>
-                    <p className="text-sm font-bold text-blue-700 break-all">{fileName}</p>
-                    <p className="text-xs text-green-600 font-medium mt-1">Archivo seleccionado</p>
+                    <p className="text-sm font-bold text-slate-800 break-all">{fileName}</p>
+                    <p className="text-xs text-emerald-600 font-medium mt-1 flex items-center justify-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Listo — datos detectados si el PDF lo permite
+                    </p>
                 </div>
             ) : (
                 <div>
-                    <p className="text-sm font-medium text-gray-700">Sube tu certificado aquí</p>
-                    <p className="text-xs text-gray-400 mt-1">PDF o imagen, máx. 10 MB</p>
+                    <p className="text-sm font-semibold text-slate-800">Sube el certificado (PDF o imagen)</p>
+                    <p className="text-xs text-slate-500 mt-1">Lectura automática de laboratorio, no. certificado y fechas</p>
                 </div>
             )}
+          </div>
         </div>
     );
 };
@@ -398,9 +583,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   const { user } = useAuth();
   const actorName = user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario';
   const actorUid = user?.id || '';
-  const { data, loading, stats, registrarEvento, editarDatosBase } = usePatronesLogic(actorName);
+  const { data, loading, stats, registrarEvento, editarDatosBase, agregarPatron } = usePatronesLogic(actorName);
   
-  const [tab, setTab] = useState<'todo' | 'alertas' | 'servicio'>('alertas');
+  const [tab, setTab] = useState<'todo' | 'alertas' | 'servicio'>('todo');
   const [busqueda, setBusqueda] = useState('');
   
   const [selectedItem, setSelectedItem] = useState<RegistroPatron | null>(null);
@@ -429,15 +614,19 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       );
     }
     
-    return result.sort((a, b) => {
-        const fa = getFechaVencimiento(a) || '2099-12-31';
-        const fb = getFechaVencimiento(b) || '2099-12-31';
-        return fa.localeCompare(fb);
-    });
+    return sortPatronesPorNoControl(result);
   }, [data, tab, busqueda]);
 
   const handleProcessWorkflow = async (formData: any, file?: File) => {
-      if(!selectedItem || !workflowAction) return;
+      if (!workflowAction) return;
+
+      if (workflowAction === 'agregar_patron') {
+        const ok = await agregarPatron(formData);
+        if (ok) setWorkflowAction(null);
+        return;
+      }
+
+      if(!selectedItem) return;
 
       let success = false;
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -454,7 +643,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
           return;
         }
         try {
-          const storagePath = buildCertificateStoragePath(selectedItem.id!, file);
+          const storagePath = buildCertificateStoragePath(
+            selectedItem.id!,
+            file,
+            formData.parteId as string | undefined,
+          );
           const storageRef = ref(storage, storagePath);
           await uploadBytes(storageRef, file, {
             contentType: file.type || 'application/pdf',
@@ -468,10 +661,28 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       }
 
       switch(workflowAction) {
-          case 'calibrar_envio':
-              success = await registrarEvento(selectedItem, 'Envío a Calibración', `Proveedor: ${formData.proveedor}`, 'flujo', { estadoProceso: 'en_calibracion', ubicacionActual: 'Externo' });
+          case 'calibrar_envio': {
+              const parteIdEnvio = formData.parteId as string | undefined;
+              const parteEnv = selectedItem.partesCalibracion?.find(p => p.id === parteIdEnvio);
+              const descEnvio = parteEnv
+                ? `${parteEnv.etiqueta}: Proveedor ${formData.proveedor}`
+                : `Proveedor: ${formData.proveedor}`;
+              let updatesEnvio: Partial<RegistroPatron> = {
+                estadoProceso: 'en_calibracion',
+                ubicacionActual: 'Externo',
+              };
+              if (patronTienePartes(selectedItem) && parteIdEnvio && selectedItem.partesCalibracion) {
+                const partes = actualizarParteEnPatron(selectedItem.partesCalibracion, parteIdEnvio, {
+                  estadoParte: 'en_calibracion',
+                });
+                updatesEnvio = { ...updatesEnvio, partesCalibracion: partes, estadoProceso: getPatronEstadoDesdePartes(partes) };
+              }
+              success = await registrarEvento(selectedItem, 'Envío a Calibración', descEnvio, 'flujo', updatesEnvio);
               break;
+          }
           case 'calibrar_recepcion': {
+              const parteId = formData.parteId as string | undefined;
+              const parte = selectedItem.partesCalibracion?.find(p => p.id === parteId);
               const recepcionUpdates: Partial<RegistroPatron> & { certificadoUrl?: ReturnType<typeof deleteField> } = {
                   estadoProceso: 'operativo',
                   ubicacionActual: 'Laboratorio',
@@ -483,7 +694,26 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                   recepcionUpdates.certificadoStoragePath = certificadoStoragePath;
                   recepcionUpdates.certificadoUrl = deleteField();
               }
-              success = await registrarEvento(selectedItem, 'Calibración Finalizada', `Lab: ${formData.laboratorio}`, 'calibracion', recepcionUpdates);
+              if (patronTienePartes(selectedItem) && parteId && selectedItem.partesCalibracion) {
+                const partes = actualizarParteEnPatron(selectedItem.partesCalibracion, parteId, {
+                  estadoParte: 'operativo',
+                  fechaVencimiento: formData.nuevaFecha,
+                  fechaUltimaCalibracion: today,
+                  laboratorioCalibracion: formData.laboratorio,
+                  noCertificado: formData.certificado,
+                  certificadoStoragePath: certificadoStoragePath || undefined,
+                });
+                const fechas = partes.map(p => p.fechaVencimiento).filter(Boolean).sort() as string[];
+                recepcionUpdates.partesCalibracion = partes;
+                recepcionUpdates.estadoProceso = getPatronEstadoDesdePartes(partes);
+                if (fechas.length) recepcionUpdates.fechaVencimiento = fechas[0];
+                if (fechas.length) recepcionUpdates.fecha = fechas[0];
+              }
+              const tituloRec = parte ? `Calibración — ${parte.etiqueta}` : 'Calibración Finalizada';
+              const descRec = parte
+                ? `Lab: ${formData.laboratorio} | Cert: ${formData.certificado || '—'}`
+                : `Lab: ${formData.laboratorio}`;
+              success = await registrarEvento(selectedItem, tituloRec, descRec, 'calibracion', recepcionUpdates);
               break;
           }
           case 'reportar_falla':
@@ -575,15 +805,24 @@ export const ProgramaCalibracionScreen: React.FC = () => {
              <TabButton active={tab === 'servicio'} onClick={() => setTab('servicio')} label="En Planta" count={stats.enUso} />
              <TabButton active={tab === 'todo'} onClick={() => setTab('todo')} label="Todo el Inventario" />
           </div>
-          <div className="relative w-full md:w-80">
-             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-             <input 
-               type="text" 
-               placeholder="Buscar control, serie, descripción..." 
-               className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#2464A3]/30 focus:border-[#2464A3] outline-none shadow-inner transition-all"
-               value={busqueda}
-               onChange={e => setBusqueda(e.target.value)}
-             />
+          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto md:items-center">
+            <button
+              type="button"
+              onClick={() => setWorkflowAction('agregar_patron')}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2464A3] text-white rounded-xl text-sm font-semibold shadow-md hover:bg-[#1d5082] transition-colors whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" /> Agregar patrón
+            </button>
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input 
+                type="text" 
+                placeholder="Buscar control, serie, descripción..." 
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#2464A3]/30 focus:border-[#2464A3] outline-none shadow-inner transition-all"
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+              />
+            </div>
           </div>
         </div>
 
@@ -603,6 +842,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
                        <tr><td colSpan={5} className="p-10 text-center text-slate-400">Cargando inventario...</td></tr>
+                  ) : filteredData.length === 0 ? (
+                       <tr><td colSpan={5} className="p-10 text-center text-slate-400">No hay patrones en esta vista. Prueba &quot;Todo el Inventario&quot; o agrega uno nuevo.</td></tr>
                   ) : filteredData.map((item) => {
                     const fechaVenc = getFechaVencimiento(item);
                     const urgency = getCalibracionUrgency(item);
@@ -647,10 +888,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
       {/* --- MODAL DE FLUJO --- */}
       <AnimatePresence>
-        {workflowAction && selectedItem && (
+        {workflowAction && (workflowAction === 'agregar_patron' || selectedItem) && (
             <WorkflowDialog 
                 action={workflowAction} 
-                item={selectedItem} 
+                item={selectedItem}
+                suggestedNoControl={suggestNextAgNoControl(data)}
                 onClose={() => setWorkflowAction(null)}
                 onConfirm={handleProcessWorkflow}
             />
@@ -722,6 +964,43 @@ const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
                         {/* TAB 1: INFO GENERAL */}
                         {panelTab === 'info' && (
                             <div className="space-y-6">
+                                {patronTienePartes(selectedItem) && selectedItem.partesCalibracion && (
+                                  <div className="bg-white p-5 rounded-2xl border border-amber-200/80 shadow-sm">
+                                    <h3 className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                      Calibración por partes
+                                    </h3>
+                                    <p className="text-xs text-slate-600 mb-3">Este patrón se envía y recibe en varios certificados (ej. masas por lotes).</p>
+                                    <div className="space-y-2">
+                                      {selectedItem.partesCalibracion.map((parte) => {
+                                        const fv = parte.fechaVencimiento || '';
+                                        const vencida = parteEstaVencida(parte);
+                                        return (
+                                          <div
+                                            key={parte.id}
+                                            className={`rounded-xl border p-3 text-sm ${parte.estadoParte === 'en_calibracion' ? 'border-blue-300 bg-blue-50' : vencida ? 'border-red-200 bg-red-50/50' : 'border-slate-200 bg-slate-50/80'}`}
+                                          >
+                                            <div className="flex justify-between items-start gap-2">
+                                              <span className="font-bold text-slate-900">{parte.etiqueta}</span>
+                                              {parte.estadoParte === 'en_calibracion' && (
+                                                <span className="text-[10px] font-bold uppercase text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">En calibración</span>
+                                              )}
+                                            </div>
+                                            {parte.descripcion && <p className="text-xs text-slate-600 mt-1">{parte.descripcion}</p>}
+                                            {parte.serie && <p className="text-xs font-mono text-slate-500 mt-1">Serie: {parte.serie}</p>}
+                                            {parte.cantidadMasas != null && (
+                                              <p className="text-xs text-slate-500">{parte.cantidadMasas} masas</p>
+                                            )}
+                                            {fv && (
+                                              <p className={`text-xs mt-1 font-medium ${vencida ? 'text-red-700' : 'text-slate-600'}`}>
+                                                Vence: {isValid(parseISO(fv)) ? format(parseISO(fv), 'dd MMM yyyy', { locale: es }) : fv}
+                                              </p>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Especificaciones</h3>
                                     <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
@@ -926,6 +1205,10 @@ const SmartActionButton = ({ item, setAction }: any) => {
     let isExpired = false;
     try { isExpired = f ? differenceInDays(parseISO(f), new Date()) <= 0 : false; } catch(e){}
 
+    if (patronTienePartes(item) && item.partesCalibracion?.some(p => p.estadoParte === 'en_calibracion')) {
+        return <BigBtn onClick={() => setAction('calibrar_recepcion')} icon={ClipboardCheck} label="Recibir certificado (parte en lab)" color="green" />;
+    }
+
     if (item.estadoProceso === 'en_calibracion') {
         return <BigBtn onClick={() => setAction('calibrar_recepcion')} icon={ClipboardCheck} label="Recibir y Subir Certificado" color="green" />;
     }
@@ -965,8 +1248,30 @@ const TabButton = ({ active, onClick, label, count }: any) => (
     </button>
 );
 
-const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
-    const [form, setForm] = useState<any>({ ...item, nuevaFecha: getFechaVencimiento(item) });
+const WORKFLOW_INPUT_CLASS =
+  'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 shadow-sm ' +
+  'focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/25 focus:outline-none transition-colors [color-scheme:light]';
+
+const WORKFLOW_TEXTAREA_CLASS =
+  'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm ' +
+  'focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/25 focus:outline-none [color-scheme:light]';
+
+const WorkflowDialog = ({ action, item, onClose, onConfirm, suggestedNoControl }: any) => {
+    const [form, setForm] = useState<any>(() => {
+      if (action === 'agregar_patron') {
+        return { noControl: suggestedNoControl || '', descripcion: '', marca: '', modelo: '', serie: '', frecuenciaMeses: 12, fechaVencimiento: '' };
+      }
+      const primeraParte = item?.partesCalibracion?.[0]?.id || '';
+      const parteEnCalib = item?.partesCalibracion?.find((p: PatronParteCalibracion) => p.estadoParte === 'en_calibracion')?.id;
+      return {
+        ...item,
+        nuevaFecha: getFechaVencimiento(item),
+        parteId: parteEnCalib || primeraParte,
+        laboratorio: '',
+        certificado: '',
+        proveedor: '',
+      };
+    });
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
 
@@ -978,6 +1283,30 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
 
     const renderContent = () => {
         switch(action) {
+            case 'agregar_patron':
+                return (
+                    <div className="space-y-4">
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          Registra un nuevo patrón en el inventario. El código suele seguir la serie <span className="font-mono font-semibold text-[#2464A3]">AG-###</span>.
+                        </p>
+                        <Input
+                          label="No. de control"
+                          placeholder="AG-064"
+                          val={form.noControl}
+                          mono
+                          hint="Código único del activo (ej. AG-064)"
+                          onChange={(v: string) => setForm({...form, noControl: v.toUpperCase()})}
+                        />
+                        <Input label="Descripción" placeholder="Nombre o tipo de equipo" val={form.descripcion} onChange={(v: string) => setForm({...form, descripcion: v})} />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <Input label="Marca" placeholder="Mitutoyo" val={form.marca} onChange={(v: string) => setForm({...form, marca: v})} />
+                            <Input label="Modelo" placeholder="Modelo" val={form.modelo} onChange={(v: string) => setForm({...form, modelo: v})} />
+                            <Input label="Serie" placeholder="Número de serie" val={form.serie} onChange={(v: string) => setForm({...form, serie: v})} />
+                            <Input label="Frecuencia (meses)" type="number" placeholder="12" val={form.frecuenciaMeses} onChange={(v: string) => setForm({...form, frecuenciaMeses: Number(v) || 12})} />
+                        </div>
+                        <Input label="Fecha de vencimiento (opcional)" type="date" val={form.fechaVencimiento} onChange={(v: string) => setForm({...form, fechaVencimiento: v})} />
+                    </div>
+                );
             case 'editar_base':
                 return (
                     <div className="space-y-3">
@@ -1000,14 +1329,14 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
                              <p>Esto marcará el equipo como "Con Falla" y alertará a mantenimiento.</p>
                          </div>
                          <label className="block text-sm font-medium text-gray-700">Detalle de la Falla</label>
-                         <textarea className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-red-500 outline-none" rows={3} placeholder="Describe el problema..." onChange={e => setForm({...form, motivo: e.target.value})}></textarea>
+                         <textarea className={WORKFLOW_TEXTAREA_CLASS} rows={3} placeholder="Describe el problema..." onChange={e => setForm({...form, motivo: e.target.value})}></textarea>
                      </div>
                  );
             case 'mantenimiento_inicio':
                 return (
                     <div className="space-y-3">
                         <label className="block text-sm font-medium text-gray-700">Diagnóstico Inicial</label>
-                        <textarea className="w-full border p-2 rounded-lg" rows={3} placeholder="¿Qué se va a revisar?" onChange={e => setForm({...form, motivo: e.target.value})}></textarea>
+                        <textarea className={WORKFLOW_TEXTAREA_CLASS} rows={3} placeholder="¿Qué se va a revisar?" onChange={e => setForm({...form, motivo: e.target.value})}></textarea>
                     </div>
                 );
             case 'mantenimiento_fin':
@@ -1018,23 +1347,49 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
                     </div>
                 );
             case 'calibrar_envio':
-                return <Input label="Proveedor de Servicio" val={form.proveedor} onChange={(v: string) => setForm({...form, proveedor: v})} />;
+                return (
+                  <div className="space-y-4">
+                    {patronTienePartes(item) && item.partesCalibracion && (
+                      <ParteCalibracionPicker
+                        partes={item.partesCalibracion}
+                        value={form.parteId}
+                        onChange={(parteId) => setForm({ ...form, parteId })}
+                      />
+                    )}
+                    <Input label="Proveedor de servicio" placeholder="Laboratorio externo" val={form.proveedor} onChange={(v: string) => setForm({...form, proveedor: v})} />
+                  </div>
+                );
             case 'calibrar_recepcion':
                  return (
                     <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-3">
+                        {patronTienePartes(item) && item.partesCalibracion && (
+                          <ParteCalibracionPicker
+                            partes={item.partesCalibracion}
+                            value={form.parteId}
+                            onChange={(parteId) => setForm({ ...form, parteId })}
+                          />
+                        )}
+                        <div className="flex items-start gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-sm text-emerald-900">
+                          <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                          <p>Al subir el PDF, el sistema intenta llenar laboratorio, certificado y fechas automáticamente.</p>
+                        </div>
+                        <CertificadoFileUploader
+                          frecuenciaMeses={item?.frecuenciaMeses || 12}
+                          onFileSelect={setSelectedFile}
+                          onExtracted={(d) => setForm((f: Record<string, unknown>) => ({
+                            ...f,
+                            laboratorio: d.laboratorio || f.laboratorio,
+                            certificado: d.certificado || f.certificado,
+                            nuevaFecha: d.nuevaFecha || f.nuevaFecha,
+                          }))}
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <Input label="Laboratorio" placeholder="Ej. Mitutoyo" val={form.laboratorio} onChange={(v: string) => setForm({...form, laboratorio: v})} />
-                            <Input label="No. Certificado" placeholder="ABC-123" val={form.certificado} onChange={(v: string) => setForm({...form, certificado: v})} />
+                            <Input label="No. certificado" placeholder="ABC-123" val={form.certificado} onChange={(v: string) => setForm({...form, certificado: v})} />
                         </div>
-                        
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Certificado Digital</label>
-                            <FileUploader onFileSelect={setSelectedFile} />
-                        </div>
-
-                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                             <Input label="Próxima Calibración" type="date" val={form.nuevaFecha} onChange={(v: string) => setForm({...form, nuevaFecha: v})} />
-                             <p className="text-xs text-blue-600 mt-1">* Se calculará automáticamente basado en la frecuencia si dejas vacío.</p>
+                        <div className="rounded-xl bg-blue-50/90 border border-blue-100 p-4 [color-scheme:light]">
+                             <Input label="Próxima calibración / vencimiento" type="date" val={form.nuevaFecha} onChange={(v: string) => setForm({...form, nuevaFecha: v})} />
+                             <p className="text-xs text-blue-700 mt-2">Si queda vacío, se estima según la frecuencia del patrón ({item?.frecuenciaMeses || 12} meses).</p>
                         </div>
                     </div>
                  );
@@ -1046,6 +1401,7 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
 
     const getTitle = () => {
         const titles: any = {
+            agregar_patron: 'Agregar patrón al inventario',
             editar_base: 'Editar Datos Maestros',
             reportar_falla: 'Reportar Incidencia',
             mantenimiento_inicio: 'Iniciar Reparación',
@@ -1058,25 +1414,50 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
         return titles[action] || 'Acción';
     };
 
+    const isAddPatron = action === 'agregar_patron';
+
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(15,23,42,0.25)] w-full max-w-md overflow-hidden border border-slate-200/80">
-                <div className="px-6 py-4 border-b bg-gradient-to-r from-slate-50 to-white flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800">{getTitle()}</h3>
-                    <button onClick={onClose}><X className="w-5 h-5 text-gray-400"/></button>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="[color-scheme:light] bg-white rounded-2xl shadow-[0_24px_64px_rgba(15,23,42,0.28)] w-full max-w-lg overflow-hidden border border-slate-200"
+            >
+                <div className={`px-6 py-4 border-b flex justify-between items-start gap-3 ${isAddPatron ? 'bg-gradient-to-r from-[#2464A3] to-[#1d5082] border-[#1a5085]/30' : 'bg-slate-50 border-slate-200'}`}>
+                    <div>
+                      <h3 className={`font-bold text-lg tracking-tight ${isAddPatron ? 'text-white' : 'text-slate-900'}`}>{getTitle()}</h3>
+                      {isAddPatron && (
+                        <p className="text-xs text-white/80 mt-0.5">Complete los datos del nuevo activo</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className={`p-2 rounded-lg transition-colors shrink-0 ${isAddPatron ? 'text-white/80 hover:bg-white/15 hover:text-white' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}
+                      aria-label="Cerrar"
+                    >
+                      <X className="w-5 h-5"/>
+                    </button>
                 </div>
-                <div className="p-6">
+                <div className="p-6 max-h-[min(70vh,520px)] overflow-y-auto bg-white">
                     {renderContent()}
                 </div>
-                <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
-                    <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium">Cancelar</button>
-                    <button 
-                        onClick={handleConfirm} 
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-4 py-2.5 text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl text-sm font-semibold transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
                         disabled={isUploading}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm flex items-center gap-2"
+                        className="px-5 py-2.5 bg-[#2464A3] text-white rounded-xl text-sm font-bold hover:bg-[#1d5082] shadow-md shadow-blue-900/20 flex items-center justify-center gap-2 disabled:opacity-60 transition-colors"
                     >
                         {isUploading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-                        {isUploading ? 'Subiendo...' : 'Confirmar'}
+                        {isUploading ? 'Guardando…' : isAddPatron ? 'Agregar patrón' : 'Confirmar'}
                     </button>
                 </div>
             </motion.div>
@@ -1084,15 +1465,63 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm }: any) => {
     );
 };
 
-const Input = ({ label, val, onChange, type = "text", placeholder }: any) => (
+const ParteCalibracionPicker = ({
+  partes,
+  value,
+  onChange,
+}: {
+  partes: PatronParteCalibracion[];
+  value?: string;
+  onChange: (id: string) => void;
+}) => (
+  <div className="space-y-2">
+    <label className="block text-xs font-semibold text-slate-600">¿Qué parte registra?</label>
+    <div className="grid gap-2">
+      {partes.map((p) => {
+        const active = value === p.id;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onChange(p.id)}
+            className={`w-full text-left rounded-xl border px-3 py-2.5 transition-all [color-scheme:light] ${
+              active
+                ? 'border-[#2464A3] bg-blue-50 ring-2 ring-[#2464A3]/20'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            <span className="font-semibold text-slate-900 text-sm">{p.etiqueta}</span>
+            {p.descripcion && <span className="block text-xs text-slate-500 mt-0.5">{p.descripcion}</span>}
+            {p.estadoParte === 'en_calibracion' && (
+              <span className="inline-block mt-1 text-[10px] font-bold text-blue-700">En calibración</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const Input = ({ label, val, onChange, type = 'text', placeholder, hint, mono }: {
+  label: string;
+  val?: string | number;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  hint?: string;
+  mono?: boolean;
+}) => (
     <div>
-        <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">{label}</label>
-        <input 
-            type={type} 
+        <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide">
+          {label}
+        </label>
+        <input
+            type={type}
             placeholder={placeholder}
-            className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-            value={val || ''} 
-            onChange={e => onChange(e.target.value)} 
+            className={`${WORKFLOW_INPUT_CLASS}${mono ? ' font-mono uppercase tracking-wide' : ''}`}
+            value={val ?? ''}
+            onChange={e => onChange(e.target.value)}
         />
+        {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
 );

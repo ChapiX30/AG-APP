@@ -9,8 +9,8 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import {
   ArrowLeft, Search, Printer, Loader2,
-  CheckCircle2, XCircle, AlertTriangle,
-  Hash, ArrowRightLeft, FileSignature, Building2
+  CheckCircle2, AlertTriangle,
+  Hash, ArrowRightLeft, FileSignature, Building2, Package
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
 
@@ -26,36 +26,33 @@ interface ItemEquipo {
   ordenCompra: string;
 }
 
-type ComparacionEstado = 'vacio' | 'coincide' | 'incompleto' | 'exceso';
+type ComparacionEstado = 'vacio' | 'parcial' | 'completa';
 
 function evaluarComparacion(
   entrada: ItemEquipo[],
   salidaIds: Set<string>
 ): {
   estado: ComparacionEstado;
-  faltantes: ItemEquipo[];
-  coinciden: boolean;
+  pendientes: ItemEquipo[];
+  salidaCount: number;
+  puedeConfirmar: boolean;
 } {
   if (entrada.length === 0) {
-    return { estado: 'vacio', faltantes: [], coinciden: false };
+    return { estado: 'vacio', pendientes: [], salidaCount: 0, puedeConfirmar: false };
   }
 
-  const faltantes = entrada.filter((item) => !salidaIds.has(item.id));
-  const salidaCount = entrada.filter((item) => salidaIds.has(item.id)).length;
+  const pendientes = entrada.filter((item) => !salidaIds.has(item.id));
+  const salidaCount = entrada.length - pendientes.length;
 
   if (salidaCount === 0) {
-    return { estado: 'vacio', faltantes: entrada, coinciden: false };
+    return { estado: 'vacio', pendientes: entrada, salidaCount: 0, puedeConfirmar: false };
   }
 
-  if (salidaCount > entrada.length) {
-    return { estado: 'exceso', faltantes, coinciden: false };
+  if (pendientes.length === 0) {
+    return { estado: 'completa', pendientes: [], salidaCount, puedeConfirmar: true };
   }
 
-  if (faltantes.length === 0 && salidaCount === entrada.length) {
-    return { estado: 'coincide', faltantes: [], coinciden: true };
-  }
-
-  return { estado: 'incompleto', faltantes, coinciden: false };
+  return { estado: 'parcial', pendientes, salidaCount, puedeConfirmar: true };
 }
 
 const CampoEquipo: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valor }) => (
@@ -194,20 +191,29 @@ export const EntradaSalidaScreen: React.FC = () => {
 
   const handleConfirmarSalida = async () => {
     if (!clienteActivo) return;
-    if (!comparacion.coinciden) {
-      alert('La salida debe coincidir exactamente con la entrada.\nMarca todos los equipos de la lista de entrada.');
+    if (!comparacion.puedeConfirmar || salidaCliente.length === 0) {
+      alert('Selecciona al menos un equipo en la columna SALIDA.');
       return;
     }
     if (!customFolio.trim()) return alert('Escribe un folio válido.');
 
+    const esCompleta = comparacion.estado === 'completa';
+    const msgParcial = esCompleta
+      ? 'Salida completa: todos los equipos del cliente.'
+      : `Salida parcial: ${salidaCliente.length} de ${entradaCliente.length} equipos.\nQuedan ${comparacion.pendientes.length} en laboratorio.`;
+
     const confirmacion = window.confirm(
-      `CONFIRMAR SALIDA\n\nFolio: ${customFolio}\nCliente: ${clienteActivo}\nEquipos: ${salidaCliente.length}\n\nEntrada y salida coinciden.\n¿Generar PDF y registrar?`
+      `CONFIRMAR SALIDA\n\nFolio: ${customFolio}\nCliente: ${clienteActivo}\nEquipos en esta salida: ${salidaCliente.length}\n\n${msgParcial}\n\n¿Generar PDF y registrar?`
     );
     if (!confirmacion) return;
 
     setLoading(true);
     try {
-      await generatePDFDoc(salidaCliente, customFolio);
+      await generatePDFDoc(salidaCliente, customFolio, !esCompleta);
+
+      const obsSalida = esCompleta
+        ? 'Salida completa'
+        : `Salida parcial (${salidaCliente.length}/${entradaCliente.length})`;
 
       const batch = writeBatch(db);
       salidaCliente.forEach((item) => {
@@ -216,7 +222,7 @@ export const EntradaSalidaScreen: React.FC = () => {
           entregado: true,
           folioSalida: customFolio,
           fechaSalida: new Date().toISOString(),
-          observacionesSalida: 'Salida completa — entrada y salida coinciden',
+          observacionesSalida: obsSalida,
         });
       });
 
@@ -233,7 +239,7 @@ export const EntradaSalidaScreen: React.FC = () => {
       }
 
       await batch.commit();
-      alert('Salida registrada. Entrada y salida coinciden.');
+      alert(esCompleta ? 'Salida completa registrada.' : `Salida parcial registrada (${salidaCliente.length} equipos).`);
       volverAClientes();
       fetchItems();
       fetchNextFolio();
@@ -245,7 +251,7 @@ export const EntradaSalidaScreen: React.FC = () => {
     }
   };
 
-  const generatePDFDoc = async (itemsToPrint: ItemEquipo[], folio: string) => {
+  const generatePDFDoc = async (itemsToPrint: ItemEquipo[], folio: string, esParcial = false) => {
     const primerCliente = itemsToPrint[0].cliente;
     const oc = itemsToPrint[0].ordenCompra;
     const pdfDoc = await PDFDocument.create();
@@ -314,6 +320,11 @@ export const EntradaSalidaScreen: React.FC = () => {
         page.drawText('FOLIO:', { x: width - margin - 110, y, size: 7, font: fontBold });
         page.drawText(folio, { x: width - margin - 75, y, size: 7, font: fontBold, color: rgb(0.8, 0, 0) });
 
+        if (esParcial) {
+          y -= 12;
+          page.drawText('SALIDA PARCIAL', { x: margin, y, size: 7, font: fontBold, color: rgb(0.75, 0.45, 0) });
+        }
+
         y -= 18;
         const tTop = y;
         const rowH = 13.5;
@@ -376,26 +387,35 @@ export const EntradaSalidaScreen: React.FC = () => {
 
   const renderTarjetaEquipo = (item: ItemEquipo, lado: 'entrada' | 'salida') => {
     const enSalida = salidaIds.has(item.id);
-    const coincide = lado === 'salida' ? enSalida : true;
+
+    const estilos =
+      lado === 'entrada'
+        ? enSalida
+          ? 'border-emerald-300 bg-emerald-50'
+          : 'border-slate-200 bg-slate-50'
+        : enSalida
+          ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-200'
+          : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/40';
 
     return (
       <div
         key={`${lado}-${item.id}`}
         onClick={lado === 'salida' ? () => toggleSalida(item.id) : undefined}
-        className={`rounded-xl border-2 p-4 transition-all ${
+        className={`rounded-xl border-2 p-3 transition-all ${
           lado === 'salida' ? 'cursor-pointer active:scale-[0.99]' : ''
-        } ${
-          coincide
-            ? 'border-emerald-300 bg-emerald-50'
-            : 'border-red-300 bg-red-50'
-        }`}
+        } ${estilos}`}
       >
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <p className="text-base font-extrabold text-slate-900 leading-snug">{item.descripcion}</p>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <p className="text-sm font-extrabold text-slate-900 leading-snug">{item.descripcion}</p>
           {lado === 'salida' && (
             enSalida
-              ? <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" />
-              : <XCircle className="w-7 h-7 text-red-500 shrink-0" />
+              ? <CheckCircle2 className="w-6 h-6 text-amber-600 shrink-0" />
+              : <div className="w-6 h-6 rounded-full border-2 border-slate-300 shrink-0" aria-hidden />
+          )}
+          {lado === 'entrada' && enSalida && (
+            <span className="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+              Sale
+            </span>
           )}
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -411,6 +431,16 @@ export const EntradaSalidaScreen: React.FC = () => {
     );
   };
 
+  const totalEquiposPendientes = useMemo(
+    () => items.length,
+    [items]
+  );
+
+  const totalClientes = useMemo(
+    () => Object.keys(clientesDisponibles).length,
+    [clientesDisponibles]
+  );
+
   const bannerComparacion = () => {
     if (!clienteActivo) return null;
 
@@ -418,80 +448,102 @@ export const EntradaSalidaScreen: React.FC = () => {
       vacio: {
         bg: 'bg-slate-100 border-slate-300 text-slate-700',
         icon: AlertTriangle,
-        titulo: 'Selecciona equipos en SALIDA',
-        detalle: `Entrada: ${entradaCliente.length} · Salida: 0`,
+        titulo: 'Selecciona equipos que salen',
+        detalle: 'Toca en la columna SALIDA los equipos de este envío',
       },
-      incompleto: {
-        bg: 'bg-red-100 border-red-400 text-red-900',
-        icon: XCircle,
-        titulo: 'NO COINCIDE — faltan equipos en salida',
-        detalle: `Entrada: ${entradaCliente.length} · Salida: ${salidaCliente.length} · Faltan: ${comparacion.faltantes.length}`,
+      parcial: {
+        bg: 'bg-amber-100 border-amber-400 text-amber-950',
+        icon: ArrowRightLeft,
+        titulo: 'Salida parcial',
+        detalle: `${salidaCliente.length} salen · ${comparacion.pendientes.length} quedan en laboratorio`,
       },
-      exceso: {
-        bg: 'bg-red-100 border-red-400 text-red-900',
-        icon: XCircle,
-        titulo: 'NO COINCIDE — revisa la selección',
-        detalle: `Entrada: ${entradaCliente.length} · Salida: ${salidaCliente.length}`,
-      },
-      coincide: {
+      completa: {
         bg: 'bg-emerald-100 border-emerald-500 text-emerald-900',
         icon: CheckCircle2,
-        titulo: 'COINCIDE — entrada y salida son iguales',
-        detalle: `${entradaCliente.length} equipos listos para confirmar`,
+        titulo: 'Salida completa',
+        detalle: `Los ${entradaCliente.length} equipos salen en este folio`,
       },
     }[comparacion.estado];
 
     const Icon = cfg.icon;
 
     return (
-      <div className={`rounded-2xl border-2 p-5 flex items-center gap-4 ${cfg.bg}`}>
-        <Icon className="w-12 h-12 shrink-0" />
+      <div className={`rounded-xl border-2 p-4 flex items-center gap-3 ${cfg.bg}`}>
+        <Icon className="w-9 h-9 shrink-0" />
         <div>
-          <p className="text-xl font-black leading-tight">{cfg.titulo}</p>
-          <p className="text-base font-semibold mt-1 opacity-90">{cfg.detalle}</p>
+          <p className="text-base font-black leading-tight">{cfg.titulo}</p>
+          <p className="text-sm font-semibold mt-0.5 opacity-90">{cfg.detalle}</p>
         </div>
       </div>
     );
   };
 
+  const etiquetaBotonSalida = () => {
+    if (loading) return 'Procesando...';
+    if (!comparacion.puedeConfirmar) return 'Selecciona equipos en SALIDA';
+    if (comparacion.estado === 'completa') return `Confirmar salida completa (${salidaCliente.length})`;
+    return `Confirmar salida parcial (${salidaCliente.length})`;
+  };
+
   return (
     <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-100 pb-28">
-      <header className="bg-white border-b sticky top-0 z-20 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col items-center text-center gap-3">
-          <img src={labLogo} alt="Logo laboratorio" className="h-16 w-auto object-contain" />
-          <div>
-            <h1 className="text-2xl font-black text-slate-900">Entrada y Salida</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Validación: lo que entró debe ser lo mismo que sale</p>
-          </div>
-        </div>
-
-        <div className="border-t bg-slate-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3 max-w-6xl mx-auto">
-          <button
-            onClick={() => (clienteActivo ? volverAClientes() : navigateTo('menu'))}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            {clienteActivo ? 'Cambiar cliente' : 'Menú'}
-          </button>
-
-          {clienteActivo && (
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200">
-              <FileSignature className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-bold text-slate-500">FOLIO</span>
-              <input
-                type="text"
-                className="font-mono font-bold text-blue-700 text-sm w-28 text-center uppercase outline-none"
-                value={customFolio}
-                onChange={(e) => setCustomFolio(e.target.value.toUpperCase())}
-              />
+      <header className="sticky top-0 z-20 shadow-md">
+        <div className="bg-[#2464A3] text-white">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => (clienteActivo ? volverAClientes() : navigateTo('menu'))}
+                className="rounded-full p-2.5 bg-white/15 hover:bg-white/25 transition-colors shrink-0"
+                aria-label={clienteActivo ? 'Cambiar cliente' : 'Volver al menú'}
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <img src={labLogo} alt="Logo" className="h-8 w-auto object-contain bg-white/90 rounded px-1.5 py-0.5 hidden sm:block" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Logística</p>
+                <h1 className="text-lg sm:text-xl font-bold truncate">Entrada y Salida</h1>
+              </div>
             </div>
-          )}
+            {clienteActivo && (
+              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg border border-white/20 shrink-0">
+                <FileSignature className="w-4 h-4 text-white/70" />
+                <input
+                  type="text"
+                  className="font-mono font-bold text-white text-sm w-24 sm:w-28 text-center uppercase outline-none bg-transparent placeholder:text-white/50"
+                  value={customFolio}
+                  onChange={(e) => setCustomFolio(e.target.value.toUpperCase())}
+                  aria-label="Folio de salida"
+                />
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4 space-y-5">
+      <main className="max-w-6xl mx-auto p-4 space-y-4">
         {!clienteActivo ? (
           <>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Clientes</p>
+                  <p className="text-xl font-black text-slate-900">{totalClientes}</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <Package className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Equipos pendientes</p>
+                  <p className="text-xl font-black text-slate-900">{totalEquiposPendientes}</p>
+                </div>
+              </div>
+            </div>
+
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
               <input
@@ -538,24 +590,40 @@ export const EntradaSalidaScreen: React.FC = () => {
           </>
         ) : (
           <>
-            <div className="bg-white rounded-2xl border border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase text-slate-400">Cliente</p>
-                <p className="text-xl font-black text-slate-900">{clienteActivo}</p>
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase text-slate-400">Cliente</p>
+                  <p className="text-lg font-black text-slate-900">{clienteActivo}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={marcarTodosSalida}
+                    className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700"
+                  >
+                    Todos salen
+                  </button>
+                  <button
+                    onClick={limpiarSalida}
+                    className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50"
+                  >
+                    Limpiar
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={marcarTodosSalida}
-                  className="px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700"
-                >
-                  Marcar todos en salida
-                </button>
-                <button
-                  onClick={limpiarSalida}
-                  className="px-4 py-2.5 rounded-xl bg-white border-2 border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50"
-                >
-                  Limpiar salida
-                </button>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-blue-50 border border-blue-100 py-2 px-1">
+                  <p className="text-[10px] font-bold uppercase text-blue-600">Entrada</p>
+                  <p className="text-lg font-black text-blue-900">{entradaCliente.length}</p>
+                </div>
+                <div className="rounded-lg bg-amber-50 border border-amber-100 py-2 px-1">
+                  <p className="text-[10px] font-bold uppercase text-amber-700">Salen ahora</p>
+                  <p className="text-lg font-black text-amber-900">{salidaCliente.length}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 border border-slate-200 py-2 px-1">
+                  <p className="text-[10px] font-bold uppercase text-slate-500">Quedan</p>
+                  <p className="text-lg font-black text-slate-800">{comparacion.pendientes.length}</p>
+                </div>
               </div>
             </div>
 
@@ -583,8 +651,8 @@ export const EntradaSalidaScreen: React.FC = () => {
                     {salidaCliente.length} / {entradaCliente.length}
                   </span>
                 </div>
-                <p className="px-4 py-2 text-sm font-semibold text-amber-900 bg-amber-50 border-b border-amber-100">
-                  Toca cada equipo que sale. Debe coincidir con la entrada.
+                <p className="px-4 py-2 text-xs font-semibold text-amber-900 bg-amber-50 border-b border-amber-100">
+                  Toca los equipos que salen en este folio. Puedes enviar solo algunos (salida parcial).
                 </p>
                 <div className="p-3 space-y-3 max-h-[55vh] overflow-y-auto">
                   {entradaCliente.map((item) => renderTarjetaEquipo(item, 'salida'))}
@@ -592,13 +660,13 @@ export const EntradaSalidaScreen: React.FC = () => {
               </section>
             </div>
 
-            {comparacion.estado === 'incompleto' && comparacion.faltantes.length > 0 && (
-              <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4">
-                <p className="font-black text-red-800 text-sm uppercase mb-2">Equipos que faltan marcar en salida</p>
+            {comparacion.estado === 'parcial' && comparacion.pendientes.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="font-bold text-slate-700 text-sm mb-2">Quedan en laboratorio (no incluidos en este folio)</p>
                 <ul className="space-y-1">
-                  {comparacion.faltantes.map((item) => (
-                    <li key={item.id} className="text-sm font-semibold text-red-700">
-                      · {item.descripcion} — Serie {item.serie} — ID {item.idInterno}
+                  {comparacion.pendientes.map((item) => (
+                    <li key={item.id} className="text-sm font-medium text-slate-600">
+                      · {item.descripcion} — Serie {item.serie}
                     </li>
                   ))}
                 </ul>
@@ -613,19 +681,21 @@ export const EntradaSalidaScreen: React.FC = () => {
           <div className="max-w-6xl mx-auto">
             <button
               onClick={handleConfirmarSalida}
-              disabled={!comparacion.coinciden || !customFolio || loading}
-              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-3 transition-all ${
-                comparacion.coinciden && customFolio
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99]'
+              disabled={!comparacion.puedeConfirmar || !customFolio || loading}
+              className={`w-full py-4 rounded-xl font-black text-base flex items-center justify-center gap-3 transition-all ${
+                comparacion.puedeConfirmar && customFolio
+                  ? comparacion.estado === 'completa'
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99]'
+                    : 'bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.99]'
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
               {loading ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Printer className="w-6 h-6" />
+                <Printer className="w-5 h-5" />
               )}
-              {comparacion.coinciden ? 'CONFIRMAR SALIDA (COINCIDE)' : 'MARCA TODOS LOS EQUIPOS PARA CONTINUAR'}
+              {etiquetaBotonSalida()}
             </button>
           </div>
         </div>

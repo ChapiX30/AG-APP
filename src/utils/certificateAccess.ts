@@ -96,11 +96,12 @@ export function validateCertificateFile(file: File): string | null {
   return null;
 }
 
-export function buildCertificateStoragePath(patronId: string, file: File): string {
+export function buildCertificateStoragePath(patronId: string, file: File, parteId?: string): string {
   const ext = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '') || 'pdf';
   const safeExt = ALLOWED_CERTIFICATE_EXT.has(ext) ? ext : 'pdf';
   const uuid = crypto.randomUUID();
-  return `${CERT_STORAGE_PREFIX}/${patronId}/${uuid}.${safeExt}`;
+  const folder = parteId ? `${patronId}/${parteId}` : patronId;
+  return `${CERT_STORAGE_PREFIX}/${folder}/${uuid}.${safeExt}`;
 }
 
 /** Extrae ruta Storage desde URL legacy de Firebase (token embebido). */
