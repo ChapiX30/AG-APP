@@ -2,8 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Eye, EyeOff, Lock, Mail, ArrowRight,
   X, CheckCircle, AlertCircle,
-  Shield, Gauge, Radio, Zap,
+  Shield, Gauge, Radio, Zap, ShieldCheck,
 } from "lucide-react";
+import {
+  isMetrologyRole,
+  isQualityRole,
+  type UsuarioRow,
+} from "../utils/calibrationShared";
 import {
   motion, AnimatePresence,
   useMotionValue, useMotionTemplate,
@@ -40,6 +45,8 @@ const fetchUser = async (email: string) => {
       name,
       initial: name[0].toUpperCase(),
       photoUrl: d.photoUrl || d.photoURL || null,
+      role: typeof d.role === "string" ? d.role.trim() : "",
+      puesto: typeof d.puesto === "string" ? d.puesto.trim() : "",
     };
   } catch {
     return null;
@@ -48,95 +55,204 @@ const fetchUser = async (email: string) => {
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-/* ─── overlay energía (login) ─── */
-const EnergyLoginOverlay: React.FC<{
+/** Tiempo mínimo para que la animación se aprecie (login rápido en caché). */
+const MIN_LOGIN_OVERLAY_MS = 1650;
+
+type DetectedUser = {
+  name: string;
+  initial: string;
+  photoUrl?: string | null;
+  role: string;
+  puesto: string;
+};
+
+type LoginVariant = "metrology" | "quality" | "general";
+
+const resolveLoginVariant = (u: DetectedUser | null): LoginVariant => {
+  if (!u) return "general";
+  const row: UsuarioRow = {
+    id: "",
+    name: u.name,
+    nombre: u.name,
+    role: u.role,
+    puesto: u.puesto,
+  };
+  if (isQualityRole(row)) return "quality";
+  if (isMetrologyRole(row)) return "metrology";
+  return "general";
+};
+
+const VARIANT_MSG: Record<LoginVariant, { sub: string }> = {
+  metrology: { sub: "Calibrando instrumentos · multímetros y fuentes" },
+  quality:   { sub: "Trazabilidad y aseguramiento de calidad" },
+  general:   { sub: "Plataforma de calibración · Equipos AG" },
+};
+
+const waitMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/* ─── animaciones por rol ─── */
+const MetrologyLoginVisual: React.FC = () => (
+  <div className="relative flex h-[7.5rem] w-36 flex-col items-center justify-end">
+    <div className="relative z-10 w-full rounded-xl border-2 border-[#5a93c9]/55 bg-gradient-to-b from-slate-800 to-slate-900 p-2.5 shadow-lg">
+      <div className="mb-2 h-1 w-8 rounded-full bg-slate-600 mx-auto" />
+      <div className="rounded-md bg-[#061018] border border-emerald-500/30 px-2 py-1.5 font-mono text-sm text-emerald-400 tabular-nums tracking-wider">
+        <motion.span
+          animate={{ opacity: [1, 0.35, 1] }}
+          transition={{ duration: 0.9, repeat: Infinity }}
+        >
+          12.034
+        </motion.span>
+        <span className="text-emerald-600/80 text-xs ml-0.5">V</span>
+      </div>
+      <div className="mt-2 flex justify-center gap-1">
+        {["V", "Ω", "A"].map((m, i) => (
+          <motion.span
+            key={m}
+            className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#2464A3]/30 text-[#8bb5d9]"
+            animate={{ opacity: i === 0 ? [0.5, 1, 0.5] : 0.45 }}
+            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }}
+          >
+            {m}
+          </motion.span>
+        ))}
+      </div>
+    </div>
+    <svg className="absolute bottom-0 w-full h-10 opacity-80" viewBox="0 0 144 40" aria-hidden>
+      <motion.path
+        d="M0,20 Q18,6 36,20 T72,20 T108,20 T144,20"
+        fill="none"
+        stroke="#5a93c9"
+        strokeWidth="2"
+        strokeLinecap="round"
+        animate={{ d: [
+          "M0,20 Q18,6 36,20 T72,20 T108,20 T144,20",
+          "M0,20 Q18,34 36,20 T72,20 T108,20 T144,20",
+          "M0,20 Q18,6 36,20 T72,20 T108,20 T144,20",
+        ]}}
+        transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+      />
+    </svg>
+    <motion.div
+      className="absolute -top-1 right-2"
+      animate={{ opacity: [0.4, 1, 0.4], scale: [0.9, 1.05, 0.9] }}
+      transition={{ duration: 1.5, repeat: Infinity }}
+    >
+      <Zap className="h-5 w-5 text-[#8bb5d9]" />
+    </motion.div>
+  </div>
+);
+
+const QualityLoginVisual: React.FC = () => (
+  <div className="relative flex h-28 w-28 items-center justify-center">
+    <motion.div
+      className="absolute inset-0 rounded-full border-2 border-dashed border-[#5a93c9]/45"
+      animate={{ rotate: 360 }}
+      transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+    />
+    <motion.div
+      className="absolute inset-2 rounded-full border border-emerald-500/25"
+      animate={{ scale: [1, 1.08, 1], opacity: [0.4, 0.7, 0.4] }}
+      transition={{ duration: 2, repeat: Infinity }}
+    />
+    <motion.div
+      className="relative z-10 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#2464A3]/20 border border-[#2464A3]/45"
+      initial={{ scale: 0.9 }}
+      animate={{ scale: [0.95, 1, 0.95] }}
+      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+    >
+      <ShieldCheck className="h-9 w-9 text-emerald-400" strokeWidth={1.75} />
+    </motion.div>
+    <motion.svg
+      className="absolute inset-0 h-full w-full"
+      viewBox="0 0 100 100"
+      aria-hidden
+    >
+      <motion.path
+        d="M28,52 L42,66 L72,36"
+        fill="none"
+        stroke="#34d399"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        initial={{ pathLength: 0 }}
+        animate={{ pathLength: 1 }}
+        transition={{ duration: 1.1, repeat: Infinity, repeatDelay: 0.6 }}
+      />
+    </motion.svg>
+  </div>
+);
+
+const GeneralLoginVisual: React.FC = () => (
+  <div className="relative flex h-28 w-28 items-center justify-center">
+    {[0, 0.5].map((delay) => (
+      <motion.span
+        key={delay}
+        className="absolute inset-0 rounded-full border border-[#2464A3]/40"
+        animate={{ scale: [0.7, 1.25], opacity: [0.5, 0] }}
+        transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay }}
+      />
+    ))}
+    <motion.div
+      animate={{ rotate: [0, 8, -8, 0] }}
+      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+    >
+      <Gauge className="h-16 w-16 text-[#5a93c9]" strokeWidth={1.5} />
+    </motion.div>
+  </div>
+);
+
+const LoginTransitionOverlay: React.FC<{
   active: boolean;
   reducedMotion: boolean;
-}> = ({ active, reducedMotion }) => (
-  <AnimatePresence>
-    {active && (
-      <motion.div
-        className="fixed inset-0 z-40 flex items-center justify-center bg-[#050810]/88 backdrop-blur-md px-4"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.22 }}
-        role="status"
-        aria-live="polite"
-        aria-busy="true"
-        aria-label="Verificando acceso"
-      >
-        <motion.div
-          className="relative flex flex-col items-center gap-4 rounded-3xl border border-[#2464A3]/45 bg-slate-900/90 px-8 py-8 w-full max-w-xs shadow-[0_0_72px_rgba(36,100,163,0.28)]"
-          initial={{ scale: 0.96, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.98, opacity: 0 }}
-          transition={{ duration: 0.25 }}
-        >
-          {reducedMotion ? (
-            <span className="h-9 w-9 rounded-full border-2 border-[#5a93c9] border-t-transparent animate-spin" />
-          ) : (
-            <div className="relative flex h-28 w-28 items-center justify-center">
-              {[0, 0.55, 1.1].map((delay) => (
-                <motion.span
-                  key={delay}
-                  className="pointer-events-none absolute inset-0 rounded-full border border-[#5a93c9]/50"
-                  animate={{ scale: [0.65, 1.35], opacity: [0.55, 0] }}
-                  transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut", delay }}
-                />
-              ))}
-              <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full bg-[#2464A3]/25 border border-[#2464A3]/50">
-                <Zap className="h-7 w-7 text-[#8bb5d9]" fill="currentColor" fillOpacity={0.25} />
-              </div>
-              <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 items-end justify-center gap-1 h-8 w-28">
-                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                  <motion.span
-                    key={i}
-                    className="w-1 rounded-full bg-gradient-to-t from-[#2464A3] to-[#5a93c9]"
-                    animate={{ height: [6, 22, 8, 18, 10] }}
-                    transition={{
-                      duration: 0.85,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: i * 0.07,
-                    }}
-                  />
-                ))}
-              </div>
-              <svg
-                className="pointer-events-none absolute inset-0 h-full w-full opacity-70"
-                viewBox="0 0 120 120"
-                aria-hidden
-              >
-                <motion.path
-                  d="M8,60 C20,38 32,82 44,60 S68,38 80,60 92,82 104,60"
-                  fill="none"
-                  stroke="#5a93c9"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  initial={{ pathLength: 0, opacity: 0.4 }}
-                  animate={{ pathLength: 1, opacity: 0.9 }}
-                  transition={{ duration: 1.2, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
-                />
-              </svg>
-            </div>
-          )}
+  variant: LoginVariant;
+}> = ({ active, reducedMotion, variant }) => {
+  const copy = VARIANT_MSG[variant];
 
-          <div className="text-center space-y-1">
-            <p className="text-sm font-medium text-slate-100">
-              Verificando acceso
-            </p>
-            <p className="text-[11px] text-slate-500">
-              {reducedMotion
-                ? "Un momento…"
-                : "Energizando sesión · equipos de medición"}
-            </p>
-          </div>
+  return (
+    <AnimatePresence>
+      {active && (
+        <motion.div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-[#050810]/90 backdrop-blur-md px-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="Verificando acceso"
+        >
+          <motion.div
+            className="relative flex flex-col items-center gap-5 rounded-3xl border border-[#2464A3]/45 bg-slate-900/92 px-8 py-8 w-full max-w-xs shadow-[0_0_72px_rgba(36,100,163,0.28)]"
+            initial={{ scale: 0.96, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.98, opacity: 0, y: 4 }}
+            transition={{ duration: 0.28 }}
+          >
+            {reducedMotion ? (
+              <span className="h-9 w-9 rounded-full border-2 border-[#5a93c9] border-t-transparent animate-spin" />
+            ) : variant === "metrology" ? (
+              <MetrologyLoginVisual />
+            ) : variant === "quality" ? (
+              <QualityLoginVisual />
+            ) : (
+              <GeneralLoginVisual />
+            )}
+
+            <div className="text-center space-y-1.5">
+              <p className="text-sm font-medium text-slate-100">
+                Verificando acceso
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                {reducedMotion ? "Un momento…" : copy.sub}
+              </p>
+            </div>
+          </motion.div>
         </motion.div>
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
+      )}
+    </AnimatePresence>
+  );
+};
 
 /* ─── logo animado (marca) ─── */
 const AnimatedBrandLogo: React.FC<{ size?: "lg" | "sm" }> = ({ size = "lg" }) => {
@@ -319,9 +435,9 @@ export const LoginScreen: React.FC<{
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
   const [attempts, setAttempts] = useState(0);
-  const [user, setUser]         = useState<{
-    name: string; initial: string; photoUrl?: string | null;
-  } | null>(null);
+  const [user, setUser]         = useState<DetectedUser | null>(null);
+  const [loginTransition, setLoginTransition] = useState(false);
+  const [loginVariant, setLoginVariant]     = useState<LoginVariant>("general");
   const [fetching, setFetching]     = useState(false);
   const [showReset, setShowReset]   = useState(false);
   const [resetStatus, setResetStatus] = useState<{
@@ -355,7 +471,17 @@ export const LoginScreen: React.FC<{
       const key = email.trim().toLowerCase();
       if (!isValidEmail(key) || lastRef.current === key) return;
       if (cacheRef.current[key] !== undefined) {
-        setUser(cacheRef.current[key]); return;
+        const cached = cacheRef.current[key] as DetectedUser | null;
+        setUser(
+          cached
+            ? {
+                ...cached,
+                role: cached.role ?? "",
+                puesto: cached.puesto ?? "",
+              }
+            : null
+        );
+        return;
       }
       setFetching(true);
       const found = await fetchUser(key);
@@ -369,15 +495,31 @@ export const LoginScreen: React.FC<{
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true); setError("");
+    const variant = resolveLoginVariant(user);
+    setLoginVariant(variant);
+    setLoginTransition(true);
+    setLoading(true);
+    setError("");
+    const started = Date.now();
+
     try {
       const ok = await login(email.trim().toLowerCase(), password);
+      const remain = MIN_LOGIN_OVERLAY_MS - (Date.now() - started);
+      if (remain > 0) await waitMs(remain);
       if (ok) navigateTo("menu");
-      else { setAttempts(p => p + 1); setError("Credenciales incorrectas."); }
+      else {
+        setAttempts((p) => p + 1);
+        setError("Credenciales incorrectas.");
+      }
     } catch (err) {
-      setAttempts(p => p + 1);
+      const remain = MIN_LOGIN_OVERLAY_MS - (Date.now() - started);
+      if (remain > 0) await waitMs(remain);
+      setAttempts((p) => p + 1);
       setError(errorMsg((err as AuthError).code ?? ""));
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+      setLoginTransition(false);
+    }
   };
 
   const handleReset = async (e: React.FormEvent) => {
@@ -718,7 +860,11 @@ export const LoginScreen: React.FC<{
         )}
       </AnimatePresence>
 
-      <EnergyLoginOverlay active={loading} reducedMotion={reducedMotion} />
+      <LoginTransitionOverlay
+        active={loginTransition}
+        reducedMotion={reducedMotion}
+        variant={loginVariant}
+      />
     </div>
   );
 };

@@ -274,8 +274,16 @@ export const EntradaSalidaScreen: React.FC = () => {
       const drawBlock = (startY: number) => {
         let y = startY;
         if (logoImg) {
-          const d = logoImg.scale(0.15);
-          page.drawImage(logoImg, { x: margin, y: y - 40, width: d.width, height: d.height });
+          const maxLogoW = 95;
+          const maxLogoH = 28;
+          const scale = Math.min(
+            maxLogoW / logoImg.width,
+            maxLogoH / logoImg.height,
+            1
+          );
+          const w = logoImg.width * scale;
+          const h = logoImg.height * scale;
+          page.drawImage(logoImg, { x: margin, y: y - h, width: w, height: h });
         }
         const emp = 'EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.';
         const wEmp = fontBold.widthOfTextAtSize(emp, 9);
