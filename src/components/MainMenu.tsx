@@ -19,7 +19,7 @@ import {
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getAuth, updateProfile } from 'firebase/auth';
 import {
-  addYears, addMonths, differenceInDays, parseISO, isValid,
+  differenceInDays, parseISO, isValid,
   format, isToday, parse, isWithinInterval, addHours,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -28,13 +28,18 @@ import { toast } from 'react-toastify';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
 import { isUserOnline } from '../hooks/usePresence';
 import { COLLECTION_PATRONES, countPatronesEnAlerta, isCalidadRole } from '../utils/patronCalibracion';
+import {
+  upsertRecordatorioConfirmacionJunta,
+  eliminarRecordatorioConfirmacionJunta,
+  usuarioYaConfirmoJunta,
+} from '../utils/notificacionesRecordatorioJunta';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 interface Service {
-  id: string; cliente: string; titulo?: string; descripcion?: string;
+  id: string; cliente: string; titulo?: string; elemento?: string; descripcion?: string;
   prioridad?: 'alta' | 'critica' | 'normal' | 'baja'; fecha?: string;
   horaInicio?: string; horaFin?: string; ubicacion?: string;
-  tipo?: string; estado?: string; personas?: string[];
+  tipo?: string; estado?: string; personas?: string[]; enterados?: string[];
 }
 
 interface UserData {
@@ -54,6 +59,8 @@ interface AppNotification {
   title: string; body: string; read: boolean;
   timestamp: Timestamp | null;
   autorNombre?: string; autorUid?: string;
+  navigateTo?: string;
+  servicioId?: string;
 }
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
@@ -116,6 +123,20 @@ const MENU_ITEMS = [
 ];
 
 const SUPER_ADMINS = ['jesus.sustaita@agsolutions.com', 'admin@agsolutions.com'];
+const PATRON_BANNER_DISMISS_KEY = 'patronAlertBannerDismissedAt';
+const PATRON_BANNER_HIDE_MS = 3 * 24 * 60 * 60 * 1000;
+
+const isPatronBannerDismissed = (): boolean => {
+  try {
+    const raw = localStorage.getItem(PATRON_BANNER_DISMISS_KEY);
+    if (!raw) return false;
+    const dismissedAt = Date.parse(raw);
+    if (Number.isNaN(dismissedAt)) return false;
+    return Date.now() - dismissedAt < PATRON_BANNER_HIDE_MS;
+  } catch {
+    return false;
+  }
+};
 const safeDateParse = (d?: string) => { if (!d) return null; const p = parseISO(d); return isValid(p) ? p : null; };
 
 const hexToRgb = (hex: string) => {
@@ -244,10 +265,11 @@ const useUserPrefs = (uid: string | undefined) => {
 };
 
 // ─── PANEL DE NOTIFICACIONES ──────────────────────────────────────────────────
-const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBroadcast, uid }: {
+const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBroadcast, uid, onNavigate }: {
   notifications: AppNotification[]; onClose: () => void;
   onMarkRead: (id: string) => void; onDelete: (id: string) => void;
   canBroadcast: boolean; uid: string;
+  onNavigate?: (screen: string) => void;
 }) => {
   const [showCompose, setShowCompose] = useState(false);
   const [title, setTitle] = useState('');
@@ -414,7 +436,10 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
           const cfg = typeConfig[n.type] || typeConfig.info;
           const Icon = cfg.icon;
           return (
-            <div key={n.id} onClick={() => onMarkRead(n.id)}
+            <div key={n.id} onClick={() => {
+                if (n.navigateTo) onNavigate?.(n.navigateTo);
+                if (!n.read) onMarkRead(n.id);
+              }}
               className={`group flex gap-3 p-3 border-b ag-border cursor-pointer transition-all ${n.read ? 'opacity-50 hover:opacity-80' : 'ag-surface-hi'}`}
             >
               <div className={`mt-0.5 p-1.5 rounded-lg flex-shrink-0 border ${cfg.bg} ${cfg.border}`}>
@@ -759,66 +784,6 @@ const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]
   </div>
 );
 
-const KpiWidget = ({ navigateTo }: { navigateTo: any }) => {
-  const [stats, setStats] = useState({ vencidos: 0, criticos: 0, proximos: 0, loading: true });
-  useEffect(() => {
-    let m = true;
-    const calc = (f: string, fr: string): Date | null => {
-      if (!f || !fr) return null;
-      try {
-        const b = parseISO(f); if (!isValid(b)) return null;
-        const s = fr.toLowerCase();
-        if (s.includes('1 año')) return addYears(b, 1);
-        if (s.includes('2 años')) return addYears(b, 2);
-        if (s.includes('3 años')) return addYears(b, 3);
-        if (s.includes('3 meses')) return addMonths(b, 3);
-        if (s.includes('6 meses')) return addMonths(b, 6);
-        return addYears(b, 1);
-      } catch { return null; }
-    };
-    getDocs(query(collection(db, 'hojasDeTrabajo'), orderBy('fecha', 'desc'))).then(snap => {
-      if (!m) return;
-      let v = 0, c = 0, p = 0;
-      const hoy = new Date(); const seen = new Set<string>();
-      snap.forEach(d => {
-        const data = d.data();
-        const id = String(data.id || data.certificado || '').trim();
-        if (id && seen.has(id)) return; if (id) seen.add(id);
-        const fv = calc(data.fecha, data.frecuenciaCalibracion);
-        if (fv) { const dias = differenceInDays(fv, hoy); if (dias < 0) v++; else if (dias <= 30) c++; else if (dias <= 60) p++; }
-      });
-      setStats({ vencidos: v, criticos: c, proximos: p, loading: false });
-    }).catch(() => { if (m) setStats(p => ({ ...p, loading: false })); });
-    return () => { m = false; };
-  }, []);
-  if (stats.loading) return <div className="h-28 rounded-2xl border ag-border animate-pulse ag-surface" />;
-  return (
-    <div className="rounded-2xl border ag-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-sm flex items-center gap-2 ag-text">
-          <Activity className="w-4 h-4 acc-text" />Estado de Equipos
-        </h3>
-        {stats.vencidos === 0 && stats.criticos === 0 &&
-          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">✓ Normal</span>}
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { n: stats.vencidos, l: 'Vencidos', c: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20' },
-          { n: stats.criticos, l: 'Críticos', c: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-          { n: stats.proximos, l: 'Próximos', c: 'acc-text', bg: 'acc-soft ag-border' },
-        ].map(({ n, l, c, bg }) => (
-          <button key={l} onClick={() => navigateTo('vencimientos')}
-            className={`flex flex-col items-center py-2.5 rounded-xl border transition-all hover:scale-105 active:scale-95 ${bg}`}
-          >
-            <span className={`text-2xl font-bold ${c}`}>{n}</span>
-            <span className={`text-[10px] uppercase font-semibold mt-0.5 ${c} opacity-80`}>{l}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
-
 // ─── MODAL PERFIL ─────────────────────────────────────────────────────────────
 const ProfileModal = ({ currentUser, onClose, onUpdate }: {
   currentUser: UserData; onClose: () => void; onUpdate: (d: Partial<UserData>) => void;
@@ -1010,13 +975,9 @@ export const MainMenu: React.FC = () => {
   const [loadingServices, setLoadingServices] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [patronAlertCount, setPatronAlertCount] = useState(0);
-  const [patronBannerDismissed, setPatronBannerDismissed] = useState(() => {
-    try {
-      return sessionStorage.getItem('patronAlertBannerDismissed') === new Date().toISOString().slice(0, 10);
-    } catch {
-      return false;
-    }
-  });
+  const pendingJuntaSyncRef = useRef<Set<string>>(new Set());
+
+  const [patronBannerDismissed, setPatronBannerDismissed] = useState(isPatronBannerDismissed);
 
   const uid   = (user as any)?.uid   || (user as any)?.id    || '';
   const email = (user as any)?.email || '';
@@ -1045,7 +1006,9 @@ export const MainMenu: React.FC = () => {
         const data = d.data();
         return { id: d.id, type: data.type || 'info', title: data.title || 'Notificación', body: data.body || '',
           read: (data.readBy || []).includes(uid), timestamp: data.timestamp || null,
-          autorNombre: data.autorNombre || '', autorUid: data.autorUid || '' } as AppNotification;
+          autorNombre: data.autorNombre || '', autorUid: data.autorUid || '',
+          navigateTo: data.navigateTo || (data.tipo === 'recordatorio_confirmacion_junta' ? 'calendario' : undefined),
+          servicioId: data.servicioId || '' } as AppNotification;
       })),
       err => console.error('Notificaciones:', err)
     );
@@ -1073,8 +1036,7 @@ export const MainMenu: React.FC = () => {
   }, [canSeePatronAlerts]);
 
   const dismissPatronBanner = useCallback(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    try { sessionStorage.setItem('patronAlertBannerDismissed', today); } catch { /* ignore */ }
+    try { localStorage.setItem(PATRON_BANNER_DISMISS_KEY, new Date().toISOString()); } catch { /* ignore */ }
     setPatronBannerDismissed(true);
   }, []);
 
@@ -1115,6 +1077,58 @@ export const MainMenu: React.FC = () => {
     const intervalId = window.setInterval(runAutoStart, 60_000);
     return () => window.clearInterval(intervalId);
   }, [assignedServices, uid]);
+
+  useEffect(() => {
+    pendingJuntaSyncRef.current = new Set();
+  }, [uid]);
+
+  // Recordatorios de confirmación de asistencia a juntas pendientes
+  useEffect(() => {
+    if (!uid) return;
+
+    const pendingJuntas = assignedServices.filter(s => {
+      if ((s.tipo || '').toLowerCase() !== 'junta') return false;
+      if (usuarioYaConfirmoJunta(s.enterados || [], uid, email)) return false;
+      const st = (s.estado || '').toLowerCase();
+      if (['finalizado', 'cancelado'].includes(st)) return false;
+      if (!s.fecha) return true;
+      const d = parseISO(s.fecha);
+      if (!isValid(d)) return true;
+      return differenceInDays(d, new Date()) >= -1;
+    });
+
+    const pendingIds = new Set(pendingJuntas.map(s => s.id));
+
+    void (async () => {
+      for (const s of pendingJuntas) {
+        const titulo = (s.titulo || s.elemento || 'Junta').trim();
+        const fechaFmt =
+          s.fecha && isValid(parseISO(s.fecha))
+            ? format(parseISO(s.fecha), 'dd MMM yyyy', { locale: es })
+            : undefined;
+        try {
+          await upsertRecordatorioConfirmacionJunta({
+            uid,
+            servicioId: s.id,
+            eventoTitulo: titulo,
+            eventoFecha: fechaFmt,
+          });
+        } catch (err) {
+          console.error('Recordatorio junta:', err);
+        }
+      }
+      for (const prevId of pendingJuntaSyncRef.current) {
+        if (!pendingIds.has(prevId)) {
+          try {
+            await eliminarRecordatorioConfirmacionJunta(prevId, uid);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      pendingJuntaSyncRef.current = pendingIds;
+    })();
+  }, [assignedServices, uid, email]);
 
   const isSuperAdmin = useMemo(() => SUPER_ADMINS.includes(localUser?.email || ''), [localUser]);
   const canBroadcast = isAdmin || isCalidad || isSuperAdmin;
@@ -1165,9 +1179,12 @@ export const MainMenu: React.FC = () => {
         <header className="sticky top-0 z-40 border-b ag-header" style={{ backdropFilter: 'blur(16px)' }}>
           <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl border ag-border overflow-hidden flex items-center justify-center ag-surface">
-                <img src={labLogo} className="w-6 h-6 object-contain" alt="Equipos y Servicios AG" onError={e => (e.currentTarget.style.display = 'none')} />
-              </div>
+              <img
+                src={labLogo}
+                alt="Equipos y Servicios AG"
+                className="h-10 w-auto object-contain shrink-0"
+                onError={e => { e.currentTarget.style.display = 'none'; }}
+              />
               <div className="hidden md:block">
                 <p className="text-sm font-bold ag-text">Equipos y Servicios AG</p>
                 <p className="text-[10px] ag-faint">Sistema de gestión metrológica</p>
@@ -1194,7 +1211,8 @@ export const MainMenu: React.FC = () => {
                 <AnimatePresence>
                   {showNotif && (
                     <NotificationPanel notifications={notifications} onClose={() => setShowNotif(false)}
-                      onMarkRead={handleMarkRead} onDelete={handleDeleteNotif} canBroadcast={canBroadcast} uid={uid} />
+                      onMarkRead={handleMarkRead} onDelete={handleDeleteNotif} canBroadcast={canBroadcast} uid={uid}
+                      onNavigate={screen => { if (screen === 'calendario') navigateTo('calendario'); setShowNotif(false); }} />
                   )}
                 </AnimatePresence>
               </div>
@@ -1403,9 +1421,10 @@ export const MainMenu: React.FC = () => {
             {/* WIDGETS */}
             <div className="lg:w-72 flex flex-col gap-4 lg:self-stretch">
               {(isCalidad || isAdmin || isSuperAdmin) && (
-                <><KpiWidget navigateTo={navigateTo} />
+                <>
                   <PatronesWidget navigateTo={navigateTo} />
-                  <TechnicianStatusWidget /></>
+                  <TechnicianStatusWidget />
+                </>
               )}
               <div className="flex-1 min-h-64"><ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} /></div>
             </div>

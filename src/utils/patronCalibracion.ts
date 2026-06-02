@@ -109,3 +109,107 @@ export function isCalidadRole(puestoOrRole: string | undefined): boolean {
   const p = (puestoOrRole || '').toLowerCase();
   return p.includes('calidad') || p.includes('admin') || p.includes('gerente');
 }
+
+const PATRON_PANEL_DISMISS_KEY = 'calendarPatronPanelDismiss';
+
+type PatronPanelDismissState = {
+  dismissedAt: string;
+  anchorPatronKey: string;
+  anchorDaysToExpiry: number;
+};
+
+/** Patrón en alerta más próximo a vencer (el que define cuándo volver a mostrar el panel). */
+export function getNearestPatronEnAlerta(
+  patrones: PatronCalibracionRow[],
+  refDate = new Date(),
+): { patron: PatronCalibracionRow; fecha: string; daysToExpiry: number } | null {
+  const sorted = sortPatronesPorVencimiento(
+    patrones.filter(p => {
+      const u = getPatronUrgency(p, refDate);
+      return u !== 'ok' && u !== 'sin-fecha';
+    }),
+  );
+  if (!sorted.length) return null;
+  const patron = sorted[0];
+  const fecha = getPatronFechaVencimiento(patron);
+  let daysToExpiry = 9999;
+  try {
+    const parsed = parseISO(fecha);
+    if (isValid(parsed)) daysToExpiry = differenceInDays(parsed, refDate);
+  } catch {
+    /* ignore */
+  }
+  return { patron, fecha, daysToExpiry };
+}
+
+function readPatronPanelDismiss(): PatronPanelDismissState | null {
+  try {
+    const raw = localStorage.getItem(PATRON_PANEL_DISMISS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PatronPanelDismissState;
+  } catch {
+    return null;
+  }
+}
+
+/** Guarda cierre del panel (X) ligado al patrón más urgente actual. */
+export function savePatronPanelDismiss(patrones: PatronCalibracionRow[]): void {
+  const nearest = getNearestPatronEnAlerta(patrones);
+  if (!nearest) return;
+  const state: PatronPanelDismissState = {
+    dismissedAt: refDateYmd(new Date()),
+    anchorPatronKey: `${nearest.patron.noControl}|${nearest.fecha}`,
+    anchorDaysToExpiry: nearest.daysToExpiry,
+  };
+  try {
+    localStorage.setItem(PATRON_PANEL_DISMISS_KEY, JSON.stringify(state));
+  } catch {
+    /* ignore */
+  }
+}
+
+function refDateYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * ¿Mostrar panel de vencimientos? Vuelve a aparecer si cambió el patrón más urgente,
+ * pasó un día, o se cruzó un umbral de aviso (30, 15, 7, 3, 1 días antes).
+ */
+export function shouldShowPatronVencimientosPanel(
+  patrones: PatronCalibracionRow[],
+  alertDays: readonly number[] = PATRON_ALERT_DAYS,
+): boolean {
+  const nearest = getNearestPatronEnAlerta(patrones);
+  if (!nearest) return false;
+
+  const stored = readPatronPanelDismiss();
+  if (!stored) return true;
+
+  const today = refDateYmd(new Date());
+  const anchorKey = `${nearest.patron.noControl}|${nearest.fecha}`;
+
+  if (stored.anchorPatronKey !== anchorKey) return true;
+  if (stored.dismissedAt !== today) return true;
+
+  const crossedAlertDay = alertDays.some(
+    day => stored.anchorDaysToExpiry > day && nearest.daysToExpiry <= day,
+  );
+  if (crossedAlertDay) return true;
+
+  if (stored.anchorDaysToExpiry > 7 && nearest.daysToExpiry <= 7) return true;
+  if (stored.anchorDaysToExpiry > 0 && nearest.daysToExpiry < 0) return true;
+
+  return false;
+}
+
+export function clearPatronPanelDismiss(): void {
+  try {
+    localStorage.removeItem(PATRON_PANEL_DISMISS_KEY);
+  } catch {
+    /* ignore */
+  }
+}

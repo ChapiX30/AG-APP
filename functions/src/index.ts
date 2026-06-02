@@ -1,10 +1,10 @@
 ﻿import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
-import * as nodemailer from "nodemailer";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { jsPDF } from "jspdf";
 import { getPatronCertificadoUrl } from "./certificadoAccess";
+import { formatMailError, getMailConfig, sendAgMail } from "./mailTransport";
 
 admin.initializeApp();
 
@@ -12,18 +12,7 @@ export { getPatronCertificadoUrl };
 const db = admin.firestore();
 
 // ==================================================================
-// 1. CONFIGURACIÓN DEL CORREO
-// ==================================================================
-const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-        user: "eseagmaster@gmail.com",
-        pass: "hcbqlsbtmppvulv"
-    }
-});
-
-// ==================================================================
-// 2. LÓGICA DE FECHAS
+// 1. LÓGICA DE FECHAS
 // ==================================================================
 const calcularProximoVencimiento = (fechaBase: Date, frecuenciaTexto: string): Date | null => {
     if (!fechaBase || !isValid(fechaBase)) return null;
@@ -94,13 +83,19 @@ export const agbotMonitorDiario = functions.pubsub
         reporteHTML += "</ul>";
 
         try {
-            await transporter.sendMail({
-                from: '"AGbot System" <eseagmaster@gmail.com>',
+            if (!getMailConfig()) {
+                console.error("Monitor diario: correo no configurado (gmail.user / gmail.pass).");
+                return null;
+            }
+            await sendAgMail({
+                fromName: "AGbot System",
                 to: "calidad@ese-ag.mx",
-                subject: `🔔 Reporte Diario de Vencimientos`,
-                html: `<h2>Equipos para hoy (${addDays(hoy, 0).toLocaleDateString()}):</h2>${reporteHTML}`
+                subject: "🔔 Reporte Diario de Vencimientos",
+                html: `<h2>Equipos para hoy (${addDays(hoy, 0).toLocaleDateString()}):</h2>${reporteHTML}`,
             });
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error("Monitor diario:", formatMailError(e));
+        }
         return null;
     });
 
@@ -321,10 +316,15 @@ export const enviarNotificacionCalidad = functions.firestore
 
         const nuevaNotificacion = change.after.data();
         const tipo = nuevaNotificacion?.tipo;
-        if (
-            !nuevaNotificacion ||
-            (tipo !== 'asignacion_calidad' && tipo !== 'revision_calidad')
-        ) {
+        const tiposPush = new Set([
+            'asignacion_calidad',
+            'revision_calidad',
+            'vencimiento_equipo',
+            'vencimiento_cliente',
+            'prestamo_patron_tecnico',
+            'prestamo_patron_calidad',
+        ]);
+        if (!nuevaNotificacion || !tipo || !tiposPush.has(tipo)) {
             return null;
         }
 
@@ -350,16 +350,13 @@ export const enviarNotificacionCalidad = functions.firestore
             ];
         };
 
-        const recipientIds: string[] =
-            tipo === 'revision_calidad'
-                ? Array.isArray(nuevaNotificacion.destinatarios)
-                    ? nuevaNotificacion.destinatarios.filter(
-                          (id: unknown) => typeof id === 'string' && id.length > 0
-                      )
-                    : []
-                : nuevaNotificacion.usuarioId
-                  ? [nuevaNotificacion.usuarioId]
-                  : [];
+        const recipientIds: string[] = Array.isArray(nuevaNotificacion.destinatarios)
+            ? nuevaNotificacion.destinatarios.filter(
+                  (id: unknown) => typeof id === 'string' && id.length > 0
+              )
+            : nuevaNotificacion.usuarioId
+              ? [nuevaNotificacion.usuarioId]
+              : [];
 
         if (recipientIds.length === 0) return null;
 
@@ -384,7 +381,12 @@ export const enviarNotificacionCalidad = functions.firestore
                 nuevaNotificacion.title || nuevaNotificacion.titulo || 'Aviso AG'
             );
             const body = String(nuevaNotificacion.body || nuevaNotificacion.mensaje || '');
-            const url = tipo === 'revision_calidad' ? '/drive' : '/calendario';
+            const url =
+                tipo === 'revision_calidad'
+                    ? '/drive'
+                    : tipo === 'vencimiento_equipo' || tipo === 'vencimiento_cliente'
+                      ? '/vencimientos'
+                      : '/calendario';
 
             const payload = {
                 data: {
@@ -445,7 +447,107 @@ export const enviarNotificacionCalidad = functions.firestore
     });
 
 // ==================================================================
-// 8. VIGILANTE DE ACTUALIZACIONES PJLA (Importado desde archivo externo)
+// 8. ALERTAS DE VENCIMIENTO (Correo + estado en Firestore)
 // ==================================================================
+const buildHtmlAlertaVencimiento = (data: FirebaseFirestore.DocumentData): string => {
+    const equipos = Array.isArray(data.equipos) ? data.equipos : [];
+    const filas = equipos
+        .map((eq: Record<string, unknown>) => {
+            const vence = eq.fechaVencimiento
+                ? format(parseISO(String(eq.fechaVencimiento)), "dd/MM/yyyy", { locale: es })
+                : "N/A";
+            return `<tr>
+                <td style="padding:8px;border:1px solid #e2e8f0;">${eq.descripcion || "—"}</td>
+                <td style="padding:8px;border:1px solid #e2e8f0;font-family:monospace;">${eq.equipoId || "—"}</td>
+                <td style="padding:8px;border:1px solid #e2e8f0;">${vence}</td>
+                <td style="padding:8px;border:1px solid #e2e8f0;text-transform:uppercase;">${eq.status || "—"}</td>
+            </tr>`;
+        })
+        .join("");
+
+    return `
+        <div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a;">
+            <div style="background:linear-gradient(135deg,#2464A3,#1d5082);color:#fff;padding:20px 24px;border-radius:12px 12px 0 0;">
+                <h2 style="margin:0;font-size:18px;">Alerta de vencimiento — AG</h2>
+                <p style="margin:8px 0 0;opacity:0.9;font-size:13px;">Cliente: <strong>${data.cliente || "—"}</strong></p>
+            </div>
+            <div style="padding:20px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+                <p>Hola <strong>${data.destinatarioNombre || "equipo"}</strong>,</p>
+                <p>${data.mensajeCorto || "Hay equipos que requieren tu atención."}</p>
+                <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:16px;background:#fff;">
+                    <thead>
+                        <tr style="background:#e2e8f0;">
+                            <th style="padding:8px;text-align:left;">Equipo</th>
+                            <th style="padding:8px;text-align:left;">ID</th>
+                            <th style="padding:8px;text-align:left;">Vence</th>
+                            <th style="padding:8px;text-align:left;">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>${filas}</tbody>
+                </table>
+                <p style="margin-top:20px;font-size:12px;color:#64748b;">Por favor contacta al cliente para programar recolección o servicio.</p>
+            </div>
+        </div>`;
+};
+
+export const procesarAlertaVencimiento = functions.firestore
+    .document("alertasVencimiento/{alertaId}")
+    .onCreate(async (snap, context) => {
+        const data = snap.data();
+        if (!data || data.estado === "enviado") return null;
+
+        const email = String(data.destinatarioEmail || "").trim();
+        if (!email) {
+            await snap.ref.update({
+                estado: "error",
+                error: "Sin correo de destinatario",
+                procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return null;
+        }
+
+        const subject = String(
+            data.titulo || `Alerta de vencimiento — ${data.cliente || "Cliente"}`
+        );
+
+        if (!getMailConfig()) {
+            await snap.ref.update({
+                estado: "error",
+                error:
+                    "Correo no configurado en Firebase. Ejecute: firebase functions:config:set gmail.user=\"...\" gmail.pass=\"...\" y despliegue functions.",
+                procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return null;
+        }
+
+        try {
+            await sendAgMail({
+                fromName: "AG Sistema de Vencimientos",
+                to: email,
+                subject: `🔔 ${subject}`,
+                html: buildHtmlAlertaVencimiento(data),
+            });
+
+            await snap.ref.update({
+                estado: "enviado",
+                procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (error) {
+            const mensaje = formatMailError(error);
+            console.error(`Error enviando alerta ${context.params.alertaId}:`, mensaje);
+            await snap.ref.update({
+                estado: "error",
+                error: mensaje,
+                procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        }
+
+        return null;
+    });
+
+// ==================================================================
+// 9. VIGILANTE DE ACTUALIZACIONES PJLA (Importado desde archivo externo)
+// ==================================================================
+export { procesarAlertaHojaServicio } from "./hojaServicioMail";
 export * from "./pjlaWatcher";
 export { scheduledDriveReconcile } from "./scheduledDriveReconcile";

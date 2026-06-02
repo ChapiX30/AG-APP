@@ -13,6 +13,10 @@ import {
 } from "firebase/firestore";
 import { getAuth } from 'firebase/auth';
 import { finalizeServicioFromHoja } from '../utils/servicioAutomation';
+import { encolarCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
+import { watchAlertaCorreo } from '../utils/alertaCorreoWatcher';
+import { useAuth } from '../hooks/useAuth';
+import toast, { Toaster } from 'react-hot-toast';
 import logoImage from '../assets/lab_logo.png';
 
 const camposIniciales = {
@@ -573,6 +577,7 @@ export default function HojaDeServicioScreen() {
   const [savingService, setSavingService] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { goBack } = useNavigation();
+  const { user } = useAuth();
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -745,32 +750,47 @@ export default function HojaDeServicioScreen() {
       }
       // =====================================================================
 
-      const confirmManual = window.confirm(
-        `✅ Servicio guardado correctamente.\n\n¿Deseas descargar el PDF y abrir el correo para adjuntarlo manualmente?`
-      );
+      toast.success(`Servicio ${campos.folio} guardado correctamente`);
 
-      if (confirmManual) {
-        await generarPDFFormal({
-            campos,
-            firmaTecnico,
-            firmaCliente,
-            equiposCalibrados,
-            outputType: 'save' 
+      const gruposCorreo = organizarEquiposUnificado(equiposCalibrados).map((g) => ({
+        tecnico: g.tecnico,
+        equipos: g.equipos.map((e) => ({ id: e.id, estado: e.estado })),
+      }));
+      const totalEq = gruposCorreo.reduce((n, g) => n + g.equipos.length, 0);
+
+      if (campos.correo?.trim()) {
+        try {
+          const alertId = await encolarCorreoHojaServicio({
+            folio: campos.folio,
+            empresa: campos.empresa,
+            fecha: campos.fecha,
+            correoCliente: campos.correo,
+            contacto: campos.contacto,
+            tecnicoResponsable: campos.tecnicoResponsable,
+            calidadServicio: campos.calidadServicio,
+            comentarios: campos.comentarios,
+            pdfURL: downloadURL,
+            storagePath,
+            gruposEquipos: gruposCorreo,
+            totalEquipos: totalEq,
+            autorNombre: user?.name,
+            autorUid: user?.id,
+          });
+          watchAlertaCorreo('alertasHojaServicio', alertId, {
+            loadingMessage: 'Enviando hoja de servicio por correo...',
+            successMessage: `Correo enviado a ${campos.correo}`,
+          });
+        } catch (mailErr) {
+          console.error(mailErr);
+          toast.error(
+            mailErr instanceof Error ? mailErr.message : 'No se pudo encolar el correo al cliente.'
+          );
+        }
+      } else {
+        toast('Servicio guardado. Agrega el correo del cliente para enviar la hoja automáticamente.', {
+          icon: 'ℹ️',
+          duration: 5000,
         });
-
-        const subject = `Hoja de Servicio ${campos.folio} - ${campos.empresa}`;
-        const body = `Buenos días,
-
-Adjunto encontrará la hoja de servicio correspondiente al día ${formatDate(campos.fecha)}.
-
-Quedo pendiente de cualquier cosa.
-Gracias.`;
-
-        const mailtoLink = `mailto:${campos.correo || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-        setTimeout(() => {
-            window.location.href = mailtoLink;
-        }, 1000);
       }
 
     } catch (error: any) {
@@ -1104,6 +1124,10 @@ Gracias.`;
 
     return (
       <div className="min-h-full flex-shrink-0 flex flex-col bg-gray-50 p-4 sm:p-8">
+        <Toaster
+          position="top-center"
+          toastOptions={{ duration: 4000, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }}
+        />
         <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
           <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-6 sm:p-8">
             <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -1266,6 +1290,10 @@ Gracias.`;
 
   return (
     <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-blue-50 via-indigo-50/50 to-purple-50 p-4 sm:p-6 lg:p-8">
+      <Toaster
+        position="top-center"
+        toastOptions={{ duration: 4000, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }}
+      />
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
@@ -1277,7 +1305,9 @@ Gracias.`;
               )}
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Hoja de Servicio</h1>
-                <p className="text-gray-500 mt-1">Genera documentos profesionales de servicio técnico</p>
+                <p className="text-gray-500 mt-1">
+                  Al finalizar, se envía un correo profesional al cliente con el PDF adjunto
+                </p>
               </div>
             </div>
             <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-3">
