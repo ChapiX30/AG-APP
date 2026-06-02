@@ -8,19 +8,22 @@ import {
   Activity, Wrench, ArrowLeft, X,
   User, FileText, ChevronRight, Truck, ClipboardCheck, Ban,
   DollarSign, History, Edit3, UploadCloud, ExternalLink, AlertOctagon, File,
-  FileBarChart, Sparkles, Loader2
+  FileBarChart, Sparkles, Loader2, Download, Trash2, RefreshCw
 } from 'lucide-react';
 
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
-import { collection, getDocs, setDoc, doc, query, deleteField } from 'firebase/firestore';
-import { ref, uploadBytes } from 'firebase/storage';
+import { FirebaseError } from 'firebase/app';
+import { collection, getDocs, getDoc, setDoc, doc, query, deleteField } from 'firebase/firestore';
+import { ref, uploadBytes, deleteObject, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../utils/firebase';
 import {
   buildCertificateStoragePath,
   canUploadPatronCertificate,
   canViewPatronCertificate,
   patronHasCertificate,
+  listPatronCertificados,
+  type PatronCertificadoListItem,
   validateCertificateFile,
 } from '../utils/certificateAccess';
 import {
@@ -39,6 +42,7 @@ import {
   getPatronFechaVencimientoEfectiva,
   getPatronEstadoDesdePartes,
   actualizarParteEnPatron,
+  mergePartesCalibracion,
   parteEstaVencida,
 } from '../utils/patronPartes';
 import toast, { Toaster } from 'react-hot-toast';
@@ -145,9 +149,14 @@ const mergePatronesInventario = (
     const key = p.noControl.toUpperCase();
     if (!key) continue;
     const prev = byKey.get(key);
+    const partesMerged = mergePartesCalibracion(prev?.partesCalibracion, p.partesCalibracion);
     byKey.set(key, {
       ...prev,
       ...p,
+      partesCalibracion: partesMerged ?? p.partesCalibracion ?? prev?.partesCalibracion,
+      certificadoStoragePath: p.certificadoStoragePath || prev?.certificadoStoragePath,
+      certificadoUrl: p.certificadoUrl ?? prev?.certificadoUrl,
+      historial: (p.historial?.length ? p.historial : prev?.historial) ?? [],
       id: p.id || prev?.id || patronFirestoreDocId(p.noControl),
     });
   }
@@ -355,7 +364,188 @@ const usePatronesLogic = (actorName: string) => {
       }
   };
 
-  return { data, loading, stats, registrarEvento, editarDatosBase, agregarPatron };
+  const guardarRecepcionCertificado = async (
+    patron: RegistroPatron,
+    formData: {
+      parteId?: string;
+      laboratorio?: string;
+      certificado?: string;
+      nuevaFecha?: string;
+    },
+    file: File,
+  ): Promise<boolean> => {
+    const docId = patron.id || patronFirestoreDocId(patron.noControl);
+    const parteId = formData.parteId?.trim();
+
+    if (patronTienePartes(patron) && !parteId) {
+      toast.error('Seleccione Parte 1 o Parte 2 antes de confirmar.');
+      return false;
+    }
+
+    const validationError = validateCertificateFile(file);
+    if (validationError) {
+      toast.error(validationError);
+      return false;
+    }
+
+    let certificadoStoragePath: string;
+    try {
+      certificadoStoragePath = buildCertificateStoragePath(docId, file, parteId);
+      await uploadBytes(ref(storage, certificadoStoragePath), file, {
+        contentType: file.type || 'application/pdf',
+      });
+    } catch (error) {
+      console.error('Error subiendo certificado:', error);
+      toast.error('No se pudo subir el archivo a Storage.');
+      return false;
+    }
+
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const snap = await getDoc(doc(db, COLLECTION_NAME, docId));
+    const remoto = snap.exists()
+      ? normalizePatron({ id: docId, ...(snap.data() as Record<string, unknown>) })
+      : normalizePatron(patron);
+
+    let partes = remoto.partesCalibracion ?? patron.partesCalibracion;
+    const parte = partes?.find((p) => p.id === parteId);
+
+    if (patronTienePartes(patron) && parteId && partes) {
+      partes = actualizarParteEnPatron(partes, parteId, {
+        estadoParte: 'operativo',
+        fechaVencimiento: formData.nuevaFecha || undefined,
+        fechaUltimaCalibracion: today,
+        laboratorioCalibracion: formData.laboratorio?.trim(),
+        noCertificado: formData.certificado?.trim(),
+        certificadoStoragePath,
+      });
+    }
+
+    const fechas = (partes ?? [])
+      .map((p) => p.fechaVencimiento)
+      .filter(Boolean)
+      .sort() as string[];
+    const fechaVenc = formData.nuevaFecha || fechas[0] || remoto.fechaVencimiento;
+
+    const tituloRec = parte ? `Calibración — ${parte.etiqueta}` : 'Calibración Finalizada';
+    const descripcion = `Lab: ${formData.laboratorio || '—'} | Cert: ${formData.certificado || '—'}`;
+
+    const nuevoHistorial: HistorialEntry = {
+      id: crypto.randomUUID(),
+      fecha: new Date().toISOString(),
+      titulo: tituloRec,
+      usuario: actorName || 'Sistema',
+      tipo: 'calibracion',
+      descripcion,
+      costo: 0,
+    };
+
+    const payload: Record<string, unknown> = {
+      noControl: remoto.noControl || patron.noControl,
+      descripcion: remoto.descripcion || patron.descripcion,
+      estadoProceso: partes ? getPatronEstadoDesdePartes(partes) : 'operativo',
+      ubicacionActual: 'Laboratorio',
+      ubicacion: 'Laboratorio',
+      fechaUltimaCalibracion: today,
+      laboratorioCalibracion: formData.laboratorio?.trim() || remoto.laboratorioCalibracion,
+      certificadoStoragePath,
+      certificadoUrl: deleteField(),
+      fechaVencimiento: fechaVenc,
+      fecha: fechaVenc,
+      historial: [nuevoHistorial, ...(remoto.historial || [])],
+      costoAcumuladoMantenimiento: remoto.costoAcumuladoMantenimiento ?? 0,
+    };
+    if (partes) payload.partesCalibracion = partes;
+
+    try {
+      await setDoc(doc(db, COLLECTION_NAME, docId), payload, { merge: true });
+      await fetchData();
+      toast.success('Certificado guardado y visible en Calibraciones.');
+      return true;
+    } catch (e) {
+      console.error('Error guardando recepción:', e);
+      toast.error('El archivo se subió pero no se guardó en el patrón. Revise permisos Firestore.');
+      return false;
+    }
+  };
+
+  const eliminarCertificadoPatron = async (
+    patron: RegistroPatron,
+    cert: PatronCertificadoListItem,
+  ): Promise<boolean> => {
+    const docId = patron.id || patronFirestoreDocId(patron.noControl);
+    const path = cert.certificadoStoragePath?.trim();
+    if (!path) return false;
+
+    const ok = window.confirm(
+      `¿Eliminar el certificado "${cert.label}"?\n\nPodrá subir otro archivo después. El archivo en la nube también se borrará.`,
+    );
+    if (!ok) return false;
+
+    try {
+      await deleteObject(ref(storage, path));
+    } catch (e) {
+      console.warn('Storage delete (puede no existir):', e);
+    }
+
+    const snap = await getDoc(doc(db, COLLECTION_NAME, docId));
+    const remoto = snap.exists()
+      ? normalizePatron({ id: docId, ...(snap.data() as Record<string, unknown>) })
+      : normalizePatron(patron);
+
+    let partes = remoto.partesCalibracion;
+    if (cert.scope === 'parte' && cert.parteId && partes) {
+      partes = partes.map((p) => {
+        if (p.id !== cert.parteId) return p;
+        const { certificadoStoragePath: _removed, ...rest } = p;
+        return rest;
+      });
+    }
+
+    const otroPath = partes?.find((p) => p.certificadoStoragePath?.trim())?.certificadoStoragePath;
+    const payload: Record<string, unknown> = {
+      historial: [
+        {
+          id: crypto.randomUUID(),
+          fecha: new Date().toISOString(),
+          titulo: 'Certificado eliminado',
+          usuario: actorName || 'Sistema',
+          tipo: 'calibracion',
+          descripcion: `Se quitó el archivo de ${cert.label} para permitir una nueva carga.`,
+        },
+        ...(remoto.historial || []),
+      ],
+    };
+
+    if (partes) payload.partesCalibracion = partes;
+
+    if (remoto.certificadoStoragePath === path) {
+      if (otroPath) payload.certificadoStoragePath = otroPath;
+      else payload.certificadoStoragePath = deleteField();
+      payload.certificadoUrl = deleteField();
+    }
+
+    try {
+      await setDoc(doc(db, COLLECTION_NAME, docId), payload, { merge: true });
+      await fetchData();
+      toast.success('Certificado eliminado. Ya puede subir otro.');
+      return true;
+    } catch (e) {
+      console.error('Error eliminando certificado:', e);
+      toast.error('No se pudo actualizar el patrón en Firestore.');
+      return false;
+    }
+  };
+
+  return {
+    data,
+    loading,
+    stats,
+    registrarEvento,
+    editarDatosBase,
+    agregarPatron,
+    guardarRecepcionCertificado,
+    eliminarCertificadoPatron,
+  };
 };
 
 // --- 3. COMPONENTES VISUALES ---
@@ -583,13 +773,59 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   const { user } = useAuth();
   const actorName = user?.name?.trim() || user?.email?.split('@')[0] || 'Usuario';
   const actorUid = user?.id || '';
-  const { data, loading, stats, registrarEvento, editarDatosBase, agregarPatron } = usePatronesLogic(actorName);
+  const { data, loading, stats, registrarEvento, editarDatosBase, agregarPatron, guardarRecepcionCertificado, eliminarCertificadoPatron } = usePatronesLogic(actorName);
   
   const [tab, setTab] = useState<'todo' | 'alertas' | 'servicio'>('todo');
   const [busqueda, setBusqueda] = useState('');
   
   const [selectedItem, setSelectedItem] = useState<RegistroPatron | null>(null);
   const [workflowAction, setWorkflowAction] = useState<any>(null);
+  const [workflowOpts, setWorkflowOpts] = useState<{ parteId?: string } | null>(null);
+
+  const handlePatronAction = (action: string, opts?: { parteId?: string }) => {
+    setWorkflowOpts(opts ?? null);
+    setWorkflowAction(action);
+  };
+
+  const descargarCertificado = async (patron: RegistroPatron, cert: PatronCertificadoListItem) => {
+    if (!patron.id || !cert.certificadoStoragePath) return;
+    try {
+      const url = cert.certificadoStoragePath
+        ? await getDownloadURL(ref(storage, cert.certificadoStoragePath))
+        : await resolvePatronCertificadoPreviewUrl({
+            patronId: patron.id,
+            certificadoStoragePath: cert.certificadoStoragePath,
+            certificadoUrl: cert.certificadoUrl,
+          });
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const ext = (cert.certificadoStoragePath.split('.').pop() || 'pdf').toLowerCase();
+      const safeLabel = cert.label.replace(/[^\w\-]+/g, '_').slice(0, 40);
+      const filename = `${patron.noControl}_${safeLabel}.${ext}`;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+      toast.success('Descarga iniciada');
+    } catch (e) {
+      console.error('Descarga certificado:', e);
+      toast.error('No se pudo descargar el archivo.');
+    }
+  };
+
+  useEffect(() => {
+    setSelectedItem((current) => {
+      if (!current) return current;
+      const fresh = data.find(
+        (d) =>
+          (current.id && d.id === current.id) ||
+          d.noControl.trim().toUpperCase() === current.noControl.trim().toUpperCase(),
+      );
+      return fresh || current;
+    });
+  }, [data]);
 
   // Filtrado
   const filteredData = useMemo(() => {
@@ -630,6 +866,24 @@ export const ProgramaCalibracionScreen: React.FC = () => {
 
       let success = false;
       const today = format(new Date(), 'yyyy-MM-dd');
+
+      if (workflowAction === 'calibrar_recepcion') {
+        if (!canUploadPatronCertificate(user)) {
+          toast.error('No tiene permiso para subir certificados.');
+          return;
+        }
+        if (!file) {
+          toast.error('Adjunte el certificado (PDF o imagen) antes de confirmar.');
+          return;
+        }
+        const ok = await guardarRecepcionCertificado(selectedItem, formData, file);
+        if (ok) {
+          setWorkflowAction(null);
+          setWorkflowOpts(null);
+        }
+        return;
+      }
+
       let certificadoStoragePath: string | undefined = selectedItem.certificadoStoragePath;
 
       if (file) {
@@ -654,8 +908,14 @@ export const ProgramaCalibracionScreen: React.FC = () => {
           });
           certificadoStoragePath = storagePath;
         } catch (error) {
-          console.error('Error subiendo certificado (sin URL en log)');
-          alert('Error al subir el archivo. Verifica su conexión y permisos.');
+          console.error('Error subiendo certificado:', error);
+          const detail =
+            error instanceof FirebaseError
+              ? (error.code === 'storage/unauthorized'
+                  ? 'Sin permiso en Storage (rol o reglas Firebase).'
+                  : error.message)
+              : 'Verifique conexión y permisos.';
+          toast.error(`No se pudo subir el certificado. ${detail}`);
           return;
         }
       }
@@ -678,42 +938,6 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 updatesEnvio = { ...updatesEnvio, partesCalibracion: partes, estadoProceso: getPatronEstadoDesdePartes(partes) };
               }
               success = await registrarEvento(selectedItem, 'Envío a Calibración', descEnvio, 'flujo', updatesEnvio);
-              break;
-          }
-          case 'calibrar_recepcion': {
-              const parteId = formData.parteId as string | undefined;
-              const parte = selectedItem.partesCalibracion?.find(p => p.id === parteId);
-              const recepcionUpdates: Partial<RegistroPatron> & { certificadoUrl?: ReturnType<typeof deleteField> } = {
-                  estadoProceso: 'operativo',
-                  ubicacionActual: 'Laboratorio',
-                  fechaVencimiento: formData.nuevaFecha,
-                  fechaUltimaCalibracion: today,
-                  laboratorioCalibracion: formData.laboratorio,
-              };
-              if (file && certificadoStoragePath) {
-                  recepcionUpdates.certificadoStoragePath = certificadoStoragePath;
-                  recepcionUpdates.certificadoUrl = deleteField();
-              }
-              if (patronTienePartes(selectedItem) && parteId && selectedItem.partesCalibracion) {
-                const partes = actualizarParteEnPatron(selectedItem.partesCalibracion, parteId, {
-                  estadoParte: 'operativo',
-                  fechaVencimiento: formData.nuevaFecha,
-                  fechaUltimaCalibracion: today,
-                  laboratorioCalibracion: formData.laboratorio,
-                  noCertificado: formData.certificado,
-                  certificadoStoragePath: certificadoStoragePath || undefined,
-                });
-                const fechas = partes.map(p => p.fechaVencimiento).filter(Boolean).sort() as string[];
-                recepcionUpdates.partesCalibracion = partes;
-                recepcionUpdates.estadoProceso = getPatronEstadoDesdePartes(partes);
-                if (fechas.length) recepcionUpdates.fechaVencimiento = fechas[0];
-                if (fechas.length) recepcionUpdates.fecha = fechas[0];
-              }
-              const tituloRec = parte ? `Calibración — ${parte.etiqueta}` : 'Calibración Finalizada';
-              const descRec = parte
-                ? `Lab: ${formData.laboratorio} | Cert: ${formData.certificado || '—'}`
-                : `Lab: ${formData.laboratorio}`;
-              success = await registrarEvento(selectedItem, tituloRec, descRec, 'calibracion', recepcionUpdates);
               break;
           }
           case 'reportar_falla':
@@ -752,9 +976,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                break;
       }
 
-      if(success) {
+      if (success) {
           setWorkflowAction(null);
-          setSelectedItem(null);
       }
   };
 
@@ -882,8 +1105,11 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       <SidePanel
         selectedItem={selectedItem}
         onClose={() => setSelectedItem(null)}
-        onAction={setWorkflowAction}
+        onAction={handlePatronAction}
         authUser={user}
+        canManageCert={canUploadPatronCertificate(user)}
+        onDownloadCert={descargarCertificado}
+        onDeleteCert={(patron, cert) => eliminarCertificadoPatron(patron, cert)}
       />
 
       {/* --- MODAL DE FLUJO --- */}
@@ -893,7 +1119,8 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 action={workflowAction} 
                 item={selectedItem}
                 suggestedNoControl={suggestNextAgNoControl(data)}
-                onClose={() => setWorkflowAction(null)}
+                initialParteId={workflowOpts?.parteId}
+                onClose={() => { setWorkflowAction(null); setWorkflowOpts(null); }}
                 onConfirm={handleProcessWorkflow}
             />
         )}
@@ -915,11 +1142,28 @@ const LocationDisplay = ({ item }: { item: RegistroPatron }) => {
 }
 
 // --- PANEL LATERAL CON TABS ---
-const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
+const SidePanel = ({
+  selectedItem,
+  onClose,
+  onAction,
+  authUser,
+  canManageCert,
+  onDownloadCert,
+  onDeleteCert,
+}: {
+  selectedItem: RegistroPatron;
+  onClose: () => void;
+  onAction: (action: string, opts?: { parteId?: string }) => void;
+  authUser: ReturnType<typeof useAuth>['user'];
+  canManageCert: boolean;
+  onDownloadCert: (patron: RegistroPatron, cert: PatronCertificadoListItem) => void;
+  onDeleteCert: (patron: RegistroPatron, cert: PatronCertificadoListItem) => void | Promise<boolean>;
+}) => {
     const [panelTab, setPanelTab] = useState<'info' | 'calib' | 'mant'>('info');
-    const [showPreview, setShowPreview] = useState(false);
+    const [previewMeta, setPreviewMeta] = useState<PatronCertificateMeta | null>(null);
     const canViewCert = canViewPatronCertificate(authUser);
     const hasCert = selectedItem ? patronHasCertificate(selectedItem) : false;
+    const certificados = selectedItem ? listPatronCertificados(selectedItem) : [];
 
     return (
         <AnimatePresence>
@@ -995,6 +1239,12 @@ const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
                                                 Vence: {isValid(parseISO(fv)) ? format(parseISO(fv), 'dd MMM yyyy', { locale: es }) : fv}
                                               </p>
                                             )}
+                                            {parte.certificadoStoragePath && (
+                                              <p className="text-xs text-emerald-700 font-medium mt-1 flex items-center gap-1">
+                                                <CheckCircle className="w-3 h-3" /> Certificado cargado
+                                                {parte.noCertificado ? ` · ${parte.noCertificado}` : ''}
+                                              </p>
+                                            )}
                                           </div>
                                         );
                                       })}
@@ -1042,26 +1292,73 @@ const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
                                         <FileText className="w-4 h-4 text-blue-500"/> Certificado Vigente
                                     </h3>
                                     {hasCert ? (
-                                        <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-white p-2 rounded text-blue-500 font-bold text-xs border border-blue-100 uppercase">
-                                                     <File size={20} />
+                                        <div className="space-y-2">
+                                          {certificados.map((cert) => (
+                                            <div
+                                              key={cert.key}
+                                              className="p-3 bg-blue-50 rounded-xl border border-blue-100 space-y-2"
+                                            >
+                                              <div className="flex items-center gap-3 min-w-0">
+                                                <div className="bg-white p-2 rounded text-blue-500 border border-blue-100 shrink-0">
+                                                  <File size={20} />
                                                 </div>
-                                                <div className="text-sm">
-                                                    <p className="font-medium text-blue-900">Documento de Calibración</p>
-                                                    <p className="text-xs text-blue-600">Subido el {selectedItem.fechaUltimaCalibracion || 'recientemente'}</p>
+                                                <div className="text-sm min-w-0 flex-1">
+                                                  <p className="font-medium text-blue-900">{cert.label}</p>
+                                                  <p className="text-xs text-blue-600">
+                                                    {cert.noCertificado ? `No. ${cert.noCertificado}` : 'Documento en Storage'}
+                                                  </p>
                                                 </div>
+                                              </div>
+                                              <div className="flex flex-wrap gap-1.5 justify-end">
+                                                {canViewCert && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setPreviewMeta({
+                                                        patronId: selectedItem.id!,
+                                                        certificadoStoragePath: cert.certificadoStoragePath,
+                                                        certificadoUrl: cert.certificadoUrl,
+                                                      })
+                                                    }
+                                                    className="px-2.5 py-1.5 bg-white text-blue-600 border border-blue-200 rounded-lg text-xs font-semibold hover:bg-blue-50"
+                                                  >
+                                                    Ver
+                                                  </button>
+                                                )}
+                                                {canViewCert && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => onDownloadCert(selectedItem, cert)}
+                                                    className="px-2.5 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 inline-flex items-center gap-1"
+                                                  >
+                                                    <Download className="w-3.5 h-3.5" /> Bajar
+                                                  </button>
+                                                )}
+                                                {canManageCert && (
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        onAction('calibrar_recepcion', {
+                                                          parteId: cert.parteId || selectedItem.partesCalibracion?.[0]?.id,
+                                                        })
+                                                      }
+                                                      className="px-2.5 py-1.5 bg-white text-[#2464A3] border border-blue-200 rounded-lg text-xs font-semibold hover:bg-blue-50 inline-flex items-center gap-1"
+                                                    >
+                                                      <RefreshCw className="w-3.5 h-3.5" /> Cambiar
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => onDeleteCert(selectedItem, cert)}
+                                                      className="px-2.5 py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-50 inline-flex items-center gap-1"
+                                                    >
+                                                      <Trash2 className="w-3.5 h-3.5" /> Quitar
+                                                    </button>
+                                                  </>
+                                                )}
+                                              </div>
                                             </div>
-                                            {canViewCert ? (
-                                              <button
-                                                onClick={() => setShowPreview(true)}
-                                                className="px-3 py-1.5 bg-white text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-50 transition shadow-sm flex items-center gap-1"
-                                              >
-                                                Ver Archivo
-                                              </button>
-                                            ) : (
-                                              <span className="text-xs text-gray-500 px-2">Sin permiso de visualización</span>
-                                            )}
+                                          ))}
                                         </div>
                                     ) : (
                                         <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
@@ -1109,14 +1406,10 @@ const SidePanel = ({ selectedItem, onClose, onAction, authUser }: any) => {
                     </div>
                     
                     {/* MODAL DE PREVISUALIZACIÓN */}
-                    {showPreview && selectedItem.id && canViewCert && hasCert && (
+                    {previewMeta && selectedItem.id && canViewCert && (
                         <FilePreviewModal
-                          meta={{
-                            patronId: selectedItem.id,
-                            certificadoStoragePath: selectedItem.certificadoStoragePath,
-                            certificadoUrl: selectedItem.certificadoUrl,
-                          }}
-                          onClose={() => setShowPreview(false)}
+                          meta={previewMeta}
+                          onClose={() => setPreviewMeta(null)}
                         />
                     )}
                 </motion.div>
@@ -1256,8 +1549,8 @@ const WORKFLOW_TEXTAREA_CLASS =
   'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm ' +
   'focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/25 focus:outline-none [color-scheme:light]';
 
-const WorkflowDialog = ({ action, item, onClose, onConfirm, suggestedNoControl }: any) => {
-    const [form, setForm] = useState<any>(() => {
+const WorkflowDialog = ({ action, item, onClose, onConfirm, suggestedNoControl, initialParteId }: any) => {
+    const buildInitialForm = () => {
       if (action === 'agregar_patron') {
         return { noControl: suggestedNoControl || '', descripcion: '', marca: '', modelo: '', serie: '', frecuenciaMeses: 12, fechaVencimiento: '' };
       }
@@ -1266,12 +1559,19 @@ const WorkflowDialog = ({ action, item, onClose, onConfirm, suggestedNoControl }
       return {
         ...item,
         nuevaFecha: getFechaVencimiento(item),
-        parteId: parteEnCalib || primeraParte,
-        laboratorio: '',
+        parteId: initialParteId || parteEnCalib || primeraParte,
+        laboratorio: item?.laboratorioCalibracion || '',
         certificado: '',
         proveedor: '',
       };
-    });
+    };
+
+    const [form, setForm] = useState<any>(buildInitialForm);
+
+    useEffect(() => {
+      setForm(buildInitialForm());
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- reinicio al abrir otro flujo
+    }, [action, initialParteId, item?.id]);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
 

@@ -59,8 +59,16 @@ service firebase.storage {
       allow create, update, delete: if isSignedIn() && !isPatronUuidFolder(folder);
     }
 
-    // Certificados de patrones — rutas nuevas (UUID, no adivinables)
+    // Certificados de patrones — calibraciones/{patronId}/{archivo} o subcarpetas por parte
     match /calibraciones/{patronId}/{fileName} {
+      allow read: if canAccessPatronCertificates();
+      allow create, update: if canWritePatronCertificates()
+        && isAllowedCertificateUpload();
+      allow delete: if canWritePatronCertificates()
+        && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
+    }
+
+    match /calibraciones/{patronId}/{parteId}/{fileName} {
       allow read: if canAccessPatronCertificates();
       allow create, update: if canWritePatronCertificates()
         && isAllowedCertificateUpload();

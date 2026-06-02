@@ -97,8 +97,22 @@ async function loadPatronCertificadoMeta(
     throw new PatronCertificadoError('Patrón no encontrado.', 'unknown');
   }
   const data = snap.data();
+  const rootPath = typeof data.certificadoStoragePath === 'string' ? data.certificadoStoragePath.trim() : '';
+  if (rootPath) {
+    return {
+      certificadoStoragePath: rootPath,
+      certificadoUrl: typeof data.certificadoUrl === 'string' ? data.certificadoUrl.trim() : '',
+    };
+  }
+  const partes = Array.isArray(data.partesCalibracion) ? data.partesCalibracion : [];
+  for (const parte of partes) {
+    const p = parte as { certificadoStoragePath?: string };
+    if (typeof p.certificadoStoragePath === 'string' && p.certificadoStoragePath.trim()) {
+      return { certificadoStoragePath: p.certificadoStoragePath.trim(), certificadoUrl: '' };
+    }
+  }
   return {
-    certificadoStoragePath: typeof data.certificadoStoragePath === 'string' ? data.certificadoStoragePath.trim() : '',
+    certificadoStoragePath: '',
     certificadoUrl: typeof data.certificadoUrl === 'string' ? data.certificadoUrl.trim() : '',
   };
 }
@@ -123,12 +137,25 @@ export async function resolvePatronCertificadoUrl(
   patronId: string,
   meta?: PatronCertificadoMeta
 ): Promise<string> {
+  const metaPath = meta?.certificadoStoragePath?.trim() || '';
+  const metaLegacy = meta?.certificadoUrl?.trim() || '';
+
+  if (metaPath) {
+    const direct = await tryStorageDownloadURL(metaPath);
+    if (direct) return direct;
+  }
+
   const patronMeta = await loadPatronCertificadoMeta(patronId, meta);
-  const storagePath = resolvePatronCertificateStoragePath(patronMeta);
-  const legacyUrl = patronMeta.certificadoUrl?.trim() || '';
+  const storagePath = metaPath || resolvePatronCertificateStoragePath(patronMeta);
+  const legacyUrl = metaLegacy || patronMeta.certificadoUrl?.trim() || '';
 
   if (!storagePath && !legacyUrl) {
     throw new PatronCertificadoError('No hay certificado asociado a este patrón.', 'no-certificate');
+  }
+
+  if (storagePath) {
+    const directUrl = await tryStorageDownloadURL(storagePath);
+    if (directUrl) return directUrl;
   }
 
   try {

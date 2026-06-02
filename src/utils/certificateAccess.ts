@@ -72,14 +72,71 @@ export function canUploadPatronCertificate(user: CertificateAuthUser): boolean {
   ]);
 }
 
-export function patronHasCertificate(
-  item: {
+type PatronCertFields = {
+  certificadoStoragePath?: string;
+  certificadoUrl?: string;
+  partesCalibracion?: Array<{
+    etiqueta?: string;
     certificadoStoragePath?: string;
-    certificadoUrl?: string;
-  } | null | undefined
-): boolean {
+    noCertificado?: string;
+  }>;
+};
+
+export function patronHasCertificate(item: PatronCertFields | null | undefined): boolean {
   if (!item) return false;
-  return Boolean(item.certificadoStoragePath?.trim() || item.certificadoUrl?.trim());
+  if (item.certificadoStoragePath?.trim() || item.certificadoUrl?.trim()) return true;
+  return (item.partesCalibracion ?? []).some(
+    (p) => Boolean(p.certificadoStoragePath?.trim()),
+  );
+}
+
+export type PatronCertificadoListItem = {
+  key: string;
+  label: string;
+  scope: 'root' | 'parte';
+  parteId?: string;
+  certificadoStoragePath?: string;
+  certificadoUrl?: string;
+  noCertificado?: string;
+};
+
+/** Certificados visibles (raíz + cada parte con archivo en Storage). */
+export function listPatronCertificados(item: PatronCertFields): PatronCertificadoListItem[] {
+  const list: PatronCertificadoListItem[] = [];
+  const rootPath = item.certificadoStoragePath?.trim() || '';
+
+  for (const parte of item.partesCalibracion ?? []) {
+    const path = parte.certificadoStoragePath?.trim();
+    if (!path) continue;
+    list.push({
+      key: `parte-${parte.id || parte.etiqueta}`,
+      label: parte.etiqueta ? `Certificado — ${parte.etiqueta}` : 'Certificado de parte',
+      scope: 'parte',
+      parteId: parte.id,
+      certificadoStoragePath: path,
+      noCertificado: parte.noCertificado,
+    });
+  }
+
+  if (rootPath && !list.some((c) => c.certificadoStoragePath === rootPath)) {
+    list.unshift({
+      key: 'root',
+      label: 'Certificado general',
+      scope: 'root',
+      certificadoStoragePath: item.certificadoStoragePath,
+      certificadoUrl: item.certificadoUrl,
+    });
+  } else if (rootPath && list.length === 0) {
+    list.push({
+      key: 'root',
+      label: 'Certificado general',
+      scope: 'root',
+      certificadoStoragePath: item.certificadoStoragePath,
+      certificadoUrl: item.certificadoUrl,
+    });
+  }
+
+  return list;
 }
 
 export function validateCertificateFile(file: File): string | null {
@@ -100,8 +157,10 @@ export function buildCertificateStoragePath(patronId: string, file: File, parteI
   const ext = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '') || 'pdf';
   const safeExt = ALLOWED_CERTIFICATE_EXT.has(ext) ? ext : 'pdf';
   const uuid = crypto.randomUUID();
-  const folder = parteId ? `${patronId}/${parteId}` : patronId;
-  return `${CERT_STORAGE_PREFIX}/${folder}/${uuid}.${safeExt}`;
+  const safeParte = parteId ? parteId.replace(/[^a-zA-Z0-9_-]/g, '') : '';
+  /** Una sola carpeta bajo calibraciones/{patronId}/ — las reglas Storage solo permiten 2 niveles. */
+  const fileName = safeParte ? `${safeParte}_${uuid}.${safeExt}` : `${uuid}.${safeExt}`;
+  return `${CERT_STORAGE_PREFIX}/${patronId}/${fileName}`;
 }
 
 /** Extrae ruta Storage desde URL legacy de Firebase (token embebido). */
@@ -120,7 +179,7 @@ export function extractStoragePathFromDownloadUrl(url: string): string | null {
 export function isPatronCertificateStoragePath(storagePath: string): boolean {
   if (!storagePath || storagePath.includes('..')) return false;
   const parts = storagePath.split('/').filter(Boolean);
-  if (parts.length !== 3) return false;
+  if (parts.length < 3 || parts.length > 4) return false;
   return parts[0] === CERT_STORAGE_PREFIX || parts[0] === LEGACY_CERT_STORAGE_PREFIX;
 }
 

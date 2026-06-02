@@ -44,7 +44,7 @@ function extractStoragePathFromDownloadUrl(url: string): string | null {
 
 function isPatronCertificateStoragePath(storagePath: string): boolean {
     const parts = storagePath.split("/").filter(Boolean);
-    if (parts.length !== 3) return false;
+    if (parts.length < 3 || parts.length > 4) return false;
     return parts[0] === "calibraciones" || parts[0] === "certificados";
 }
 

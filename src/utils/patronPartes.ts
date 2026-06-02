@@ -58,6 +58,30 @@ export function actualizarParteEnPatron(
   return partes.map((p) => (p.id === parteId ? { ...p, ...updates } : p));
 }
 
+/** Combina catálogo local + Firestore sin perder certificados por parte. */
+export function mergePartesCalibracion(
+  seed?: PatronParteCalibracion[],
+  remote?: PatronParteCalibracion[],
+): PatronParteCalibracion[] | undefined {
+  if (!seed?.length && !remote?.length) return undefined;
+  const map = new Map<string, PatronParteCalibracion>();
+  for (const p of seed ?? []) map.set(p.id, { ...p });
+  for (const p of remote ?? []) {
+    const prev = map.get(p.id);
+    map.set(p.id, {
+      ...prev,
+      ...p,
+      certificadoStoragePath: p.certificadoStoragePath || prev?.certificadoStoragePath,
+      fechaVencimiento: p.fechaVencimiento || prev?.fechaVencimiento,
+      fechaUltimaCalibracion: p.fechaUltimaCalibracion || prev?.fechaUltimaCalibracion,
+      laboratorioCalibracion: p.laboratorioCalibracion || prev?.laboratorioCalibracion,
+      noCertificado: p.noCertificado || prev?.noCertificado,
+      estadoParte: p.estadoParte || prev?.estadoParte,
+    });
+  }
+  return [...map.values()];
+}
+
 export function parteEstaVencida(parte: PatronParteCalibracion): boolean {
   const f = getParteFechaVencimiento(parte);
   if (!f) return false;
