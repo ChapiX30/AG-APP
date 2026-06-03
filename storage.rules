@@ -99,5 +99,15 @@ service firebase.storage {
     match /formatos_master/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
+
+    // Solicitudes de vacaciones (PDF AG-ADM-F12) — lectura app; escritura vía Functions Admin
+    match /vacaciones/{solicitudId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf';
+      allow delete: if isSignedIn();
+    }
   }
 }

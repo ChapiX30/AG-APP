@@ -38,6 +38,11 @@ const TVDashboardScreen = lazy(() => import('./TVDashboardScreen'));
 // --- FORMATOS Y PERMISOS DE TRABAJO ---
 const FormatosScreen = lazy(() => import('./FormatosScreen').then(module => ({ default: module.FormatosScreen })));
 const PermisosTrabajoScreen = lazy(() => import('./PermisosTrabajoScreen').then(module => ({ default: module.PermisosTrabajoScreen })));
+const SolicitudVacacionesScreen = lazy(() =>
+  import('./SolicitudVacacionesScreen').then((module) => ({
+    default: module.SolicitudVacacionesScreen,
+  })),
+);
 
 // --- HISTORIAL DE EQUIPOS ---
 const DirectorioEmpresasScreen = lazy(() => import('./EquipmentHistoryScreens').then(module => ({ default: module.DirectorioEmpresasScreen })));
@@ -167,6 +172,7 @@ const renderScreen = (screen: string, user: any) => {
     case 'entrada-salida': return <EntradaSalidaScreen />;
     case 'formatos': return <FormatosScreen />;
     case 'permisos-trabajo': return <PermisosTrabajoScreen />;
+    case 'solicitud-vacaciones': return <SolicitudVacacionesScreen />;
     case 'directorio-empresas': return <DirectorioEmpresasScreen />;
     case 'equipos-empresa': return <EquiposPorEmpresaScreen />;
     case 'detalle-equipo': return <DetalleEquipoScreen />;

@@ -323,6 +323,8 @@ export const enviarNotificacionCalidad = functions.firestore
             'vencimiento_cliente',
             'prestamo_patron_tecnico',
             'prestamo_patron_calidad',
+            'vacacion_pendiente',
+            'vacacion_rechazada',
         ]);
         if (!nuevaNotificacion || !tipo || !tiposPush.has(tipo)) {
             return null;
@@ -386,7 +388,9 @@ export const enviarNotificacionCalidad = functions.firestore
                     ? '/drive'
                     : tipo === 'vencimiento_equipo' || tipo === 'vencimiento_cliente'
                       ? '/vencimientos'
-                      : '/calendario';
+                      : tipo === 'vacacion_pendiente' || tipo === 'vacacion_rechazada'
+                        ? '/solicitud-vacaciones'
+                        : '/calendario';
 
             const payload = {
                 data: {
@@ -549,5 +553,7 @@ export const procesarAlertaVencimiento = functions.firestore
 // 9. VIGILANTE DE ACTUALIZACIONES PJLA (Importado desde archivo externo)
 // ==================================================================
 export { procesarAlertaHojaServicio } from "./hojaServicioMail";
+export { procesarAlertaVacaciones } from "./vacacionSolicitudMail";
+export { onVacacionAprobadaFinal } from "./vacacionAprobacionFinal";
 export * from "./pjlaWatcher";
 export { scheduledDriveReconcile } from "./scheduledDriveReconcile";

@@ -109,6 +109,7 @@ const MENU_ITEMS = [
   { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo' },
   { id: 'directorio-empresas', title: 'Historial Equipos', icon: History, category: 'Análisis' },
   { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo' },
+  { id: 'solicitud-vacaciones', title: 'Vacaciones', icon: Calendar, category: 'Operativo' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico' },
   { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad' },
