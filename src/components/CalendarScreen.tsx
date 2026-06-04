@@ -42,9 +42,11 @@ import {
   type PatronUrgency,
 } from '../utils/patronCalibracion';
 import {
+  canAcknowledgeAssignedEvent,
   canEditCalendarEvents,
   canSeeAllCalendarEvents,
   getEventCreatorDisplay,
+  isEdgarAmador,
 } from '../utils/calendarPermissions';
 import {
   isReprogramadoEstado,
@@ -149,8 +151,16 @@ const isUserAssignedToEvent = (
     return personas.some(p => keys.has(String(p).toLowerCase()));
 };
 
-const getAckLabel = (tipo?: string) => (tipo === 'junta' ? 'Asistencia confirmada' : 'Enterado');
-const getAckActionLabel = (tipo?: string) => (tipo === 'junta' ? 'Confirmar asistencia' : 'Confirmar enterado');
+const getAckLabel = (tipo?: string, user?: { nombre?: string; name?: string; email?: string; correo?: string } | null) => {
+    if (tipo === 'junta') return 'Asistencia confirmada';
+    if (user && isEdgarAmador(user)) return 'De acuerdo';
+    return 'Enterado';
+};
+const getAckActionLabel = (tipo?: string, user?: { nombre?: string; name?: string; email?: string; correo?: string } | null) => {
+    if (tipo === 'junta') return 'Confirmar asistencia';
+    if (user && isEdgarAmador(user)) return 'Estoy de acuerdo';
+    return 'Confirmar enterado';
+};
 const getAckInviteMessage = (tipo?: string) =>
     tipo === 'junta'
         ? 'Ingresa al calendario para confirmar tu asistencia.'
@@ -250,8 +260,9 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const isAssigned = event ? isUserAssignedToEvent(currentUser, event.personas || [], authUid) : false;
     const canFullEdit = canEdit && !!event && !isPJLA && (!isCalidad || isEditingEvent);
     const showDetailView = !!event && (!canFullEdit || isPJLA);
-    const ackLabel = getAckLabel(event?.tipo);
-    const ackActionLabel = getAckActionLabel(event?.tipo);
+    const ackLabel = getAckLabel(event?.tipo, currentUser);
+    const ackActionLabel = getAckActionLabel(event?.tipo, currentUser);
+    const canAckAssigned = canAcknowledgeAssignedEvent(currentUser, event?.tipo, isAssigned);
     const creatorDisplay = event ? getEventCreatorDisplay(event, technicalStaff) : null;
 
     const sustaitaId = technicalStaff.find((u: any) => u.nombre?.toLowerCase().includes('sustaita'))?.id || '';
@@ -380,7 +391,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
     const handleMarcarEnterado = async () => {
         const ackUserId = resolveAckUserId();
-        if (!event?.id || !ackUserId || !isAssigned) return;
+        if (!event?.id || !ackUserId || !isAssigned || !canAckAssigned) return;
         setMarking(true);
         try {
             const enteradosActuales: string[] = event.enterados || [];
@@ -672,11 +683,16 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 </div>
                             )}
 
-                            {!isPJLA && isAssigned && !yaEstaEnterado && (
+                            {!isPJLA && isAssigned && !yaEstaEnterado && canAckAssigned && (
                                 <button type="button" onClick={handleMarcarEnterado} disabled={marking} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-2">
                                     {marking ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <UserCheck size={18}/>}
                                     {ackActionLabel}
                                 </button>
+                            )}
+                            {!isPJLA && isAssigned && !yaEstaEnterado && !canAckAssigned && event?.tipo === 'junta' && (
+                                <p className="text-xs text-amber-800 text-center py-2.5 px-3 bg-amber-50 border border-amber-200 rounded-xl mt-2">
+                                    En juntas, la confirmación de asistencia la realizan Calidad o Jorge Amador. Si estás invitado, no necesitas confirmar aquí.
+                                </p>
                             )}
                             {!isPJLA && !isAssigned && !canEdit && event?.personas?.length > 0 && (
                                 <p className="text-xs text-slate-500 italic text-center py-2 border border-dashed border-slate-200 rounded-xl">
@@ -837,7 +853,13 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
 // --- 3. VISTA GANTT PT (INTERLABORATORIOS) MAYO - ABRIL ---
 
-const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, canEdit, technicalStaff, onUploadEvidencia, currentUser, authUid }: any) => {
+const calcMagnitudAvance = (eventosMag: any[]) => {
+    if (!eventosMag.length) return 0;
+    const sum = eventosMag.reduce((acc, ev) => acc + calculateAvance(ev), 0);
+    return Math.round(sum / eventosMag.length);
+};
+
+const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCalidad, canEdit, technicalStaff, onUploadEvidencia, currentUser, authUid }: any) => {
     const [uploadingId, setUploadingId] = useState<string | null>(null);
     const monthsPT = ['Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril'];
     const ptEvents = events.filter(e => e.tipo === 'intralaboratorio' || e.tipo === 'interlaboratorio');
@@ -916,6 +938,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, canEdit, te
                     <tbody>
                         {Object.keys(groupedEvents).map(magnitud => {
                             const eventosMag = groupedEvents[magnitud];
+                            const avanceMagnitud = calcMagnitudAvance(eventosMag);
                             return (
                                 <React.Fragment key={magnitud}>
                                     {eventosMag.map((ev, idx) => {
@@ -930,8 +953,23 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, canEdit, te
                                         return (
                                             <tr key={ev.id} className="hover:brightness-95 cursor-pointer transition-all h-7" onClick={() => onEventClick(ev)}>
                                                 {idx === 0 && (
-                                                    <td rowSpan={eventosMag.length} className="border border-slate-300 p-1 text-center bg-white font-bold text-slate-700 text-[9px] sticky left-0 z-30 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                                                        {magnitud}
+                                                    <td rowSpan={eventosMag.length + 1} className="border border-slate-300 p-1 text-center bg-white font-bold text-slate-700 text-[9px] sticky left-0 z-30 shadow-[2px_0_5px_rgba(0,0,0,0.02)] align-top">
+                                                        <div className="flex flex-col items-center gap-1 min-h-full justify-start">
+                                                            <span className="leading-tight break-words">{magnitud}</span>
+                                                            {canEdit && onDeleteMagnitud && (
+                                                                <button
+                                                                    type="button"
+                                                                    title={`Eliminar magnitud "${magnitud}" y todas sus actividades`}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        onDeleteMagnitud(magnitud, eventosMag.map((x: { id: string }) => x.id));
+                                                                    }}
+                                                                    className="p-1 text-red-600 hover:bg-red-50 rounded border border-red-200"
+                                                                >
+                                                                    <Trash2 size={12}/>
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 )}
                                                 
@@ -991,6 +1029,18 @@ const GanttPTView = ({ events, onCellClick, onEventClick, isCalidad, canEdit, te
                                             </tr>
                                         );
                                     })}
+                                    <tr className="bg-slate-100 border-t-2 border-slate-400 h-7">
+                                        <td colSpan={2} className="border border-slate-300 px-2 py-0.5 text-[9px] font-black text-slate-800 uppercase tracking-wide sticky left-[80px] z-30 bg-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                            Avance total magnitud
+                                        </td>
+                                        <td className="border border-slate-300 p-0.5 bg-slate-100" />
+                                        <td className={`border border-slate-300 p-1 text-center font-black text-[10px] ${getAvanceColor(avanceMagnitud)}`}>
+                                            {avanceMagnitud}%
+                                        </td>
+                                        <td colSpan={52} className="border border-slate-300 bg-slate-100 text-[8px] text-slate-500 italic px-2">
+                                            Promedio de {eventosMag.length} actividad{eventosMag.length === 1 ? '' : 'es'}
+                                        </td>
+                                    </tr>
                                 </React.Fragment>
                             );
                         })}
@@ -1306,6 +1356,19 @@ export const CalendarScreen: React.FC = () => {
         await uploadEvidenciaServicio(servicioId, file);
     };
 
+    const handleDeleteMagnitud = async (magnitud: string, eventIds: string[]) => {
+        if (!canEditEvents || !eventIds.length) return;
+        const msg = `¿Eliminar toda la magnitud "${magnitud}"?\nSe borrarán ${eventIds.length} actividad${eventIds.length === 1 ? '' : 'es'}. Esta acción no se puede deshacer.`;
+        if (!window.confirm(msg)) return;
+        try {
+            await Promise.all(eventIds.map(id => deleteDoc(doc(db, 'servicios', id))));
+            toast.success(`Magnitud "${magnitud}" eliminada (${eventIds.length} actividades).`);
+        } catch (err) {
+            console.error(err);
+            toast.error('No se pudo eliminar la magnitud completa');
+        }
+    };
+
     const handleGanttCellClick = (catId: string, weekIdx: number) => {
         if (!isCalidad) return;
         const month = (Math.floor(weekIdx / 4) + 4) % 12;
@@ -1555,7 +1618,7 @@ export const CalendarScreen: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                        <GanttPTView events={roleVisibleEvents} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} isCalidad={isCalidad} canEdit={canEditEvents} technicalStaff={users} onUploadEvidencia={handleUploadEvidenciaPT} currentUser={currentUserData} authUid={authUser?.uid} />
+                        <GanttPTView events={roleVisibleEvents} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} onDeleteMagnitud={handleDeleteMagnitud} isCalidad={isCalidad} canEdit={canEditEvents} technicalStaff={users} onUploadEvidencia={handleUploadEvidenciaPT} currentUser={currentUserData} authUid={authUser?.uid} />
                     )}
                 </div>
 

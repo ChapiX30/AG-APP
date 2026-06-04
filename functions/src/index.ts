@@ -325,6 +325,8 @@ export const enviarNotificacionCalidad = functions.firestore
             'prestamo_patron_calidad',
             'vacacion_pendiente',
             'vacacion_rechazada',
+            'vacacion_progreso',
+            'vacacion_aprobada',
         ]);
         if (!nuevaNotificacion || !tipo || !tiposPush.has(tipo)) {
             return null;
@@ -388,7 +390,10 @@ export const enviarNotificacionCalidad = functions.firestore
                     ? '/drive'
                     : tipo === 'vencimiento_equipo' || tipo === 'vencimiento_cliente'
                       ? '/vencimientos'
-                      : tipo === 'vacacion_pendiente' || tipo === 'vacacion_rechazada'
+                      : tipo === 'vacacion_pendiente' ||
+                          tipo === 'vacacion_rechazada' ||
+                          tipo === 'vacacion_progreso' ||
+                          tipo === 'vacacion_aprobada'
                         ? '/solicitud-vacaciones'
                         : '/calendario';
 
@@ -554,6 +559,7 @@ export const procesarAlertaVencimiento = functions.firestore
 // ==================================================================
 export { procesarAlertaHojaServicio } from "./hojaServicioMail";
 export { procesarAlertaVacaciones } from "./vacacionSolicitudMail";
+export { procesarAlertaVacacionesPaso } from "./vacacionPasoMail";
 export { onVacacionAprobadaFinal } from "./vacacionAprobacionFinal";
 export * from "./pjlaWatcher";
 export { scheduledDriveReconcile } from "./scheduledDriveReconcile";

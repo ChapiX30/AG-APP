@@ -39,7 +39,7 @@ import { db, storage } from '../utils/firebase';
 import {
   canSubmitVacationRequest,
   canUserActOnSolicitud,
-  DEFAULT_VACATION_RH_EMAIL,
+  VACATION_RH_EMAILS,
   getVacationFlowType,
   initialNotifyStepForFlow,
   initialStatusForFlow,
@@ -58,7 +58,12 @@ import {
 import {
   notifyVacationPendingApproval,
   notifyVacationRejected,
+  notifyVacationSubmitted,
+  notifyVacationStepApproved,
+  notifyVacationFullyApproved,
 } from '../utils/vacationNotify';
+import { finalizeVacationAfterApproval } from '../utils/vacationFinalize';
+import { getDownloadURL } from 'firebase/storage';
 import {
   countVacationDaysInclusive,
   formatProgressStateLabel,
@@ -198,7 +203,8 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       fechaSolicitud: format(new Date(), 'yyyy-MM-dd'),
       historial: [] as VacationHistorialEntry[],
       aprobaciones: {},
-      correoRh: DEFAULT_VACATION_RH_EMAIL,
+      correoRh: VACATION_RH_EMAILS[0],
+      correosRh: [...VACATION_RH_EMAILS],
     };
   };
 
@@ -242,7 +248,17 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       await notifyVacationPendingApproval({
         solicitudId: refDoc.id,
         solicitanteNombre: user!.name,
+        solicitanteEmail: user!.email,
         step: pasoNotif,
+        dias: Number(diasVacaciones),
+        fechaInicio,
+        fechaFin,
+      });
+      await notifyVacationSubmitted({
+        solicitanteUid: user!.id,
+        solicitanteNombre: user!.name,
+        solicitanteEmail: user!.email,
+        solicitudId: refDoc.id,
         dias: Number(diasVacaciones),
       });
       toast.success('Solicitud enviada correctamente.');
@@ -316,7 +332,17 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       await notifyVacationPendingApproval({
         solicitudId: s.id,
         solicitanteNombre: s.solicitanteNombre,
+        solicitanteEmail: s.solicitanteEmail,
         step: initialNotifyStepForFlow(flujo),
+        dias: s.diasVacaciones,
+        fechaInicio: s.fechaInicio,
+        fechaFin: s.fechaFin,
+      });
+      await notifyVacationSubmitted({
+        solicitanteUid: s.solicitanteUid,
+        solicitanteNombre: s.solicitanteNombre,
+        solicitanteEmail: s.solicitanteEmail,
+        solicitudId: s.id,
         dias: s.diasVacaciones,
       });
       toast.success('Solicitud reenviada.');
@@ -367,13 +393,36 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           estado: 'aprobada',
           aprobaciones,
           historial,
-          pdfGenerado: false,
-          pdfStoragePath: null,
           updatedAt: serverTimestamp(),
         });
-        toast.success(
-          'Solicitud aprobada. El PDF se generará y se enviará a Recursos Humanos en breve.',
-        );
+        const aprobadaDoc: SolicitudVacacionesDoc = {
+          ...s,
+          estado: 'aprobada',
+          aprobaciones,
+          historial,
+        };
+        try {
+          await finalizeVacationAfterApproval(aprobadaDoc);
+          await notifyVacationFullyApproved({
+            solicitanteUid: s.solicitanteUid,
+            solicitanteNombre: s.solicitanteNombre,
+            solicitanteEmail: s.solicitanteEmail,
+            solicitudId: s.id,
+          });
+          toast.success(
+            'Solicitud aprobada. PDF generado y enviado a eseagmaster@gmail.com (Recursos Humanos).',
+          );
+        } catch (pdfErr) {
+          console.error(pdfErr);
+          await updateDoc(doc(db, 'solicitudesVacaciones', s.id), {
+            pdfGenerado: false,
+            pdfError:
+              pdfErr instanceof Error ? pdfErr.message : 'Error al generar o enviar el PDF.',
+          });
+          toast.error(
+            'Aprobada, pero falló el PDF o el correo. Revise permisos o intente de nuevo.',
+          );
+        }
       } else if (siguiente) {
         await updateDoc(doc(db, 'solicitudesVacaciones', s.id), {
           estado: siguiente,
@@ -382,12 +431,31 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           updatedAt: serverTimestamp(),
         });
         const nextStep = approvalStepForStatus(siguiente);
+        const siguientePasoLabel =
+          nextStep === 'calidad'
+            ? 'Calidad'
+            : nextStep === 'edgar'
+              ? 'Edgar Amador'
+              : nextStep === 'jorge'
+                ? 'Jorge Amador'
+                : 'siguiente autorizador';
+        await notifyVacationStepApproved({
+          solicitanteUid: s.solicitanteUid,
+          solicitanteNombre: s.solicitanteNombre,
+          solicitanteEmail: s.solicitanteEmail,
+          solicitudId: s.id,
+          autorizadoPor: user.name,
+          siguientePasoLabel,
+        });
         if (nextStep) {
           await notifyVacationPendingApproval({
             solicitudId: s.id,
             solicitanteNombre: s.solicitanteNombre,
+            solicitanteEmail: s.solicitanteEmail,
             step: nextStep,
             dias: s.diasVacaciones,
+            fechaInicio: s.fechaInicio,
+            fechaFin: s.fechaFin,
           });
         }
         toast.success('Autorización registrada.');
@@ -426,6 +494,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       await notifyVacationRejected({
         solicitanteUid: rejectTarget.solicitanteUid,
         solicitanteNombre: rejectTarget.solicitanteNombre,
+        solicitanteEmail: rejectTarget.solicitanteEmail,
         rechazadoPorNombre: user.name,
         motivo,
         solicitudId: rejectTarget.id,
@@ -436,6 +505,40 @@ export const SolicitudVacacionesScreen: React.FC = () => {
     } catch (e) {
       console.error(e);
       toast.error('No se pudo rechazar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDescargarPdf = async (s: SolicitudVacacionesDoc) => {
+    if (!s.pdfStoragePath) {
+      return toast.error('El PDF aún no está disponible.');
+    }
+    try {
+      const url = await getDownloadURL(ref(storage, s.pdfStoragePath));
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error(e);
+      toast.error('No se pudo abrir el PDF.');
+    }
+  };
+
+  const handleReintentarPdfRh = async (s: SolicitudVacacionesDoc) => {
+    if (!s.id) return;
+    setBusy(true);
+    try {
+      if (s.pdfStoragePath) {
+        const { retryVacationRhEmail } = await import('../utils/vacationFinalize');
+        await retryVacationRhEmail(s);
+        toast.success('Correo con PDF encolado de nuevo a Recursos Humanos.');
+      } else {
+        const aprobadaDoc = { ...s, estado: 'aprobada' as const };
+        await finalizeVacationAfterApproval(aprobadaDoc);
+        toast.success('PDF generado y correo enviado a Recursos Humanos.');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'No se pudo reenviar el PDF.');
     } finally {
       setBusy(false);
     }
@@ -646,6 +749,40 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                               onReenviar={() => handleReenviar(s)}
                               busy={busy}
                             />
+                          )}
+                          {s.estado === 'aprobada' && (
+                            <div className="flex flex-wrap gap-2">
+                              {s.pdfStoragePath ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleDescargarPdf(s);
+                                  }}
+                                  className="px-4 py-2.5 rounded-lg border border-[#2464A3] text-[#2464A3] text-sm font-medium flex items-center gap-2 hover:bg-sky-50 disabled:opacity-50"
+                                >
+                                  <FileText size={16} />
+                                  Ver PDF AG-ADM-F12
+                                </button>
+                              ) : null}
+                              {(!s.correoEnviado || s.pdfError) && puedeAutorizar ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleReintentarPdfRh(s);
+                                  }}
+                                  className="px-4 py-2.5 rounded-lg bg-[#2464A3] text-white text-sm font-medium disabled:opacity-50"
+                                >
+                                  Reenviar PDF a RH
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
+                          {s.estado === 'aprobada' && s.pdfError && (
+                            <p className="text-xs text-amber-700">{s.pdfError}</p>
                           )}
                           {puedeEliminarSolicitud(s) ? (
                             <button

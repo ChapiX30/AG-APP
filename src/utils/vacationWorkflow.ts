@@ -44,7 +44,10 @@ export interface SolicitudVacacionesDoc {
     jorge?: VacationApprovalRecord;
   };
   pdfStoragePath?: string;
+  pdfGenerado?: boolean;
+  pdfError?: string;
   correoRh?: string;
+  correosRh?: string[];
   correoEnviado?: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;

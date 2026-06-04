@@ -6,17 +6,19 @@ import { es } from "date-fns/locale";
 
 const PAGE_W = 612;
 const PAGE_H = 792;
-const MARGIN = 48;
+const MARGIN = 54;
 const AG_BLUE = rgb(36 / 255, 100 / 255, 163 / 255);
-const AG_BLUE_LIGHT = rgb(0.92, 0.96, 0.99);
-const TEXT = rgb(0.12, 0.14, 0.18);
-const TEXT_MUTED = rgb(0.42, 0.45, 0.5);
-const BORDER = rgb(0.82, 0.86, 0.9);
+const AG_BLUE_DARK = rgb(29 / 255, 80 / 255, 130 / 255);
+const TEXT = rgb(0.1, 0.12, 0.16);
+const TEXT_MUTED = rgb(0.4, 0.44, 0.5);
+const BORDER = rgb(0.78, 0.82, 0.88);
+const ROW_ALT = rgb(0.97, 0.98, 0.99);
 
 function loadLogoBytes(): Uint8Array | null {
     const candidates = [
         path.join(__dirname, "../assets/lab_logo.png"),
         path.join(__dirname, "../../assets/lab_logo.png"),
+        path.join(__dirname, "../../../src/assets/lab_logo.png"),
     ];
     for (const p of candidates) {
         try {
@@ -28,16 +30,11 @@ function loadLogoBytes(): Uint8Array | null {
     return null;
 }
 
-function formatFechaLarga(isoDate: string): { dia: string; mes: string; anio: string } {
+function formatFechaLarga(isoDate: string): string {
     try {
-        const d = parseISO(isoDate);
-        return {
-            dia: format(d, "d"),
-            mes: format(d, "MMMM", { locale: es }).toUpperCase(),
-            anio: format(d, "yyyy"),
-        };
+        return format(parseISO(isoDate), "d 'de' MMMM 'de' yyyy", { locale: es });
     } catch {
-        return { dia: "—", mes: "—", anio: "—" };
+        return isoDate || "—";
     }
 }
 
@@ -74,95 +71,187 @@ function wrapText(text: string, maxChars: number): string[] {
     return lines.length ? lines : [""];
 }
 
-function drawHeaderBand(
+function drawHeader(
     page: PDFPage,
     font: PDFFont,
     fontBold: PDFFont,
     logoImg: Awaited<ReturnType<PDFDocument["embedPng"]>> | null,
 ) {
     const { width, height } = page.getSize();
-    const bandH = 88;
+    const bandH = 96;
 
     page.drawRectangle({
         x: 0,
         y: height - bandH,
         width,
         height: bandH,
-        color: AG_BLUE_LIGHT,
-    });
-    page.drawRectangle({
-        x: 0,
-        y: height - 4,
-        width,
-        height: 4,
         color: AG_BLUE,
     });
 
-    const logoX = MARGIN;
-    const logoY = height - bandH + 18;
+    const logoY = height - bandH + 22;
     if (logoImg) {
-        const maxW = 118;
-        const maxH = 52;
+        const maxW = 100;
+        const maxH = 48;
         const scale = Math.min(maxW / logoImg.width, maxH / logoImg.height, 1);
-        const w = logoImg.width * scale;
-        const h = logoImg.height * scale;
-        page.drawImage(logoImg, { x: logoX, y: logoY, width: w, height: h });
+        page.drawImage(logoImg, {
+            x: MARGIN,
+            y: logoY,
+            width: logoImg.width * scale,
+            height: logoImg.height * scale,
+        });
     }
 
-    const textX = logoImg ? MARGIN + 128 : MARGIN;
-    const textBaseY = height - 32;
+    const textX = logoImg ? MARGIN + 112 : MARGIN;
     page.drawText("EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.", {
         x: textX,
-        y: textBaseY,
-        size: 11,
+        y: height - 38,
+        size: 10.5,
         font: fontBold,
-        color: AG_BLUE,
+        color: rgb(1, 1, 1),
     });
     page.drawText("Departamento de Recursos Humanos", {
         x: textX,
-        y: textBaseY - 16,
+        y: height - 54,
         size: 9,
         font,
-        color: TEXT_MUTED,
+        color: rgb(0.88, 0.92, 0.98),
     });
 
     const codigo = "AG-ADM-F12-00";
-    const codigoW = font.widthOfTextAtSize(codigo, 8);
+    const codigoW = fontBold.widthOfTextAtSize(codigo, 8);
     page.drawRectangle({
-        x: width - MARGIN - codigoW - 16,
-        y: height - bandH + 22,
-        width: codigoW + 16,
-        height: 20,
-        borderColor: AG_BLUE,
-        borderWidth: 0.75,
+        x: width - MARGIN - codigoW - 20,
+        y: height - bandH + 28,
+        width: codigoW + 20,
+        height: 22,
         color: rgb(1, 1, 1),
     });
     page.drawText(codigo, {
-        x: width - MARGIN - codigoW - 8,
-        y: height - bandH + 28,
+        x: width - MARGIN - codigoW - 10,
+        y: height - bandH + 35,
         size: 8,
+        font: fontBold,
+        color: AG_BLUE_DARK,
+    });
+}
+
+function drawTitleBlock(page: PDFPage, fontBold: PDFFont, y: number): number {
+    const { width } = page.getSize();
+    const titulo = "SOLICITUD DE VACACIONES";
+    const size = 16;
+    const w = fontBold.widthOfTextAtSize(titulo, size);
+    page.drawText(titulo, {
+        x: (width - w) / 2,
+        y,
+        size,
+        font: fontBold,
+        color: TEXT,
+    });
+    page.drawRectangle({
+        x: (width - w) / 2 - 24,
+        y: y - 10,
+        width: w + 48,
+        height: 3,
+        color: AG_BLUE,
+    });
+    return y - 32;
+}
+
+function drawDataGrid(
+    page: PDFPage,
+    font: PDFFont,
+    fontBold: PDFFont,
+    yTop: number,
+    data: FirebaseFirestore.DocumentData,
+): number {
+    const { width } = page.getSize();
+    const tableX = MARGIN;
+    const tableW = width - MARGIN * 2;
+    const rowH = 22;
+    const rows: [string, string][] = [
+        ["Nombre del colaborador", String(data.solicitanteNombre || "—")],
+        ["Puesto", String(data.solicitantePuesto || "—")],
+        ["Días solicitados", String(data.diasVacaciones ?? "—")],
+        ["Periodo", `${formatFechaCorta(String(data.fechaInicio || ""))} al ${formatFechaCorta(String(data.fechaFin || ""))}`],
+        ["Fecha de solicitud", formatFechaCorta(String(data.fechaSolicitud || ""))],
+    ];
+
+    const tableH = rowH * (rows.length + 1);
+    const tableY = yTop - tableH;
+
+    page.drawText("Datos del colaborador", {
+        x: tableX,
+        y: yTop + 6,
+        size: 10,
         font: fontBold,
         color: AG_BLUE,
     });
-}
 
-function drawTitle(page: PDFPage, fontBold: PDFFont, y: number): number {
-    const { width } = page.getSize();
-    const titulo = "SOLICITUD DE VACACIONES";
-    const size = 15;
-    const w = fontBold.widthOfTextAtSize(titulo, size);
-    const x = (width - w) / 2;
-    page.drawText(titulo, { x, y, size, font: fontBold, color: TEXT });
-    page.drawLine({
-        start: { x: MARGIN + 40, y: y - 8 },
-        end: { x: width - MARGIN - 40, y: y - 8 },
-        thickness: 1.2,
+    page.drawRectangle({
+        x: tableX,
+        y: tableY,
+        width: tableW,
+        height: tableH,
+        borderColor: BORDER,
+        borderWidth: 1,
+    });
+
+    page.drawRectangle({
+        x: tableX,
+        y: tableY + tableH - rowH,
+        width: tableW,
+        height: rowH,
         color: AG_BLUE,
     });
-    return y - 28;
+    page.drawText("Concepto", {
+        x: tableX + 10,
+        y: tableY + tableH - rowH + 7,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+    });
+    page.drawText("Detalle", {
+        x: tableX + tableW * 0.38,
+        y: tableY + tableH - rowH + 7,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+    });
+
+    let rowY = tableY + tableH - rowH * 2;
+    for (let i = 0; i < rows.length; i++) {
+        if (i % 2 === 0) {
+            page.drawRectangle({
+                x: tableX + 0.5,
+                y: rowY,
+                width: tableW - 1,
+                height: rowH,
+                color: ROW_ALT,
+            });
+        }
+        page.drawText(rows[i][0], {
+            x: tableX + 10,
+            y: rowY + 7,
+            size: 8.5,
+            font: fontBold,
+            color: TEXT_MUTED,
+        });
+        const val = rows[i][1];
+        const valLines = wrapText(val, 48);
+        page.drawText(valLines[0], {
+            x: tableX + tableW * 0.38,
+            y: rowY + 7,
+            size: 9,
+            font: i === 0 ? fontBold : font,
+            color: TEXT,
+        });
+        rowY -= rowH;
+    }
+
+    return tableY - 20;
 }
 
-function drawBodyBox(
+function drawBodyText(
     page: PDFPage,
     font: PDFFont,
     fontBold: PDFFont,
@@ -172,38 +261,43 @@ function drawBodyBox(
     const { width } = page.getSize();
     const boxX = MARGIN;
     const boxW = width - MARGIN * 2;
-    const pad = 16;
-
-    const inicio = formatFechaLarga(String(data.fechaInicio || ""));
-    const fin = formatFechaLarga(String(data.fechaFin || ""));
+    const pad = 14;
     const dias = data.diasVacaciones ?? "—";
+    const inicioTxt = formatFechaLarga(String(data.fechaInicio || ""));
+    const finTxt = formatFechaLarga(String(data.fechaFin || ""));
 
     const parrafos = [
         "A QUIEN CORRESPONDA:",
         "",
-        `Por medio del presente solicito ${dias} día(s) de vacaciones, los cuales se harán efectivos del día ${inicio.dia} al día ${fin.dia} de ${fin.mes} del año ${fin.anio}.`,
+        `Por medio del presente solicito el goce de ${dias} día(s) de vacaciones, del ${inicioTxt} al ${finTxt}, conforme a los días que me corresponden según la Ley Federal del Trabajo.`,
         "",
-        "Estos días se tomarán de los que me corresponden según la Ley Federal del Trabajo.",
-        "",
-        "He tomado las medidas necesarias para cumplir con mis responsabilidades y se cubra el área donde laboro. Así mismo informo con la debida antelación a fin de que se realicen los cambios o ajustes necesarios para el buen funcionamiento de la empresa.",
+        "Manifiesto haber tomado las medidas necesarias para el cumplimiento de mis responsabilidades y la cobertura del área en la que laboro, informando con la debida antelación para los ajustes que la empresa requiera.",
     ];
 
     let contentH = pad * 2;
-    const lines: { text: string; bold: boolean; size: number }[] = [];
+    const lines: { text: string; bold: boolean }[] = [];
     for (const p of parrafos) {
         if (!p) {
-            contentH += 8;
+            contentH += 6;
             continue;
         }
         const isSaludo = p.startsWith("A QUIEN");
-        const wrapped = wrapText(p, 82);
-        for (const wl of wrapped) {
-            lines.push({ text: wl, bold: isSaludo, size: isSaludo ? 10 : 10 });
-            contentH += 14;
+        for (const wl of wrapText(p, 78)) {
+            lines.push({ text: wl, bold: isSaludo });
+            contentH += 13;
         }
     }
 
-    const boxH = contentH + 8;
+    const comentario = String(data.comentarioSolicitante || "").trim();
+    if (comentario) {
+        contentH += 8;
+        for (const wl of wrapText(`Observaciones: ${comentario}`, 76)) {
+            lines.push({ text: wl, bold: false });
+            contentH += 13;
+        }
+    }
+
+    const boxH = contentH + 6;
     const boxY = yStart - boxH;
 
     page.drawRectangle({
@@ -212,23 +306,23 @@ function drawBodyBox(
         width: boxW,
         height: boxH,
         borderColor: BORDER,
-        borderWidth: 1,
+        borderWidth: 0.75,
         color: rgb(1, 1, 1),
     });
 
-    let y = yStart - pad - 12;
+    let y = yStart - pad - 10;
     for (const ln of lines) {
         page.drawText(ln.text, {
             x: boxX + pad,
             y,
-            size: ln.size,
+            size: ln.bold ? 10 : 9.5,
             font: ln.bold ? fontBold : font,
             color: TEXT,
         });
-        y -= 14;
+        y -= 13;
     }
 
-    return boxY - 24;
+    return boxY - 22;
 }
 
 function drawSignatureBlock(
@@ -238,8 +332,6 @@ function drawSignatureBlock(
     y: number,
     data: FirebaseFirestore.DocumentData,
 ): number {
-    const { width } = page.getSize();
-
     page.drawText("Atentamente", {
         x: MARGIN,
         y,
@@ -247,49 +339,38 @@ function drawSignatureBlock(
         font: fontBold,
         color: TEXT,
     });
-    y -= 36;
+    y -= 40;
 
-    const sigW = 240;
+    const sigW = 220;
     page.drawLine({
-        start: { x: MARGIN, y: y + 4 },
-        end: { x: MARGIN + sigW, y: y + 4 },
-        thickness: 0.75,
+        start: { x: MARGIN, y: y + 6 },
+        end: { x: MARGIN + sigW, y: y + 6 },
+        thickness: 1,
         color: AG_BLUE,
     });
     page.drawText(String(data.solicitanteNombre || "—"), {
         x: MARGIN,
-        y: y - 14,
+        y: y - 12,
         size: 11,
         font: fontBold,
         color: TEXT,
     });
     page.drawText(String(data.solicitantePuesto || "Solicitante"), {
         x: MARGIN,
-        y: y - 28,
+        y: y - 26,
         size: 9,
         font,
         color: TEXT_MUTED,
     });
-
-    const fechaSol = formatFechaLarga(String(data.fechaSolicitud || ""));
-    const fechaTxt = `${fechaSol.dia} de ${fechaSol.mes.charAt(0) + fechaSol.mes.slice(1).toLowerCase()} del ${fechaSol.anio}`;
-    const fechaLabel = "Fecha de solicitud:";
-    page.drawText(fechaLabel, {
-        x: width - MARGIN - 160,
-        y: y - 4,
-        size: 8,
-        font: fontBold,
+    page.drawText("Firma del solicitante", {
+        x: MARGIN,
+        y: y - 40,
+        size: 7.5,
+        font,
         color: TEXT_MUTED,
     });
-    page.drawText(fechaTxt, {
-        x: width - MARGIN - 160,
-        y: y - 18,
-        size: 9,
-        font,
-        color: TEXT,
-    });
 
-    return y - 52;
+    return y - 58;
 }
 
 function drawAuthTable(
@@ -302,10 +383,10 @@ function drawAuthTable(
     const { width } = page.getSize();
     const tableX = MARGIN;
     const tableW = width - MARGIN * 2;
-    const col1 = 130;
-    const col2 = tableW - col1 - 72;
-    const rowH = 26;
-    const headerH = 22;
+    const col1 = 128;
+    const col2 = tableW - col1 - 78;
+    const rowH = 28;
+    const headerH = 24;
 
     const aprob = (data.aprobaciones || {}) as Record<
         string,
@@ -321,13 +402,13 @@ function drawAuthTable(
                   { label: "Jefe inmediato", key: "jorge" },
               ];
 
-    const tableH = headerH + rows.length * rowH + 4;
+    const tableH = headerH + rows.length * rowH;
     const tableY = y - tableH;
 
-    page.drawText("Autorizaciones", {
+    page.drawText("Cadena de autorización", {
         x: tableX,
-        y: y + 4,
-        size: 11,
+        y: y + 6,
+        size: 10,
         font: fontBold,
         color: AG_BLUE,
     });
@@ -346,16 +427,22 @@ function drawAuthTable(
         y: tableY + tableH - headerH,
         width: tableW,
         height: headerH,
-        color: AG_BLUE,
+        color: AG_BLUE_DARK,
     });
 
-    const headers = ["Área", "Nombre", "Fecha"];
+    const headers = ["Área / nivel", "Autorizó", "Fecha"];
     let hx = tableX + 8;
-    page.drawText(headers[0], { x: hx, y: tableY + tableH - headerH + 7, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText(headers[0], {
+        x: hx,
+        y: tableY + tableH - headerH + 8,
+        size: 8,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+    });
     hx = tableX + col1 + 8;
-    page.drawText(headers[1], { x: hx, y: tableY + tableH - headerH + 7, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText(headers[1], { x: hx, y: tableY + tableH - headerH + 8, size: 8, font: fontBold, color: rgb(1, 1, 1) });
     hx = tableX + col1 + col2 + 8;
-    page.drawText(headers[2], { x: hx, y: tableY + tableH - headerH + 7, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText(headers[2], { x: hx, y: tableY + tableH - headerH + 8, size: 8, font: fontBold, color: rgb(1, 1, 1) });
 
     page.drawLine({
         start: { x: tableX + col1, y: tableY },
@@ -373,6 +460,7 @@ function drawAuthTable(
     let rowY = tableY + tableH - headerH - rowH;
     for (let i = 0; i < rows.length; i++) {
         const rec = aprob[rows[i].key];
+        const ok = Boolean(rec?.nombre);
         if (i > 0) {
             page.drawLine({
                 start: { x: tableX, y: rowY + rowH },
@@ -381,53 +469,99 @@ function drawAuthTable(
                 color: BORDER,
             });
         }
+        if (i % 2 === 0) {
+            page.drawRectangle({
+                x: tableX + 0.5,
+                y: rowY,
+                width: tableW - 1,
+                height: rowH,
+                color: ROW_ALT,
+            });
+        }
         page.drawText(rows[i].label, {
             x: tableX + 8,
-            y: rowY + 9,
-            size: 9,
+            y: rowY + 10,
+            size: 8.5,
             font: fontBold,
             color: TEXT,
         });
-        page.drawText(rec?.nombre || "—", {
+        page.drawText(rec?.nombre || "Pendiente", {
             x: tableX + col1 + 8,
-            y: rowY + 9,
+            y: rowY + 10,
             size: 9,
-            font,
-            color: TEXT,
+            font: ok ? fontBold : font,
+            color: ok ? TEXT : TEXT_MUTED,
         });
         page.drawText(rec?.fecha ? formatFechaCorta(rec.fecha) : "—", {
             x: tableX + col1 + col2 + 8,
-            y: rowY + 9,
+            y: rowY + 10,
             size: 9,
             font,
             color: TEXT_MUTED,
         });
+        if (ok) {
+            page.drawText("✓", {
+                x: tableX + col1 + col2 - 14,
+                y: rowY + 10,
+                size: 10,
+                font: fontBold,
+                color: rgb(0.12, 0.55, 0.35),
+            });
+        }
         rowY -= rowH;
     }
 
-    return tableY - 12;
+    return tableY - 8;
+}
+
+function drawApprovedStamp(page: PDFPage, fontBold: PDFFont) {
+    const { width, height } = page.getSize();
+    const stamp = "APROBADO";
+    const size = 42;
+    const w = fontBold.widthOfTextAtSize(stamp, size);
+    const x = width - MARGIN - w - 20;
+    const y = height * 0.38;
+    page.drawRectangle({
+        x: x - 12,
+        y: y - 8,
+        width: w + 24,
+        height: size + 16,
+        borderColor: rgb(0.12, 0.55, 0.35),
+        borderWidth: 2,
+        color: rgb(0.94, 0.99, 0.96),
+        opacity: 0.85,
+    });
+    page.drawText(stamp, {
+        x,
+        y,
+        size,
+        font: fontBold,
+        color: rgb(0.1, 0.5, 0.32),
+        opacity: 0.35,
+    });
 }
 
 function drawFooter(page: PDFPage, font: PDFFont) {
     const { width } = page.getSize();
     page.drawLine({
-        start: { x: MARGIN, y: 36 },
-        end: { x: width - MARGIN, y: 36 },
+        start: { x: MARGIN, y: 40 },
+        end: { x: width - MARGIN, y: 40 },
         thickness: 0.5,
         color: BORDER,
     });
-    const foot = "Documento generado electrónicamente · Equipos y Servicios AG";
+    const foot =
+        "Documento generado electrónicamente · Equipos y Servicios Especializados AG · AG-ADM-F12";
     const fw = font.widthOfTextAtSize(foot, 7);
     page.drawText(foot, {
         x: (width - fw) / 2,
-        y: 22,
+        y: 26,
         size: 7,
         font,
         color: TEXT_MUTED,
     });
 }
 
-/** PDF AG-ADM-F12 — diseño corporativo con logo (servidor). */
+/** PDF AG-ADM-F12 — formato corporativo (servidor). */
 export async function buildVacationPdfBuffer(
     data: FirebaseFirestore.DocumentData,
 ): Promise<Buffer> {
@@ -447,19 +581,20 @@ export async function buildVacationPdfBuffer(
         }
     }
 
-    drawHeaderBand(page, font, fontBold, logoImg);
+    drawHeader(page, font, fontBold, logoImg);
 
-    let y = height - 88 - 24;
-    y = drawTitle(page, fontBold, y);
-    y = drawBodyBox(page, font, fontBold, y, data);
+    let y = height - 96 - 28;
+    y = drawTitleBlock(page, fontBold, y);
+    y = drawDataGrid(page, font, fontBold, y, data);
+    y = drawBodyText(page, font, fontBold, y, data);
     y = drawSignatureBlock(page, font, fontBold, y, data);
     drawAuthTable(page, font, fontBold, y, data);
-    drawFooter(page, font);
 
-    const comentario = String(data.comentarioSolicitante || "").trim();
-    if (comentario) {
-        /* espacio reservado; comentarios largos en futura versión multipágina */
+    if (String(data.estado || "") === "aprobada") {
+        drawApprovedStamp(page, fontBold);
     }
+
+    drawFooter(page, font);
 
     return Buffer.from(await pdfDoc.save());
 }

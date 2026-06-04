@@ -67,9 +67,27 @@ export const isJorgeAmador = (user: CalendarPermissionUser): boolean => {
 export const canSeeAllCalendarEvents = (user: CalendarPermissionUser): boolean =>
   isCalidadRole(getCalendarUserRole(user));
 
-/** Edición completa: calidad/admin/gerente, Edgar o Jorge. */
+/** Edición completa del calendario: calidad/admin/gerente o Jorge (no Edgar). */
 export const canEditCalendarEvents = (user: CalendarPermissionUser): boolean =>
-  canSeeAllCalendarEvents(user) || isEdgarAmador(user) || isJorgeAmador(user);
+  canSeeAllCalendarEvents(user) || isJorgeAmador(user);
+
+/** Confirmar asistencia en juntas (Calidad / Jorge). */
+export const canConfirmJuntaAsistencia = (user: CalendarPermissionUser): boolean =>
+  canSeeAllCalendarEvents(user) || isJorgeAmador(user);
+
+/**
+ * Confirmación como asignado: en juntas solo Calidad/Jorge;
+ * en otras actividades (p. ej. Gantt PT) también Edgar con "estar de acuerdo".
+ */
+export const canAcknowledgeAssignedEvent = (
+  user: CalendarPermissionUser,
+  eventTipo?: string,
+  isAssigned?: boolean,
+): boolean => {
+  if (!isAssigned || !user) return false;
+  if (eventTipo === 'junta') return canConfirmJuntaAsistencia(user);
+  return true;
+};
 
 /** Resuelve quién creó el servicio (varios campos legacy en Firestore). */
 export const getEventCreatorKeys = (event: {

@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import * as functions from "firebase-functions/v1";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { VACATION_RH_EMAILS, resolveRhEmailsFromDoc } from "./vacacionEmails";
 import { formatMailError, getMailConfig, sendAgMail } from "./mailTransport";
 
 function escapeHtml(text: string): string {
@@ -22,11 +23,59 @@ function formatFecha(iso: string): string {
     }
 }
 
-function getRhEmailFromData(data: FirebaseFirestore.DocumentData): string {
-    const fromDoc = String(data.destinatarioEmail || "").trim();
-    if (fromDoc) return fromDoc;
-    const cfg = (functions.config().vacaciones || {}) as Record<string, string>;
-    return String(process.env.VACACIONES_RH_EMAIL || cfg.rh_email || "eseagmaster@gmail.com").trim();
+function getRhEmailsFromAlerta(data: FirebaseFirestore.DocumentData): string[] {
+    const extra = Array.isArray(data.destinatarios)
+        ? data.destinatarios.map((e: unknown) => String(e).trim().toLowerCase()).filter(Boolean)
+        : [];
+    const fromDoc = extra.length > 0 ? extra : resolveRhEmailsFromDoc(data);
+    return [...new Set([...VACATION_RH_EMAILS, ...fromDoc])];
+}
+
+/** Envía el PDF AG-ADM-F12 solo a Recursos Humanos (dos correos fijos). */
+export async function sendVacationRhPdfMail(params: {
+    pdfBuffer: Buffer;
+    solicitudId: string;
+    data: FirebaseFirestore.DocumentData;
+}): Promise<{ enviados: string[]; adjunto: boolean }> {
+    const emails = getRhEmailsFromAlerta({ destinatarios: VACATION_RH_EMAILS });
+    if (!getMailConfig()) {
+        throw new Error("Correo no configurado (gmail.user / gmail.pass)");
+    }
+
+    const nombre = String(params.data.solicitanteNombre || "Colaborador");
+    const subject = `Solicitud de vacaciones — ${nombre} (AG-ADM-F12)`;
+    const html = buildHtmlVacaciones({
+        ...params.data,
+        mensajeCorto: `Se adjunta el formato AG-ADM-F12 autorizado para ${nombre} (${params.data.diasVacaciones} día(s)).`,
+    });
+    const filename = `Vacaciones_${nombre.replace(/\s+/g, "_")}_AG-ADM-F12.pdf`;
+    const attachments = [
+        {
+            filename,
+            content: params.pdfBuffer,
+            contentType: "application/pdf",
+        },
+    ];
+
+    const enviados: string[] = [];
+    for (const to of emails) {
+        await sendAgMail({
+            fromName: "AG Recursos Humanos",
+            to,
+            subject: `📋 ${subject}`,
+            html,
+            attachments,
+        });
+        enviados.push(to);
+    }
+
+    await admin
+        .firestore()
+        .collection("solicitudesVacaciones")
+        .doc(params.solicitudId)
+        .set({ correoEnviado: true, correosRhEnviados: enviados }, { merge: true });
+
+    return { enviados, adjunto: true };
 }
 
 function buildHtmlVacaciones(data: FirebaseFirestore.DocumentData): string {
@@ -67,10 +116,10 @@ export const procesarAlertaVacaciones = functions.firestore
     .document("alertasVacaciones/{alertaId}")
     .onCreate(async (snap, context) => {
         const data = snap.data();
-        if (!data || data.estado === "enviado") return null;
+        if (!data || data.estado === "enviado" || data.estado === "omitido") return null;
 
-        const email = getRhEmailFromData(data);
-        if (!email) {
+        const emails = getRhEmailsFromAlerta(data);
+        if (emails.length === 0) {
             await snap.ref.update({
                 estado: "error",
                 error: "Sin correo de destino RH",
@@ -106,17 +155,28 @@ export const procesarAlertaVacaciones = functions.firestore
                 }
             }
 
-            await sendAgMail({
-                fromName: "AG Recursos Humanos",
-                to: email,
-                subject: `📋 ${subject}`,
-                html: buildHtmlVacaciones(data),
-                attachments,
-            });
+            if (attachments.length === 0) {
+                throw new Error(
+                    `No se pudo adjuntar el PDF (${storagePath || "sin ruta"}). Revise Storage y la función onVacacionAprobadaFinal.`,
+                );
+            }
+
+            const enviados: string[] = [];
+            for (const to of emails) {
+                await sendAgMail({
+                    fromName: "AG Recursos Humanos",
+                    to,
+                    subject: `📋 ${subject}`,
+                    html: buildHtmlVacaciones(data),
+                    attachments,
+                });
+                enviados.push(to);
+            }
 
             await snap.ref.update({
                 estado: "enviado",
-                adjuntoEnviado: attachments.length > 0,
+                destinatariosEnviados: enviados,
+                adjuntoEnviado: true,
                 procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
             });
 

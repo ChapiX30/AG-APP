@@ -157,5 +157,11 @@ export function initialNotifyStepForFlow(tipoFlujo: VacationFlowType): VacationW
   return tipoFlujo === 'calidad' ? 'jorge' : 'calidad';
 }
 
-/** Correo RH (prueba). */
-export const DEFAULT_VACATION_RH_EMAIL = 'eseagmaster@gmail.com';
+/** Correos RH / administración — PDF final y copia en avisos. */
+export const VACATION_RH_EMAILS = [
+  'eseagmaster@gmail.com',
+  'admin@ese-ag.mx',
+] as const;
+
+/** Compatibilidad con campo legacy `correoRh` (primer correo). */
+export const DEFAULT_VACATION_RH_EMAIL = VACATION_RH_EMAILS[0];
