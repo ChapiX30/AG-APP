@@ -154,8 +154,12 @@ const mergePatronesInventario = (
       ...prev,
       ...p,
       partesCalibracion: partesMerged ?? p.partesCalibracion ?? prev?.partesCalibracion,
-      certificadoStoragePath: p.certificadoStoragePath || prev?.certificadoStoragePath,
-      certificadoUrl: p.certificadoUrl ?? prev?.certificadoUrl,
+      certificadoStoragePath:
+        (p.certificadoStoragePath && String(p.certificadoStoragePath).trim()) ||
+        prev?.certificadoStoragePath,
+      certificadoUrl:
+        (p.certificadoUrl && String(p.certificadoUrl).trim()) ||
+        prev?.certificadoUrl,
       historial: (p.historial?.length ? p.historial : prev?.historial) ?? [],
       id: p.id || prev?.id || patronFirestoreDocId(p.noControl),
     });
@@ -1293,6 +1297,11 @@ const SidePanel = ({
                                     </h3>
                                     {hasCert ? (
                                         <div className="space-y-2">
+                                          {certificados.length === 0 && (
+                                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+                                              Hay certificado registrado. Si no ve los botones, recargue la página (F5).
+                                            </div>
+                                          )}
                                           {certificados.map((cert) => (
                                             <div
                                               key={cert.key}

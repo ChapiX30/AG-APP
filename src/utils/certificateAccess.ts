@@ -100,15 +100,25 @@ export type PatronCertificadoListItem = {
   noCertificado?: string;
 };
 
-/** Certificados visibles (raíz + cada parte con archivo en Storage). */
+/** Certificados visibles (raíz + cada parte; incluye enlaces legacy certificadoUrl). */
 export function listPatronCertificados(item: PatronCertFields): PatronCertificadoListItem[] {
   const list: PatronCertificadoListItem[] = [];
-  const rootPath = item.certificadoStoragePath?.trim() || '';
+  const seen = new Set<string>();
+
+  const pushUnique = (entry: PatronCertificadoListItem) => {
+    const dedupe =
+      entry.certificadoStoragePath?.trim() ||
+      entry.certificadoUrl?.trim() ||
+      entry.key;
+    if (seen.has(dedupe)) return;
+    seen.add(dedupe);
+    list.push(entry);
+  };
 
   for (const parte of item.partesCalibracion ?? []) {
     const path = parte.certificadoStoragePath?.trim();
     if (!path) continue;
-    list.push({
+    pushUnique({
       key: `parte-${parte.id || parte.etiqueta}`,
       label: parte.etiqueta ? `Certificado — ${parte.etiqueta}` : 'Certificado de parte',
       scope: 'parte',
@@ -118,21 +128,23 @@ export function listPatronCertificados(item: PatronCertFields): PatronCertificad
     });
   }
 
-  if (rootPath && !list.some((c) => c.certificadoStoragePath === rootPath)) {
-    list.unshift({
+  const rootPath = item.certificadoStoragePath?.trim() || '';
+  const rootUrl = item.certificadoUrl?.trim() || '';
+
+  if (rootPath) {
+    pushUnique({
       key: 'root',
-      label: 'Certificado general',
+      label: 'Certificado',
       scope: 'root',
-      certificadoStoragePath: item.certificadoStoragePath,
-      certificadoUrl: item.certificadoUrl,
+      certificadoStoragePath: rootPath,
+      certificadoUrl: rootUrl || undefined,
     });
-  } else if (rootPath && list.length === 0) {
-    list.push({
-      key: 'root',
-      label: 'Certificado general',
+  } else if (rootUrl) {
+    pushUnique({
+      key: 'root-legacy',
+      label: 'Certificado',
       scope: 'root',
-      certificadoStoragePath: item.certificadoStoragePath,
-      certificadoUrl: item.certificadoUrl,
+      certificadoUrl: rootUrl,
     });
   }
 
