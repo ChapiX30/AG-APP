@@ -63,7 +63,10 @@ function resolveCertificatePath(
     return extractStoragePathFromDownloadUrl(legacyUrl);
 }
 
-export const getPatronCertificadoUrl = functions.https.onCall(async (data, context) => {
+export async function runGetPatronCertificadoUrl(
+    data: { patronId?: string } | undefined,
+    context: functions.https.CallableContext,
+) {
     if (!context.auth?.uid) {
         throw new functions.https.HttpsError("unauthenticated", "Debe iniciar sesión.");
     }
@@ -121,4 +124,4 @@ export const getPatronCertificadoUrl = functions.https.onCall(async (data, conte
         url,
         expiresInSeconds: Math.floor(SIGNED_URL_TTL_MS / 1000),
     };
-});
+}

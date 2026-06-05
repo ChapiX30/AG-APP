@@ -49,6 +49,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function canManageAppNovedades() {
+      return isSignedIn() && userExists() && roleText().matches('.*(calidad|administrativo).*');
+    }
+
+    match /appNovedades/{novedadId} {
+      allow read: if isSignedIn();
+      allow create: if canManageAppNovedades();
+      allow update, delete: if canManageAppNovedades();
+    }
+
     // Resto de colecciones: autenticación requerida (alinear con despliegue previo)
     match /{document=**} {
       allow read, write: if isSignedIn();

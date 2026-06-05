@@ -112,9 +112,10 @@ async function downloadPdfFromStorage(storagePath: string): Promise<Buffer | nul
     }
 }
 
-export const procesarAlertaVacaciones = functions.firestore
-    .document("alertasVacaciones/{alertaId}")
-    .onCreate(async (snap, context) => {
+export async function runProcesarAlertaVacaciones(
+    snap: FirebaseFirestore.QueryDocumentSnapshot,
+    context: functions.EventContext,
+): Promise<null> {
         const data = snap.data();
         if (!data || data.estado === "enviado" || data.estado === "omitido") return null;
 
@@ -198,4 +199,4 @@ export const procesarAlertaVacaciones = functions.firestore
         }
 
         return null;
-    });
+}

@@ -132,9 +132,10 @@ async function resolveRecipients(data: FirebaseFirestore.DocumentData): Promise<
     return [];
 }
 
-export const procesarAlertaVacacionesPaso = functions.firestore
-    .document("alertasVacacionesPaso/{alertaId}")
-    .onCreate(async (snap, context) => {
+export async function runProcesarAlertaVacacionesPaso(
+    snap: FirebaseFirestore.QueryDocumentSnapshot,
+    context: functions.EventContext,
+): Promise<null> {
         const data = snap.data();
         if (!data || data.estado === "enviado") return null;
 
@@ -203,4 +204,4 @@ export const procesarAlertaVacacionesPaso = functions.firestore
         }
 
         return null;
-    });
+}

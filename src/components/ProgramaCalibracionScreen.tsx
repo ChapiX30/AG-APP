@@ -33,7 +33,7 @@ import {
 } from '../utils/patronCertificadoUrl';
 import { patronesData } from './patronesData';
 import { notificarPrestamoPatronPlanta } from '../utils/notificacionesPrestamoPatron';
-import { sortPatronesPorNoControl, suggestNextAgNoControl } from '../utils/patronCalibracion';
+import { sortPatronesPorNoControl, suggestNextAgNoControl, countPatronesEnAlerta, countPatronesRequierenAtencion, isPatronRequiereAtencion } from '../utils/patronCalibracion';
 import { patronFirestoreDocId } from '../utils/patronLink';
 import { extractPatronCertificadoFromFile } from '../utils/patronCertificadoExtract';
 import {
@@ -231,18 +231,15 @@ const usePatronesLogic = (actorName: string) => {
   const [data, setData] = useState<RegistroPatron[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // KPIs en tiempo real
+  // KPIs en tiempo real (misma lógica que calendario / menú principal)
   const stats = useMemo(() => {
     const total = data.length;
-    const vencidos = data.filter(d => {
-       const f = getFechaVencimiento(d);
-       if(!f) return false;
-       try { return differenceInDays(parseISO(f), new Date()) < 0; } catch(e){ return false; }
-    }).length;
+    const enAlertaCalibracion = countPatronesEnAlerta(data);
+    const atencionRequerida = countPatronesRequierenAtencion(data);
     const enMantenimiento = data.filter(d => d.estadoProceso === 'en_mantenimiento' || d.estadoProceso === 'con_falla').length;
     const enUso = data.filter(d => d.estadoProceso === 'en_servicio' || d.estadoProceso === 'en_uso').length;
     const gastoTotal = data.reduce((acc, curr) => acc + (curr.costoAcumuladoMantenimiento || 0), 0);
-    return { total, vencidos, enMantenimiento, gastoTotal, enUso };
+    return { total, enAlertaCalibracion, atencionRequerida, enMantenimiento, gastoTotal, enUso };
   }, [data]);
 
   const fetchData = useCallback(async () => {
@@ -835,12 +832,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
   const filteredData = useMemo(() => {
     let result = data;
     if (tab === 'alertas') {
-      result = result.filter(d => {
-        const f = getFechaVencimiento(d);
-        let vencido = false;
-        try { vencido = f ? differenceInDays(parseISO(f), new Date()) <= 30 : false; } catch {}
-        return vencido || d.estadoProceso === 'en_mantenimiento' || d.estadoProceso === 'en_calibracion' || d.estadoProceso === 'con_falla';
-      });
+      result = result.filter(d => isPatronRequiereAtencion(d));
     } else if (tab === 'servicio') {
         result = result.filter(d => ['en_uso', 'en_servicio', 'en_prestamo'].includes(d.estadoProceso));
     }
@@ -1020,7 +1012,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         {/* DASHBOARD KPIS */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <KPICard title="Inventario Total" value={stats.total} icon={FileBarChart} color="blue" />
-            <KPICard title="Atención Requerida" value={stats.vencidos} icon={AlertTriangle} color="red" subtext="Vencidos o Fallas" />
+            <KPICard title="Atención Requerida" value={stats.enAlertaCalibracion} icon={AlertTriangle} color="red" subtext="Vencidos o por vencer (≤30 días)" />
             <KPICard title="En Planta" value={stats.enUso} icon={User} color="indigo" subtext="Préstamos activos" />
             <KPICard title="Gasto Acumulado" value={`$${stats.gastoTotal.toLocaleString()}`} icon={DollarSign} color="green" subtext="Mantenimiento y Calib." />
         </div>
@@ -1028,7 +1020,7 @@ export const ProgramaCalibracionScreen: React.FC = () => {
         {/* CONTROLES */}
         <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 mb-6 bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
           <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-             <TabButton active={tab === 'alertas'} onClick={() => setTab('alertas')} label="Prioridad / Alertas" count={stats.vencidos + stats.enMantenimiento} />
+             <TabButton active={tab === 'alertas'} onClick={() => setTab('alertas')} label="Prioridad / Alertas" count={stats.atencionRequerida} />
              <TabButton active={tab === 'servicio'} onClick={() => setTab('servicio')} label="En Planta" count={stats.enUso} />
              <TabButton active={tab === 'todo'} onClick={() => setTab('todo')} label="Todo el Inventario" />
           </div>

@@ -22,9 +22,10 @@ async function downloadPdfFromStorage(storagePath: string): Promise<Buffer | nul
  * Cuando Jorge (u otro) marca la solicitud como aprobada, el servidor genera el PDF
  * y lo sube a Storage (evita error storage/unauthorized en el cliente).
  */
-export const onVacacionAprobadaFinal = functions.firestore
-    .document("solicitudesVacaciones/{solicitudId}")
-    .onUpdate(async (change, context) => {
+export async function runOnVacacionAprobadaFinal(
+    change: functions.Change<FirebaseFirestore.DocumentSnapshot>,
+    context: functions.EventContext,
+): Promise<null> {
         const after = change.after.data();
         if (!after) return null;
 
@@ -134,4 +135,4 @@ export const onVacacionAprobadaFinal = functions.firestore
         }
 
         return null;
-    });
+}

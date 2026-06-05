@@ -1,5 +1,9 @@
 import { differenceInDays, parseISO, isValid } from 'date-fns';
 import { COLLECTION_PATRONES } from './patronLink';
+import {
+  getPatronFechaVencimientoEfectiva,
+  type PatronConPartes,
+} from './patronPartes';
 
 export { COLLECTION_PATRONES };
 
@@ -8,7 +12,7 @@ export const PATRON_ALERT_DAYS = [30, 15, 7, 3, 1] as const;
 
 export type PatronUrgency = 'vencido' | 'urgente7' | 'proximo30' | 'ok' | 'sin-fecha';
 
-export interface PatronCalibracionRow {
+export interface PatronCalibracionRow extends PatronConPartes {
   id?: string;
   noControl: string;
   descripcion?: string;
@@ -21,7 +25,22 @@ export interface PatronCalibracionRow {
 }
 
 export function getPatronFechaVencimiento(item: PatronCalibracionRow): string {
-  return item.fecha || item.fechaVencimiento || '';
+  return getPatronFechaVencimientoEfectiva(item);
+}
+
+/** Mantenimiento, falla o en calibración externa. */
+export function isPatronEstadoCritico(estadoProceso?: string): boolean {
+  const e = (estadoProceso || '').toLowerCase();
+  return e === 'en_mantenimiento' || e === 'con_falla' || e === 'en_calibracion';
+}
+
+/** Misma regla que calendario/menú + estados operativos críticos del inventario. */
+export function isPatronRequiereAtencion(
+  item: PatronCalibracionRow,
+  refDate = new Date(),
+  alertDays: readonly number[] = PATRON_ALERT_DAYS,
+): boolean {
+  return isPatronEnAlerta(item, refDate, alertDays) || isPatronEstadoCritico(item.estadoProceso);
 }
 
 export function getPatronUrgency(item: PatronCalibracionRow, refDate = new Date()): PatronUrgency {
@@ -95,6 +114,13 @@ export function countPatronesEnAlerta(
   alertDays: readonly number[] = PATRON_ALERT_DAYS,
 ): number {
   return patrones.filter(p => isPatronEnAlerta(p, new Date(), alertDays)).length;
+}
+
+export function countPatronesRequierenAtencion(
+  patrones: PatronCalibracionRow[],
+  alertDays: readonly number[] = PATRON_ALERT_DAYS,
+): number {
+  return patrones.filter(p => isPatronRequiereAtencion(p, new Date(), alertDays)).length;
 }
 
 export function sortPatronesPorVencimiento(patrones: PatronCalibracionRow[]): PatronCalibracionRow[] {

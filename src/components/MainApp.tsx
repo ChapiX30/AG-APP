@@ -10,6 +10,9 @@ import { Layout } from './Layout';
 import { MainMenu } from './MainMenu';
 import { ScreenSuspenseFallback } from './ui/ScreenSkeletons';
 import { ScreenTransition } from './ui/ScreenTransition';
+import { WhatsNewModal } from './WhatsNewModal';
+import { useWhatsNew } from '../hooks/useWhatsNew';
+import { useAppUpdates } from '../hooks/useAppUpdates';
 
 // --- IMPORT DE LA NUEVA PANTALLA PÚBLICA ---
 const ShareView = lazy(() => import('./ShareView').then(module => ({ default: module.ShareView })));
@@ -82,6 +85,12 @@ export const MainApp: React.FC = () => {
 
   usePushNotifications(uid, user?.email || localStorage.getItem('usuario.email') || '');
   usePresence(isAuthenticated ? uid : undefined);
+  const { allUpdates } = useAppUpdates();
+  const { update: whatsNewUpdate, dismiss: dismissWhatsNew } = useWhatsNew(
+    isAuthenticated ? uid : undefined,
+    user,
+    allUpdates,
+  );
 
   // --- PRIORIDAD 1: SI ES UNA CONSULTA DE QR, MOSTRAR VISTA PÚBLICA SIN LOGIN ---
   if (shareCertificado) {
@@ -138,6 +147,7 @@ export const MainApp: React.FC = () => {
           </ScreenTransition>
         </Suspense>
       </div>
+      <WhatsNewModal update={whatsNewUpdate} onDismiss={dismissWhatsNew} />
     </Layout>
   );
 };

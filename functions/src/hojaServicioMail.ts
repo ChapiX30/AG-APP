@@ -98,9 +98,10 @@ async function downloadPdfFromStorage(storagePath: string): Promise<Buffer | nul
     }
 }
 
-export const procesarAlertaHojaServicio = functions.firestore
-    .document("alertasHojaServicio/{alertaId}")
-    .onCreate(async (snap, context) => {
+export async function runProcesarAlertaHojaServicio(
+    snap: FirebaseFirestore.QueryDocumentSnapshot,
+    context: functions.EventContext,
+): Promise<null> {
         const data = snap.data();
         if (!data || data.estado === "enviado") return null;
 
@@ -165,4 +166,4 @@ export const procesarAlertaHojaServicio = functions.firestore
         }
 
         return null;
-    });
+}

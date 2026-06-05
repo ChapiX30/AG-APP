@@ -2,13 +2,9 @@
 import * as admin from "firebase-admin";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
-import { jsPDF } from "jspdf";
-import { getPatronCertificadoUrl } from "./certificadoAccess";
-import { formatMailError, getMailConfig, sendAgMail } from "./mailTransport";
 
 admin.initializeApp();
 
-export { getPatronCertificadoUrl };
 const db = admin.firestore();
 
 // ==================================================================
@@ -83,6 +79,7 @@ export const agbotMonitorDiario = functions.pubsub
         reporteHTML += "</ul>";
 
         try {
+            const { getMailConfig, sendAgMail } = require("./mailTransport");
             if (!getMailConfig()) {
                 console.error("Monitor diario: correo no configurado (gmail.user / gmail.pass).");
                 return null;
@@ -94,6 +91,7 @@ export const agbotMonitorDiario = functions.pubsub
                 html: `<h2>Equipos para hoy (${addDays(hoy, 0).toLocaleDateString()}):</h2>${reporteHTML}`,
             });
         } catch (e) {
+            const { formatMailError } = require("./mailTransport");
             console.error("Monitor diario:", formatMailError(e));
         }
         return null;
@@ -151,159 +149,9 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
 // ==================================================================
 export const agbotRegenerarPDF = functions.firestore
     .document("hojasDeTrabajo/{docId}")
-    .onUpdate(async (change: any, context: any) => {
-        const data = change.after.data();
-        const dataAnterior = change.before.data();
-
-        if (data.cliente === dataAnterior.cliente &&
-            data.equipo === dataAnterior.equipo &&
-            data.medicionPatron === dataAnterior.medicionPatron &&
-            data.medicionInstrumento === dataAnterior.medicionInstrumento) {
-            return null;
-        }
-
-        console.log(`Regenerando PDF PROFESIONAL en Storage para el folio: ${data.certificado}`);
-
-        try {
-            const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
-            const pageWidth = doc.internal.pageSize.width;
-            const pageHeight = doc.internal.pageSize.height;
-            const marginLeft = 40;
-            const marginRight = pageWidth - 40;
-            let currentY = 80;
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(18);
-            doc.setTextColor(0, 0, 139); 
-            doc.text("Equipos y Servicios Especializados AG", pageWidth / 2, 50, { align: "center" });
-
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "normal");
-
-            const col1X = marginLeft;
-            const col2X = pageWidth / 2 + 20;
-
-            doc.setFont("helvetica", "bold");
-            doc.text(`Nombre: ${data.nombre || "-"}`, marginLeft, currentY);
-            doc.setFont("helvetica", "normal");
-            doc.text(`Fecha: ${data.fecha || "-"}`, col2X, currentY);
-            currentY += 25;
-
-            doc.setDrawColor(100);
-            doc.setLineWidth(1);
-            doc.line(marginLeft, currentY, marginRight, currentY);
-            currentY += 20;
-
-            const infoData = [
-                { l: "Cliente:", v: data.cliente, l2: "N. Certificado:", v2: data.certificado },
-                { l: "Equipo:", v: data.equipo, l2: "ID:", v2: data.id },
-                { l: "Marca:", v: data.marca, l2: "Modelo:", v2: data.modelo },
-                { l: "N. Serie:", v: data.serie || data.numeroSerie, l2: "Ubicación:", v2: data.lugarCalibracion },
-                { l: "Magnitud:", v: data.magnitud, l2: "Unidad:", v2: Array.isArray(data.unidad) ? data.unidad.join(', ') : data.unidad },
-                { l: "Alcance:", v: data.alcance, l2: "Resolución:", v2: data.resolucion },
-                { l: "Frecuencia:", v: data.frecuenciaCalibracion, l2: "Recepción:", v2: data.fechaRecepcion || "N/A" },
-                { l: "Temp. Amb:", v: `${data.tempAmbiente || "-"} °C`, l2: "Humedad:", v2: `${data.humedadRelativa || "-"} %` },
-            ];
-
-            doc.setFontSize(10);
-            infoData.forEach(row => {
-                doc.setFont("helvetica", "bold");
-                doc.text(row.l, col1X, currentY);
-                doc.setFont("helvetica", "normal");
-                doc.text(String(row.v || "-").substring(0, 35), col1X + 65, currentY);
-
-                doc.setFont("helvetica", "bold");
-                doc.text(row.l2, col2X, currentY);
-                doc.setFont("helvetica", "normal");
-                doc.text(String(row.v2 || "-").substring(0, 35), col2X + 80, currentY);
-                currentY += 16;
-            });
-
-            currentY += 15;
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(13);
-            doc.setFillColor(220, 220, 220); 
-            doc.rect(marginLeft, currentY - 14, pageWidth - 80, 20, 'F');
-            doc.text("Resultados de Mediciones", marginLeft + 10, currentY);
-            currentY += 20;
-
-            const tableWidth = 500;
-            const tableX = (pageWidth - tableWidth) / 2;
-
-            doc.setFillColor(50, 80, 160);
-            doc.setDrawColor(0);
-            doc.setLineWidth(0.1);
-            doc.rect(tableX, currentY, tableWidth, 20, 'FD');
-
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "bold");
-            doc.text("Medición Patrón", tableX + 20, currentY + 14);
-            doc.text("Medición Instrumento", tableX + (tableWidth / 2) + 20, currentY + 14);
-            currentY += 20;
-
-            doc.setTextColor(0, 0, 0);
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(10);
-
-            const patronRaw = (data.medicionPatron || "").split('\n');
-            const instrumentoRaw = (data.medicionInstrumento || "").split('\n');
-            const maxLines = Math.max(patronRaw.length, instrumentoRaw.length);
-            const loopLimit = maxLines > 0 ? maxLines : 1;
-
-            for (let i = 0; i < loopLimit; i++) {
-                const pLine = patronRaw[i] || "";
-                const iLine = instrumentoRaw[i] || "";
-
-                const isHeaderLine = (pLine.trim().endsWith(':') || iLine.trim().endsWith(':'));
-                const rowHeight = 18;
-
-                doc.setDrawColor(200);
-                if (isHeaderLine) {
-                    doc.setFillColor(240, 240, 240);
-                    doc.setFont("helvetica", "bold");
-                    doc.rect(tableX, currentY, tableWidth, rowHeight, 'FD');
-                    doc.setTextColor(0, 0, 100);
-                } else {
-                    doc.setFillColor(255, 255, 255);
-                    doc.setFont("helvetica", "normal");
-                    doc.rect(tableX, currentY, tableWidth / 2, rowHeight);
-                    doc.rect(tableX + tableWidth / 2, currentY, tableWidth / 2, rowHeight);
-                    doc.setTextColor(0, 0, 0);
-                }
-
-                doc.text(pLine, tableX + 10, currentY + 12);
-                doc.text(iLine, tableX + (tableWidth / 2) + 10, currentY + 12);
-                currentY += rowHeight;
-            }
-
-            doc.setFontSize(9);
-            doc.setFont("helvetica", "italic");
-            doc.setTextColor(100);
-            doc.text("AG-CAL-F39-00", marginLeft, pageHeight - 20);
-
-            const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
-            const rutaStorage = `worksheets/${data.nombre || "Sistema"}/${data.certificado}_${data.id}.pdf`;
-            const bucket = admin.storage().bucket();
-
-            await bucket.file(rutaStorage).save(pdfBuffer, {
-                contentType: "application/pdf",
-                metadata: { cacheControl: "no-cache, max-age=0" }
-            });
-
-            const metaId = rutaStorage.replace(/\//g, "_");
-            await db.collection("fileMetadata").doc(metaId).set({
-                updated: admin.firestore.FieldValue.serverTimestamp(),
-                size: pdfBuffer.length
-            }, { merge: true });
-
-            return { success: true };
-        } catch (error) {
-            console.error("Error regenerando PDF:", error);
-            return null;
-        }
+    .onUpdate(async (change, context) => {
+        const { runAgbotRegenerarPDF } = require("./agbotRegenerarPdf");
+        return runAgbotRegenerarPDF(change);
     });
 
 // ==================================================================
@@ -519,6 +367,7 @@ export const procesarAlertaVencimiento = functions.firestore
             data.titulo || `Alerta de vencimiento — ${data.cliente || "Cliente"}`
         );
 
+        const { getMailConfig, sendAgMail, formatMailError } = require("./mailTransport");
         if (!getMailConfig()) {
             await snap.ref.update({
                 estado: "error",
@@ -555,11 +404,55 @@ export const procesarAlertaVencimiento = functions.firestore
     });
 
 // ==================================================================
-// 9. VIGILANTE DE ACTUALIZACIONES PJLA (Importado desde archivo externo)
+// 9. FUNCIONES CON CARGA DIFERIDA (evita timeout al desplegar)
 // ==================================================================
-export { procesarAlertaHojaServicio } from "./hojaServicioMail";
-export { procesarAlertaVacaciones } from "./vacacionSolicitudMail";
-export { procesarAlertaVacacionesPaso } from "./vacacionPasoMail";
-export { onVacacionAprobadaFinal } from "./vacacionAprobacionFinal";
-export * from "./pjlaWatcher";
-export { scheduledDriveReconcile } from "./scheduledDriveReconcile";
+export const getPatronCertificadoUrl = functions.https.onCall(async (data, context) => {
+    const { runGetPatronCertificadoUrl } = require("./certificadoAccess");
+    return runGetPatronCertificadoUrl(data, context);
+});
+
+export const procesarAlertaHojaServicio = functions.firestore
+    .document("alertasHojaServicio/{alertaId}")
+    .onCreate(async (snap, context) => {
+        const { runProcesarAlertaHojaServicio } = require("./hojaServicioMail");
+        return runProcesarAlertaHojaServicio(snap, context);
+    });
+
+export const procesarAlertaVacaciones = functions.firestore
+    .document("alertasVacaciones/{alertaId}")
+    .onCreate(async (snap, context) => {
+        const { runProcesarAlertaVacaciones } = require("./vacacionSolicitudMail");
+        return runProcesarAlertaVacaciones(snap, context);
+    });
+
+export const procesarAlertaVacacionesPaso = functions.firestore
+    .document("alertasVacacionesPaso/{alertaId}")
+    .onCreate(async (snap, context) => {
+        const { runProcesarAlertaVacacionesPaso } = require("./vacacionPasoMail");
+        return runProcesarAlertaVacacionesPaso(snap, context);
+    });
+
+export const onVacacionAprobadaFinal = functions.firestore
+    .document("solicitudesVacaciones/{solicitudId}")
+    .onUpdate(async (change, context) => {
+        const { runOnVacacionAprobadaFinal } = require("./vacacionAprobacionFinal");
+        return runOnVacacionAprobadaFinal(change, context);
+    });
+
+export const checkPJLAUpdates = functions.pubsub
+    .schedule("every 24 hours")
+    .timeZone("America/Monterrey")
+    .onRun(async () => {
+        const { runCheckPJLAUpdates } = require("./pjlaWatcher");
+        await runCheckPJLAUpdates();
+        return null;
+    });
+
+export const scheduledDriveReconcile = functions
+    .runWith({ timeoutSeconds: 540, memory: "512MB" })
+    .pubsub.schedule("every 5 minutes")
+    .timeZone("America/Mexico_City")
+    .onRun(async () => {
+        const { runScheduledDriveReconcile } = require("./scheduledDriveReconcile");
+        return runScheduledDriveReconcile();
+    });

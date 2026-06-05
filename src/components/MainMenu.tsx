@@ -7,8 +7,20 @@ import {
   ArrowRightLeft, FileOutput, LogOut, User, CheckCircle2,
   AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
   FileText, Users, History, Palette, LayoutGrid, AlignLeft, Check,
-  Info, AlertCircle, Send, Megaphone, Trash2,
+  Info, AlertCircle, Send, Megaphone, Trash2, Sparkles,
 } from 'lucide-react';
+import { NovedadesWidget } from './NovedadesWidget';
+import { NovedadesComposeModal } from './NovedadesComposeModal';
+import { WhatsNewModal } from './WhatsNewModal';
+import type { AppUpdate } from '../config/appUpdates';
+import { useAppUpdates } from '../hooks/useAppUpdates';
+import { canCreateAppNovedades } from '../utils/appNovedades';
+import {
+  getUpdatesForUser,
+  isNovedadesWidgetHidden,
+  markUpdateSeen,
+  setNovedadesWidgetHidden,
+} from '../utils/appUpdatesStorage';
 import labLogo from '../assets/lab_logo.png';
 import { db, storage } from '../utils/firebase';
 import {
@@ -475,8 +487,10 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
 };
 
 // ─── SELECTOR DE TEMA ─────────────────────────────────────────────────────────
-const ThemeSelector = ({ prefs, setPrefs, onClose }: {
+const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNovedadesWidgetHiddenChange }: {
   prefs: UserPrefs; setPrefs: (p: Partial<UserPrefs>) => void; onClose: () => void;
+  novedadesWidgetHidden: boolean;
+  onNovedadesWidgetHiddenChange: (hidden: boolean) => void;
 }) => {
   const colorRef = useRef<HTMLInputElement>(null);
   const [custom, setCustom] = useState(prefs.accentColor);
@@ -556,6 +570,29 @@ const ThemeSelector = ({ prefs, setPrefs, onClose }: {
             <div className="flex-1 h-1.5 rounded-full" style={{ background: `linear-gradient(to right, var(--acc), rgba(var(--acc-rgb)/0.4))` }} />
             <span className="text-[11px] px-2.5 py-1 rounded-lg text-white font-semibold" style={{ backgroundColor: 'var(--acc)' }}>Botón</span>
           </div>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2">Menú principal</p>
+          <button
+            type="button"
+            onClick={() => onNovedadesWidgetHiddenChange(!novedadesWidgetHidden)}
+            className={`w-full flex items-center gap-2 py-2.5 px-3 rounded-xl text-xs font-semibold border transition-all ${
+              novedadesWidgetHidden
+                ? 'ag-surface-hi ag-border ag-muted hover:opacity-80'
+                : 'acc-soft acc-text border-transparent'
+            }`}
+          >
+            <Sparkles size={14} className="shrink-0" />
+            <span className="flex-1 text-left">
+              {novedadesWidgetHidden ? 'Mostrar widget de novedades' : 'Widget de novedades visible'}
+            </span>
+          </button>
+          <p className="text-[10px] ag-faint mt-1.5 leading-snug">
+            {novedadesWidgetHidden
+              ? 'El menú vuelve a verse como antes, sin el panel lateral.'
+              : 'También puedes ocultarlo con la ✕ del panel.'}
+          </p>
         </div>
 
         <p className="text-[10px] ag-muted text-center">
@@ -979,6 +1016,12 @@ export const MainMenu: React.FC = () => {
   const pendingJuntaSyncRef = useRef<Set<string>>(new Set());
 
   const [patronBannerDismissed, setPatronBannerDismissed] = useState(isPatronBannerDismissed);
+  const [novedadesWidgetHidden, setNovedadesWidgetHiddenState] = useState(false);
+  const [selectedNovedad, setSelectedNovedad] = useState<AppUpdate | null>(null);
+  const [novedadesSeenRevision, setNovedadesSeenRevision] = useState(0);
+  const [showComposeNovedad, setShowComposeNovedad] = useState(false);
+
+  const { allUpdates } = useAppUpdates();
 
   const uid   = (user as any)?.uid   || (user as any)?.id    || '';
   const email = (user as any)?.email || '';
@@ -986,6 +1029,23 @@ export const MainMenu: React.FC = () => {
   const { prefs, setPrefs, loading: loadingPrefs } = useUserPrefs(uid);
   const viewMode = prefs.viewMode;
   const setViewMode = (v: 'grid' | 'list') => setPrefs({ viewMode: v });
+
+  useEffect(() => {
+    if (uid) setNovedadesWidgetHiddenState(isNovedadesWidgetHidden(uid));
+  }, [uid]);
+
+  const handleNovedadesWidgetHiddenChange = useCallback((hidden: boolean) => {
+    setNovedadesWidgetHiddenState(hidden);
+    if (uid) setNovedadesWidgetHidden(uid, hidden);
+  }, [uid]);
+
+  const handleDismissNovedadModal = useCallback(() => {
+    if (selectedNovedad && uid) {
+      markUpdateSeen(uid, selectedNovedad.id);
+      setNovedadesSeenRevision((r) => r + 1);
+    }
+    setSelectedNovedad(null);
+  }, [selectedNovedad, uid]);
 
   useEffect(() => {
     if (user) setLocalUser({
@@ -1017,6 +1077,14 @@ export const MainMenu: React.FC = () => {
 
   const isAdmin      = useMemo(() => !!(localUser && (localUser.role.includes('admin') || localUser.role.includes('administrativo') || SUPER_ADMINS.includes(localUser.email))), [localUser]);
   const isCalidad    = useMemo(() => !!(localUser?.role.includes('calidad')), [localUser]);
+  const canCreateNovedades = useMemo(
+    () => canCreateAppNovedades(user ?? (localUser ? { role: localUser.role, puesto: localUser.role } : null)),
+    [user, localUser],
+  );
+  const novedadesForUser = useMemo(
+    () => getUpdatesForUser(uid, user, allUpdates),
+    [uid, user, allUpdates],
+  );
   const isJefe       = useMemo(() => !!(localUser?.role.includes('admin') || localUser?.role.includes('gerente')), [localUser]);
   const canSeePatronAlerts = useMemo(
     () => isCalidadRole(localUser?.role) || isJefe || isCalidad,
@@ -1231,7 +1299,15 @@ export const MainMenu: React.FC = () => {
                   <Palette size={17} />
                 </button>
                 <AnimatePresence>
-                  {showTheme && <ThemeSelector prefs={prefs} setPrefs={setPrefs} onClose={() => setShowTheme(false)} />}
+                  {showTheme && (
+                    <ThemeSelector
+                      prefs={prefs}
+                      setPrefs={setPrefs}
+                      onClose={() => setShowTheme(false)}
+                      novedadesWidgetHidden={novedadesWidgetHidden}
+                      onNovedadesWidgetHiddenChange={handleNovedadesWidgetHiddenChange}
+                    />
+                  )}
                 </AnimatePresence>
               </div>
 
@@ -1421,6 +1497,18 @@ export const MainMenu: React.FC = () => {
 
             {/* WIDGETS */}
             <div className="lg:w-72 flex flex-col gap-4 lg:self-stretch">
+              {!novedadesWidgetHidden && (novedadesForUser.length > 0 || canCreateNovedades) && (
+                <NovedadesWidget
+                  uid={uid}
+                  user={user}
+                  updates={novedadesForUser}
+                  seenRevision={novedadesSeenRevision}
+                  canCreate={canCreateNovedades}
+                  onSelect={setSelectedNovedad}
+                  onCompose={() => setShowComposeNovedad(true)}
+                  onHide={() => handleNovedadesWidgetHiddenChange(true)}
+                />
+              )}
               {(isCalidad || isAdmin || isSuperAdmin) && (
                 <>
                   <PatronesWidget navigateTo={navigateTo} />
@@ -1431,6 +1519,17 @@ export const MainMenu: React.FC = () => {
             </div>
           </div>
         </main>
+
+        <WhatsNewModal update={selectedNovedad} onDismiss={handleDismissNovedadModal} />
+
+        {canCreateNovedades && (
+          <NovedadesComposeModal
+            open={showComposeNovedad}
+            onClose={() => setShowComposeNovedad(false)}
+            autorUid={uid}
+            autorNombre={localUser.name}
+          />
+        )}
 
         <AnimatePresence>
           {showProfile && localUser && (
