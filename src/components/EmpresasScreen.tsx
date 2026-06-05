@@ -81,9 +81,9 @@ const normalizeText = (value: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-const canEditEmpresas = (user: { name?: string; role?: string; email?: string } | null): boolean => {
+const canEditEmpresas = (user: { name?: string; role?: string; puesto?: string; email?: string } | null): boolean => {
   if (!user) return false;
-  const role = normalizeText(user.role || "");
+  const role = normalizeText(user.puesto || user.role || "");
   const name = normalizeText(user.name || "");
   const email = normalizeText(user.email || "");
   const isCalidad =

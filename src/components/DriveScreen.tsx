@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where, writeBatch } from "firebase/firestore";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where, writeBatch, documentId } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
@@ -135,15 +135,96 @@ const generateSearchTokens = (text: string): string[] => {
   return [...new Set([normalized, ...parts])];
 };
 
-const fuzzyMatch = (file: DriveFile, searchTerms: string[]) => {
-  const textToSearch = [
-    file.name, 
-    file.rawName, 
-    file.notas || "",
-    ...(file.keywords || [])
-  ].join(' ').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  
-  return searchTerms.every(term => textToSearch.includes(term));
+const compactAlphanumeric = (text: string) =>
+  normalizeText(text).replace(/[^a-z0-9]/g, "");
+
+const parseSearchTerms = (query: string): string[] => {
+  const q = normalizeText(query);
+  if (!q) return [];
+  return [...new Set(q.split(/[\s_\-./\\]+/).filter((t) => t.length > 0))];
+};
+
+const buildFileSearchHaystack = (file: DriveFile): string =>
+  normalizeText(
+    [
+      file.name,
+      file.rawName,
+      file.notas || "",
+      file.parentFolder || "",
+      file.uploadedBy || "",
+      file.worksheetId || "",
+      file.worksheetCliente || "",
+      file.worksheetEquipo || "",
+      file.worksheetTechnician || "",
+      file.ubicacion || "",
+      file.ubicacion_real || "",
+      ...(file.keywords || []),
+    ].join(" ")
+  );
+
+/** Búsqueda flexible: ignora mayúsculas/acentos, guiones y orden parcial de tokens. */
+const matchDriveSearch = (file: DriveFile, query: string): boolean => {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+
+  const haystack = buildFileSearchHaystack(file);
+  const compactHay = compactAlphanumeric(haystack);
+  const fullQuery = normalizeText(trimmed);
+  const compactQuery = compactAlphanumeric(trimmed);
+
+  if (fullQuery.length >= 2 && haystack.includes(fullQuery)) return true;
+  if (compactQuery.length >= 2 && compactHay.includes(compactQuery)) return true;
+
+  const terms = parseSearchTerms(trimmed);
+  if (terms.length === 0) return true;
+
+  return terms.every((term) => {
+    if (haystack.includes(term)) return true;
+    const compactTerm = compactAlphanumeric(term);
+    if (compactTerm.length >= 2 && compactHay.includes(compactTerm)) return true;
+    if (/^\d+$/.test(term) && haystack.includes(term)) return true;
+    return false;
+  });
+};
+
+const matchDriveSearchText = (text: string, query: string): boolean =>
+  matchDriveSearch(
+    { name: text, rawName: text, url: "", fullPath: "", updated: "", created: "" },
+    query
+  );
+
+const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+};
+
+async function fetchMetadataBatch(metaIds: string[]): Promise<Map<string, Record<string, unknown>>> {
+  const map = new Map<string, Record<string, unknown>>();
+  if (metaIds.length === 0) return map;
+
+  await Promise.all(
+    chunkArray(metaIds, 10).map(async (ids) => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, "fileMetadata"), where(documentId(), "in", ids))
+        );
+        snap.forEach((d) => map.set(d.id, d.data()));
+      } catch {
+        await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const metaSnap = await getDoc(doc(db, "fileMetadata", id));
+              if (metaSnap.exists()) map.set(id, metaSnap.data());
+            } catch {
+              /* ignore */
+            }
+          })
+        );
+      }
+    })
+  );
+  return map;
 };
 
 const cleanFileName = (rawName: string) => {
@@ -195,9 +276,7 @@ async function buildDriveBrowseFromMetadata(
   const basePrefix = `${basePath}/`;
   const folderNames = new Set<string>();
   const files: DriveFile[] = [];
-  const searchTerm = options.debouncedSearch
-    ? normalizeText(options.debouncedSearch)
-    : "";
+  const searchQuery = options.debouncedSearch.trim();
 
   snap.forEach((docSnap) => {
     const data = docSnap.data();
@@ -220,15 +299,16 @@ async function buildDriveBrowseFromMetadata(
       const segments = relative.split("/").filter(Boolean);
       if (segments.length === 0) return;
       if (segments.length === 1) {
-        if (searchTerm && !normalizeText(rawName).includes(searchTerm)) return;
-        files.push(metadataToDriveFile(data, rawName, fullPath));
+        const fileRow = metadataToDriveFile(data, rawName, fullPath);
+        if (searchQuery && !matchDriveSearch(fileRow, searchQuery)) return;
+        files.push(fileRow);
         return;
       }
       const folder = segments[0];
       if (!options.isQuality && path.length === 0) {
         if (!normalizeText(folder).includes(options.myName)) return;
       }
-      if (searchTerm && !normalizeText(folder).includes(searchTerm)) return;
+      if (searchQuery && !matchDriveSearchText(folder, searchQuery)) return;
       folderNames.add(folder);
       return;
     }
@@ -238,12 +318,13 @@ async function buildDriveBrowseFromMetadata(
     const segments = relative.split("/").filter(Boolean);
     if (segments.length === 0) return;
     if (segments.length === 1) {
-      if (searchTerm && !normalizeText(rawName).includes(searchTerm)) return;
-      files.push(metadataToDriveFile(data, rawName, fullPath));
+      const fileRow = metadataToDriveFile(data, rawName, fullPath);
+      if (searchQuery && !matchDriveSearch(fileRow, searchQuery)) return;
+      files.push(fileRow);
       return;
     }
     const folder = segments[0];
-    if (searchTerm && !normalizeText(folder).includes(searchTerm)) return;
+    if (searchQuery && !matchDriveSearchText(folder, searchQuery)) return;
     folderNames.add(folder);
   });
 
@@ -777,12 +858,18 @@ const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, dragga
 };
 
 // ─── DETAILS PANEL ────────────────────────────
-const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes, onRegeneratePdf, isGeneratingPdf, showRegeneratePdf, isPendingWorksheet }: any) => {
+const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes, onRegeneratePdf, isGeneratingPdf, showRegeneratePdf, isPendingWorksheet, scrollRef }: any) => {
   const [notes, setNotes] = React.useState(file.notas || "");
+  const localScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = scrollRef || localScrollRef;
+
   React.useEffect(() => { setNotes(file.notas || ""); }, [file]);
+  React.useEffect(() => {
+    bodyScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [file.fullPath, bodyScrollRef]);
 
   return (
-    <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-80 bg-white border-l border-slate-200 z-[60] flex flex-col h-full overflow-hidden animate-in slide-in-from-right duration-250">
+    <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-80 md:flex-shrink-0 bg-white border-l border-slate-200 z-[60] flex flex-col h-full md:max-h-full overflow-hidden animate-in slide-in-from-right duration-250 md:sticky md:top-0 md:self-stretch">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
         <span className="text-sm font-semibold text-slate-800">Información</span>
         <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
@@ -798,7 +885,7 @@ const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload
         <p className="text-xs text-slate-400 mt-1 font-mono">{formatFileSize(file.size)}</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+      <div ref={bodyScrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-6 min-h-0">
         <div className="space-y-3">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Detalles</h4>
           {[
@@ -985,6 +1072,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [groupView, setGroupView] = useState<string | null>(null);
   const [newFileMenuOpen, setNewFileMenuOpen] = useState(false);
   const newFileMenuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const detailsScrollRef = useRef<HTMLDivElement>(null);
   const pendingReviewSyncAtRef = useRef(0);
   const loadRequestIdRef = useRef(0);
   const downloadUrlCacheRef = useRef(new Map<string, { url: string; at: number }>());
@@ -997,7 +1086,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: DriveFile | null; folder: DriveFolder | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearch = useDebounce(searchQuery, 300);
+  const debouncedSearch = useDebounce(searchQuery, 200);
+  const searchCatalogActive = debouncedSearch.trim().length > 0;
 
   // Drag & drop
   const [dragActive, setDragActive] = useState(false);
@@ -1109,11 +1199,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     setSelectedIds(new Set());
     setLastSelectedId(null);
 
-    const isGlobalView = activeFilter !== 'all' || debouncedSearch !== "";
-    if (isGlobalView) setLoading(true);
+    const useGlobalCatalog = activeFilter !== "all" || searchCatalogActive;
+    if (useGlobalCatalog) setLoading(true);
 
     try {
-      if (isGlobalView) {
+      if (useGlobalCatalog) {
         setLoading(true);
         setFilesLoading(false);
 
@@ -1153,7 +1243,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         }
         const results: DriveFile[] = [];
         const myName = normalizeText(currentUserData?.name || "");
-        const searchTerms = debouncedSearch ? normalizeText(debouncedSearch).split(/[\s\-]+/).filter(t => t.length > 0) : [];
 
         snap.forEach((docSnap) => {
           const data = docSnap.data();
@@ -1202,11 +1291,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             ubicacion: data.ubicacion, ubicacion_real: data.ubicacion_real
           };
 
-          if (searchTerms.length > 0) {
-            if (fuzzyMatch(fileObj, searchTerms)) results.push(fileObj);
-          } else {
-            results.push(fileObj);
-          }
+          results.push(fileObj);
         });
         const isGlobalPendingOrCompleted =
           activeFilter === "pending_review" || activeFilter === "completed";
@@ -1263,44 +1348,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         if (!isQuality && path.length === 0) {
           loadedFolders = loadedFolders.filter((f) => normalizeText(f.name).includes(myName));
         }
-        if (debouncedSearch) {
-          const term = normalizeText(debouncedSearch);
-          loadedFolders = loadedFolders.filter(f => normalizeText(f.name).includes(term));
-        }
         setFolders(loadedFolders);
         setLoading(false);
         setFilesLoading(true);
 
         const items = res.items.filter(item => item.name !== '.keep');
-        let filteredItems = items;
-        if (debouncedSearch) {
-          const term = normalizeText(debouncedSearch);
-          filteredItems = items.filter(item => {
-            const cleanName = cleanFileName(item.name);
-            return normalizeText(cleanName).includes(term) || normalizeText(item.name).includes(term);
-          });
-        }
+        const filteredItems = items;
 
         const metaIds = filteredItems.map(item => item.fullPath.replace(/\//g, '_'));
-        const metadataById = new Map<string, Record<string, unknown>>();
-        await Promise.all(
-          metaIds.map(async (metaId) => {
-            try {
-              const metaSnap = await getDoc(doc(db, 'fileMetadata', metaId));
-              if (metaSnap.exists()) metadataById.set(metaId, metaSnap.data());
-            } catch { /* ignore */ }
-          })
-        );
+        const metadataById = await fetchMetadataBatch(metaIds);
 
         const repairs: Array<{ metaId: string; payload: Record<string, unknown> }> = [];
 
         const filePromises = filteredItems.map(async (item) => {
           const rawName = item.name;
           const cleanName = cleanFileName(rawName);
-          if (debouncedSearch) {
-            const term = normalizeText(debouncedSearch);
-            if (!normalizeText(cleanName).includes(term) && !normalizeText(rawName).includes(term)) return null;
-          }
 
           const metaId = item.fullPath.replace(/\//g, '_');
           const meta = metadataById.get(metaId) || {};
@@ -1378,37 +1440,44 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           )
         );
 
-        loaded = await Promise.all(
-          loaded.map(async (f) => {
-            if (f.completed === true || f.reviewed === true) return f;
-            const driveFlag = String(f.worksheetCargadoDrive || "").trim();
-            if (!isWorksheetRealizado(driveFlag)) return f;
+        if (requestId === loadRequestIdRef.current) {
+          setFiles(loaded);
+          setFilesLoading(false);
+        }
 
-            const techName =
-              f.worksheetTechnician?.trim() ||
-              f.parentFolder?.trim() ||
-              path[path.length - 1]?.trim() ||
-              "";
+        void (async () => {
+          const synced = await Promise.all(
+            loaded.map(async (f) => {
+              if (f.completed === true || f.reviewed === true) return f;
+              const driveFlag = String(f.worksheetCargadoDrive || "").trim();
+              if (!isWorksheetRealizado(driveFlag)) return f;
 
-            let wsRow: Record<string, unknown> | null = null;
-            if (f.worksheetDocId) {
-              const wsSnap = await getDoc(doc(db, "hojasDeTrabajo", f.worksheetDocId));
-              if (wsSnap.exists()) wsRow = { ...wsSnap.data(), docId: wsSnap.id };
-            }
-            if (wsRow && isWorksheetRealizado(wsRow.cargado_drive)) {
-              void syncSingleFilePendingReviewFromWorksheet(f.fullPath, wsRow);
-            }
+              const techName =
+                f.worksheetTechnician?.trim() ||
+                f.parentFolder?.trim() ||
+                path[path.length - 1]?.trim() ||
+                "";
 
-            return {
-              ...f,
-              completed: true,
-              completedByName: f.completedByName || techName || undefined,
-            };
-          })
-        );
+              let wsRow: Record<string, unknown> | null = null;
+              if (f.worksheetDocId) {
+                const wsSnap = await getDoc(doc(db, "hojasDeTrabajo", f.worksheetDocId));
+                if (wsSnap.exists()) wsRow = { ...wsSnap.data(), docId: wsSnap.id };
+              }
+              if (wsRow && isWorksheetRealizado(wsRow.cargado_drive)) {
+                void syncSingleFilePendingReviewFromWorksheet(f.fullPath, wsRow);
+              }
 
-        setFiles(loaded);
-        setFilesLoading(false);
+              return {
+                ...f,
+                completed: true,
+                completedByName: f.completedByName || techName || undefined,
+              };
+            })
+          );
+          if (requestId === loadRequestIdRef.current) {
+            setFiles(synced);
+          }
+        })();
 
         if (repairs.length > 0) {
           setIsSyncing(true);
@@ -1452,7 +1521,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         setFilesLoading(false);
       }
     }
-  }, [path, activeFilter, currentUserData, debouncedSearch, isQuality, currentRoot, showToast]);
+  }, [path, activeFilter, currentUserData, searchCatalogActive, isQuality, currentRoot, showToast]);
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
@@ -1525,9 +1594,36 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     };
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const copyFileName = useCallback(
+    async (file: DriveFile) => {
+      try {
+        await navigator.clipboard.writeText(file.name);
+        showToast("Nombre copiado al portapapeles", "success");
+      } catch {
+        showToast("No se pudo copiar el nombre", "error");
+      }
+    },
+    [showToast]
+  );
+
   // ── Sorted/filtered files ──
   const processedFiles = useMemo(() => {
     let result = [...files];
+    if (debouncedSearch.trim()) {
+      result = result.filter((f) => matchDriveSearch(f, debouncedSearch));
+    }
     if (pendingWorksheetFile && debouncedSearch.trim().length >= 3) {
       const linkId = extractWorksheetLinkId(pendingWorksheetFile.rawName);
       const alreadyListed = result.some(
@@ -1550,6 +1646,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     });
     return result;
   }, [files, pendingWorksheetFile, debouncedSearch, sortBy]);
+
+  const visibleFolders = useMemo(() => {
+    if (!debouncedSearch.trim()) return folders;
+    return folders.filter((f) => matchDriveSearchText(f.name, debouncedSearch));
+  }, [folders, debouncedSearch]);
 
   const isMetrologistFolderView = useMemo(
     () =>
@@ -1598,7 +1699,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       setLastSelectedId(file.fullPath);
     }
     setSelectedIds(newSelected);
-    if (newSelected.size !== 1) setDetailsOpen(false);
+    if (newSelected.size !== 1) {
+      setDetailsOpen(false);
+    } else if (detailsOpen) {
+      detailsScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    }
   };
 
   // ── Preview ──
@@ -2426,10 +2531,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     let displayFiles = processedFiles;
     if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView) displayFiles = groupedFiles[groupView] || [];
-    const showFolders = activeFilter === 'all' && !debouncedSearch && folders.length > 0;
+    const showFolders = activeFilter === 'all' && !debouncedSearch && visibleFolders.length > 0;
 
     if (displayFiles.length === 0 && !showFolders && !filesLoading) {
-      if (debouncedSearch) return <EmptyState icon={Search} title={`Sin resultados para "${debouncedSearch}"`} subtitle="Intenta con otras palabras clave" />;
+      if (debouncedSearch) return <EmptyState icon={Search} title={`Sin resultados para "${debouncedSearch}"`} subtitle="Usa parte del nombre, folio o ID; no hace falta escribirlo exacto ni con guiones" />;
       return <EmptyState icon={Folder} title="Esta carpeta está vacía" subtitle="Sube archivos o crea una carpeta para comenzar" />;
     }
 
@@ -2526,10 +2631,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
               <Folder size={13} className="text-amber-500" /> Carpetas
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{folders.length}</span>
+              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{visibleFolders.length}</span>
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              {folders.map(f => (
+              {visibleFolders.map(f => (
                 <FolderCard
                   key={f.fullPath} folder={f}
                   isDragTarget={dropTargetFolder === f.fullPath}
@@ -2725,7 +2830,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
           <div className="relative flex-1 max-w-lg group">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#2464A3] transition-colors" />
-            <input type="text" placeholder="Buscar por nombre, ID equipo, certificado o folio..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#2464A3]/30 border border-slate-200/60 focus:border-[#2464A3] rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
+            <input ref={searchInputRef} type="text" placeholder="Buscar (parcial, sin guiones exactos) — Ctrl+K" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#2464A3]/30 border border-slate-200/60 focus:border-[#2464A3] rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
             {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors"><X size={13} /></button>}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -2756,9 +2861,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             {sortMenuOpen && ( <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">{sortOptions.map(opt => ( <button key={opt.key} onClick={() => { setSortBy(opt.key as SortType); setSortMenuOpen(false); }} className={clsx("w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors", sortBy === opt.key ? "bg-[#2464A3]/10 text-[#2464A3] font-semibold" : "text-slate-600 hover:bg-slate-50")}>{opt.icon} {opt.label}{sortBy === opt.key && <CheckCircle2 size={11} className="ml-auto text-[#2464A3]" />}</button> ))}</div> )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto flex min-h-0">
-          <div className={clsx("flex-1 p-4 md:p-6 min-w-0 transition-all duration-200")}>
-            {loading ? <LoadingSkeleton /> : renderContent()}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <div className={clsx("flex-1 overflow-y-auto min-w-0 transition-all duration-200")}>
+            <div className="p-4 md:p-6">
+              {loading ? <LoadingSkeleton /> : renderContent()}
+            </div>
           </div>
           {detailsOpen && selectedIds.size === 1 && (() => {
             const file = processedFiles.find(f => f.fullPath === Array.from(selectedIds)[0]);
@@ -2768,6 +2875,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             return file ? (
               <DetailsPanel
                 file={file}
+                scrollRef={detailsScrollRef}
                 onClose={() => setDetailsOpen(false)}
                 isQualityUser={isQuality}
                 onToggleStatus={updateFileStatus}
@@ -2820,7 +2928,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   onClick={() => { if (contextMenu.file) handleRegeneratePdf(contextMenu.file); setContextMenu(null); }}
                 />
               )}
-              <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); } setContextMenu(null); }} />
+              <MenuOption icon={<Info size={14} />} label="Ver detalles" onClick={() => { if (contextMenu.file) { setSelectedIds(new Set([contextMenu.file.fullPath])); setDetailsOpen(true); detailsScrollRef.current?.scrollTo({ top: 0, behavior: "auto" }); } setContextMenu(null); }} />
+              <MenuOption icon={<Copy size={14} />} label="Copiar nombre" onClick={() => { if (contextMenu.file) copyFileName(contextMenu.file); setContextMenu(null); }} />
               {!contextMenu.file.isPendingWorksheet && (
                 <MenuOption icon={<Download size={14} />} label="Descargar" onClick={() => { if (contextMenu.file) handleDownload(contextMenu.file); setContextMenu(null); }} />
               )}
