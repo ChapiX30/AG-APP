@@ -7,74 +7,33 @@ import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore'; 
 import { db } from '../utils/firebase';
 import { 
-  ArrowLeft, User, Package, Plus, Loader2, AlertTriangle, 
+  ArrowLeft, Package, Plus, Loader2, AlertTriangle, 
   Camera, X, Save, FileText, Briefcase, Info, Printer
 } from 'lucide-react'; 
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import {
   COLLECTION_PATRONES,
   formatPatronNombre,
+  isPatronCalibracionVencido,
   isPatronUnavailable,
 } from '../utils/patronLink';
+import labLogo from '../assets/lab_logo.png';
 
-// ==================================================================
-// --- 1. CONFIGURACIÓN Y ESTILOS ---
-// ==================================================================
-
+const AG_BLUE = '#2464A3';
 const COLLECTION_NAME_PATRONES = COLLECTION_PATRONES;
+const INPUT_CLASS =
+  'w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/15 transition-colors';
+const TABLE_INPUT = `${INPUT_CLASS} py-1.5`;
 
-const styles = `
-  :root { --primary: #2464A3; --bg-page: #f8fafc; --text-main: #1e293b; }
-  body { background: var(--bg-page); color: var(--text-main); font-family: sans-serif; }
-  .layout-container { max-width: 1200px; margin: 0 auto; padding: 20px; padding-bottom: 100px; }
-  .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
-  
-  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; gap: 8px; transition: all 0.2s; }
-  .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(36, 100, 163, 0.3); }
-  .btn-primary:hover { background: #1d5082; transform: translateY(-1px); }
-  .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
-
-  .btn-success { background: #10b981; color: white; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3); }
-  .btn-success:hover { background: #059669; transform: translateY(-1px); }
-  .btn-success:disabled { background: #94a3b8; cursor: not-allowed; }
-
-  .btn-danger { background: #fee2e2; color: #b91c1c; }
-  .btn-secondary { background: white; border: 1px solid #cbd5e1; color: #475569; }
-  .btn-secondary:hover { background: #f1f5f9; border-color: #94a3b8; }
-  
-  .input-control { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-top: 5px; background-color: #ffffff !important; color: #1e293b !important; font-size: 0.95rem; }
-  .input-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36, 100, 163, 0.1); }
-  label { font-weight: 600; color: #475569; font-size: 0.85rem; margin-bottom: 4px; display: block; }
-  
-  .modern-table { width: 100%; border-collapse: separate; border-spacing: 0; }
-  .modern-table th { text-align: left; padding: 12px 16px; background: #f8fafc; font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700; border-bottom: 1px solid #e2e8f0; letter-spacing: 0.05em; }
-  .modern-table td { padding: 10px 16px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 0.9rem; vertical-align: middle; }
-  
-  .status-badge { padding: 4px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
-  .status-vencido { background: #fecaca; color: #991b1b; }
-  .status-vigente { background: #dcfce7; color: #166534; }
-  .status-pendiente { background: #f1f5f9; color: #64748b; }
-  .status-proximo { background: #fef9c3; color: #854d0e; }
-  .status-critico { background: #ffedd5; color: #c2410c; }
-
-  .field-error { color: #dc2626; font-size: 0.75rem; margin-top: 4px; font-weight: 500; }
-  .help-text { color: #64748b; font-size: 0.8rem; margin-top: 4px; line-height: 1.4; }
-  .etiquetadora-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px dashed #cbd5e1; background: #f8fafc; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; }
-  .etiquetadora-chip:hover { border-color: var(--primary); background: #eff6ff; }
-  .etiquetadora-chip.is-own { border-style: solid; border-color: #93c5fd; background: #eff6ff; }
-  .etiquetadora-chip:disabled { opacity: 0.5; cursor: not-allowed; }
-  .empty-state { text-align: center; padding: 32px 16px; color: #94a3b8; }
-  .empty-state svg { margin: 0 auto 12px; opacity: 0.5; }
-  
-  .floating-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 1100px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 16px; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); display: flex; gap: 12px; justify-content: space-between; align-items: center; z-index: 50; border: 1px solid #e2e8f0; }
-  
-  .scanner-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-  .scanner-box { background: white; padding: 24px; width: 90%; max-width: 500px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
-  .scanner-video { width: 100%; border-radius: 12px; background: black; margin-bottom: 16px; overflow: hidden; }
-
-  option.opt-vencido { color: #dc2626; font-weight: bold; background-color: #fef2f2; }
-  option.opt-unavailable { color: #94a3b8; font-style: italic; background-color: #f8fafc; }
-`;
+const FormField = ({ label, required, children, error }: { label: string; required?: boolean; children: React.ReactNode; error?: string }) => (
+  <div>
+    <label className="block text-xs font-medium text-slate-600 mb-1.5">
+      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+    </label>
+    {children}
+    {error && <p className="text-xs text-red-600 mt-1" role="alert">{error}</p>}
+  </div>
+);
 
 // ==================================================================
 // --- 2. TIPOS E INTERFACES ---
@@ -111,6 +70,18 @@ type FormInputs = {
   selectedBackpacks: string[];
   manualTools: (ToolItem & { isVencida?: boolean, isUnavailable?: boolean })[]; 
 };
+
+const STATUS_BADGE: Record<PatronBase['status'] | 'manual', string> = {
+  vigente: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  vencido: 'bg-red-50 text-red-700 border-red-200',
+  critico: 'bg-orange-50 text-orange-700 border-orange-200',
+  proximo: 'bg-amber-50 text-amber-700 border-amber-200',
+  pendiente: 'bg-slate-100 text-slate-600 border-slate-200',
+  manual: 'bg-slate-100 text-slate-500 border-slate-200',
+};
+
+const statusLabel = (status: PatronBase['status']) =>
+  status === 'critico' ? 'crítico' : status === 'proximo' ? 'próximo' : status;
 
 // ==================================================================
 // --- 3. CATÁLOGOS Y HELPERS ---
@@ -156,14 +127,18 @@ const isEtiquetadoraInList = (tools: ToolItem[], serie: string) =>
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
     if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'pendiente';
+    if (isPatronCalibracionVencido(fecha)) return 'vencido';
     try {
         const dias = differenceInDays(parseISO(fecha), new Date());
-        if (dias < 0) return 'vencido';
         if (dias >= 0 && dias <= 7) return 'critico';
         if (dias > 7 && dias <= 30) return 'proximo';
         return 'vigente';
-    } catch (error) { return 'pendiente'; }
+    } catch {
+        return 'pendiente';
+    }
 };
+
+const patronEstaVencido = (p: PatronBase) => isPatronCalibracionVencido(p.fechaVencimiento);
 
 function aggregateTools(backpackIds: string[]): ToolItem[] {
   const aggregator = new Map<string, ToolItem>();
@@ -199,6 +174,12 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     
     const existingPdfBytes = await response.arrayBuffer();
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
+
+    // La plantilla puede incluir hojas en blanco; conservar solo la primera como base
+    while (pdfDoc.getPageCount() > 1) {
+      pdfDoc.removePage(pdfDoc.getPageCount() - 1);
+    }
+
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontSize = 9;
     const color = rgb(0, 0, 0);
@@ -239,12 +220,9 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
         page.drawText(data.companiaDepto || '', { x: 320, y: height - 114, size: fontSize, font, color });
         page.drawText(data.noEmpleado || '', { x: 500, y: height - 114, size: fontSize, font, color });
 
-        // --- INICIO DEL PARCHE DE FECHA DE IMPRESIÓN ---
-        // Dibuja un rectángulo blanco para tapar la fecha vieja (ajusta x, y, width, height si es necesario)
-        page.drawRectangle({ x: 420, y: height - 55, width: 170, height: 15, color: rgb(1, 1, 1) }); 
-        // Dibuja la fecha nueva
-        page.drawText(`Fecha de Impresion ${currentDateStr}`, { x: 420, y: height - 50, size: fontSize, font, color });
-        // --- FIN DEL PARCHE ---
+        // Fecha de impresión en el pie del documento (abajo a la derecha)
+        page.drawRectangle({ x: 395, y: 30, width: 185, height: 18, color: rgb(1, 1, 1) });
+        page.drawText(`Fecha de Impresión ${currentDateStr}`, { x: 400, y: 36, size: fontSize, font, color });
 
         let yStartTable = height - 222; 
         
@@ -256,6 +234,11 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
           page.drawText(tool.modelo.substring(0, 15), { x: 400, y, size: fontSize, font, color });
           page.drawText(tool.serie.substring(0, 15), { x: 480, y, size: fontSize, font, color });
         });
+    }
+
+    // Por si quedó alguna hoja sin usar
+    while (pdfDoc.getPageCount() > toolChunks.length) {
+      pdfDoc.removePage(pdfDoc.getPageCount() - 1);
     }
     
     const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
@@ -319,7 +302,7 @@ const NormasScreen = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
 
-  const { register, control, handleSubmit, setValue, watch, trigger, getValues, formState: { errors } } = useForm<FormInputs>({
+  const { register, control, setValue, watch, trigger, getValues, formState: { errors } } = useForm<FormInputs>({
     defaultValues: { 
         fecha: new Date().toISOString().split('T')[0], 
         selectedBackpacks: [], 
@@ -373,6 +356,10 @@ const NormasScreen = () => {
       setLinkNotice(`El patrón ${p.noControl} ya está en la lista.`);
       return;
     }
+    if (patronEstaVencido(p)) {
+      setLinkNotice(`El patrón ${p.noControl} está vencido. No puede salir a servicio hasta recalibrarlo.`);
+      return;
+    }
     if (isPatronUnavailable(p.estadoProceso)) {
       setLinkNotice(`El patrón ${p.noControl} no está disponible (${p.estadoProceso.replace(/_/g, ' ')}).`);
       return;
@@ -383,7 +370,7 @@ const NormasScreen = () => {
       marca: p.marca,
       modelo: p.modelo,
       serie: p.serie,
-      isVencida: p.status === 'vencido' || p.status === 'critico',
+      isVencida: false,
       isUnavailable: false,
       estadoProceso: p.estadoProceso,
     });
@@ -391,14 +378,22 @@ const NormasScreen = () => {
   }, [append, getValues]);
 
   const aggregatedTools = useMemo(() => aggregateTools(watchedBackpacks || []), [watchedBackpacks]);
-  const isAnyPatronVencido = useMemo(() => watchedManualTools.some(tool => tool.isVencida), [watchedManualTools]);
+  const hasPatronVencidoEnLista = useMemo(
+    () => watchedManualTools.some(t => {
+      const p = patronesMap.get(t.herramienta);
+      return p ? patronEstaVencido(p) : false;
+    }),
+    [watchedManualTools, patronesMap],
+  );
 
   // Auto-seleccionar mochila del metrólogo responsable
   useEffect(() => {
-    const backpackId = resolveBackpackIdForUsuario(watchedUsuario || '');
-    if (backpackId) {
-      setValue('selectedBackpacks', [backpackId]);
+    if (!watchedUsuario) {
+      setValue('selectedBackpacks', []);
+      return;
     }
+    const backpackId = resolveBackpackIdForUsuario(watchedUsuario);
+    if (backpackId) setValue('selectedBackpacks', [backpackId]);
   }, [watchedUsuario, setValue]);
 
   const handleAddManualRow = () => {
@@ -407,10 +402,11 @@ const NormasScreen = () => {
 
   const handleAddEtiquetadora = (etiq: typeof ETIQUETADORAS_CATALOG[number]) => {
     if (isEtiquetadoraInList(watchedManualTools, etiq.item.serie)) {
-      alert(`La etiquetadora de ${etiq.persona} ya está en la lista.`);
+      setLinkNotice(`La etiquetadora de ${etiq.persona} ya está en la lista.`);
       return;
     }
     append({ ...etiq.item, isVencida: false, isUnavailable: false });
+    setLinkNotice(`Etiquetadora de ${etiq.persona} agregada.`);
   };
 
   // Carga inicial de datos de Firebase
@@ -447,10 +443,10 @@ const NormasScreen = () => {
     const allTools = [...aggregatedTools, ...watchedManualTools];
 
     if (allTools.length === 0) return alert("No hay equipos en la lista.");
-    
-    if (isAnyPatronVencido) {
-        const proceed = window.confirm("¡ATENCIÓN! Hay equipos vencidos en la lista. ¿Deseas generar el PDF de todos modos?");
-        if (!proceed) return;
+
+    if (hasPatronVencidoEnLista) {
+      setLinkNotice('Hay patrones vencidos en la lista. Retírelos antes de generar el PDF.');
+      return;
     }
 
     if (type === 'cel') {
@@ -460,7 +456,15 @@ const NormasScreen = () => {
     }
   };
 
-  const handleScan = (code: string) => {
+  const stopScan = useCallback(() => {
+    if (scannerControlsRef.current) {
+      scannerControlsRef.current.stop();
+      scannerControlsRef.current = null;
+    }
+    setIsScannerOpen(false);
+  }, []);
+
+  const handleScan = useCallback((code: string) => {
     if (!code) return;
     const p = patronesScannerMap.get(code);
     if (!p) {
@@ -468,47 +472,49 @@ const NormasScreen = () => {
       return;
     }
     stopScan();
-    
-    if (watchedManualTools.some(t => t.herramienta === p.nombre)) {
-      setLinkNotice(`El patrón ${p.noControl} ya está en la lista.`);
-      return;
-    }
-    if (isPatronUnavailable(p.estadoProceso)) {
-      setLinkNotice(`NO DISPONIBLE: ${p.noControl} está ${p.estadoProceso.replace(/_/g, ' ')}.`);
-      return;
-    }
-
-    append({
-        herramienta: p.nombre, qty: '1', marca: p.marca, modelo: p.modelo, serie: p.serie,
-        isVencida: p.status === 'vencido' || p.status === 'critico',
-        isUnavailable: false,
-        estadoProceso: p.estadoProceso,
-    });
-    setLinkNotice(`Patrón ${p.noControl} agregado desde escaneo.`);
-  };
-
-  const stopScan = () => {
-    if (scannerControlsRef.current) { scannerControlsRef.current.stop(); scannerControlsRef.current = null; }
-    setIsScannerOpen(false);
-  };
+    appendPatronToForm(p, 'Escaneo');
+  }, [patronesScannerMap, stopScan, appendPatronToForm]);
 
   useEffect(() => {
-    if (isScannerOpen && videoRef.current) {
-        const reader = new BrowserMultiFormatReader();
-        reader.decodeFromVideoDevice(undefined, videoRef.current, (res, err, ctrl) => {
-            if (res) { handleScan(res.getText()); ctrl.stop(); }
-            if (ctrl) scannerControlsRef.current = ctrl;
-        }).catch(() => setIsScannerOpen(false));
-    }
-    return () => { if (scannerControlsRef.current) scannerControlsRef.current.stop(); };
-  }, [isScannerOpen]);
+    if (!isScannerOpen || !videoRef.current) return;
+
+    const reader = new BrowserMultiFormatReader();
+    let mounted = true;
+
+    reader
+      .decodeFromVideoDevice(undefined, videoRef.current, (res, _err, ctrl) => {
+        if (!mounted) return;
+        if (res) {
+          handleScan(res.getText());
+          ctrl?.stop();
+        }
+        if (ctrl) scannerControlsRef.current = ctrl;
+      })
+      .catch(() => setIsScannerOpen(false));
+
+    return () => {
+      mounted = false;
+      scannerControlsRef.current?.stop();
+      scannerControlsRef.current = null;
+    };
+  }, [isScannerOpen, handleScan]);
 
   const handleRegistrarSalida = async () => {
     if (!(await trigger('usuario'))) return alert('Falta Usuario');
     const usuario = getValues('usuario');
     const tools = watchedManualTools.filter(t => patronesMap.has(t.herramienta));
-    
+
     if (!tools.length) return alert('Debes agregar al menos un patrón manualmente para registrar salida en base de datos.');
+
+    const vencidos = tools.filter(t => {
+      const p = patronesMap.get(t.herramienta);
+      return p && patronEstaVencido(p);
+    });
+    if (vencidos.length > 0) {
+      setLinkNotice('No se puede registrar salida: hay patrones vencidos en la lista.');
+      return;
+    }
+
     if (!window.confirm(`¿Confirmar salida de ${tools.length} equipos a ${usuario}?`)) return;
 
     setIsSavingBatch(true);
@@ -535,36 +541,60 @@ const NormasScreen = () => {
     finally { setIsSavingBatch(false); }
   };
 
+  const totalEquipos = aggregatedTools.length + fields.length;
+
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-[#f8fafc]">
-      <style>{styles}</style>
-      
-      {/* DATALIST con filtro para ocultar los ya seleccionados */}
+    <div className="min-h-full w-full flex-shrink-0 bg-[#eef2f7] text-slate-800 font-sans">
       <datalist id="patrones-list">
         {sortedPatronOptions.map(op => {
-            const isSelected = watchedManualTools.some(t => t.herramienta === op.nombre);
-            if (isSelected) return null; // Si ya lo tomó, desaparece de las opciones sugeridas
-            return (
-                <option key={op.id} value={op.nombre}>
-                    {op.status === 'vencido' ? '(VENCIDO)' : ''}
-                </option>
-            );
+          const isSelected = watchedManualTools.some(t => t.herramienta === op.nombre);
+          if (isSelected || patronEstaVencido(op)) return null;
+          return <option key={op.id} value={op.nombre} />;
         })}
       </datalist>
 
       {isScannerOpen && (
-        <div className="scanner-overlay" onClick={stopScan}>
-          <div className="scanner-box" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold mb-4 text-gray-900 text-lg text-center">Escanear Patrón</h3>
-            <video ref={videoRef} className="scanner-video" />
-            <button className="btn btn-danger w-full" onClick={stopScan}><X size={18} /> Cancelar</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4" onClick={stopScan}>
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-slate-900 text-center mb-4">Escanear patrón</h3>
+            <video ref={videoRef} className="w-full rounded-lg bg-black mb-4" />
+            <button
+              type="button"
+              onClick={stopScan}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm font-medium hover:bg-red-100 transition-colors"
+            >
+              <X size={18} /> Cancelar
+            </button>
           </div>
         </div>
       )}
 
-      <div className="layout-container">
+      <div className="bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigateTo('menu')}
+            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            aria-label="Volver al menú"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <img src={labLogo} alt="Equipos y Servicios AG" className="h-10 w-auto object-contain" />
+          <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
+            <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight">Hoja de Herramienta</h1>
+            <p className="text-xs sm:text-sm text-slate-500 truncate">
+              Registro de salida · Laboratorio de Metrología
+            </p>
+          </div>
+          <span className="hidden sm:inline-block text-xs text-slate-500 font-medium tabular-nums">
+            {new Date().toLocaleDateString('es-MX')}
+          </span>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6 pb-8">
         {linkNotice && (
-          <div className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             <span>{linkNotice}</span>
             <button type="button" onClick={() => setLinkNotice(null)} className="text-blue-600 hover:text-blue-800 shrink-0">
               <X size={16} />
@@ -572,304 +602,349 @@ const NormasScreen = () => {
           </div>
         )}
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between mb-8 rounded-2xl bg-[#2464A3] text-white px-5 py-4 shadow-md">
-           <div className="flex items-center gap-4">
-              <button className="rounded-full p-3 bg-white/15 hover:bg-white/25 transition-colors" onClick={() => navigateTo('menu')} aria-label="Volver al menú">
-                <ArrowLeft size={22} />
-              </button>
-              <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Equipos y Servicios AG</p>
-                  <h1 className="text-2xl font-bold">Hoja de Herramienta</h1>
-                  <p className="text-white/80 text-sm">Registro de salida · Laboratorio de Metrología</p>
-              </div>
-           </div>
-           <div className="flex items-center gap-3">
-             <div className="text-right hidden sm:block bg-white/10 px-4 py-2 rounded-lg border border-white/20">
-                <span className="text-xs font-bold text-white/70 block uppercase">Hoy</span>
-                <div className="font-mono font-bold text-lg">{new Date().toLocaleDateString()}</div>
-             </div>
-           </div>
-        </div>
-
-        {/* RESPONSABLE */}
-        <div className="card">
-          <div className="flex items-center gap-3 mb-6 border-b pb-4">
-              <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><User size={24}/></div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Responsable</h2>
-                <p className="help-text mb-0">Datos que aparecen en el registro de salida y en los PDF.</p>
-              </div>
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+            <h2 className="text-base font-semibold text-slate-900">1. Responsable del servicio</h2>
+            <p className="text-sm text-slate-500 mt-0.5">Datos que aparecen en el registro de salida y en los PDF.</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <label htmlFor="normas-fecha">Fecha de salida *</label>
-                <div className="relative">
-                  <input id="normas-fecha" type="date" className="input-control" {...register('fecha', { required: true })} aria-required="true" />
-                </div>
-            </div>
-            <div>
-                <label htmlFor="normas-usuario">Metrólogo / Técnico *</label>
-                <select id="normas-usuario" {...register('usuario', { required: 'Selecciona un metrólogo' })} className="input-control" aria-invalid={!!errors.usuario} disabled={isLoadingMetrologos}>
-                  <option value="">{isLoadingMetrologos ? 'Cargando metrólogos...' : '-- Seleccionar --'}</option>
-                  {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
-                </select>
-                {errors.usuario && <p className="field-error" role="alert">{String(errors.usuario.message)}</p>}
-            </div>
-            <div>
-                 <label htmlFor="normas-empleado">No. Empleado *</label>
-                 <input id="normas-empleado" className="input-control" {...register('noEmpleado', { required: 'Número de empleado requerido' })} placeholder="Ej: 1234" aria-invalid={!!errors.noEmpleado} />
-                 {errors.noEmpleado && <p className="field-error" role="alert">{String(errors.noEmpleado.message)}</p>}
-            </div>
-            <div>
-                 <label htmlFor="normas-compania">Compañía</label>
-                 <input id="normas-compania" className="input-control" {...register('companiaDepto')} />
-            </div>
+          <div className="p-5 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Fecha de salida" required>
+              <input id="normas-fecha" type="date" className={INPUT_CLASS} {...register('fecha', { required: true })} />
+            </FormField>
+            <FormField label="Metrólogo / Técnico" required error={errors.usuario?.message as string}>
+              <select
+                id="normas-usuario"
+                {...register('usuario', { required: 'Selecciona un metrólogo' })}
+                className={INPUT_CLASS}
+                disabled={isLoadingMetrologos}
+              >
+                <option value="">{isLoadingMetrologos ? 'Cargando metrólogos...' : 'Seleccionar metrólogo'}</option>
+                {metrologos.map(u => <option key={u.id} value={u.nombre}>{u.nombre}</option>)}
+              </select>
+            </FormField>
+            <FormField label="No. de empleado" required error={errors.noEmpleado?.message as string}>
+              <input id="normas-empleado" className={INPUT_CLASS} {...register('noEmpleado', { required: 'Número de empleado requerido' })} placeholder="Ej. 1234" />
+            </FormField>
+            <FormField label="Compañía">
+              <input id="normas-compania" className={INPUT_CLASS} {...register('companiaDepto')} />
+            </FormField>
             <div className="md:col-span-2">
-                 <label htmlFor="normas-gafete">Gafete (opcional)</label>
-                 <input id="normas-gafete" className="input-control" {...register('gafeteContratista')} placeholder="Solo si aplica para el cliente" />
+              <FormField label="Gafete de contratista (opcional)">
+                <input id="normas-gafete" className={INPUT_CLASS} {...register('gafeteContratista')} placeholder="Solo si aplica para el cliente" />
+              </FormField>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* KITS */}
-        <div className="card">
-            <div className="flex items-center gap-3 mb-6 border-b pb-4">
-                <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Briefcase size={24}/></div>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-800">Kits Rápidos (Mochilas)</h2>
-                  <p className="help-text mb-0">Herramientas fijas del kit. Las etiquetadoras se agregan solo como patrón manual.</p>
-                </div>
-            </div>
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <Briefcase size={18} style={{ color: AG_BLUE }} />
+              2. Kits de herramienta (mochilas)
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Herramientas fijas del kit. Las etiquetadoras se agregan en la sección de patrones.
+            </p>
+          </div>
+          <div className="p-5 sm:p-6">
             {!watchedUsuario && (
-              <p className="help-text mb-4 flex items-center gap-2"><Info size={14}/> Selecciona un metrólogo para resaltar su mochila automáticamente.</p>
+              <p className="text-sm text-slate-500 mb-4 flex items-center gap-2">
+                <Info size={14} /> Seleccione un metrólogo para asignar su mochila automáticamente.
+              </p>
             )}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6" role="group" aria-label="Selección de mochilas">
-              <Controller name="selectedBackpacks" control={control} render={({ field }) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" role="group" aria-label="Selección de mochilas">
+              <Controller
+                name="selectedBackpacks"
+                control={control}
+                render={({ field }) => (
                   <>
                     {Object.entries(BACKPACK_CATALOG).map(([id, backpack]) => {
-                        const isSelected = field.value.includes(id);
-                        const isOwnKit = usuarioOwnerKey === backpack.ownerKey;
-                        return (
-                        <label key={id} className={`border p-4 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${isSelected ? 'bg-blue-50 border-blue-500 shadow-md' : 'hover:bg-gray-50'} ${isOwnKit && watchedUsuario ? 'ring-2 ring-blue-200' : ''}`}>
-                          <input type="checkbox" className="sr-only" checked={isSelected} aria-label={backpack.nombre}
-                            onChange={e => field.onChange(e.target.checked ? [...field.value, id] : field.value.filter(v => v !== id))} />
-                          <Package size={28} className={isSelected ? 'text-blue-600' : 'text-gray-400'} aria-hidden="true" />
-                          <div>
-                              <span className={`block font-semibold ${isSelected ? 'text-blue-900' : 'text-gray-600'}`}>{backpack.nombre}</span>
-                              <span className="text-xs text-gray-400">{backpack.items.length} pzas</span>
-                              {isOwnKit && watchedUsuario && <span className="text-xs text-blue-600 font-semibold">Tu kit</span>}
+                      const isSelected = field.value.includes(id);
+                      const isOwnKit = usuarioOwnerKey === backpack.ownerKey;
+                      return (
+                        <label
+                          key={id}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'border-[#2464A3]/40 bg-[#2464A3]/5'
+                              : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          } ${isOwnKit && watchedUsuario ? 'ring-1 ring-[#2464A3]/30' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-[#2464A3] focus:ring-[#2464A3]/30"
+                            checked={isSelected}
+                            onChange={e => field.onChange(
+                              e.target.checked ? [...field.value, id] : field.value.filter(v => v !== id)
+                            )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-slate-800">{backpack.nombre}</span>
+                            <span className="text-xs text-slate-500">{backpack.items.length} piezas</span>
+                            {isOwnKit && watchedUsuario && (
+                              <span className="text-xs font-medium" style={{ color: AG_BLUE }}>Kit asignado</span>
+                            )}
                           </div>
                         </label>
-                        );
+                      );
                     })}
                   </>
-              )} />
+                )}
+              />
             </div>
-            
+
             {aggregatedTools.length > 0 && (
-                <div className="bg-gray-50 rounded-lg p-4 border">
-                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center gap-2"><Info size={16}/> Resumen de Herramientas en Kits</h3>
-                    <table className="modern-table bg-white rounded-lg">
-                        <thead><tr><th>Herramienta</th><th className="text-center">Cant.</th><th>Marca</th><th>Modelo</th></tr></thead>
-                        <tbody>
-                            {aggregatedTools.map((t, i) => (
-                                <tr key={i}>
-                                    <td className="font-medium">{t.herramienta}</td>
-                                    <td className="text-center font-bold text-blue-700">{t.qty}</td>
-                                    <td>{t.marca}</td>
-                                    <td>{t.modelo}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+              <div className="mt-5 rounded-lg border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Resumen del kit seleccionado
                 </div>
-            )}
-        </div>
-
-        {/* ESCANEO MANUAL */}
-        <div className="card">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 border-b pb-4">
-                <div className="flex items-center gap-3">
-                    <div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Camera size={24}/></div>
-                    <div>
-                      <h2 className="text-lg font-bold text-gray-800">Patrones y Equipo Extra</h2>
-                      <p className="help-text mb-0">Patrones de calibración, equipo prestado o etiquetadora si la llevas.</p>
-                    </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                    <button type="button" className="btn btn-secondary" onClick={() => setIsScannerOpen(true)} aria-label="Escanear código de patrón"><Camera size={18}/> Escanear</button>
-                    <button type="button" className="btn btn-secondary" onClick={handleAddManualRow} aria-label="Agregar patrón manual"><Plus size={18}/> Patrón manual</button>
-                </div>
-            </div>
-            
-            {fields.length > 0 && (
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Printer size={18} className="text-slate-600"/>
-                      <h3 className="text-sm font-bold text-slate-700">Etiquetadoras por persona</h3>
-                    </div>
-                    <p className="help-text mb-3">No todos tienen impresora asignada; agrega la que uses o la que prestes.</p>
-                    <div className="flex flex-wrap gap-2">
-                      {ETIQUETADORAS_CATALOG.map(etiq => {
-                        const yaAgregada = isEtiquetadoraInList(watchedManualTools, etiq.item.serie);
-                        const esPropia = usuarioOwnerKey === etiq.ownerKey;
-                        return (
-                          <button
-                            key={etiq.ownerKey}
-                            type="button"
-                            className={`etiquetadora-chip ${esPropia ? 'is-own' : ''}`}
-                            disabled={yaAgregada}
-                            onClick={() => handleAddEtiquetadora(etiq)}
-                            title={yaAgregada ? 'Ya en la lista' : `Agregar etiquetadora de ${etiq.persona}`}
-                          >
-                            <Printer size={14}/>
-                            <span><strong>{etiq.persona}</strong> · {etiq.item.serie}</span>
-                            {esPropia && <span className="text-blue-600 text-xs">(tuya)</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                </div>
-            )}
-
-            {isAnyPatronVencido && (
-                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 flex items-center gap-3">
-                    <AlertTriangle size={24}/> 
-                    <div><strong>Equipos Vencidos:</strong> Hay equipos con calibración expirada en tu lista manual.</div>
-                </div>
-            )}
-
-            <div className="overflow-x-auto">
-                <table className="modern-table" style={{ minWidth: '800px' }}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
                     <thead>
-                        <tr>
-                            <th className="w-8">#</th>
-                            <th>Patrón / Equipo (Busca o escribe)</th>
-                            <th style={{ width: '70px' }}>Cant</th>
-                            <th>Marca</th>
-                            <th>Modelo</th>
-                            <th>Serie</th>
-                            <th className="w-24">Estado</th>
-                            <th className="w-12"></th>
-                        </tr>
+                      <tr className="border-b border-slate-200 bg-white">
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500">Herramienta</th>
+                        <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 w-16">Cant.</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500">Marca</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500">Modelo</th>
+                      </tr>
                     </thead>
                     <tbody>
-                        {fields.length === 0 && (
-                            <tr>
-                              <td colSpan={8}>
-                                <div className="empty-state">
-                                  <Package size={40}/>
-                                  <p className="font-medium text-gray-500">Sin patrones ni equipo extra</p>
-                                  <p className="text-sm mt-1">Usa <strong>Escanear</strong> o <strong>Patrón manual</strong> para agregar equipos de calibración o una etiquetadora.</p>
-                                </div>
-                              </td>
-                            </tr>
-                        )}
-                        {fields.map((item, index) => {
-                             const selectedTool = watchedManualTools[index]?.herramienta;
-                             const current = patronesMap.get(selectedTool);
-                             return (
-                                <tr key={item.id} className={current?.status === 'vencido' ? 'bg-red-50' : ''}>
-                                    <td className="font-bold text-gray-400 text-center">{index + 1}</td>
-                                    <td>
-                                        <Controller name={`manualTools.${index}.herramienta`} control={control} render={({ field }) => (
-                                            <input 
-                                                {...field}
-                                                list="patrones-list"
-                                                className="input-control text-sm px-2 py-1.5"
-                                                placeholder="Escribe o selecciona..."
-                                                autoComplete="off"
-                                                onChange={e => {
-                                                    field.onChange(e.target.value);
-                                                    const p = patronesMap.get(e.target.value);
-                                                    if (p) {
-                                                        if (isPatronUnavailable(p.estadoProceso)) {
-                                                          setLinkNotice(`Atención: ${p.noControl} está ${p.estadoProceso.replace(/_/g, ' ')}.`);
-                                                        }
-                                                        setValue(`manualTools.${index}.marca`, p.marca);
-                                                        setValue(`manualTools.${index}.modelo`, p.modelo);
-                                                        setValue(`manualTools.${index}.serie`, p.serie);
-                                                        setValue(`manualTools.${index}.isVencida`, p.status === 'vencido' || p.status === 'critico');
-                                                        setValue(`manualTools.${index}.estadoProceso`, p.estadoProceso);
-                                                    } else {
-                                                        setValue(`manualTools.${index}.isVencida`, false);
-                                                        setValue(`manualTools.${index}.estadoProceso`, undefined);
-                                                    }
-                                                }}
-                                            />
-                                        )} />
-                                    </td>
-                                    <td>
-                                        <input type="number" className="input-control text-sm px-2 py-1.5" {...register(`manualTools.${index}.qty`)} />
-                                    </td>
-                                    <td>
-                                        <input className="input-control text-sm px-2 py-1.5" placeholder="Marca" {...register(`manualTools.${index}.marca`)} />
-                                    </td>
-                                    <td>
-                                        <input className="input-control text-sm px-2 py-1.5" placeholder="Modelo" {...register(`manualTools.${index}.modelo`)} />
-                                    </td>
-                                    <td>
-                                        <input className="input-control text-sm px-2 py-1.5" placeholder="Serie" {...register(`manualTools.${index}.serie`)} />
-                                    </td>
-                                    <td className="text-center">
-                                        {current ? (
-                                          <span className={`status-badge status-${['vencido','vigente','pendiente'].includes(current.status) ? current.status : current.status === 'critico' ? 'critico' : current.status === 'proximo' ? 'proximo' : 'pendiente'}`}>
-                                            {current.status === 'critico' ? 'crítico' : current.status === 'proximo' ? 'próximo' : current.status}
-                                          </span>
-                                        ) : watchedManualTools[index]?.herramienta ? (
-                                          <span className="status-badge status-pendiente">manual</span>
-                                        ) : (
-                                          <span className="text-gray-300">-</span>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <button type="button" onClick={() => remove(index)} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors" aria-label={`Quitar fila ${index + 1}`}><X size={18}/></button>
-                                    </td>
-                                </tr>
-                             )
-                        })}
+                      {aggregatedTools.map((t, i) => (
+                        <tr key={i} className="border-b border-slate-100 last:border-0">
+                          <td className="px-4 py-2.5 font-medium text-slate-800">{t.herramienta}</td>
+                          <td className="px-4 py-2.5 text-center font-semibold text-slate-700">{t.qty}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{t.marca}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{t.modelo}</td>
+                        </tr>
+                      ))}
                     </tbody>
-                </table>
-            </div>
-        </div>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
 
-        {/* BARRA DE ACCIONES */}
-        <div className="floating-bar">
-            <div className="hidden md:block text-sm font-medium text-gray-600">
-                <span>Kit: <strong>{aggregatedTools.length}</strong></span>
-                <span className="mx-2 text-gray-300">|</span>
-                <span>Manual: <strong>{fields.length}</strong></span>
-                <span className="mx-2 text-gray-300">|</span>
-                <span>Total: <strong className="text-blue-600">{aggregatedTools.length + fields.length}</strong></span>
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Camera size={18} style={{ color: AG_BLUE }} />
+                3. Patrones y equipo adicional
+              </h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Patrones de calibración, equipo prestado o etiquetadora.
+              </p>
             </div>
-            <div className="flex gap-3 w-full md:w-auto">
-                <button 
-                    type="button" 
-                    className="btn btn-success flex-1" 
-                    onClick={handleRegistrarSalida} 
-                    disabled={isSavingBatch || (fields.length === 0)}
-                >
-                    {isSavingBatch ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} Registrar en Sistema
-                </button>
-                
-                <button 
-                    type="button" 
-                    className="btn btn-primary flex-1" 
-                    onClick={() => handlePdf('cel')}
-                >
-                    <FileText size={20}/> Celestica
-                </button>
-                
-                <button 
-                    type="button" 
-                    className="btn btn-secondary flex-1" 
-                    onClick={() => handlePdf('gen')}
-                >
-                    <FileText size={20}/> Genérico
-                </button>
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsScannerOpen(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Camera size={16} /> Escanear
+              </button>
+              <button
+                type="button"
+                onClick={handleAddManualRow}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Plus size={16} /> Agregar fila
+              </button>
             </div>
-        </div>
+          </div>
+
+          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="text-sm font-medium text-slate-700 flex items-center gap-2 mb-2">
+              <Printer size={16} className="text-slate-500" />
+              Etiquetadoras
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">Agregue la impresora que lleva o la que presta.</p>
+            <div className="flex flex-wrap gap-2">
+              {ETIQUETADORAS_CATALOG.map(etiq => {
+                const yaAgregada = isEtiquetadoraInList(watchedManualTools, etiq.item.serie);
+                const esPropia = usuarioOwnerKey === etiq.ownerKey;
+                return (
+                  <button
+                    key={etiq.ownerKey}
+                    type="button"
+                    disabled={yaAgregada}
+                    onClick={() => handleAddEtiquetadora(etiq)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      esPropia
+                        ? 'border-[#2464A3]/40 bg-[#2464A3]/5 text-slate-800'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Printer size={14} />
+                    <span>{etiq.persona} · {etiq.item.serie}</span>
+                    {esPropia && <span style={{ color: AG_BLUE }}>(propia)</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {hasPatronVencidoEnLista && (
+            <div className="mx-5 sm:mx-6 mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <AlertTriangle size={20} className="shrink-0 mt-0.5" />
+              <span><strong>Patrones vencidos:</strong> Retire los equipos vencidos de la lista para poder registrar salida o generar PDF.</span>
+            </div>
+          )}
+
+          <div className="p-5 sm:p-6 overflow-x-auto">
+            <table className="w-full min-w-[800px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left px-2 py-2 text-xs font-semibold text-slate-500 w-8">#</th>
+                  <th className="text-left px-2 py-2 text-xs font-semibold text-slate-500">Patrón / Equipo</th>
+                  <th className="text-left px-2 py-2 text-xs font-semibold text-slate-500 w-16">Cant.</th>
+                  <th className="text-left px-2 py-2 text-xs font-semibold text-slate-500">Marca</th>
+                  <th className="text-left px-2 py-2 text-xs font-semibold text-slate-500">Modelo</th>
+                  <th className="text-left px-2 py-2 text-xs font-semibold text-slate-500">Serie</th>
+                  <th className="text-center px-2 py-2 text-xs font-semibold text-slate-500 w-24">Estado</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {fields.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-slate-400">
+                      <Package size={36} className="mx-auto mb-3 opacity-40" />
+                      <p className="text-sm font-medium text-slate-500">Sin patrones ni equipo adicional</p>
+                      <p className="text-xs mt-1 text-slate-400">Use Escanear, Agregar fila o seleccione una etiquetadora.</p>
+                    </td>
+                  </tr>
+                )}
+                {fields.map((item, index) => {
+                  const selectedTool = watchedManualTools[index]?.herramienta;
+                  const current = patronesMap.get(selectedTool);
+                  const badgeKey = current?.status ?? (watchedManualTools[index]?.herramienta ? 'manual' : null);
+                  return (
+                    <tr key={item.id} className={`border-b border-slate-100 ${current?.status === 'vencido' ? 'bg-red-50/50' : ''}`}>
+                      <td className="px-2 py-2 text-center text-xs text-slate-400 font-medium">{index + 1}</td>
+                      <td className="px-2 py-2">
+                        <Controller
+                          name={`manualTools.${index}.herramienta`}
+                          control={control}
+                          render={({ field }) => (
+                            <input
+                              {...field}
+                              list="patrones-list"
+                              className={TABLE_INPUT}
+                              placeholder="Buscar o escribir..."
+                              autoComplete="off"
+                              onChange={e => {
+                                const valor = e.target.value;
+                                const p = patronesMap.get(valor);
+                                if (p && patronEstaVencido(p)) {
+                                  field.onChange('');
+                                  setValue(`manualTools.${index}.marca`, '');
+                                  setValue(`manualTools.${index}.modelo`, '');
+                                  setValue(`manualTools.${index}.serie`, '');
+                                  setValue(`manualTools.${index}.qty`, '1');
+                                  setValue(`manualTools.${index}.isVencida`, false);
+                                  setValue(`manualTools.${index}.estadoProceso`, undefined);
+                                  setLinkNotice(`El patrón ${p.noControl} está vencido. No puede seleccionarse.`);
+                                  return;
+                                }
+                                field.onChange(valor);
+                                if (p) {
+                                  if (isPatronUnavailable(p.estadoProceso)) {
+                                    setLinkNotice(`Atención: ${p.noControl} está ${p.estadoProceso.replace(/_/g, ' ')}.`);
+                                  }
+                                  setValue(`manualTools.${index}.marca`, p.marca);
+                                  setValue(`manualTools.${index}.modelo`, p.modelo);
+                                  setValue(`manualTools.${index}.serie`, p.serie);
+                                  setValue(`manualTools.${index}.isVencida`, false);
+                                  setValue(`manualTools.${index}.estadoProceso`, p.estadoProceso);
+                                } else {
+                                  setValue(`manualTools.${index}.isVencida`, false);
+                                  setValue(`manualTools.${index}.estadoProceso`, undefined);
+                                }
+                              }}
+                            />
+                          )}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input type="number" min={1} className={TABLE_INPUT} {...register(`manualTools.${index}.qty`)} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input className={TABLE_INPUT} placeholder="Marca" {...register(`manualTools.${index}.marca`)} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input className={TABLE_INPUT} placeholder="Modelo" {...register(`manualTools.${index}.modelo`)} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input className={TABLE_INPUT} placeholder="Serie" {...register(`manualTools.${index}.serie`)} />
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        {badgeKey ? (
+                          <span className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-semibold uppercase ${STATUS_BADGE[badgeKey]}`}>
+                            {badgeKey === 'manual' ? 'manual' : statusLabel(badgeKey)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => remove(index)}
+                          className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          aria-label={`Quitar fila ${index + 1}`}
+                        >
+                          <X size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 sm:px-6 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="text-sm text-slate-600">
+            <p>
+              Kit: <span className="font-semibold text-slate-800">{aggregatedTools.length}</span>
+              {' · '}
+              Manual: <span className="font-semibold text-slate-800">{fields.length}</span>
+              {' · '}
+              Total: <span className="font-semibold" style={{ color: AG_BLUE }}>{totalEquipos}</span>
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={handleRegistrarSalida}
+              disabled={isSavingBatch || fields.length === 0 || hasPatronVencidoEnLista}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isSavingBatch ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+              Registrar salida
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePdf('cel')}
+              disabled={hasPatronVencidoEnLista}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-white text-sm font-semibold shadow-sm hover:opacity-95 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: AG_BLUE }}
+            >
+              <FileText size={18} /> PDF Celestica
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePdf('gen')}
+              disabled={hasPatronVencidoEnLista}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FileText size={18} /> PDF Genérico
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );

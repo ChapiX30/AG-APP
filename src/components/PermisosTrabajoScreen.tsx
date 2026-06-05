@@ -1,19 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Settings, CheckCircle2, Printer, Users, Calendar as CalendarIcon, Building, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { FileText, Printer, Users, ShieldCheck, ArrowLeft, ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
 import { db } from '../utils/firebase'; 
 import { useNavigation } from '../hooks/useNavigation';
+import labLogo from '../assets/lab_logo.png';
+
+const AG_BLUE = '#2464A3';
+const INPUT_CLASS =
+  'w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/15 transition-colors';
 
 const PROCESOS = [
-  { id: 'electrica', nombre: 'Proceso eléctrica:', descripcion: 'Simulación de patrón a instrumento o viceversa dependiendo el equipo a calibrar hasta 580 VDC, VAC etc.' },
-  { id: 'presion', nombre: 'Proceso presión:', descripcion: 'Calibración directa entre bomba hidráulica manual de 1,000 PSI a 5,000 PSI.' },
-  { id: 'temperatura', nombre: 'Proceso temperatura:', descripcion: 'Comparación directa mediante termocople tipo J o K dependiendo de la condición del instrumento.' },
-  { id: 'dimensional', nombre: 'Proceso dimensional:', descripcion: 'Comparacion directa contra bloques patron' },
-  { id: 'flujo', nombre: 'Proceso flujo:', descripcion: 'Comparación directa entre patrón e instrumento regulando la presión en máquina.' },
-  { id: 'par', nombre: 'Proceso par torsional:', descripcion: 'Comparación directa en analizador torque e instrumento entre 90 lbin y 50 ftlb.' }
+  { id: 'electrica', nombre: 'Proceso eléctrica:', descripcion: 'Simulación de patrón a instrumento o viceversa dependiendo el equipo a calibrar hasta 580 VDC, VAC etc.', riesgo: 'Descarga eléctrica y contacto con partes energizadas' },
+  { id: 'presion', nombre: 'Proceso presión:', descripcion: 'Calibración directa entre bomba hidráulica manual de 1,000 PSI a 5,000 PSI.', riesgo: 'Proyección de fluidos a alta presión y liberación súbita de presión' },
+  { id: 'temperatura', nombre: 'Proceso temperatura:', descripcion: 'Comparación directa mediante termocople tipo J o K dependiendo de la condición del instrumento.', riesgo: 'Quemaduras por contacto con superficies calientes' },
+  { id: 'dimensional', nombre: 'Proceso dimensional:', descripcion: 'Comparacion directa contra bloques patron', riesgo: 'Cortaduras y golpes por manejo de bloques patrón metálicos' },
+  { id: 'flujo', nombre: 'Proceso flujo:', descripcion: 'Comparación directa entre patrón e instrumento regulando la presión en máquina.', riesgo: 'Proyección de fluidos y contacto con presión residual en líneas' },
+  { id: 'par', nombre: 'Proceso par torsional:', descripcion: 'Comparación directa en analizador torque e instrumento entre 90 lbin y 50 ftlb.', riesgo: 'Atrapamiento de manos y golpes por liberación de energía mecánica' },
+  { id: 'quimica', nombre: 'Proceso química:', descripcion: 'Calibración de instrumentos de conductividad y pH mediante soluciones patrón buffer y estándares de conductividad.', riesgo: 'Contacto con soluciones químicas, salpicaduras y irritación en piel u ojos' }
 ];
 
 // Función de ayuda para dividir texto largo en múltiples líneas sin cortar palabras
@@ -33,6 +39,13 @@ const dividirTexto = (texto: string, longitudMaxima: number): string[] => {
   if (lineaActual) lineas.push(lineaActual.trim());
   return lineas;
 };
+
+const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div>
+    <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>
+    {children}
+  </div>
+);
 
 export const PermisosTrabajoScreen: React.FC = () => {
   const { navigateTo } = useNavigation(); 
@@ -135,29 +148,77 @@ export const PermisosTrabajoScreen: React.FC = () => {
       });
 
       // --- ACTIVIDADES (PÁGINA 1) ---
-      let startY = 418; 
-      const table1_spacing = 13.8; 
+      const COL_ACTIVIDAD_X = 76;
+      const COL_ACTIVIDAD_ANCHO = 154;
+      const COL_RIESGO_X = 242;
+      const COL_RIESGO_ANCHO = 170;
+      const COL_CONTRAMEDIDA_X = 424;
+      const startY = 418;
+      const table1_spacing = 13.8;
 
-      dibujar(0, 'Revisión de equipo', 75, startY, false, 8);
-      dibujar(0, 'Caída de equipo', 255, startY, false, 8); 
-      dibujar(0, 'Uso de zapatones', 425, startY, false, 8);
+      const OFFSETS_CELDA: Record<number, number[]> = {
+        1: [1],
+        2: [-5, 1],
+        3: [-6.5, -1.5, 3],
+      };
+
+      const dividirPorAncho = (texto: string, anchoMax: number, size: number, maxLineas: number): string[] => {
+        const palabras = texto.split(' ').filter(Boolean);
+        const lineas: string[] = [];
+        let lineaActual = '';
+
+        for (let i = 0; i < palabras.length; i++) {
+          const palabra = palabras[i];
+          const candidato = lineaActual ? `${lineaActual} ${palabra}` : palabra;
+
+          if (font.widthOfTextAtSize(candidato, size) > anchoMax && lineaActual) {
+            lineas.push(lineaActual);
+            if (lineas.length >= maxLineas - 1) {
+              lineas.push(palabras.slice(i).join(' '));
+              return lineas.slice(0, maxLineas);
+            }
+            lineaActual = palabra;
+          } else {
+            lineaActual = candidato;
+          }
+        }
+
+        if (lineaActual) lineas.push(lineaActual);
+        return lineas.slice(0, maxLineas);
+      };
+
+      const cabeEnAncho = (lineas: string[], size: number, anchoMax: number) =>
+        lineas.every(l => font.widthOfTextAtSize(l, size) <= anchoMax);
+
+      const obtenerLineasCelda = (texto: string, anchoMax: number): { lineas: string[]; size: number } => {
+        for (const size of [6.5, 6]) {
+          const lineas = dividirPorAncho(texto, anchoMax, size, 2);
+          if (lineas.length <= 2 && cabeEnAncho(lineas, size, anchoMax)) return { lineas, size };
+        }
+        for (const size of [6, 5.5]) {
+          const lineas = dividirPorAncho(texto, anchoMax, size, 3);
+          if (lineas.length <= 3 && cabeEnAncho(lineas, size, anchoMax)) return { lineas, size };
+        }
+        return { lineas: dividirPorAncho(texto, anchoMax, 5.5, 3), size: 5.5 };
+      };
+
+      const dibujarCelda = (texto: string, x: number, y: number, anchoMax: number) => {
+        const { lineas, size } = obtenerLineasCelda(texto, anchoMax);
+        const offsets = OFFSETS_CELDA[lineas.length] ?? OFFSETS_CELDA[1];
+        lineas.forEach((linea, idx) => {
+          dibujar(0, linea, x, y + offsets[idx], false, size);
+        });
+      };
+
+      dibujar(0, 'Revisión de equipo', COL_ACTIVIDAD_X, startY + 1, false, 6.5);
+      dibujar(0, 'Caída de equipo', COL_RIESGO_X, startY + 1, false, 6.5);
+      dibujar(0, 'Uso de zapatones', COL_CONTRAMEDIDA_X, startY + 1, false, 6.5);
 
       procesosActivos.forEach((p, i) => {
-        const y = startY + ((i + 1) * table1_spacing); 
-        dibujar(0, p.nombre, 75, y, false, 7.5); 
-        
-        const lineasDesc = dividirTexto(p.descripcion, 50);
-        
-        if (lineasDesc.length === 1) {
-          dibujar(0, lineasDesc[0], 242, y - 2, false, 7);
-        } else if (lineasDesc.length === 2) {
-          dibujar(0, lineasDesc[0], 242, y - 5, false, 6);
-          dibujar(0, lineasDesc[1], 242, y + 2, false, 6);
-        } else {
-          dibujar(0, lineasDesc[0], 242, y - 7, false, 5.5);
-          dibujar(0, lineasDesc[1], 242, y - 2, false, 5.5);
-          dibujar(0, lineasDesc[2], 242, y + 3, false, 5.5);
-        }
+        const ajusteFila = i >= 4 ? 2 : 0;
+        const y = startY + ((i + 1) * table1_spacing) - 0.5 + ajusteFila;
+        dibujarCelda(p.descripcion, COL_ACTIVIDAD_X, y, COL_ACTIVIDAD_ANCHO);
+        dibujarCelda(p.riesgo, COL_RIESGO_X, y, COL_RIESGO_ANCHO);
       });
 
       // --- ASPECTOS E IMPACTOS AMBIENTALES (PÁGINA 1) ---
@@ -210,157 +271,176 @@ export const PermisosTrabajoScreen: React.FC = () => {
     }
   };
 
+  const puedeGenerar = metrologosSel.length > 0 && procesosSel.length > 0;
+
   return (
-    <div className="min-h-full flex-shrink-0 w-full bg-slate-950 text-slate-200 selection:bg-blue-500/30 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 font-sans">
-      
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4 shrink-0">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigateTo('menu')} 
-            className="p-2.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 hover:border-slate-500 transition-all shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            title="Regresar al Menú Principal"
+    <div className="min-h-full w-full flex-shrink-0 bg-[#eef2f7] text-slate-800 font-sans">
+      <div className="bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigateTo('menu')}
+            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            title="Regresar al menú"
           >
-            <ArrowLeft size={22} />
+            <ArrowLeft size={20} />
           </button>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold flex items-center gap-3 text-slate-100 tracking-tight">
-              <div className="p-2 bg-rose-500/10 rounded-xl text-rose-500">
-                <FileText size={24}/>
-              </div>
-              Permisos No Rutinarios
+          <img src={labLogo} alt="Equipos y Servicios AG" className="h-10 w-auto object-contain" />
+          <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
+            <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight">
+              Permisos de Trabajo No Rutinarios
             </h1>
-            <p className="text-slate-500 text-sm font-medium mt-1 ml-14 hidden sm:block">
-              Generador de Formato Oficial DOC0040218
+            <p className="text-xs sm:text-sm text-slate-500 truncate">
+              Seguridad y Medio Ambiente · Formato DOC0040218
             </p>
           </div>
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600">
+            <FileText size={14} style={{ color: AG_BLUE }} />
+            Permiso TR
+          </span>
         </div>
-      </header>
+      </div>
 
-      <main className="flex-1 flex flex-col gap-6 lg:gap-8">
-        
-        <section className="bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800/60 shadow-xl relative overflow-hidden shrink-0">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500 opacity-40"></div>
-          <h2 className="text-base font-bold text-slate-200 flex items-center gap-3 mb-6">
-            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400"><Building size={18}/></div> 
-            1. Datos Generales del Servicio
-          </h2>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Fecha</label>
-              <input type="text" value={fecha} onChange={(e) => setFecha(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"/>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Compañía / Empresa</label>
-              <input type="text" value={compania} onChange={(e) => setCompania(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"/>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Lugar</label>
-              <input type="text" value={lugar} onChange={(e) => setLugar(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"/>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Jefe Inmediato</label>
-              <input type="text" value={jefe} onChange={(e) => setJefe(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"/>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:col-span-2 lg:col-span-1 xl:col-span-1">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Inicio</label>
-                <input type="text" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium text-center"/>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Término</label>
-                <input type="text" value={horaFin} onChange={(e) => setHoraFin(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium text-center"/>
-              </div>
-            </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+            <h2 className="text-base font-semibold text-slate-900">1. Datos generales del servicio</h2>
+            <p className="text-sm text-slate-500 mt-0.5">Información que se imprimirá en la carátula del permiso.</p>
+          </div>
+          <div className="p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <FormField label="Fecha">
+              <input type="text" value={fecha} onChange={(e) => setFecha(e.target.value)} className={INPUT_CLASS} />
+            </FormField>
+            <FormField label="Compañía / Empresa">
+              <input type="text" value={compania} onChange={(e) => setCompania(e.target.value)} className={INPUT_CLASS} />
+            </FormField>
+            <FormField label="Lugar de trabajo">
+              <input type="text" value={lugar} onChange={(e) => setLugar(e.target.value)} className={INPUT_CLASS} />
+            </FormField>
+            <FormField label="Jefe inmediato">
+              <input type="text" value={jefe} onChange={(e) => setJefe(e.target.value)} className={INPUT_CLASS} />
+            </FormField>
+            <FormField label="Hora de inicio">
+              <input type="text" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className={`${INPUT_CLASS} text-center`} />
+            </FormField>
+            <FormField label="Hora de término">
+              <input type="text" value={horaFin} onChange={(e) => setHoraFin(e.target.value)} className={`${INPUT_CLASS} text-center`} />
+            </FormField>
           </div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 flex-1">
-          
-          <section className="bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800/60 shadow-xl relative overflow-hidden flex flex-col">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-500 opacity-40"></div>
-            <h2 className="text-base font-bold text-slate-200 flex items-center gap-3 mb-6 shrink-0">
-              <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400"><Settings size={18}/></div>
-              2. Pasos y Actividades
-            </h2>
-            <label className="block text-xs font-bold text-slate-400 mb-4 uppercase tracking-wider shrink-0">Selecciona los procesos a calibrar:</label>
-            
-            <div className="grid grid-cols-1 gap-3 overflow-y-auto custom-scrollbar pr-2 pb-2 flex-1">
-              {PROCESOS.map(p => (
-                <button 
-                  key={p.id} 
-                  onClick={() => toggleProceso(p.id)} 
-                  className={`text-left px-5 py-4 rounded-xl border text-sm font-medium flex justify-between items-center transition-all duration-200 w-full ${
-                    procesosSel.includes(p.id) 
-                    ? 'bg-amber-500/10 border-amber-500/50 text-amber-300 shadow-[0_0_15px_-3px_rgba(245,158,11,0.15)]' 
-                    : 'bg-slate-950 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
-                  }`}
-                >
-                  <span className="truncate pr-4">{p.nombre.replace('Proceso', '')}</span>
-                  {procesosSel.includes(p.id) ? (
-                    <CheckCircle2 size={20} className="text-amber-400 drop-shadow-md shrink-0"/>
-                  ) : (
-                    <div className="w-5 h-5 rounded-full border-2 border-slate-700 shrink-0"></div>
-                  )}
-                </button>
-              ))}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <ClipboardList size={18} style={{ color: AG_BLUE }} />
+                2. Procesos y actividades
+              </h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Seleccione las magnitudes a calibrar ({procesosSel.length} de {PROCESOS.length}).
+              </p>
+            </div>
+            <div className="divide-y divide-slate-100 overflow-y-auto max-h-[420px]">
+              {PROCESOS.map((p) => {
+                const selected = procesosSel.includes(p.id);
+                return (
+                  <label
+                    key={p.id}
+                    className={`flex items-start gap-3 px-5 sm:px-6 py-3.5 cursor-pointer transition-colors ${
+                      selected ? 'bg-[#2464A3]/5' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleProceso(p.id)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-[#2464A3] focus:ring-[#2464A3]/30"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-slate-900">
+                        {p.nombre.replace('Proceso ', '').replace(':', '')}
+                      </span>
+                      <span className="block text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">
+                        {p.descripcion}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </section>
 
-          <section className="bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-800/60 shadow-xl relative overflow-hidden flex flex-col justify-between">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500 opacity-40"></div>
-            
-            <div className="flex flex-col flex-1">
-              <h2 className="text-base font-bold text-slate-200 flex items-center gap-3 mb-6 shrink-0">
-                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400"><Users size={18}/></div>
-                4. Personal Asignado
+          <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Users size={18} style={{ color: AG_BLUE }} />
+                3. Personal asignado
               </h2>
-              <label className="block text-xs font-bold text-slate-400 mb-4 uppercase tracking-wider shrink-0">Selecciona uno o más metrólogos:</label>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 overflow-y-auto custom-scrollbar pr-2 flex-1 max-h-[350px]">
-                {metrologos.map(m => (
-                  <button 
-                    key={m.id} 
-                    onClick={() => toggleMetrologo(m.id)} 
-                    className={`text-left px-4 py-4 rounded-xl border text-sm font-medium flex justify-between items-center transition-all duration-200 w-full ${
-                      metrologosSel.includes(m.id) 
-                      ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-300 shadow-[0_0_15px_-3px_rgba(16,185,129,0.15)]' 
-                      : 'bg-slate-950 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    <span className="truncate pr-2">{m.nombre}</span>
-                    {metrologosSel.includes(m.id) ? (
-                      <CheckCircle2 size={18} className="text-emerald-400 shrink-0 drop-shadow-md"/>
-                    ) : (
-                      <div className="w-4 h-4 rounded-full border-2 border-slate-700 shrink-0"></div>
-                    )}
-                  </button>
-                ))}
-              </div>
-              
-              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800/80 shrink-0">
-                <p className="text-xs text-slate-400 flex items-start gap-3 leading-relaxed">
-                  <ShieldCheck className="text-slate-500 shrink-0 mt-0.5" size={16} />
-                  <span>
-                    <strong>Aviso EPP:</strong> Las casillas ("X") del Equipo de Protección Personal fueron removidas de la plantilla para llenado manual en planta, con excepción del texto automático de <em>Bata Antiestática</em>.
-                  </span>
-                </p>
-              </div>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Metrólogos que firmarán el permiso ({metrologosSel.length} seleccionados).
+              </p>
             </div>
-            
-            <div className="pt-6 mt-6 border-t border-slate-800/80 shrink-0">
-              <button 
-                onClick={generarPDF} 
-                disabled={metrologosSel.length === 0 || procesosSel.length === 0} 
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white px-8 py-4.5 rounded-xl font-bold flex items-center justify-center gap-3 transition-all duration-300 shadow-[0_0_20px_-5px_rgba(37,99,235,0.4)] hover:shadow-[0_0_25px_-5px_rgba(37,99,235,0.6)] disabled:shadow-none text-lg"
-              >
-                <Printer size={24} /> Generar Documento Oficial
-              </button>
+            <div className="p-5 sm:px-6 sm:py-4 flex-1">
+              {metrologos.length === 0 ? (
+                <p className="text-sm text-slate-500 py-8 text-center">No hay metrólogos registrados en el sistema.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[280px] overflow-y-auto pr-1">
+                  {metrologos.map((m) => {
+                    const selected = metrologosSel.includes(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                          selected
+                            ? 'border-[#2464A3]/40 bg-[#2464A3]/5'
+                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleMetrologo(m.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-[#2464A3] focus:ring-[#2464A3]/30"
+                        />
+                        <span className="text-sm font-medium text-slate-800 truncate">{m.nombre}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-4 p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed flex gap-2.5">
+                <ShieldCheck size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                <span>
+                  Las casillas de EPP se llenan manualmente en planta. El documento incluye automáticamente la leyenda de <strong>Bata Antiestática</strong>.
+                </span>
+              </div>
             </div>
           </section>
         </div>
 
-      </main>
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="text-sm text-slate-600">
+            <p>
+              <span className="font-medium text-slate-800">{procesosSel.length}</span> proceso(s) ·{' '}
+              <span className="font-medium text-slate-800">{metrologosSel.length}</span> metrólogo(s)
+            </p>
+            {!puedeGenerar && (
+              <p className="text-xs text-amber-700 mt-1">Seleccione al menos un proceso y un metrólogo para continuar.</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={generarPDF}
+            disabled={!puedeGenerar}
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-white text-sm font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:opacity-95"
+            style={{ backgroundColor: AG_BLUE }}
+          >
+            <Printer size={18} />
+            Generar documento PDF
+          </button>
+        </section>
+      </div>
     </div>
   );
 };
