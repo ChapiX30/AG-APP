@@ -306,7 +306,7 @@ export async function notifyVacationRejected(params: {
   }
 }
 
-/** Encola envío RH con PDF (respaldo; el envío principal es onVacacionAprobadaFinal). */
+/** @deprecated No usar en aprobación final; el envío lo hace onVacacionAprobadaFinal. */
 export async function enqueueVacationRhEmail(params: {
   solicitudId: string;
   solicitanteNombre: string;

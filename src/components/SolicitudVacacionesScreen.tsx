@@ -62,7 +62,7 @@ import {
   notifyVacationStepApproved,
   notifyVacationFullyApproved,
 } from '../utils/vacationNotify';
-import { finalizeVacationAfterApproval } from '../utils/vacationFinalize';
+import { requestVacationRhEmailRetry } from '../utils/vacationFinalize';
 import { getDownloadURL } from 'firebase/storage';
 import {
   countVacationDaysInclusive,
@@ -395,34 +395,16 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           historial,
           updatedAt: serverTimestamp(),
         });
-        const aprobadaDoc: SolicitudVacacionesDoc = {
-          ...s,
-          estado: 'aprobada',
-          aprobaciones,
-          historial,
-        };
-        try {
-          await finalizeVacationAfterApproval(aprobadaDoc);
-          await notifyVacationFullyApproved({
-            solicitanteUid: s.solicitanteUid,
-            solicitanteNombre: s.solicitanteNombre,
-            solicitanteEmail: s.solicitanteEmail,
-            solicitudId: s.id,
-          });
-          toast.success(
-            'Solicitud aprobada. PDF generado y enviado a eseagmaster@gmail.com (Recursos Humanos).',
-          );
-        } catch (pdfErr) {
-          console.error(pdfErr);
-          await updateDoc(doc(db, 'solicitudesVacaciones', s.id), {
-            pdfGenerado: false,
-            pdfError:
-              pdfErr instanceof Error ? pdfErr.message : 'Error al generar o enviar el PDF.',
-          });
-          toast.error(
-            'Aprobada, pero falló el PDF o el correo. Revise permisos o intente de nuevo.',
-          );
-        }
+        await notifyVacationFullyApproved({
+          solicitanteUid: s.solicitanteUid,
+          solicitanteNombre: s.solicitanteNombre,
+          solicitanteEmail: s.solicitanteEmail,
+          solicitudId: s.id,
+        });
+        toast.success(
+          'Solicitud aprobada. El PDF y el correo se enviarán automáticamente a Recursos Humanos.',
+        );
+        void aprobadaDoc;
       } else if (siguiente) {
         await updateDoc(doc(db, 'solicitudesVacaciones', s.id), {
           estado: siguiente,
@@ -527,15 +509,8 @@ export const SolicitudVacacionesScreen: React.FC = () => {
     if (!s.id) return;
     setBusy(true);
     try {
-      if (s.pdfStoragePath) {
-        const { retryVacationRhEmail } = await import('../utils/vacationFinalize');
-        await retryVacationRhEmail(s);
-        toast.success('Correo con PDF encolado de nuevo a Recursos Humanos.');
-      } else {
-        const aprobadaDoc = { ...s, estado: 'aprobada' as const };
-        await finalizeVacationAfterApproval(aprobadaDoc);
-        toast.success('PDF generado y correo enviado a Recursos Humanos.');
-      }
+      await requestVacationRhEmailRetry(s);
+      toast.success('Reenvío solicitado. El correo con PDF se procesará en unos momentos.');
     } catch (e) {
       console.error(e);
       toast.error(e instanceof Error ? e.message : 'No se pudo reenviar el PDF.');

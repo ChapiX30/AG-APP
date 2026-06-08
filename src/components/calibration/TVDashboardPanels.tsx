@@ -462,7 +462,7 @@ export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
           <div ref={segmentRef} data-tv-scroll="segment" className="space-y-4 pb-2">
             <CompanyArrivalsBody areas={areas} hasAny={hasAny} year={year} />
           </div>
-          {hasAny && (
+          {hasAny && (scrollMode === "scrolling" || scrollMode === "paused") && (
             <div aria-hidden className="space-y-4 pt-2 pb-1">
               <CompanyArrivalsBody areas={areas} hasAny={hasAny} year={year} />
             </div>
@@ -487,6 +487,13 @@ const PRIORITY_DOT: Record<string, string> = {
   baja: "bg-slate-500",
 };
 
+const STATUS_GLOW: Record<string, string> = {
+  programado: "from-blue-500/20 via-transparent to-indigo-500/10",
+  en_proceso: "from-amber-500/25 via-transparent to-orange-500/10",
+  finalizado: "from-emerald-500/20 via-transparent to-teal-500/10",
+  reprogramacion: "from-purple-500/20 via-transparent to-violet-500/10",
+};
+
 const ServicioTvCard: React.FC<{
   service: ServicioRow;
   usuarios: UsuarioRow[];
@@ -506,84 +513,120 @@ const ServicioTvCard: React.FC<{
         : service.estado === "reprogramacion"
           ? "bg-purple-500"
           : "bg-blue-500";
+  const statusGlow =
+    service.estado === "en_proceso"
+      ? "bg-amber-500"
+      : service.estado === "finalizado"
+        ? "bg-emerald-500"
+        : service.estado === "reprogramacion"
+          ? "bg-purple-500"
+          : "bg-blue-500";
 
   const tipoLabel = service.tipo
     ? service.tipo.charAt(0).toUpperCase() + service.tipo.slice(1)
     : null;
 
   return (
-    <div className="relative rounded-xl border border-white/10 bg-slate-900/70 p-3 text-sm overflow-hidden">
-      <span className={clsx("absolute top-0 left-0 w-1.5 h-full rounded-l-xl", statusAccent)} />
-      <div className="flex items-start gap-2.5 pl-2">
-        <span
+    <article
+      className={clsx(
+        "group relative rounded-2xl border border-white/[0.08] bg-gradient-to-br p-[1px] overflow-hidden transition-all duration-300 hover:border-white/20",
+        STATUS_GLOW[service.estado] || STATUS_GLOW.programado
+      )}
+    >
+      <div className="relative rounded-[15px] bg-slate-900/80 backdrop-blur-sm p-3.5 overflow-hidden">
+        <div
           className={clsx(
-            "w-2.5 h-2.5 rounded-full mt-1 shrink-0 ring-2 ring-slate-800",
-            PRIORITY_DOT[service.prioridad] || "bg-slate-500"
+            "absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-30 pointer-events-none",
+            statusGlow
           )}
         />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2 flex-wrap">
-            <p className="font-bold text-white text-base leading-snug line-clamp-2 flex-1 min-w-0">
-              {service.titulo}
-            </p>
-            {showDateBadge && dateBadge && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 shrink-0">
-                {dateBadge}
-              </span>
+        <div className="flex items-start gap-3">
+          <div
+            className={clsx(
+              "w-1 rounded-full self-stretch shrink-0 shadow-lg",
+              statusAccent
             )}
-          </div>
-          <p className="text-sm text-blue-300 truncate flex items-center gap-1.5 mt-1">
-            <Building2 className="w-3.5 h-3.5 shrink-0" /> {service.cliente}
-          </p>
-          <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-gray-300">
-            {tipoLabel && (
-              <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-white/10 font-semibold capitalize">
-                {tipoLabel}
-              </span>
-            )}
-            {(service.horaInicio || service.horaFin) && (
-              <span className="flex items-center gap-1 font-medium">
-                <Clock className="w-3.5 h-3.5 shrink-0" />
-                {service.horaInicio}
-                {service.horaFin ? ` – ${service.horaFin}` : ""}
-              </span>
-            )}
-            {service.ubicacion && (
-              <span className="flex items-center gap-1 truncate max-w-[200px]">
-                <MapPin className="w-3.5 h-3.5 shrink-0" /> {service.ubicacion}
-              </span>
-            )}
-          </div>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-black uppercase tracking-wider text-purple-300/90 shrink-0">
-              Metrólogos
-            </span>
-            {assignees.length > 0 ? (
-              assignees.map((a) => (
+          />
+          <div className="min-w-0 flex-1 space-y-2.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
                 <span
-                  key={a.id}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-400/40 text-sm font-bold text-purple-50"
-                  title={a.name}
-                >
-                  {a.color && (
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/25"
-                      style={{ backgroundColor: a.color }}
-                    />
+                  className={clsx(
+                    "w-2 h-2 rounded-full mt-1.5 shrink-0 ring-2 ring-slate-800",
+                    PRIORITY_DOT[service.prioridad] || "bg-slate-500"
                   )}
-                  <span className="truncate max-w-[180px]">{a.name}</span>
+                />
+                <div className="min-w-0">
+                  <h5 className="font-bold text-white text-[15px] leading-snug line-clamp-2">
+                    {service.titulo}
+                  </h5>
+                  <p className="text-xs text-slate-400 truncate flex items-center gap-1.5 mt-1">
+                    <Building2 className="w-3.5 h-3.5 shrink-0 text-blue-400" />
+                    <span className="text-blue-200/90 font-medium">{service.cliente}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className={clsx("text-[10px] px-2 py-1 rounded-lg border font-bold uppercase tracking-wide", st.className)}>
+                  {st.label}
                 </span>
-              ))
-            ) : (
-              <span className="text-sm font-semibold text-amber-300/90 italic">Sin asignar</span>
-            )}
+                {showDateBadge && dateBadge && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
+                    {dateBadge}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              {tipoLabel && (
+                <div className="flex items-center gap-1.5 rounded-lg bg-slate-800/80 border border-white/5 px-2 py-1.5">
+                  <Briefcase className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span className="font-semibold text-slate-200 capitalize truncate">{tipoLabel}</span>
+                </div>
+              )}
+              {(service.horaInicio || service.horaFin) && (
+                <div className="flex items-center gap-1.5 rounded-lg bg-slate-800/80 border border-white/5 px-2 py-1.5">
+                  <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span className="font-semibold text-slate-200 tabular-nums">
+                    {service.horaInicio}
+                    {service.horaFin ? ` – ${service.horaFin}` : ""}
+                  </span>
+                </div>
+              )}
+              {service.ubicacion && (
+                <div className="col-span-2 flex items-center gap-1.5 rounded-lg bg-slate-800/60 border border-white/5 px-2 py-1.5">
+                  <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+                  <span className="text-slate-300 truncate">{service.ubicacion}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-white/5">
+              {assignees.length > 0 ? (
+                assignees.map((a) => (
+                  <span
+                    key={a.id}
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-800/90 border border-white/10 text-[11px] font-semibold text-slate-100"
+                    title={a.name}
+                  >
+                    {a.color && (
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0 ring-1 ring-white/20"
+                        style={{ backgroundColor: a.color }}
+                      />
+                    )}
+                    <span className="truncate max-w-[140px]">{a.name}</span>
+                  </span>
+                ))
+              ) : (
+                <span className="text-[11px] font-medium text-amber-300/80 italic">Sin metrólogo asignado</span>
+              )}
+            </div>
           </div>
         </div>
-        <span className={clsx("text-xs px-2 py-1 rounded border font-bold shrink-0", st.className)}>
-          {st.label}
-        </span>
       </div>
-    </div>
+    </article>
   );
 };
 
@@ -594,48 +637,116 @@ interface ServicesDashboardPanelProps {
   todayKey: string;
 }
 
-const ServicesListBody: React.FC<{
-  todayServices: ServicioRow[];
-  programmedServices: ServicioRow[];
-  usuariosMetrologia: UsuarioRow[];
-  todayKey: string;
-  hasAny: boolean;
-}> = ({ todayServices, programmedServices, usuariosMetrologia, todayKey, hasAny }) => {
-  if (!hasAny) {
-    return (
-      <div className="flex flex-col items-center justify-center text-gray-500 py-10 text-sm">
-        Sin servicios para hoy ni programados
-      </div>
-    );
-  }
+const ServiceColumn: React.FC<{
+  title: string;
+  count: number;
+  accent: "purple" | "indigo";
+  emptyMessage: string;
+  children: React.ReactNode;
+}> = ({ title, count, accent, emptyMessage, children }) => {
+  const accentStyles =
+    accent === "purple"
+      ? {
+          header: "from-purple-500/15 to-transparent border-purple-500/20 text-purple-200",
+          badge: "bg-purple-500/25 text-purple-100 border-purple-400/30",
+          dot: "bg-purple-400",
+        }
+      : {
+          header: "from-indigo-500/15 to-transparent border-indigo-500/20 text-indigo-200",
+          badge: "bg-indigo-500/25 text-indigo-100 border-indigo-400/30",
+          dot: "bg-indigo-400",
+        };
 
   return (
-    <>
-      <section>
-        <div className="flex items-center justify-between mb-2.5 px-1">
-          <h4 className="text-xs font-black uppercase tracking-widest text-purple-300">Servicios de hoy</h4>
-          <span className="text-[10px] text-gray-500">{todayServices.length}</span>
+    <div className="flex flex-col min-h-0 h-full rounded-xl border border-white/[0.06] bg-slate-900/40 overflow-hidden">
+      <div
+        className={clsx(
+          "shrink-0 px-3 py-2 border-b bg-gradient-to-r flex items-center justify-between",
+          accentStyles.header
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span className={clsx("w-1.5 h-1.5 rounded-full", accentStyles.dot)} />
+          <h4 className="text-[11px] font-black uppercase tracking-[0.15em]">{title}</h4>
         </div>
-        {todayServices.length === 0 ? (
-          <p className="text-xs text-gray-500 italic px-1 py-3">Ningún servicio para hoy</p>
+        <span className={clsx("text-[10px] font-bold px-2 py-0.5 rounded-full border", accentStyles.badge)}>
+          {count}
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-2 py-2 space-y-2">
+        {count === 0 ? (
+          <p className="text-xs text-slate-500 italic text-center py-6">{emptyMessage}</p>
         ) : (
-          <div className="space-y-2.5">
+          children
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
+  todayServices,
+  programmedServices,
+  usuarios,
+  todayKey,
+}) => {
+  const hasAny = todayServices.length > 0 || programmedServices.length > 0;
+
+  const usuariosMetrologia = useMemo(
+    () => usuarios.filter((u) => isMetrologyRole(u)),
+    [usuarios]
+  );
+
+  return (
+    <div
+      className={`h-full flex flex-col rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/40 backdrop-blur-md overflow-hidden shadow-xl shadow-black/20`}
+    >
+      <div className="px-4 py-3 border-b border-white/10 shrink-0 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-purple-950/30 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-purple-500/15 border border-purple-500/25">
+            <Briefcase className="w-5 h-5 text-purple-300" />
+          </div>
+          <div>
+            <h3 className="text-base lg:text-lg font-bold text-white tracking-tight">Servicios</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">Operación de campo · hoy y agenda</p>
+          </div>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <div className="text-center px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+            <p className="text-lg font-black text-purple-200 leading-none">{todayServices.length}</p>
+            <p className="text-[9px] uppercase tracking-wider text-purple-400/80 font-bold mt-0.5">Hoy</p>
+          </div>
+          <div className="text-center px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+            <p className="text-lg font-black text-indigo-200 leading-none">{programmedServices.length}</p>
+            <p className="text-[9px] uppercase tracking-wider text-indigo-400/80 font-bold mt-0.5">Prog.</p>
+          </div>
+        </div>
+      </div>
+
+      {!hasAny ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 gap-2">
+          <Briefcase className="w-10 h-10 text-slate-600" />
+          <p className="text-sm font-medium">Sin servicios para hoy ni programados</p>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 grid grid-cols-2 gap-2.5 p-2.5">
+          <ServiceColumn
+            title="Hoy"
+            count={todayServices.length}
+            accent="purple"
+            emptyMessage="Ningún servicio para hoy"
+          >
             {todayServices.map((s) => (
               <ServicioTvCard key={s.id} service={s} usuarios={usuariosMetrologia} />
             ))}
-          </div>
-        )}
-      </section>
+          </ServiceColumn>
 
-      <section>
-        <div className="flex items-center justify-between mb-2.5 px-1">
-          <h4 className="text-xs font-black uppercase tracking-widest text-indigo-300">Servicios programados</h4>
-          <span className="text-[10px] text-gray-500">{programmedServices.length}</span>
-        </div>
-        {programmedServices.length === 0 ? (
-          <p className="text-xs text-gray-500 italic px-1 py-3">Sin fechas futuras</p>
-        ) : (
-          <div className="space-y-2.5">
+          <ServiceColumn
+            title="Programados"
+            count={programmedServices.length}
+            accent="indigo"
+            emptyMessage="Sin fechas futuras"
+          >
             {programmedServices.map((s) => {
               const dateKey = normalizeServicioDateKey(s.fecha);
               return (
@@ -648,92 +759,9 @@ const ServicesListBody: React.FC<{
                 />
               );
             })}
-          </div>
-        )}
-      </section>
-    </>
-  );
-};
-
-export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
-  todayServices,
-  programmedServices,
-  usuarios,
-  todayKey,
-}) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const segmentRef = useRef<HTMLDivElement>(null);
-  const [scrollPaused, setScrollPaused] = useState(false);
-  const [scrollMode, setScrollMode] = useState<TvScrollState>("idle");
-  const hasAny = todayServices.length > 0 || programmedServices.length > 0;
-
-  const usuariosMetrologia = useMemo(
-    () => usuarios.filter((u) => isMetrologyRole(u)),
-    [usuarios]
-  );
-
-  useTvKioskAutoScroll(scrollRef, hasAny, scrollPaused, {
-    force: true,
-    onStateChange: setScrollMode,
-    pxPerSec: 4.5,
-    seamless: hasAny,
-    segmentRef,
-  });
-
-  return (
-    <div
-      className={`h-full flex flex-col rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 overflow-hidden`}
-    >
-      <div className="px-4 py-2.5 border-b border-white/10 shrink-0 bg-slate-900/60 flex items-center justify-between gap-2">
-        <div>
-          <h3 className="text-base font-bold text-purple-300 flex items-center gap-2">
-            <Briefcase className="w-5 h-5" /> Servicios
-          </h3>
-          <p className="text-[10px] text-gray-500 mt-0.5">Hoy y próximos programados</p>
+          </ServiceColumn>
         </div>
-        <div className="flex gap-1.5 shrink-0">
-          <span className="px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-200 text-[10px] font-bold border border-purple-500/30">
-            Hoy {todayServices.length}
-          </span>
-          <span className="px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-200 text-[10px] font-bold border border-indigo-500/30">
-            Prog. {programmedServices.length}
-          </span>
-        </div>
-      </div>
-
-      <div
-        ref={scrollRef}
-        data-tv-scroll="viewport"
-        data-tv-scroll-mode={scrollMode}
-        className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-2.5 py-2 tv-kiosk-scroll"
-        onMouseEnter={() => setScrollPaused(true)}
-        onMouseLeave={() => setScrollPaused(false)}
-        onFocus={() => setScrollPaused(true)}
-        onBlur={() => setScrollPaused(false)}
-      >
-        <div data-tv-scroll="track">
-          <div ref={segmentRef} data-tv-scroll="segment" className="space-y-5 pb-2">
-            <ServicesListBody
-              todayServices={todayServices}
-              programmedServices={programmedServices}
-              usuariosMetrologia={usuariosMetrologia}
-              todayKey={todayKey}
-              hasAny={hasAny}
-            />
-          </div>
-          {hasAny && (
-            <div aria-hidden className="space-y-5 pt-2 pb-1">
-              <ServicesListBody
-                todayServices={todayServices}
-                programmedServices={programmedServices}
-                usuariosMetrologia={usuariosMetrologia}
-                todayKey={todayKey}
-                hasAny={hasAny}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

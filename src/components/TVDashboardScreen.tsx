@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { ArrowLeft, MonitorPlay, Clock } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useCalibrationDashboardData } from "../hooks/useCalibrationDashboardData";
-import { CALIBRATION_COLORS } from "../utils/calibrationShared.tsx";
 import {
   DashboardCalendar,
   CompanyArrivalsPanel,
@@ -50,8 +49,22 @@ const TVDashboardScreen: React.FC = () => {
   }
 
   return (
-    <div className={`h-full min-h-0 flex-1 flex flex-col ${CALIBRATION_COLORS.background} text-white font-sans overflow-hidden`}>
-      <header className="bg-slate-900/90 backdrop-blur-lg border-b border-white/5 px-4 lg:px-6 py-3 flex flex-wrap justify-between items-center gap-3 shrink-0 z-40">
+    <div className="h-full min-h-0 flex-1 flex flex-col bg-slate-950 text-white font-sans overflow-hidden relative">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-blue-600/10 blur-3xl" />
+        <div className="absolute top-1/3 -right-24 w-80 h-80 rounded-full bg-purple-600/10 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 w-72 h-72 rounded-full bg-orange-500/8 blur-3xl" />
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+        />
+      </div>
+
+      <header className="relative bg-slate-900/70 backdrop-blur-xl border-b border-white/[0.06] px-4 lg:px-6 py-3 flex flex-wrap justify-between items-center gap-3 shrink-0 z-40 shadow-lg shadow-black/20">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigateTo("mainmenu")}
@@ -85,7 +98,7 @@ const TVDashboardScreen: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 overflow-hidden p-3 lg:p-4 grid grid-cols-12 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:gap-4">
+      <main className="relative flex-1 min-h-0 overflow-hidden p-3 lg:p-4 grid grid-cols-12 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:gap-4">
         {/* Fila principal: calendario | llegadas | servicios */}
         <section className="col-span-12 lg:col-span-2 min-h-0 h-full row-span-1 hidden lg:flex lg:flex-col overflow-hidden">
           <DashboardCalendar

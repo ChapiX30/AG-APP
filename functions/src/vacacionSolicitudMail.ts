@@ -36,9 +36,38 @@ export async function sendVacationRhPdfMail(params: {
     pdfBuffer: Buffer;
     solicitudId: string;
     data: FirebaseFirestore.DocumentData;
-}): Promise<{ enviados: string[]; adjunto: boolean }> {
+    /** Si true, reenvía aunque correoEnviado ya esté marcado (reintento manual). */
+    force?: boolean;
+}): Promise<{ enviados: string[]; adjunto: boolean; omitido?: boolean }> {
+    const docRef = admin.firestore().collection("solicitudesVacaciones").doc(params.solicitudId);
+    const claimed = await admin.firestore().runTransaction(async (tx) => {
+        const snap = await tx.get(docRef);
+        const d = snap.data();
+        if (!params.force && d?.correoEnviado === true) {
+            return false;
+        }
+        if (d?.correoRhProcesando === true) {
+            return false;
+        }
+        tx.update(docRef, { correoRhProcesando: true });
+        return true;
+    });
+    if (!claimed) {
+        const snap = await docRef.get();
+        const prev = snap.data()?.correosRhEnviados;
+        return {
+            enviados: Array.isArray(prev) ? prev.map(String) : [],
+            adjunto: true,
+            omitido: true,
+        };
+    }
+
     const emails = getRhEmailsFromAlerta({ destinatarios: VACATION_RH_EMAILS });
     if (!getMailConfig()) {
+        await docRef.set(
+            { correoRhProcesando: admin.firestore.FieldValue.delete(), correoEnviado: false },
+            { merge: true },
+        );
         throw new Error("Correo no configurado (gmail.user / gmail.pass)");
     }
 
@@ -58,24 +87,38 @@ export async function sendVacationRhPdfMail(params: {
     ];
 
     const enviados: string[] = [];
-    for (const to of emails) {
-        await sendAgMail({
-            fromName: "AG Recursos Humanos",
-            to,
-            subject: `📋 ${subject}`,
-            html,
-            attachments,
-        });
-        enviados.push(to);
+    try {
+        for (const to of emails) {
+            await sendAgMail({
+                fromName: "Equipos y Servicios AG",
+                to,
+                subject: `📋 ${subject}`,
+                html,
+                attachments,
+            });
+            enviados.push(to);
+        }
+
+        await docRef.set(
+            {
+                correoEnviado: true,
+                correosRhEnviados: enviados,
+                correoRhProcesando: admin.firestore.FieldValue.delete(),
+            },
+            { merge: true },
+        );
+
+        return { enviados, adjunto: true };
+    } catch (error) {
+        await docRef.set(
+            {
+                correoRhProcesando: admin.firestore.FieldValue.delete(),
+                correoEnviado: false,
+            },
+            { merge: true },
+        );
+        throw error;
     }
-
-    await admin
-        .firestore()
-        .collection("solicitudesVacaciones")
-        .doc(params.solicitudId)
-        .set({ correoEnviado: true, correosRhEnviados: enviados }, { merge: true });
-
-    return { enviados, adjunto: true };
 }
 
 function buildHtmlVacaciones(data: FirebaseFirestore.DocumentData): string {
@@ -118,6 +161,22 @@ export async function runProcesarAlertaVacaciones(
 ): Promise<null> {
         const data = snap.data();
         if (!data || data.estado === "enviado" || data.estado === "omitido") return null;
+
+        if (data.solicitudId) {
+            const sol = await admin
+                .firestore()
+                .collection("solicitudesVacaciones")
+                .doc(String(data.solicitudId))
+                .get();
+            if (sol.data()?.correoEnviado === true) {
+                await snap.ref.update({
+                    estado: "omitido",
+                    motivo: "Correo RH ya enviado por onVacacionAprobadaFinal",
+                    procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                return null;
+            }
+        }
 
         const emails = getRhEmailsFromAlerta(data);
         if (emails.length === 0) {
@@ -165,7 +224,7 @@ export async function runProcesarAlertaVacaciones(
             const enviados: string[] = [];
             for (const to of emails) {
                 await sendAgMail({
-                    fromName: "AG Recursos Humanos",
+                    fromName: "Equipos y Servicios AG",
                     to,
                     subject: `📋 ${subject}`,
                     html: buildHtmlVacaciones(data),

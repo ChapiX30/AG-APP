@@ -2,10 +2,7 @@ import * as admin from "firebase-admin";
 import * as functions from "firebase-functions/v1";
 import { format } from "date-fns";
 import { buildVacationPdfBuffer } from "./vacacionPdfBuild";
-import { VACATION_RH_EMAILS } from "./vacacionEmails";
 import { sendVacationRhPdfMail } from "./vacacionSolicitudMail";
-
-const db = admin.firestore();
 
 async function downloadPdfFromStorage(storagePath: string): Promise<Buffer | null> {
     try {
@@ -53,16 +50,11 @@ export async function runOnVacacionAprobadaFinal(
                     solicitudId,
                     data: after,
                 });
-                await db.collection("alertasVacaciones").add({
-                    estado: "enviado",
-                    solicitudId,
-                    destinatarios: [...VACATION_RH_EMAILS],
-                    storagePath: existingPath,
-                    destinatariosEnviados: mailResult.enviados,
-                    adjuntoEnviado: true,
-                    procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
-                });
-                console.log(`Vacaciones ${solicitudId}: correo RH reenviado (${mailResult.enviados.join(", ")})`);
+                if (mailResult.omitido) {
+                    console.log(`Vacaciones ${solicitudId}: correo RH ya enviado, se omite reenvío.`);
+                } else {
+                    console.log(`Vacaciones ${solicitudId}: correo RH reenviado (${mailResult.enviados.join(", ")})`);
+                }
             } catch (error) {
                 const mensaje = error instanceof Error ? error.message : String(error);
                 console.error(`Vacaciones ${solicitudId} correo RH:`, mensaje);
@@ -100,28 +92,13 @@ export async function runOnVacacionAprobadaFinal(
                 pdfError: admin.firestore.FieldValue.delete(),
             });
 
-            await db.collection("alertasVacaciones").add({
-                estado: "enviado",
-                solicitudId,
-                destinatarios: [...VACATION_RH_EMAILS],
-                correosRh: [...VACATION_RH_EMAILS],
-                destinatarioNombre: "Recursos Humanos",
-                solicitanteNombre: after.solicitanteNombre || "Colaborador",
-                diasVacaciones: after.diasVacaciones,
-                fechaInicio: after.fechaInicio,
-                fechaFin: after.fechaFin,
-                storagePath,
-                destinatariosEnviados: mailResult.enviados,
-                adjuntoEnviado: mailResult.adjunto,
-                titulo: `Solicitud de vacaciones — ${after.solicitanteNombre || "Colaborador"}`,
-                mensajeCorto: `Formato AG-ADM-F12 enviado a Recursos Humanos.`,
-                creadoEn: admin.firestore.FieldValue.serverTimestamp(),
-                procesadoEn: admin.firestore.FieldValue.serverTimestamp(),
-            });
-
-            console.log(
-                `Vacaciones ${solicitudId}: PDF generado y enviado a RH: ${mailResult.enviados.join(", ")}`,
-            );
+            if (mailResult.omitido) {
+                console.log(`Vacaciones ${solicitudId}: PDF generado; correo RH ya estaba enviado.`);
+            } else {
+                console.log(
+                    `Vacaciones ${solicitudId}: PDF generado y enviado a RH: ${mailResult.enviados.join(", ")}`,
+                );
+            }
         } catch (error) {
             const mensaje =
                 error instanceof Error ? error.message : String(error);
