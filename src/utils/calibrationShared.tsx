@@ -55,11 +55,15 @@ export interface HojaTrabajoRow {
   cliente?: string;
   equipo?: string;
   folio?: string;
+  certificado?: string;
   fecha?: string;
   fechaEntrada?: string;
   fechaRecepcion?: string;
   fecha_calib?: string;
   createdAt?: string;
+  lastUpdated?: string;
+  status?: string;
+  pdfURL?: string;
   status_equipo?: string;
   status_certificado?: string;
   ubicacion_real?: string;
@@ -369,8 +373,72 @@ export const isEquipmentDelivered = (row: HojaTrabajoRow) =>
 
 export const isEquipmentFullyDone = (row: HojaTrabajoRow) => isCronogramaComplete(row);
 
-export const isEquipmentCalibrated = (row: HojaTrabajoRow) =>
-  (row.status_equipo || "").toLowerCase() === "calibrado" || isCronogramaComplete(row);
+const normalizeStatusEquipo = (status?: string): string =>
+  (status || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+/** Misma fusión fecha / fecha_calib que FridayScreen al cargar filas. */
+export const normalizeHojaRowForRules = (row: HojaTrabajoRow): HojaTrabajoRow => ({
+  ...row,
+  fecha: row.fecha || row.fecha_calib,
+});
+
+const rowRecencyTime = (row: HojaTrabajoRow): number => {
+  for (const raw of [row.lastUpdated, row.createdAt, row.fechaEntrada, row.fecha, row.fecha_calib]) {
+    const d = parseDateRobust(raw);
+    if (d) return d.getTime();
+  }
+  return 0;
+};
+
+const shouldPreferEquipmentRow = (candidate: HojaTrabajoRow, current: HojaTrabajoRow): boolean => {
+  const candidateCal = isEquipmentCalibrated(candidate);
+  const currentCal = isEquipmentCalibrated(current);
+  if (candidateCal !== currentCal) return candidateCal;
+  return rowRecencyTime(candidate) >= rowRecencyTime(current);
+};
+
+/**
+ * Evita contar dos veces el mismo ID interno (p. ej. fila vieja en lab + hoja guardada tras calibrar).
+ * Prefiere el registro calibrado o el más reciente — alineado con el orden de Friday.
+ */
+export const dedupeHojasByEquipmentKey = (hojas: HojaTrabajoRow[]): HojaTrabajoRow[] => {
+  const keyed = new Map<string, HojaTrabajoRow>();
+  const withoutId: HojaTrabajoRow[] = [];
+
+  hojas.forEach((raw) => {
+    const row = normalizeHojaRowForRules(raw);
+    const id = (row.id || "").trim().toUpperCase();
+    if (!id) {
+      withoutId.push(row);
+      return;
+    }
+    const key = `${normalizeCompany(row.cliente)}::${id}`;
+    const prev = keyed.get(key);
+    if (!prev || shouldPreferEquipmentRow(row, prev)) keyed.set(key, row);
+  });
+
+  return [...withoutId, ...keyed.values()];
+};
+
+/** Fecha de calibración registrada (columna Friday / hoja de trabajo). */
+export const hasCalibrationDate = (row: HojaTrabajoRow): boolean =>
+  Boolean(getCalibrationWorkDate(row));
+
+export const isEquipmentCalibrated = (row: HojaTrabajoRow): boolean => {
+  const normalized = normalizeHojaRowForRules(row);
+  if (normalizeStatusEquipo(normalized.status_equipo) === "calibrado") return true;
+  if (isCronogramaComplete(normalized)) return true;
+  if (hasCalibrationDate(normalized)) return true;
+  const certStatus = getEffectiveCertStatus(normalized);
+  if (certStatus === "Generado" || certStatus === "Firmado") return true;
+  if ((normalized.status || "").trim().toLowerCase() === "completed") return true;
+  if (normalized.pdfURL && String(normalized.pdfURL).trim().length > 0) return true;
+  return false;
+};
 
 /** Equipo de laboratorio aún en flujo (backlog acumulado, sin filtro por día). */
 export const isInLabBacklog = (row: HojaTrabajoRow): boolean => {
@@ -385,8 +453,7 @@ export const isInLabBacklog = (row: HojaTrabajoRow): boolean => {
 /** Pendiente de calibración en lab (excluye ya calibrados y flujo cerrado). */
 export const isLabPendingCalibration = (row: HojaTrabajoRow): boolean => {
   if (!isInLabBacklog(row)) return false;
-  if ((row.status_equipo || "").toLowerCase() === "calibrado") return false;
-  return true;
+  return !isEquipmentCalibrated(row);
 };
 
 /** Fecha inicio SLA: fechaEntrada → fechaRecepcion → createdAt (como Friday). */
@@ -436,7 +503,7 @@ export const computeCompanyArrivals = (
 ): CompanyArrivalGroup[] => {
   const map = new Map<string, CompanyArrivalGroup>();
 
-  hojas.forEach((row) => {
+  dedupeHojasByEquipmentKey(hojas).forEach((row) => {
     if (!isLogisticsArrival(row, dateKey)) return;
     const company = normalizeCompany(row.cliente);
     const entry = map.get(company) || emptyCompanyArrivalGroup(company);
@@ -501,7 +568,7 @@ export const computeCompanyLabBacklog = (
   const year = options?.year ?? new Date().getFullYear();
   const map = new Map<string, CompanyArrivalGroup>();
 
-  hojas.forEach((row) => {
+  dedupeHojasByEquipmentKey(hojas).forEach((row) => {
     if (!isInLabBacklog(row)) return;
     if (!isRowInYear(row, year)) return;
     bumpCompanyArrival(map, normalizeCompany(row.cliente), row);
@@ -518,7 +585,7 @@ export const computeCompanyLabBacklogByArea = (
   const year = options?.year ?? new Date().getFullYear();
   const areaMaps = new Map<LabAreaKey, Map<string, CompanyArrivalGroup>>();
 
-  hojas.forEach((row) => {
+  dedupeHojasByEquipmentKey(hojas).forEach((row) => {
     if (!isInLabBacklog(row)) return;
     if (!isRowInYear(row, year)) return;
     const area = normalizeDepartment(row.departamento);
@@ -545,6 +612,14 @@ export const computeCompanyLabBacklogByArea = (
 };
 
 const computeSlaDisplay = (row: HojaTrabajoRow) => {
+  if (isEquipmentCalibrated(row)) {
+    return {
+      diffDays: 999,
+      daysLabel: "Calibrado",
+      statusColor: "text-emerald-300 font-semibold bg-emerald-950/40",
+    };
+  }
+
   let diffDays = 999;
   let daysLabel = "-";
   let statusColor = "text-gray-400";
@@ -587,7 +662,7 @@ export const computeLabPending = (
     "Sin Asignar": 0,
   };
 
-  const equiposPendientes = hojas.filter(
+  const equiposPendientes = dedupeHojasByEquipmentKey(hojas).filter(
     (r) => isLabPendingCalibration(r) && isRowInYear(r, year)
   );
 

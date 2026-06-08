@@ -820,7 +820,7 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
       <div className="flex text-[9px] text-gray-500 uppercase font-bold px-3 py-1.5 border-b border-white/5 shrink-0">
         <div className="w-[28%]">Cliente</div>
         <div className="w-[32%]">Equipo</div>
-        <div className="w-[22%] text-center">SLA</div>
+        <div className="w-[22%] text-center">Estado</div>
         <div className="w-[18%] text-right">Téc.</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar">

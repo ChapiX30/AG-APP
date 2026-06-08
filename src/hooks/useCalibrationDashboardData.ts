@@ -17,6 +17,7 @@ import {
   FALLBACK_CHART_COLORS,
   MAGNITUDES_COLORS,
   getCalibrationWorkDate,
+  dedupeHojasByEquipmentKey,
   isInLabBacklog,
   isRowInYear,
   isVisibleServicioForDashboard,
@@ -77,7 +78,8 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     const month = selectedDate.getMonth() + 1;
 
     const currentYear = new Date().getFullYear();
-    const companyArrivalsByArea = computeCompanyLabBacklogByArea(hojasDeTrabajo, {
+    const hojasDeduped = dedupeHojasByEquipmentKey(hojasDeTrabajo);
+    const companyArrivalsByArea = computeCompanyLabBacklogByArea(hojasDeduped, {
       year: currentYear,
     });
 
@@ -96,13 +98,13 @@ export function useCalibrationDashboardData(selectedDate: Date) {
         return (a.horaInicio || "").localeCompare(b.horaInicio || "");
       });
 
-    const labPending = computeLabPending(hojasDeTrabajo, { year: currentYear });
-    const activityDateKeys = computeActivityDateKeys(hojasDeTrabajo, servicios);
+    const labPending = computeLabPending(hojasDeduped, { year: currentYear });
+    const activityDateKeys = computeActivityDateKeys(hojasDeduped, servicios);
 
     const totalArrivedToday = companyArrivalsByArea.reduce((acc, s) => acc + s.totalArrived, 0);
     const totalPendingToday = companyArrivalsByArea.reduce((acc, s) => acc + s.totalPending, 0);
 
-    const hojasDelMes = hojasDeTrabajo.filter((h) => {
+    const hojasDelMes = hojasDeduped.filter((h) => {
       const d = getCalibrationWorkDate(h);
       if (!d) return false;
       return d.getFullYear() === year && d.getMonth() + 1 === month;
@@ -121,7 +123,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     );
 
     const carryingByName: Record<string, number> = {};
-    hojasDeTrabajo.forEach((h) => {
+    dedupeHojasByEquipmentKey(hojasDeTrabajo).forEach((h) => {
       if (!isInLabBacklog(h) || !isRowInYear(h, currentYear)) return;
       const name = cleanName(h.nombre || h.assignedTo);
       if (!name || !validMetrologosNames.has(name)) return;
@@ -167,7 +169,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       const probe = new Date(year, month - 1, d);
       if (probe.getMonth() !== month - 1) continue;
       const key = toDateKey(probe);
-      arrivalsForMonth[key] = computeCompanyArrivals(hojasDeTrabajo, key).reduce(
+      arrivalsForMonth[key] = computeCompanyArrivals(hojasDeduped, key).reduce(
         (acc, g) => acc + g.arrived,
         0
       );

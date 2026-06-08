@@ -860,9 +860,8 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
         </div>
     );
 }, (prev, next) =>
-    prev.row.docId === next.row.docId &&
+    prev.row === next.row &&
     prev.isSelected === next.isSelected &&
-    getResponsableName(prev.row) === getResponsableName(next.row) &&
     prev.index === next.index &&
     prev.groupId === next.groupId &&
     prev.color === next.color &&
