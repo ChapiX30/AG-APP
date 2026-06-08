@@ -667,12 +667,14 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                       className="vac-input"
                     />
                   </Field>
-                  {miSaldoVacaciones.asignados > 0 && Number(diasVacaciones) >= 1 && (
+                  {miSaldoVacaciones.asignados !== 0 || miSaldoVacaciones.usados > 0 || miSaldoVacaciones.pendientes > 0
+                    ? Number(diasVacaciones) >= 1 && (
                     <DiasSolicitudPreview
                       restantes={miSaldoVacaciones.restantes}
                       diasSolicitados={diasVacaciones}
                     />
-                  )}
+                  )
+                    : null}
                 </div>
                 <Field label="Fecha de inicio">
                   <input
@@ -982,7 +984,10 @@ function VacationDiasCard({
   saldo: VacationBalance;
   year: number;
 }) {
-  if (saldo.asignados === 0) {
+  const sinRegistro =
+    saldo.asignados === 0 && saldo.usados === 0 && saldo.pendientes === 0;
+
+  if (sinRegistro) {
     return (
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
         <p className="text-sm text-slate-500">
@@ -993,7 +998,7 @@ function VacationDiasCard({
   }
 
   const restantesColor =
-    saldo.restantes <= 0
+    saldo.restantes < 0
       ? 'text-red-700'
       : saldo.restantes <= 5
         ? 'text-amber-700'
@@ -1009,13 +1014,16 @@ function VacationDiasCard({
         Días de vacaciones · {year}
       </p>
       <p className="text-base text-slate-800">
-        Te quedan{' '}
+        {saldo.restantes < 0 ? 'Llevas ' : 'Te quedan '}
         <span className={`text-2xl font-bold tabular-nums ${restantesColor}`}>
-          {saldo.restantes}
+          {saldo.restantes < 0 ? Math.abs(saldo.restantes) : saldo.restantes}
         </span>{' '}
-        día{saldo.restantes === 1 ? '' : 's'} disponibles
+        {saldo.restantes < 0 ? `día${Math.abs(saldo.restantes) === 1 ? '' : 's'} de adeudo` : `día${saldo.restantes === 1 ? '' : 's'} disponibles`}
         <span className="text-sm font-normal text-slate-500">
-          {' '}de {saldo.asignados} que te corresponden
+          {' '}
+          {saldo.asignados < 0
+            ? `(saldo inicial: ${saldo.asignados} días)`
+            : `de ${saldo.asignados} que te corresponden`}
         </span>
       </p>
       {detallePartes.length > 0 && (
@@ -1033,18 +1041,20 @@ function DiasSolicitudPreview({
   diasSolicitados: number;
 }) {
   const quedarian = restantes - diasSolicitados;
-  const excede = quedarian < 0;
+  const yaEnAdeudo = restantes < 0;
 
   return (
     <p
       className={`text-xs font-medium mt-1.5 flex items-start gap-1 ${
-        excede ? 'text-amber-700' : 'text-slate-500'
+        yaEnAdeudo || quedarian < 0 ? 'text-amber-700' : 'text-slate-500'
       }`}
     >
-      {excede && <AlertTriangle size={12} className="shrink-0 mt-0.5" />}
-      {excede
-        ? `Solo te restan ${restantes}; RH revisará si pides ${diasSolicitados}.`
-        : `Te quedarían ${quedarian} día${quedarian === 1 ? '' : 's'} después de esta solicitud.`}
+      {(yaEnAdeudo || quedarian < 0) && <AlertTriangle size={12} className="shrink-0 mt-0.5" />}
+      {yaEnAdeudo
+        ? `Ya llevas ${Math.abs(restantes)} día(s) de adeudo. RH revisará esta solicitud.`
+        : quedarian < 0
+          ? `Solo te restan ${restantes}; RH revisará si pides ${diasSolicitados}.`
+          : `Te quedarían ${quedarian} día${quedarian === 1 ? '' : 's'} después de esta solicitud.`}
     </p>
   );
 }

@@ -144,8 +144,9 @@ export const ControlVacacionesRhScreen: React.FC = () => {
 
   const lowCount = useMemo(
     () => [...usersMetrologia, ...usersCalidad].filter((u) => {
-      const { restantes, asignados } = getSaldo(u);
-      return asignados > 0 && restantes >= 0 && restantes <= 5;
+      const { restantes, asignados, usados, pendientes } = getSaldo(u);
+      if (asignados === 0 && usados === 0 && pendientes === 0) return false;
+      return restantes < 0 || (restantes >= 0 && restantes <= 5);
     }).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [usersMetrologia, usersCalidad, solicitudes],
@@ -159,7 +160,7 @@ export const ControlVacacionesRhScreen: React.FC = () => {
   const startEdit = (u: UsuarioRh) => {
     if (saving) return;
     setEditingId(u.id);
-    setEditValue(String(getDiasAsignadosFromSaldo(u.vacacionesSaldo, CURRENT_YEAR) || ''));
+    setEditValue(String(getDiasAsignadosFromSaldo(u.vacacionesSaldo, CURRENT_YEAR)));
   };
   const cancelEdit = () => {
     if (saving) return;
@@ -169,16 +170,8 @@ export const ControlVacacionesRhScreen: React.FC = () => {
 
   const saveEdit = async (u: UsuarioRh) => {
     const val = parseInt(editValue, 10);
-    if (isNaN(val) || val < 0 || val > 365) {
-      toast.error('Indica un número válido entre 0 y 365.');
-      return;
-    }
-    const { usados, pendientes } = getSaldo(u);
-    const minimo = usados + pendientes;
-    if (val < minimo) {
-      toast.error(
-        `${u.name} ya tiene ${minimo} día(s) usados o en trámite. Asigna al menos ${minimo}.`,
-      );
+    if (isNaN(val) || val < -365 || val > 365) {
+      toast.error('Indica un número válido entre -365 y 365.');
       return;
     }
     const actual = getDiasAsignadosFromSaldo(u.vacacionesSaldo, CURRENT_YEAR);
@@ -249,7 +242,7 @@ export const ControlVacacionesRhScreen: React.FC = () => {
           <StatCard icon={<Users size={18} />} label="Metrólogos" value={usersMetrologia.length} accent="blue" />
           <StatCard icon={<Users size={18} />} label="Calidad" value={usersCalidad.length} accent="violet" />
           <StatCard icon={<CalendarDays size={18} />} label="Año en curso" value={CURRENT_YEAR} accent="slate" />
-          <StatCard icon={<span className="text-base font-bold">!</span>} label="Menos de 5 días" value={lowCount} accent="amber" />
+          <StatCard icon={<span className="text-base font-bold">!</span>} label="Bajo saldo o adeudo" value={lowCount} accent="amber" />
         </div>
 
         {/* Search */}
@@ -432,17 +425,17 @@ function ColaboradorInfo({ name, puesto }: { name: string; puesto: string }) {
 }
 
 function DisponiblesBadge({ restantes, asignados }: { restantes: number; asignados: number }) {
-  if (asignados === 0) {
+  if (asignados === 0 && restantes === 0) {
     return (
       <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
         Sin asignar
       </span>
     );
   }
-  if (restantes <= 0) {
+  if (restantes < 0) {
     return (
       <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-        {restantes} disponibles
+        {Math.abs(restantes)} días de adeudo
       </span>
     );
   }
@@ -502,7 +495,7 @@ function DiasCorrespondenEditor({
         <input
           ref={inputRef}
           type="number"
-          min={0}
+          min={-365}
           max={365}
           inputMode="numeric"
           value={editValue}
@@ -558,7 +551,7 @@ function DiasCorrespondenEditor({
       className="group inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent hover:border-slate-200 hover:bg-white transition-colors"
       title="Editar días que corresponden"
     >
-      <span className={`text-lg font-bold tabular-nums ${asignados === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
+      <span className={`text-lg font-bold tabular-nums ${asignados === 0 ? 'text-slate-400' : asignados < 0 ? 'text-red-700' : 'text-slate-800'}`}>
         {asignados}
       </span>
       <span className="text-xs text-slate-400 group-hover:text-[#2464A3]">días</span>
