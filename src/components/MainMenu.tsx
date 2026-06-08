@@ -122,6 +122,7 @@ const MENU_ITEMS = [
   { id: 'directorio-empresas', title: 'Historial Equipos', icon: History, category: 'Análisis' },
   { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo' },
   { id: 'solicitud-vacaciones', title: 'Vacaciones', icon: Calendar, category: 'Operativo' },
+  { id: 'control-vacaciones-rh', title: 'Control Vacaciones RH', icon: Users, category: 'Operativo' },
   { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión' },
   { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico' },
   { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad' },
@@ -1202,15 +1203,21 @@ export const MainMenu: React.FC = () => {
   const isSuperAdmin = useMemo(() => SUPER_ADMINS.includes(localUser?.email || ''), [localUser]);
   const canBroadcast = isAdmin || isCalidad || isSuperAdmin;
 
+  const isAdministrativo = useMemo(
+    () => !!(localUser?.role.includes('administrativo') || localUser?.role.includes('admin')),
+    [localUser],
+  );
+
   const filteredMenu = useMemo(() => {
     if (!localUser) return [];
     return MENU_ITEMS.filter(item => {
       if (item.id === 'calibration-stats') return isJefe || isSuperAdmin;
       if (item.id === 'vencimientos') return isJefe || isCalidad || isSuperAdmin;
       if (['programa-calibracion', 'control-prestamos'].includes(item.id)) return isJefe || isCalidad || isSuperAdmin;
+      if (item.id === 'control-vacaciones-rh') return isAdministrativo || isSuperAdmin;
       return true;
     }).filter(i => !searchTerm || i.title.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [localUser, searchTerm, isJefe, isCalidad, isSuperAdmin]);
+  }, [localUser, searchTerm, isJefe, isCalidad, isSuperAdmin, isAdministrativo]);
 
   const menuGroups = useMemo(() => groupMenuByCategory(filteredMenu), [filteredMenu]);
   const isSearching = searchTerm.trim().length > 0;

@@ -65,6 +65,13 @@ import {
 import { requestVacationRhEmailRetry } from '../utils/vacationFinalize';
 import { getDownloadURL } from 'firebase/storage';
 import {
+  computeVacationBalance,
+  getDiasAsignadosFromSaldo,
+  getVacationYear,
+  type VacacionesSaldoYear,
+  type VacationBalance,
+} from '../utils/vacationBalance';
+import {
   countVacationDaysInclusive,
   formatProgressStateLabel,
   getVacationProgressSteps,
@@ -107,6 +114,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
   const [rejectMotivo, setRejectMotivo] = useState('');
   const [selectedSolicitudId, setSelectedSolicitudId] = useState<string | null>(null);
   const [selectedApproverId, setSelectedApproverId] = useState<string | null>(null);
+  const [vacacionesSaldo, setVacacionesSaldo] = useState<Record<string, VacacionesSaldoYear>>({});
 
   const diasSegunFechas = useMemo(
     () =>
@@ -128,6 +136,25 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       fechaFin,
       diasSegunFechas,
     });
+
+  useEffect(() => {
+    if (!user?.id || !puedeSolicitar) return;
+    return onSnapshot(doc(db, 'usuarios', user.id), (snap) => {
+      const data = snap.data();
+      setVacacionesSaldo((data?.vacacionesSaldo as Record<string, VacacionesSaldoYear>) ?? {});
+    });
+  }, [user?.id, puedeSolicitar]);
+
+  const miSaldoVacaciones = useMemo(() => {
+    const asignados = getDiasAsignadosFromSaldo(vacacionesSaldo);
+    return computeVacationBalance(asignados, misSolicitudes, getVacationYear());
+  }, [vacacionesSaldo, misSolicitudes]);
+
+  useEffect(() => {
+    if (diasSegunFechas != null && diasSegunFechas >= 1) {
+      setDiasVacaciones(diasSegunFechas);
+    }
+  }, [diasSegunFechas]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -404,7 +431,6 @@ export const SolicitudVacacionesScreen: React.FC = () => {
         toast.success(
           'Solicitud aprobada. El PDF y el correo se enviarán automáticamente a Recursos Humanos.',
         );
-        void aprobadaDoc;
       } else if (siguiente) {
         await updateDoc(doc(db, 'solicitudesVacaciones', s.id), {
           estado: siguiente,
@@ -612,6 +638,10 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           ))}
         </nav>
 
+        {puedeSolicitar && tab === 'mis' && (
+          <VacationDiasCard saldo={miSaldoVacaciones} year={getVacationYear()} />
+        )}
+
         {tab === 'nueva' && puedeSolicitar && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/80">
@@ -624,17 +654,26 @@ export const SolicitudVacacionesScreen: React.FC = () => {
               </p>
             </div>
             <div className="p-6 space-y-5 max-w-xl">
+              <VacationDiasCard saldo={miSaldoVacaciones} year={getVacationYear()} />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Field label="Días solicitados">
-                  <input
-                    type="number"
-                    min={1}
-                    max={60}
-                    value={diasVacaciones}
-                    onChange={(e) => setDiasVacaciones(Number(e.target.value))}
-                    className="vac-input"
-                  />
-                </Field>
+                <div>
+                  <Field label="Días solicitados">
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={diasVacaciones}
+                      onChange={(e) => setDiasVacaciones(Number(e.target.value))}
+                      className="vac-input"
+                    />
+                  </Field>
+                  {miSaldoVacaciones.asignados > 0 && Number(diasVacaciones) >= 1 && (
+                    <DiasSolicitudPreview
+                      restantes={miSaldoVacaciones.restantes}
+                      diasSolicitados={diasVacaciones}
+                    />
+                  )}
+                </div>
                 <Field label="Fecha de inicio">
                   <input
                     type="date"
@@ -658,7 +697,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                     diasNoCoinciden ? 'text-red-600' : 'text-emerald-700'
                   }`}
                 >
-                  {diasNoCoinciden ? 'Cambia de fecha porfavor.' : 'Sí, así se puede.'}
+                  {diasNoCoinciden ? 'Las fechas no coinciden con los días indicados.' : 'Fechas y días coinciden.'}
                 </p>
               )}
               <Field label="Observaciones (opcional)">
@@ -900,6 +939,8 @@ export const SolicitudVacacionesScreen: React.FC = () => {
         .vac-input {
           width: 100%;
           background: #fff;
+          color: #1e293b;
+          color-scheme: light;
           border: 1px solid #cbd5e1;
           border-radius: 0.5rem;
           padding: 0.625rem 0.875rem;
@@ -931,6 +972,80 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function VacationDiasCard({
+  saldo,
+  year,
+}: {
+  saldo: VacationBalance;
+  year: number;
+}) {
+  if (saldo.asignados === 0) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+        <p className="text-sm text-slate-500">
+          Recursos Humanos aún no ha registrado tus días de vacaciones para {year}.
+        </p>
+      </div>
+    );
+  }
+
+  const restantesColor =
+    saldo.restantes <= 0
+      ? 'text-red-700'
+      : saldo.restantes <= 5
+        ? 'text-amber-700'
+        : 'text-emerald-700';
+
+  const detallePartes: string[] = [];
+  if (saldo.usados > 0) detallePartes.push(`${saldo.usados} ya tomados`);
+  if (saldo.pendientes > 0) detallePartes.push(`${saldo.pendientes} en trámite`);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3.5 space-y-1">
+      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+        Días de vacaciones · {year}
+      </p>
+      <p className="text-base text-slate-800">
+        Te quedan{' '}
+        <span className={`text-2xl font-bold tabular-nums ${restantesColor}`}>
+          {saldo.restantes}
+        </span>{' '}
+        día{saldo.restantes === 1 ? '' : 's'} disponibles
+        <span className="text-sm font-normal text-slate-500">
+          {' '}de {saldo.asignados} que te corresponden
+        </span>
+      </p>
+      {detallePartes.length > 0 && (
+        <p className="text-xs text-slate-400">{detallePartes.join(' · ')}</p>
+      )}
+    </div>
+  );
+}
+
+function DiasSolicitudPreview({
+  restantes,
+  diasSolicitados,
+}: {
+  restantes: number;
+  diasSolicitados: number;
+}) {
+  const quedarian = restantes - diasSolicitados;
+  const excede = quedarian < 0;
+
+  return (
+    <p
+      className={`text-xs font-medium mt-1.5 flex items-start gap-1 ${
+        excede ? 'text-amber-700' : 'text-slate-500'
+      }`}
+    >
+      {excede && <AlertTriangle size={12} className="shrink-0 mt-0.5" />}
+      {excede
+        ? `Solo te restan ${restantes}; RH revisará si pides ${diasSolicitados}.`
+        : `Te quedarían ${quedarian} día${quedarian === 1 ? '' : 's'} después de esta solicitud.`}
+    </p>
   );
 }
 
