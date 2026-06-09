@@ -22,8 +22,11 @@ import {
 import clsx from "clsx";
 import labLogo from '../assets/lab_logo.png';
 import {
-  buildPendingWorksheetDriveEntry,
+  buildWorksheetSearchEntry,
+  driveFileMatchesEquipmentId,
+  extractEquipmentIdFromFileName,
   extractWorksheetLinkId,
+  isEquipmentIdSearchTerm,
   isLinkableWorksheetId,
   resolveWorksheetBySearchTerm,
   resolveWorksheetDoc,
@@ -32,6 +35,7 @@ import {
 import {
   generateWorksheetPdfFromFirestore,
   getTechnicianFolderName,
+  getTechnicianFolderFromWorksheet,
 } from "../utils/worksheetPdfGenerator";
 import { getFolderVisualStyle } from "../utils/fileUtils";
 import { parseDateRobust } from "../utils/calibrationShared";
@@ -138,9 +142,22 @@ const generateSearchTokens = (text: string): string[] => {
 const compactAlphanumeric = (text: string) =>
   normalizeText(text).replace(/[^a-z0-9]/g, "");
 
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const isEquipmentIdQuery = isEquipmentIdSearchTerm;
+
+const tokenizeSearchText = (text: string): string[] => {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  return normalized.split(/[\s_\-./\\]+/).filter((t) => t.length > 0);
+};
+
 const parseSearchTerms = (query: string): string[] => {
-  const q = normalizeText(query);
+  const trimmed = query.trim();
+  const q = normalizeText(trimmed);
   if (!q) return [];
+  // Mantener IDs de equipo completos (MS-182), no separar en "ms" + "182"
+  if (isEquipmentIdQuery(trimmed)) return [q];
   return [...new Set(q.split(/[\s_\-./\\]+/).filter((t) => t.length > 0))];
 };
 
@@ -153,6 +170,7 @@ const buildFileSearchHaystack = (file: DriveFile): string =>
       file.parentFolder || "",
       file.uploadedBy || "",
       file.worksheetId || "",
+      file.worksheetDocId || "",
       file.worksheetCliente || "",
       file.worksheetEquipo || "",
       file.worksheetTechnician || "",
@@ -162,29 +180,69 @@ const buildFileSearchHaystack = (file: DriveFile): string =>
     ].join(" ")
   );
 
-/** Búsqueda flexible: ignora mayúsculas/acentos, guiones y orden parcial de tokens. */
+/** Coincidencia delimitada: evita que "182" matchee dentro de "001826". */
+const hasDelimitedMatch = (haystack: string, term: string): boolean => {
+  const t = normalizeText(term);
+  if (!t) return false;
+  const re = new RegExp(`(^|[^a-z0-9])${escapeRegex(t)}([^a-z0-9]|$)`);
+  return re.test(haystack);
+};
+
+const termMatchesHaystack = (haystack: string, tokens: string[], term: string): boolean => {
+  const termNorm = normalizeText(term);
+  if (!termNorm) return false;
+
+  if (tokens.includes(termNorm)) return true;
+  if (hasDelimitedMatch(haystack, termNorm)) return true;
+
+  // Términos alfabéticos largos: coincidencia compacta solo si >= 4 chars
+  const compactTerm = compactAlphanumeric(term);
+  const compactHay = compactAlphanumeric(haystack);
+  if (compactTerm.length >= 4 && /^[a-z]+$/.test(compactTerm)) {
+    return compactHay.includes(compactTerm);
+  }
+
+  // Números: solo con delimitadores, NUNCA como subcadena suelta en compact
+  if (/^\d+$/.test(term)) {
+    return hasDelimitedMatch(haystack, term);
+  }
+
+  return false;
+};
+
+/**
+ * Búsqueda flexible pero precisa para IDs de equipo (MS-182).
+ * Ya no devuelve falsos positivos por subcadenas numéricas.
+ */
 const matchDriveSearch = (file: DriveFile, query: string): boolean => {
   const trimmed = query.trim();
   if (!trimmed) return true;
 
   const haystack = buildFileSearchHaystack(file);
-  const compactHay = compactAlphanumeric(haystack);
+  const tokens = tokenizeSearchText(haystack);
   const fullQuery = normalizeText(trimmed);
+  const compactHay = compactAlphanumeric(haystack);
   const compactQuery = compactAlphanumeric(trimmed);
 
-  if (fullQuery.length >= 2 && haystack.includes(fullQuery)) return true;
-  if (compactQuery.length >= 2 && compactHay.includes(compactQuery)) return true;
+  // ID de equipo: EP-52889 en AGPT-0531-26_EP-52889.pdf (sufijo tras _)
+  if (isEquipmentIdQuery(trimmed)) {
+    if (file.isPendingWorksheet) return false;
+    if (driveFileMatchesEquipmentId(file.rawName || file.name, trimmed)) return true;
+    const idNorm = fullQuery;
+    if (file.worksheetId && normalizeText(file.worksheetId) === idNorm) return true;
+    if (tokens.includes(idNorm)) return true;
+    if (hasDelimitedMatch(haystack, idNorm)) return true;
+    if (compactQuery.length >= 4 && compactHay.includes(compactQuery)) return true;
+    return false;
+  }
+
+  if (fullQuery.length >= 2 && hasDelimitedMatch(haystack, fullQuery)) return true;
+  if (compactQuery.length >= 4 && compactHay.includes(compactQuery)) return true;
 
   const terms = parseSearchTerms(trimmed);
   if (terms.length === 0) return true;
 
-  return terms.every((term) => {
-    if (haystack.includes(term)) return true;
-    const compactTerm = compactAlphanumeric(term);
-    if (compactTerm.length >= 2 && compactHay.includes(compactTerm)) return true;
-    if (/^\d+$/.test(term) && haystack.includes(term)) return true;
-    return false;
-  });
+  return terms.every((term) => termMatchesHaystack(haystack, tokens, term));
 };
 
 const matchDriveSearchText = (text: string, query: string): boolean =>
@@ -391,8 +449,9 @@ function metadataToDriveFile(
   };
 }
 
-/** Catálogo ampliado para que la búsqueda encuentre archivos más antiguos. */
-const SEARCH_CATALOG_LIMIT = 1500;
+/** Catálogo en memoria para búsqueda (se filtra en cliente, sin re-descargar). */
+const SEARCH_CATALOG_LIMIT = 1000;
+const CATALOG_CACHE_MS = 2 * 60 * 1000;
 /** Documentos recientes que el listener en vivo vigila fuera de una carpeta. */
 const REALTIME_RECENT_LIMIT = 400;
 
@@ -492,6 +551,31 @@ const formatDate = (dateStr: unknown) => {
 
 const getFileWorkDate = (file: DriveFile) =>
   file.workDate || resolveFileWorkDate(file, [file.created, file.updated]) || file.created;
+
+const sortDriveFiles = (list: DriveFile[], sortBy: SortType): DriveFile[] => {
+  const result = [...list];
+  result.sort((a, b) => {
+    switch (sortBy) {
+      case "nameAsc": return a.name.localeCompare(b.name);
+      case "nameDesc": return b.name.localeCompare(a.name);
+      case "dateAsc":
+        return new Date(getFileWorkDate(a)).getTime() - new Date(getFileWorkDate(b)).getTime();
+      case "dateDesc":
+        return new Date(getFileWorkDate(b)).getTime() - new Date(getFileWorkDate(a)).getTime();
+      case "sizeAsc": return (a.size || 0) - (b.size || 0);
+      case "sizeDesc": return (b.size || 0) - (a.size || 0);
+      default: return 0;
+    }
+  });
+  return result;
+};
+
+type BrowseSnapshot = {
+  files: DriveFile[];
+  folders: DriveFolder[];
+  path: string[];
+  activeFilter: FilterType;
+};
 
 const getFileIcon = (fileName?: string, size: number = 24) => {
   if (!fileName || typeof fileName !== 'string') return <File size={size} className="text-slate-400" strokeWidth={1.5} />;
@@ -1114,6 +1198,14 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const pendingReviewSyncAtRef = useRef(0);
   const loadRequestIdRef = useRef(0);
   const downloadUrlCacheRef = useRef(new Map<string, { url: string; at: number }>());
+  const metadataCatalogCacheRef = useRef<{
+    key: string;
+    files: DriveFile[];
+    at: number;
+  } | null>(null);
+  const filesRef = useRef(files);
+  const foldersRef = useRef(folders);
+  const browseSnapshotRef = useRef<BrowseSnapshot | null>(null);
   const PENDING_REVIEW_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
   const DOWNLOAD_URL_CACHE_TTL_MS = 12 * 60 * 1000;
 
@@ -1123,7 +1215,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: DriveFile | null; folder: DriveFolder | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearch = useDebounce(searchQuery, 200);
+  const debouncedSearch = useDebounce(searchQuery, 120);
   const searchCatalogActive = debouncedSearch.trim().length > 0;
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
@@ -1163,6 +1255,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [newName, setNewName] = useState("");
   const [generatingPdfLinkId, setGeneratingPdfLinkId] = useState<string | null>(null);
   const [pendingWorksheetFile, setPendingWorksheetFile] = useState<PendingWorksheetDriveEntry | null>(null);
+  const [pendingWorksheetLoading, setPendingWorksheetLoading] = useState(false);
 
   const handleBack = () => { onBack ? onBack() : goBack(); };
 
@@ -1230,7 +1323,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             workDate: resolveFileWorkDate(data, [data.created, data.updated]),
           });
         }
-        setSuggestedFiles(await enrichFilesWithWorkDates(recents));
+        setSuggestedFiles(recents);
       } catch (e) { console.error(e); }
     };
     load();
@@ -1239,17 +1332,44 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // ── Load content ──
   const loadContent = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
+    const isSearchBrowse = searchCatalogActive && activeFilter === "all";
     setContextMenu(null);
-    setSelectedIds(new Set());
-    setLastSelectedId(null);
+    if (!isSearchBrowse) {
+      metadataCatalogCacheRef.current = null;
+      setSelectedIds(new Set());
+      setLastSelectedId(null);
+    }
 
     const useGlobalCatalog = activeFilter !== "all" || searchCatalogActive;
-    if (useGlobalCatalog) setLoading(true);
+    const hasVisibleFiles = filesRef.current.length > 0;
+    if (useGlobalCatalog) {
+      if (isSearchBrowse && hasVisibleFiles) setFilesLoading(true);
+      else setLoading(true);
+    }
 
     try {
       if (useGlobalCatalog) {
-        setLoading(true);
-        setFilesLoading(false);
+        if (!(isSearchBrowse && hasVisibleFiles)) {
+          setLoading(true);
+        }
+        setFilesLoading(isSearchBrowse && hasVisibleFiles);
+
+        const catalogCacheKey = `${currentRoot}|${isQuality}|${normalizeText(currentUserData?.name || "")}|all`;
+        const cachedCatalog = metadataCatalogCacheRef.current;
+        if (
+          isSearchBrowse &&
+          cachedCatalog &&
+          cachedCatalog.key === catalogCacheKey &&
+          Date.now() - cachedCatalog.at < CATALOG_CACHE_MS
+        ) {
+          if (requestId === loadRequestIdRef.current) {
+            setFiles(cachedCatalog.files);
+            setFolders([]);
+            setLoading(false);
+            setFilesLoading(false);
+          }
+          return;
+        }
 
         if (activeFilter === 'pending_review' && currentRoot === 'worksheets') {
           const now = Date.now();
@@ -1343,6 +1463,28 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
           results.push(fileObj);
         });
+
+        const mapped = results.map((f) => ({
+          ...f,
+          parentFolder: resolveTechnicianGroupKey(f),
+        }));
+
+        // Búsqueda: guardar catálogo completo en caché y filtrar en cliente (instantáneo)
+        if (isSearchBrowse) {
+          metadataCatalogCacheRef.current = {
+            key: catalogCacheKey,
+            files: mapped,
+            at: Date.now(),
+          };
+          if (requestId === loadRequestIdRef.current) {
+            setFiles(mapped);
+            setFolders([]);
+            setLoading(false);
+            setFilesLoading(false);
+          }
+          return;
+        }
+
         const isGlobalPendingOrCompleted =
           activeFilter === "pending_review" || activeFilter === "completed";
         const enriched = await enrichFilesWithWorksheetInfo(
@@ -1484,18 +1626,21 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           } as DriveFile;
         });
 
-        let loaded = await enrichFilesWithWorksheetInfo(
-          await enrichFilesWithWorkDates(
-            (await Promise.all(filePromises)).filter(Boolean) as DriveFile[]
-          )
-        );
+        const basicFiles = (await Promise.all(filePromises)).filter(Boolean) as DriveFile[];
 
         if (requestId === loadRequestIdRef.current) {
-          setFiles(loaded);
+          setFiles(basicFiles);
+          setLoading(false);
           setFilesLoading(false);
         }
 
         void (async () => {
+          const loaded = await enrichFilesWithWorksheetInfo(
+            await enrichFilesWithWorkDates(basicFiles, { persist: true })
+          );
+          if (requestId !== loadRequestIdRef.current) return;
+          setFiles(loaded);
+
           const synced = await Promise.all(
             loaded.map(async (f) => {
               if (f.completed === true || f.reviewed === true) return f;
@@ -1575,11 +1720,27 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
+  useEffect(() => { filesRef.current = files; });
+  useEffect(() => { foldersRef.current = folders; });
+
+  const saveBrowseSnapshot = useCallback(() => {
+    browseSnapshotRef.current = {
+      files: filesRef.current,
+      folders: foldersRef.current,
+      path: [...path],
+      activeFilter,
+    };
+  }, [path, activeFilter]);
+
+  useEffect(() => {
+    if (!searchCatalogActive) {
+      saveBrowseSnapshot();
+    }
+  }, [files, folders, path, activeFilter, searchCatalogActive, saveBrowseSnapshot]);
+
   // ── Realtime: refleja borrados / cambios / subidas de otros usuarios ──
-  const filesRef = useRef(files);
   const loadContentRef = useRef(loadContent);
   const quietReloadTimer = useRef<number | null>(null);
-  useEffect(() => { filesRef.current = files; });
   useEffect(() => { loadContentRef.current = loadContent; });
 
   const scheduleQuietReload = useCallback(() => {
@@ -1631,7 +1792,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       liveQuery = query(
         collection(db, "fileMetadata"),
         orderBy("created", "desc"),
-        limit(searchCatalogActive ? SEARCH_CATALOG_LIMIT : REALTIME_RECENT_LIMIT)
+        limit(REALTIME_RECENT_LIMIT)
       );
     }
 
@@ -1664,7 +1825,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             }
           }
         });
-        if (needsReload) scheduleQuietReload();
+        if (needsReload && !searchCatalogActive) scheduleQuietReload();
       },
       (err) => {
         console.warn("[Drive] realtime listener:", err);
@@ -1692,16 +1853,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     const lookupPendingWorksheet = async () => {
       const term = debouncedSearch.trim();
+      const minLen = isEquipmentIdQuery(term) ? 2 : 3;
       if (
         !term ||
-        term.length < 3 ||
+        term.length < minLen ||
         !currentUserData ||
         currentRoot !== "worksheets"
       ) {
         setPendingWorksheetFile(null);
+        setPendingWorksheetLoading(false);
         return;
       }
 
+      setPendingWorksheetLoading(true);
       try {
         const wsDoc = await resolveWorksheetBySearchTerm(term);
         if (cancelled) return;
@@ -1711,19 +1875,33 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         }
 
         const data = wsDoc.data() as Record<string, unknown>;
-        if (!isQuality) {
+        const exactIdSearch =
+          isEquipmentIdQuery(term) &&
+          normalizeText(String(data.id || "")) === normalizeText(term);
+
+        // Búsqueda por ID exacto (MS-182): mostrar siempre si existe en Friday
+        if (!isQuality && !exactIdSearch) {
           const myName = normalizeText(currentUserData?.name || "");
-          const assigned = normalizeText(String(data.nombre || data.assignedTo || ""));
-          if (assigned !== myName) {
+          const assigned = normalizeText(
+            String(data.nombre || data.assignedTo || data.tecnico || "")
+          );
+          const techFolder = normalizeText(getTechnicianFolderFromWorksheet(data));
+          const isMine =
+            assigned === myName ||
+            techFolder.includes(myName) ||
+            myName.includes(techFolder);
+          if (!isMine) {
             setPendingWorksheetFile(null);
             return;
           }
         }
 
-        setPendingWorksheetFile(buildPendingWorksheetDriveEntry(wsDoc));
+        setPendingWorksheetFile(buildWorksheetSearchEntry(wsDoc, filesRef.current));
       } catch (e) {
         console.error("[Drive] pending worksheet lookup:", e);
         if (!cancelled) setPendingWorksheetFile(null);
+      } finally {
+        if (!cancelled) setPendingWorksheetLoading(false);
       }
     };
 
@@ -1780,22 +1958,37 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     [showToast]
   );
 
+  // Filtro instantáneo mientras escribes (sin esperar debounce ni re-fetch)
+  const activeSearchTerm = useMemo(() => {
+    if (!searchCatalogActive) return "";
+    const debounced = debouncedSearch.trim();
+    if (debounced) return debounced;
+    return searchQuery.trim();
+  }, [searchCatalogActive, debouncedSearch, searchQuery]);
+
   // ── Sorted/filtered files ──
   const processedFiles = useMemo(() => {
     let result = [...files];
-    if (debouncedSearch.trim()) {
-      result = result.filter((f) => matchDriveSearch(f, debouncedSearch));
+    if (activeSearchTerm) {
+      result = result.filter((f) => matchDriveSearch(f, activeSearchTerm));
     }
-    if (pendingWorksheetFile && debouncedSearch.trim().length >= 3) {
-      const linkId = extractWorksheetLinkId(pendingWorksheetFile.rawName);
+
+    let pinnedPending: DriveFile | null = null;
+    const minPendingLen = isEquipmentIdQuery(activeSearchTerm) ? 2 : 3;
+    if (pendingWorksheetFile && activeSearchTerm.length >= minPendingLen) {
+      const equipId =
+        pendingWorksheetFile.worksheetId ||
+        extractEquipmentIdFromFileName(pendingWorksheetFile.rawName || pendingWorksheetFile.name);
       const alreadyListed = result.some(
         (f) =>
           !f.isPendingWorksheet &&
-          extractWorksheetLinkId(f.rawName || f.name) === linkId
+          (driveFileMatchesEquipmentId(f.rawName || f.name, activeSearchTerm) ||
+            (equipId && driveFileMatchesEquipmentId(f.rawName || f.name, equipId)))
       );
-      if (!alreadyListed) result.unshift(pendingWorksheetFile);
+      if (!alreadyListed) pinnedPending = pendingWorksheetFile;
     }
-    result.sort((a, b) => {
+
+    const sortFn = (a: DriveFile, b: DriveFile) => {
       switch (sortBy) {
         case 'nameAsc': return a.name.localeCompare(b.name);
         case 'nameDesc': return b.name.localeCompare(a.name);
@@ -1805,14 +1998,18 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         case 'sizeDesc': return (b.size || 0) - (a.size || 0);
         default: return 0;
       }
-    });
+    };
+    result.sort(sortFn);
+
+    // Hoja sin PDF siempre arriba (no se pierde al ordenar)
+    if (pinnedPending) return [pinnedPending, ...result];
     return result;
-  }, [files, pendingWorksheetFile, debouncedSearch, sortBy]);
+  }, [files, pendingWorksheetFile, activeSearchTerm, sortBy]);
 
   const visibleFolders = useMemo(() => {
-    if (!debouncedSearch.trim()) return folders;
-    return folders.filter((f) => matchDriveSearchText(f.name, debouncedSearch));
-  }, [folders, debouncedSearch]);
+    if (!activeSearchTerm) return folders;
+    return folders.filter((f) => matchDriveSearchText(f.name, activeSearchTerm));
+  }, [folders, activeSearchTerm]);
 
   // ── Búsqueda estilo Google Drive: carpetas + archivos sugeridos ──
   const folderMatches = useMemo(() => {
@@ -1824,7 +2021,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       for (let i = 1; i < parts.length - 1; i++) {
         const name = parts[i];
         if (seen.has(name)) continue;
-        if (matchDriveSearchText(name, debouncedSearch)) {
+        if (matchDriveSearchText(name, activeSearchTerm)) {
           seen.add(name);
           out.push({ name, pathSegments: parts.slice(1, i + 1) });
           if (out.length >= 4) return out;
@@ -1832,7 +2029,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
     }
     return out;
-  }, [searchCatalogActive, files, debouncedSearch]);
+  }, [searchCatalogActive, files, activeSearchTerm]);
 
   type SearchSuggestion =
     | { kind: "folder"; key: string; folder: { name: string; pathSegments: string[] } }
@@ -1845,13 +2042,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       key: `folder-${f.pathSegments.join("/")}`,
       folder: f,
     }));
-    const fileItems: SearchSuggestion[] = processedFiles.slice(0, 8).map((f) => ({
+    const fileItems: SearchSuggestion[] = processedFiles.slice(0, 12).map((f) => ({
       kind: "file",
       key: `file-${f.fullPath}`,
       file: f,
     }));
     return [...folderItems, ...fileItems];
   }, [searchCatalogActive, folderMatches, processedFiles]);
+
+  /** Panel desplegable activo: oculta la lista duplicada detrás. */
+  const showSearchDropdown =
+    searchFocused && searchCatalogActive && activeSearchTerm.length > 0;
 
   useEffect(() => {
     setSearchActiveIndex(-1);
@@ -2099,6 +2300,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           openSearchSuggestion(searchSuggestions[searchActiveIndex]);
         }
       } else if (e.key === "Escape") {
+        e.preventDefault();
         setSearchFocused(false);
         setSearchActiveIndex(-1);
       }
@@ -2667,6 +2869,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         count++;
       }
       showToast(`${count} archivo(s) subido(s)`, 'success');
+      metadataCatalogCacheRef.current = null;
       loadContent();
     } catch (e) { showToast("Error al subir archivos", 'error'); }
     finally { setIsUploading(false); }
@@ -2753,7 +2956,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ─── RENDER CONTENT ───────────────────────
   const renderContent = () => {
-    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && !groupView) {
+    const bgSnap = showSearchDropdown ? browseSnapshotRef.current : null;
+    const useBrowseBehindSearch = !!(bgSnap && bgSnap.activeFilter === "all");
+
+    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && !groupView && !useBrowseBehindSearch) {
       const groups = Object.keys(groupedFiles);
       if (groups.length === 0) return <EmptyState icon={activeFilter === 'completed' ? FileCheck : Bell} title={activeFilter === 'completed' ? "No hay servicios completados" : "No hay archivos por revisar"} />;
       return (
@@ -2782,18 +2988,48 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       );
     }
 
-    let displayFiles = processedFiles;
-    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView) displayFiles = groupedFiles[groupView] || [];
-    const showFolders = activeFilter === 'all' && !debouncedSearch && visibleFolders.length > 0;
+    let displayFiles = useBrowseBehindSearch
+      ? sortDriveFiles(bgSnap!.files, sortBy)
+      : processedFiles;
+    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView && !useBrowseBehindSearch) {
+      displayFiles = groupedFiles[groupView] || [];
+    }
+    const contentFolders = useBrowseBehindSearch ? bgSnap!.folders : visibleFolders;
+    const contentPath = useBrowseBehindSearch ? bgSnap!.path : path;
+    const showFolders =
+      activeFilter === "all" &&
+      (useBrowseBehindSearch || !debouncedSearch) &&
+      contentFolders.length > 0;
 
-    if (displayFiles.length === 0 && !showFolders && !filesLoading) {
-      if (debouncedSearch) return <EmptyState icon={Search} title={`Sin resultados para "${debouncedSearch}"`} subtitle="Usa parte del nombre, folio o ID; no hace falta escribirlo exacto ni con guiones" />;
+    const isMetrologistContent =
+      activeFilter === "all" &&
+      (useBrowseBehindSearch || !debouncedSearch) &&
+      contentPath.length > 0 &&
+      !contentPath.some((p) =>
+        ["hojas de trabajo", "hojas de servicio"].some((ex) =>
+          p.toLowerCase().includes(ex)
+        )
+      );
+    const metrologistGroupsContent = isMetrologistContent
+      ? groupFilesByUbicacion(displayFiles)
+      : null;
+
+    if (!useBrowseBehindSearch && displayFiles.length === 0 && !showFolders && !filesLoading) {
+      if (debouncedSearch && pendingWorksheetLoading && currentRoot === "worksheets") {
+        return <LoadingSkeleton compact />;
+      }
+      if (debouncedSearch) {
+        const idHint = isEquipmentIdQuery(debouncedSearch)
+          ? "Si la hoja existe en Friday pero no tiene PDF, aparecerá arriba como «Sin PDF» para generarlo."
+          : "Usa el ID de equipo (ej. MS-182), folio o parte del nombre del certificado.";
+        return <EmptyState icon={Search} title={`Sin resultados para "${debouncedSearch}"`} subtitle={idHint} />;
+      }
       return <EmptyState icon={Folder} title="Esta carpeta está vacía" subtitle="Sube archivos o crea una carpeta para comenzar" />;
     }
 
-    const labFiles = metrologistFileGroups?.lab ?? [];
-    const siteFiles = metrologistFileGroups?.site ?? [];
-    const otherFiles = isMetrologistFolderView ? [] : displayFiles;
+    const labFiles = metrologistGroupsContent?.lab ?? [];
+    const siteFiles = metrologistGroupsContent?.site ?? [];
+    const otherFiles = isMetrologistContent ? [] : displayFiles;
 
     const showReviewMeta = activeFilter === 'pending_review';
 
@@ -2857,7 +3093,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     return (
       <div className="animate-in slide-in-from-bottom-1 duration-200 pb-24">
-        {path.length === 0 && activeFilter === 'all' && !debouncedSearch && suggestedFiles.length > 0 && (
+        {contentPath.length === 0 && activeFilter === 'all' && (useBrowseBehindSearch || !debouncedSearch) && suggestedFiles.length > 0 && (
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
               <Zap size={13} className="text-amber-500" /> Acceso Rápido
@@ -2886,10 +3122,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
               <Folder size={13} className="text-amber-500" /> Carpetas
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{visibleFolders.length}</span>
+              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">{contentFolders.length}</span>
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              {visibleFolders.map(f => (
+              {contentFolders.map(f => (
                 <FolderCard
                   key={f.fullPath} folder={f}
                   isDragTarget={dropTargetFolder === f.fullPath}
@@ -2897,7 +3133,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   onDragStart={(e: React.DragEvent) => handleItemDragStart(e, f, 'folder')}
                   onDragOver={(e: React.DragEvent) => handleFolderDragOver(e, f.fullPath)}
                   onDrop={(e: React.DragEvent) => handleFolderDrop(e, f)}
-                  onDoubleClick={() => { setPath([...path, f.name]); setSearchQuery(""); }}
+                  onDoubleClick={() => { setPath([...contentPath, f.name]); setSearchQuery(""); setSearchFocused(false); }}
                   onContextMenu={(e: React.MouseEvent) => handleFolderContextMenu(e, f)}
                 />
               ))}
@@ -2910,11 +3146,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <div className="flex items-center justify-between mb-3 sticky top-0 bg-[#f0f2f5]/90 backdrop-blur-sm py-2 z-10">
               <h2 className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                 <File size={13} className="text-slate-400" />
-                {debouncedSearch ? 'Resultados' : 'Archivos'}
+                {debouncedSearch && !useBrowseBehindSearch ? 'Resultados' : 'Archivos'}
                 <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md">
                   {displayFiles.length}
                 </span>
-                {filesLoading && <Loader2 size={12} className="animate-spin text-blue-500" />}
+                {filesLoading && !useBrowseBehindSearch && <Loader2 size={12} className="animate-spin text-blue-500" />}
               </h2>
               {selectedIds.size > 0 && (
                 <div className="fixed md:relative bottom-4 md:bottom-auto left-3 right-3 md:left-auto md:right-auto z-20 flex items-center gap-2 animate-in slide-in-from-bottom md:slide-in-from-right fade-in duration-150 bg-white md:bg-transparent border md:border-0 border-slate-200 rounded-2xl md:rounded-none shadow-lg md:shadow-none px-3 py-2 md:p-0">
@@ -2971,7 +3207,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 </div>
               )}
             </div>
-            {isMetrologistFolderView ? (
+            {isMetrologistContent ? (
               <>
                 {filesLoading && displayFiles.length === 0 ? <LoadingSkeleton compact /> : null}
                 {renderFilesBlock('Laboratorio', labFiles)}
@@ -3081,98 +3317,155 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         </div>
       </aside>
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white sticky top-0 z-30 flex-shrink-0 shadow-sm">
+        <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white sticky top-0 z-30 flex-shrink-0 shadow-sm overflow-visible">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
-          <div ref={searchContainerRef} className="relative flex-1 max-w-lg group">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#2464A3] transition-colors z-10" />
+          <div ref={searchContainerRef} className="relative flex-1 max-w-xl overflow-visible z-[70]">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#2464A3] transition-colors z-10 pointer-events-none" />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Buscar en el Drive — Ctrl+K"
               value={searchQuery}
               onChange={e => { setSearchQuery(e.target.value); setSearchFocused(true); }}
-              onFocus={() => setSearchFocused(true)}
+              onFocus={() => { saveBrowseSnapshot(); setSearchFocused(true); }}
               onKeyDown={handleSearchKeyDown}
               autoComplete="off"
               className={clsx(
-                "w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#2464A3]/30 border border-slate-200/60 focus:border-[#2464A3] py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm",
-                searchFocused && searchCatalogActive && searchSuggestions.length > 0
-                  ? "rounded-t-2xl rounded-b-none border-b-transparent"
+                "w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#2464A3]/30 border border-slate-200/60 focus:border-[#2464A3] py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm relative z-10",
+                showSearchDropdown
+                  ? "rounded-t-xl rounded-b-none border-b-transparent shadow-md"
                   : "rounded-full"
               )}
             />
-            {searchQuery && <button onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors z-10"><X size={13} /></button>}
-            {searchFocused && searchCatalogActive && (
-              <div className="absolute left-0 right-0 top-full z-50 bg-white border border-[#2464A3]/40 border-t-0 rounded-b-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-[60vh] overflow-y-auto">
-                {searchSuggestions.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-xs text-slate-400">
-                    Sin resultados para "<span className="font-semibold text-slate-500">{debouncedSearch}</span>"
-                  </div>
-                ) : (
-                  <>
-                    {searchSuggestions.map((item, idx) => {
-                      const active = idx === searchActiveIndex;
-                      if (item.kind === "folder") {
-                        const style = getFolderVisualStyle(item.folder.name);
-                        return (
-                          <button
-                            key={item.key}
-                            onMouseEnter={() => setSearchActiveIndex(idx)}
-                            onMouseDown={(e) => { e.preventDefault(); openSearchSuggestion(item); }}
-                            className={clsx("w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors", active ? "bg-[#2464A3]/10" : "hover:bg-slate-50")}
-                          >
-                            <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", style.bg)}>
-                              <Folder size={16} className={clsx(style.icon, style.fill)} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-slate-800 truncate"><HighlightText text={item.folder.name} query={debouncedSearch} /></p>
-                              <p className="text-[10px] text-slate-400">Carpeta</p>
-                            </div>
-                            <ChevronRight size={14} className="text-slate-300 flex-shrink-0" />
-                          </button>
-                        );
-                      }
-                      const f = item.file;
-                      return (
-                        <button
-                          key={item.key}
-                          onMouseEnter={() => setSearchActiveIndex(idx)}
-                          onMouseDown={(e) => { e.preventDefault(); openSearchSuggestion(item); }}
-                          className={clsx("w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors", active ? "bg-[#2464A3]/10" : "hover:bg-slate-50")}
-                        >
-                          <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", getFileColorBg(f.name))}>
-                            {getFileIcon(f.name, 16)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-slate-800 truncate"><HighlightText text={f.name} query={debouncedSearch} /></p>
-                            <p className="text-[10px] text-slate-400 truncate flex items-center gap-1.5">
-                              {f.isPendingWorksheet ? (
-                                <span className="text-amber-600 font-semibold">Sin PDF · generar</span>
-                              ) : (
-                                <>
-                                  {f.parentFolder && f.parentFolder !== "Raíz" && (
-                                    <span className="inline-flex items-center gap-0.5"><FolderOpen size={9} />{f.parentFolder}</span>
-                                  )}
-                                  <span>{formatDate(getFileWorkDate(f))}</span>
-                                </>
-                              )}
-                            </p>
-                          </div>
-                          {f.reviewed ? (
-                            <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-                          ) : f.completed ? (
-                            <Eye size={14} className="text-blue-500 flex-shrink-0" />
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                    <div className="px-3.5 py-2 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
-                      <span>↑↓ navegar · Enter abrir · Esc cerrar</span>
-                      {processedFiles.length > 8 && <span>+{processedFiles.length - 8} más abajo</span>}
+            {(filesLoading && searchCatalogActive) && (
+              <Loader2 size={14} className="absolute right-8 top-1/2 -translate-y-1/2 text-[#2464A3] animate-spin z-20" />
+            )}
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); setSearchFocused(true); searchInputRef.current?.focus(); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors z-20"
+              >
+                <X size={13} />
+              </button>
+            )}
+            {showSearchDropdown && (
+              <>
+                <div
+                  className="fixed inset-0 z-[60] bg-slate-900/10"
+                  aria-hidden
+                  onMouseDown={() => setSearchFocused(false)}
+                />
+                <div className="absolute left-0 top-full z-[70] w-full min-w-[280px] sm:min-w-[420px]">
+                  <div className="rounded-b-xl border border-t-0 border-[#2464A3]/25 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="px-3.5 py-2 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold text-slate-600 truncate">
+                        Resultados para «{activeSearchTerm}»
+                      </p>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0">
+                        {processedFiles.length} encontrado{processedFiles.length === 1 ? "" : "s"}
+                      </span>
                     </div>
-                  </>
-                )}
-              </div>
+                    <div className="max-h-[min(380px,52vh)] overflow-y-auto overscroll-contain">
+                      {searchSuggestions.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-xs text-slate-400">
+                          {filesLoading ? (
+                            <span className="inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Buscando…</span>
+                          ) : (
+                            <>Sin coincidencias para «<span className="font-semibold text-slate-500">{activeSearchTerm}</span>»</>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="py-1">
+                          {searchSuggestions.map((item, idx) => {
+                            const active = idx === searchActiveIndex;
+                            if (item.kind === "folder") {
+                              const style = getFolderVisualStyle(item.folder.name);
+                              return (
+                                <button
+                                  key={item.key}
+                                  type="button"
+                                  onMouseEnter={() => setSearchActiveIndex(idx)}
+                                  onMouseDown={(e) => { e.preventDefault(); openSearchSuggestion(item); }}
+                                  className={clsx(
+                                    "w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors",
+                                    active ? "bg-[#2464A3]/10" : "hover:bg-slate-50"
+                                  )}
+                                >
+                                  <div className={clsx("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", style.bg)}>
+                                    <Folder size={17} className={clsx(style.icon, style.fill)} />
+                                  </div>
+                                  <div className="min-w-0 flex-1 overflow-hidden">
+                                    <p className="text-sm font-medium text-slate-800 truncate">
+                                      <HighlightText text={item.folder.name} query={activeSearchTerm} />
+                                    </p>
+                                    <p className="text-[10px] text-slate-400">Carpeta</p>
+                                  </div>
+                                  <ChevronRight size={14} className="text-slate-300 flex-shrink-0" />
+                                </button>
+                              );
+                            }
+                            const f = item.file;
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onMouseEnter={() => setSearchActiveIndex(idx)}
+                                onMouseDown={(e) => { e.preventDefault(); openSearchSuggestion(item); }}
+                                className={clsx(
+                                  "w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors",
+                                  active ? "bg-[#2464A3]/10" : "hover:bg-slate-50"
+                                )}
+                              >
+                                <div className={clsx("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", getFileColorBg(f.name))}>
+                                  {getFileIcon(f.name, 17)}
+                                </div>
+                                <div className="min-w-0 flex-1 overflow-hidden pr-1">
+                                  <p className="text-sm font-medium text-slate-800 truncate" title={f.name}>
+                                    <HighlightText text={f.name} query={activeSearchTerm} />
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 truncate">
+                                    {f.isPendingWorksheet ? (
+                                      <span className="text-amber-600 font-semibold">Sin PDF · generar</span>
+                                    ) : (
+                                      <>
+                                        {f.parentFolder && f.parentFolder !== "Raíz" && (
+                                          <span className="inline-flex items-center gap-0.5 mr-1.5">
+                                            <FolderOpen size={9} />{f.parentFolder}
+                                          </span>
+                                        )}
+                                        <span>{formatDate(getFileWorkDate(f))}</span>
+                                        {f.size ? <span className="ml-1.5">{formatFileSize(f.size)}</span> : null}
+                                      </>
+                                    )}
+                                  </p>
+                                </div>
+                                {f.reviewed ? (
+                                  <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+                                ) : f.completed ? (
+                                  <Eye size={14} className="text-blue-500 flex-shrink-0" />
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-3.5 py-2.5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-slate-400">↑↓ navegar · Enter abrir</span>
+                      {processedFiles.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchFocused(false)}
+                          className="text-[10px] font-semibold text-[#2464A3] hover:underline flex-shrink-0"
+                        >
+                          Ver lista completa ({processedFiles.length})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -3201,9 +3494,24 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <span className="flex items-center gap-1.5 font-semibold text-[#2464A3]"><Filter size={11} />{filterLabels[activeFilter]}
                 {groupView && ( <div className="flex items-center ml-1"><ChevronRight size={11} className="text-slate-400 mr-1" /><span className="text-slate-700 bg-white border border-[#2464A3]/20 px-2 py-0.5 rounded-md flex items-center gap-1">{groupView}<button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700"><X size={10} /></button></span></div> )}
               </span>
-            ) : debouncedSearch ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-[#2464A3]" />Resultados para "{debouncedSearch}"</span> ) : (
-              <nav className="flex items-center gap-1 text-slate-500"><button onClick={() => setPath([])} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", path.length === 0 ? "text-slate-800 font-semibold" : "")}><Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}</button>
-                {path.map((folder, i) => ( <React.Fragment key={folder}><ChevronRight size={11} className="text-slate-300" /><button onClick={() => setPath(path.slice(0, i + 1))} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === path.length - 1 ? "text-slate-800 font-semibold" : "")}>{folder}</button></React.Fragment> ))}
+            ) : debouncedSearch && !showSearchDropdown ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-[#2464A3]" />Resultados para "{debouncedSearch}" <span className="text-slate-400 font-normal">({processedFiles.length})</span></span> ) : (
+              <nav className="flex items-center gap-1 text-slate-500">
+                {(() => {
+                  const crumbPath = showSearchDropdown && browseSnapshotRef.current
+                    ? browseSnapshotRef.current.path
+                    : path;
+                  return (
+                    <>
+                      <button onClick={() => { setPath([]); setSearchFocused(false); }} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", crumbPath.length === 0 ? "text-slate-800 font-semibold" : "")}><Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}</button>
+                      {crumbPath.map((folder, i) => (
+                        <React.Fragment key={folder}>
+                          <ChevronRight size={11} className="text-slate-300" />
+                          <button onClick={() => { setPath(crumbPath.slice(0, i + 1)); setSearchFocused(false); }} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === crumbPath.length - 1 ? "text-slate-800 font-semibold" : "")}>{folder}</button>
+                        </React.Fragment>
+                      ))}
+                    </>
+                  );
+                })()}
               </nav>
             )}
           </div>
@@ -3215,7 +3523,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className={clsx("flex-1 overflow-y-auto min-w-0 transition-all duration-200")}>
             <div className="p-4 md:p-6">
-              {loading ? <LoadingSkeleton /> : renderContent()}
+              {loading && !(searchCatalogActive && files.length > 0) && !(showSearchDropdown && browseSnapshotRef.current) ? <LoadingSkeleton /> : renderContent()}
             </div>
           </div>
           {detailsOpen && selectedIds.size === 1 && (() => {
