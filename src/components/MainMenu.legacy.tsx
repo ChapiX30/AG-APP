@@ -1,8 +1,3 @@
-/**
- * MainMenu — diseño renovado.
- * Para volver al diseño anterior:
- *   Copy-Item src/components/MainMenu.legacy.tsx src/components/MainMenu.tsx
- */
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
@@ -13,7 +8,6 @@ import {
   AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
   FileText, Users, History, Palette, LayoutGrid, AlignLeft, Check,
   Info, AlertCircle, Send, Megaphone, Trash2, Sparkles,
-  MoreHorizontal, Layers,
 } from 'lucide-react';
 import { NovedadesWidget } from './NovedadesWidget';
 import { NovedadesComposeModal } from './NovedadesComposeModal';
@@ -223,51 +217,8 @@ const ThemeStyle = () => (
     .acc-ring:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px rgba(var(--acc-rgb)/0.18); }
     .acc-hover:hover { background: rgba(var(--acc-rgb)/0.10); }
     .card-interact { transition: all 0.18s ease; }
-    .card-interact:hover { border-color: rgba(var(--acc-rgb)/0.4) !important; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.35); transform: translateY(-2px); }
+    .card-interact:hover { border-color: rgba(var(--acc-rgb)/0.4) !important; }
     .card-interact:hover .ci-icon { color: var(--acc); }
-    .ag-mesh {
-      background:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(var(--acc-rgb)/0.14) 0%, transparent 55%),
-        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(var(--acc-rgb)/0.08) 0%, transparent 50%),
-        radial-gradient(ellipse 50% 30% at 50% 100%, rgba(var(--acc-rgb)/0.06) 0%, transparent 45%),
-        var(--bg);
-    }
-    .ag-hero {
-      background:
-        linear-gradient(135deg, rgba(var(--acc-rgb)/0.18) 0%, rgba(var(--acc-rgb)/0.04) 50%, transparent 100%),
-        var(--surface);
-      border-color: rgba(var(--acc-rgb)/0.22);
-      box-shadow: 0 4px 24px -6px rgba(var(--acc-rgb)/0.12);
-    }
-    .ag-chip {
-      background: var(--surface-hi);
-      border: 1px solid var(--border-color);
-      color: var(--text-muted);
-      transition: all 0.15s ease;
-    }
-    .ag-chip:hover { border-color: rgba(var(--acc-rgb)/0.35); color: var(--text); }
-    .ag-chip-active {
-      background: rgba(var(--acc-rgb)/0.15);
-      border-color: rgba(var(--acc-rgb)/0.45);
-      color: var(--acc);
-      box-shadow: 0 0 0 1px rgba(var(--acc-rgb)/0.1);
-    }
-    .ag-section {
-      background:
-        linear-gradient(160deg, rgba(var(--acc-rgb)/0.05) 0%, transparent 70%),
-        var(--surface);
-      border: 1px solid var(--border-color);
-      border-radius: 1.25rem;
-      padding: 1rem;
-    }
-    .ag-menu-card {
-      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-    }
-    .ag-menu-card:hover { box-shadow: 0 12px 28px -10px rgba(0,0,0,0.4); }
-    .ag-widgets-scroll { scrollbar-width: none; -ms-overflow-style: none; }
-    .ag-widgets-scroll::-webkit-scrollbar { display: none; }
-    .ag-skeleton { background: linear-gradient(90deg, var(--surface-hi) 25%, var(--surface) 50%, var(--surface-hi) 75%); background-size: 200% 100%; animation: ag-shimmer 1.4s ease infinite; }
-    @keyframes ag-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .cs::-webkit-scrollbar { width: 4px; }
     .cs::-webkit-scrollbar-thumb { background: var(--surface-hi); border-radius: 4px; }
     .cs::-webkit-scrollbar-track { background: transparent; }
@@ -286,31 +237,6 @@ const ThemeStyle = () => (
 );
 
 const CATEGORY_ORDER = ['Operativo', 'Gestión', 'Técnico', 'Calidad', 'Análisis', 'Archivos', 'Logística'];
-
-const CATEGORY_COLORS: Record<string, { rgb: string }> = {
-  Operativo: { rgb: '59 130 246' },
-  Gestión: { rgb: '139 92 246' },
-  Técnico: { rgb: '6 182 212' },
-  Calidad: { rgb: '16 185 129' },
-  Análisis: { rgb: '245 158 11' },
-  Archivos: { rgb: '236 72 153' },
-  Logística: { rgb: '249 115 22' },
-};
-
-const getCategoryRgb = (category: string) => CATEGORY_COLORS[category]?.rgb ?? '100 116 139';
-
-const formatRoleLabel = (role: string): string => {
-  if (!role) return 'Usuario';
-  const r = role.toLowerCase();
-  if (r.includes('admin') && !r.includes('administrativo')) return 'Administrador';
-  if (r.includes('gerente') || r.includes('jefe')) return 'Jefe / Gerente';
-  if (r.includes('calidad')) return 'Calidad';
-  if (r.includes('metrol')) return 'Metrólogo';
-  if (r.includes('tecnic') || r.includes('técnico')) return 'Técnico';
-  if (r.includes('administrativo')) return 'Administrativo';
-  if (r.includes('ingeniero')) return 'Ingeniero';
-  return role.charAt(0).toUpperCase() + role.slice(1);
-};
 
 const groupMenuByCategory = (items: typeof MENU_ITEMS) => {
   const map = new Map<string, typeof MENU_ITEMS>();
@@ -987,134 +913,6 @@ const ProfileModal = ({ currentUser, onClose, onUpdate }: {
 
 type MenuItem = (typeof MENU_ITEMS)[number];
 
-const MenuLoadingSkeleton = () => (
-  <div className="min-h-full flex-shrink-0 ag-bg ag-mesh flex flex-col">
-    <div className="h-16 border-b ag-border ag-header" />
-    <div className="max-w-7xl mx-auto px-4 py-6 w-full space-y-5">
-      <div className="h-36 rounded-2xl ag-skeleton" />
-      <div className="flex gap-2 overflow-hidden">
-        {[1, 2, 3, 4].map(i => <div key={i} className="h-9 w-24 rounded-full ag-skeleton shrink-0" />)}
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-28 rounded-2xl ag-skeleton" />)}
-      </div>
-    </div>
-  </div>
-);
-
-const CategoryChips = ({
-  categories, selected, onSelect,
-}: { categories: string[]; selected: string; onSelect: (cat: string) => void }) => (
-  <div className="flex gap-2 overflow-x-auto ag-widgets-scroll pb-1 -mx-1 px-1">
-    <button
-      type="button"
-      onClick={() => onSelect('')}
-      className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold ag-chip ${!selected ? 'ag-chip-active' : ''}`}
-    >
-      Todos
-    </button>
-    {categories.map(cat => {
-      const rgb = getCategoryRgb(cat);
-      const active = selected === cat;
-      return (
-        <button
-          key={cat}
-          type="button"
-          onClick={() => onSelect(active ? '' : cat)}
-          className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold ag-chip flex items-center gap-1.5 ${active ? 'ag-chip-active' : ''}`}
-          style={active ? undefined : { borderColor: `rgba(${rgb}/0.25)` }}
-        >
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: `rgb(${rgb})` }} />
-          {cat}
-        </button>
-      );
-    })}
-  </div>
-);
-
-const WelcomeHero = ({
-  firstName, roleLabel, moduleCount, unreadCount, formattedDate, searchTerm, onSearchChange,
-}: {
-  firstName: string; roleLabel: string; moduleCount: number; unreadCount: number;
-  formattedDate: string; searchTerm: string; onSearchChange: (v: string) => void;
-}) => (
-  <div className="rounded-2xl border ag-hero p-4 sm:p-5 mb-5">
-    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-      <div className="min-w-0">
-        <p className="text-[11px] font-bold uppercase tracking-wider acc-text mb-1">Panel principal</p>
-        <h2 className="text-xl sm:text-2xl font-bold ag-text tracking-tight">Hola, {firstName} 👋</h2>
-        <p className="text-xs ag-muted mt-1 md:hidden">{formattedDate}</p>
-        <div className="flex flex-wrap items-center gap-2 mt-3">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full acc-soft acc-text border" style={{ borderColor: 'rgba(var(--acc-rgb)/0.25)' }}>
-            <User className="w-3 h-3" />{roleLabel}
-          </span>
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full ag-surface-hi ag-muted border ag-border">
-            <Layers className="w-3 h-3" />{moduleCount} módulo{moduleCount !== 1 ? 's' : ''}
-          </span>
-          {unreadCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/25">
-              <Bell className="w-3 h-3" />{unreadCount} sin leer
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="relative w-full sm:w-72 lg:w-80 shrink-0">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint pointer-events-none" aria-hidden />
-        <input
-          value={searchTerm}
-          onChange={e => onSearchChange(e.target.value)}
-          placeholder="Buscar módulo..."
-          aria-label="Buscar módulo"
-          className="w-full pl-10 pr-10 py-3 text-sm rounded-xl border ag-input shadow-sm"
-        />
-        {searchTerm && (
-          <button
-            type="button"
-            onClick={() => onSearchChange('')}
-            aria-label="Limpiar búsqueda"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg ag-muted hover:ag-text transition-colors"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-    </div>
-  </div>
-);
-
-const MobileActionsMenu = ({
-  open, onClose, viewMode, onToggleView, onOpenTheme, onLogout, formattedDate,
-}: {
-  open: boolean; onClose: () => void; viewMode: 'grid' | 'list';
-  onToggleView: () => void; onOpenTheme: () => void; onLogout: () => void; formattedDate: string;
-}) => (
-  <AnimatePresence>
-    {open && (
-      <motion.div
-        initial={{ opacity: 0, y: -6, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -6, scale: 0.97 }}
-        className="absolute right-0 top-12 w-52 rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card py-1"
-      >
-        <p className="px-4 py-2 text-[10px] ag-faint border-b ag-border truncate">{formattedDate}</p>
-        <button type="button" onClick={() => { onToggleView(); onClose(); }}
-          className="w-full flex items-center gap-3 px-4 py-3 text-sm ag-muted hover:ag-surface-hi transition-colors">
-          {viewMode === 'grid' ? <AlignLeft size={16} /> : <LayoutGrid size={16} />}
-          {viewMode === 'grid' ? 'Vista lista' : 'Vista cuadrícula'}
-        </button>
-        <button type="button" onClick={() => { onOpenTheme(); onClose(); }}
-          className="w-full flex items-center gap-3 px-4 py-3 text-sm ag-muted hover:ag-surface-hi transition-colors">
-          <Palette size={16} />Personalización
-        </button>
-        <button type="button" onClick={() => { onLogout(); onClose(); }}
-          className="w-full flex items-center gap-3 px-4 py-3 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors">
-          <LogOut size={16} />Cerrar sesión
-        </button>
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
-
 const activateMenuItem = (
   e: React.KeyboardEvent,
   isDisabled: boolean,
@@ -1129,110 +927,89 @@ const activateMenuItem = (
 
 const MenuGridCard = ({
   item, index, isDisabled, onNavigate, hideCategory, badgeCount,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number }) => {
-  const rgb = getCategoryRgb(item.category);
-  return (
-    <motion.div
-      key={item.id}
-      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.02 }}
-      whileTap={isDisabled ? {} : { scale: 0.97 }}
-      role="button"
-      tabIndex={isDisabled ? -1 : 0}
-      aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
-      onClick={() => !isDisabled && onNavigate(item.id)}
-      onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
-      className={`group relative rounded-2xl border p-4 sm:p-5 min-h-[7.5rem] cursor-pointer card-interact ag-card ag-menu-card overflow-hidden
-        ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
-      `}
-    >
-      {isDisabled && (
-        <span className="absolute top-2.5 right-2.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
-      )}
-      {!isDisabled && badgeCount != null && badgeCount > 0 && (
-        <span className="absolute top-2.5 right-2.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
-          {badgeCount > 99 ? '99+' : badgeCount}
-        </span>
-      )}
-      <div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl"
-        style={{ background: `radial-gradient(circle at 15% 85%, rgba(${rgb}/0.14) 0%, transparent 65%)` }}
-      />
-      <div className="relative z-10 flex flex-col h-full gap-3 sm:gap-4">
-        <div
-          className="p-3 rounded-xl w-fit transition-colors"
-          style={{ background: `rgba(${rgb}/0.14)` }}
-        >
-          <item.icon className="w-5 h-5 sm:w-6 sm:h-6 transition-colors" style={{ color: `rgb(${rgb})` }} />
-        </div>
-        <div>
-          <h3 className="text-sm sm:text-[15px] font-semibold ag-text leading-snug">{item.title}</h3>
-          {!hideCategory && (
-            <span
-              className="text-[10px] uppercase font-bold tracking-wide mt-1 inline-block px-1.5 py-0.5 rounded-md"
-              style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}
-            >
-              {item.category}
-            </span>
-          )}
-        </div>
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number }) => (
+  <motion.div
+    key={item.id}
+    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.025 }}
+    whileHover={isDisabled ? {} : { y: -3 }} whileTap={isDisabled ? {} : { scale: 0.97 }}
+    role="button"
+    tabIndex={isDisabled ? -1 : 0}
+    aria-disabled={isDisabled}
+    aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
+    onClick={() => !isDisabled && onNavigate(item.id)}
+    onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
+    onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
+    onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
+    className={`group relative rounded-2xl border p-4 cursor-pointer card-interact ag-card overflow-hidden
+      ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+    `}
+  >
+    {isDisabled && (
+      <span className="absolute top-2 right-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
+    )}
+    {!isDisabled && badgeCount != null && badgeCount > 0 && (
+      <span className="absolute top-2 right-2 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
+        {badgeCount > 99 ? '99+' : badgeCount}
+      </span>
+    )}
+    {!isDisabled && (
+      <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl"
+        style={{ background: `radial-gradient(circle at 20% 80%, rgba(var(--acc-rgb)/0.08) 0%, transparent 60%)` }} />
+    )}
+    <motion.div className="relative z-10 flex flex-col h-full gap-3">
+      <div className="p-2.5 rounded-xl w-fit ag-surface-hi transition-colors group-hover:acc-soft">
+        <item.icon className="w-5 h-5 ag-muted ci-icon transition-colors" />
+      </div>
+      <div>
+        <h3 className="text-sm font-semibold ag-text leading-tight">{item.title}</h3>
+        {!hideCategory && (
+          <span className="text-[10px] uppercase font-bold tracking-wide ag-faint mt-0.5 block">{item.category}</span>
+        )}
       </div>
     </motion.div>
-  );
-};
+  </motion.div>
+);
 
 const MenuListRow = ({
   item, index, isDisabled, onNavigate, badgeCount,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number }) => {
-  const rgb = getCategoryRgb(item.category);
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.012 }}
-      whileTap={isDisabled ? {} : { scale: 0.99 }}
-      role="button"
-      tabIndex={isDisabled ? -1 : 0}
-      aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
-      onClick={() => !isDisabled && onNavigate(item.id)}
-      onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
-      className={`group flex items-center gap-3 px-4 py-3.5 sm:py-4 rounded-xl border cursor-pointer card-interact ag-card ag-menu-card min-h-[3.25rem]
-        ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
-      `}
-    >
-      <div className="p-2.5 rounded-xl transition-colors" style={{ background: `rgba(${rgb}/0.14)` }}>
-        <item.icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: `rgb(${rgb})` }} />
-      </div>
-      <span className="flex-1 text-sm font-medium ag-text">{item.title}</span>
-      {!isDisabled && badgeCount != null && badgeCount > 0 && (
-        <span className="min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white">
-          {badgeCount > 99 ? '99+' : badgeCount}
-        </span>
-      )}
-      <span
-        className="text-[10px] uppercase font-bold hidden sm:inline px-2 py-0.5 rounded-md"
-        style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}
-      >
-        {item.category}
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number }) => (
+  <motion.div
+    initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.015 }}
+    whileTap={isDisabled ? {} : { scale: 0.99 }}
+    role="button"
+    tabIndex={isDisabled ? -1 : 0}
+    aria-disabled={isDisabled}
+    aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
+    onClick={() => !isDisabled && onNavigate(item.id)}
+    onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
+    onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
+    onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
+    className={`group flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer card-interact ag-card
+      ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+    `}
+  >
+    <div className="p-2 rounded-lg ag-surface-hi group-hover:acc-soft transition-colors">
+      <item.icon className="w-4 h-4 ag-muted ci-icon transition-colors" />
+    </div>
+    <span className="flex-1 text-sm font-medium ag-text">{item.title}</span>
+    {!isDisabled && badgeCount != null && badgeCount > 0 && (
+      <span className="min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white">
+        {badgeCount > 99 ? '99+' : badgeCount}
       </span>
-      {!isDisabled && <ChevronRight className="w-4 h-4 ag-faint group-hover:acc-text transition-colors opacity-60 group-hover:opacity-100 flex-shrink-0" />}
-    </motion.div>
-  );
-};
+    )}
+    <span className="text-[10px] uppercase font-bold ag-faint hidden sm:inline">{item.category}</span>
+    {!isDisabled && <ChevronRight className="w-4 h-4 ag-faint group-hover:acc-text transition-colors opacity-60 group-hover:opacity-100 flex-shrink-0" />}
+  </motion.div>
+);
 
 export const MainMenu: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { logout, user } = useAuth();
   const [localUser, setLocalUser] = useState<UserData | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [assignedServices, setAssignedServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -1431,7 +1208,7 @@ export const MainMenu: React.FC = () => {
     [localUser],
   );
 
-  const permittedMenu = useMemo(() => {
+  const filteredMenu = useMemo(() => {
     if (!localUser) return [];
     return MENU_ITEMS.filter(item => {
       if (item.id === 'calibration-stats') return isJefe || isSuperAdmin;
@@ -1439,24 +1216,11 @@ export const MainMenu: React.FC = () => {
       if (['programa-calibracion', 'control-prestamos'].includes(item.id)) return isJefe || isCalidad || isSuperAdmin;
       if (item.id === 'control-vacaciones-rh') return isAdministrativo || isSuperAdmin;
       return true;
-    });
-  }, [localUser, isJefe, isCalidad, isSuperAdmin, isAdministrativo]);
-
-  const availableCategories = useMemo(
-    () => CATEGORY_ORDER.filter(cat => permittedMenu.some(i => i.category === cat)),
-    [permittedMenu],
-  );
-
-  const filteredMenu = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    return permittedMenu
-      .filter(i => !term || i.title.toLowerCase().includes(term))
-      .filter(i => !selectedCategory || i.category === selectedCategory);
-  }, [permittedMenu, searchTerm, selectedCategory]);
+    }).filter(i => !searchTerm || i.title.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [localUser, searchTerm, isJefe, isCalidad, isSuperAdmin, isAdministrativo]);
 
   const menuGroups = useMemo(() => groupMenuByCategory(filteredMenu), [filteredMenu]);
-  const isSearching = searchTerm.trim().length > 0 || !!selectedCategory;
-  const roleLabel = formatRoleLabel(localUser?.role || '');
+  const isSearching = searchTerm.trim().length > 0;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1464,7 +1228,6 @@ export const MainMenu: React.FC = () => {
       setShowNotif(false);
       setShowTheme(false);
       setShowProfile(false);
-      setShowMobileMenu(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1474,77 +1237,51 @@ export const MainMenu: React.FC = () => {
   const today = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
   const formattedDate = today.charAt(0).toUpperCase() + today.slice(1);
 
-  if (!localUser || loadingPrefs) return <MenuLoadingSkeleton />;
-
-  const firstName = localUser.name.split(' ')[0];
-  const clearFilters = () => { setSearchTerm(''); setSelectedCategory(''); };
-
-  const showNovedades = !novedadesWidgetHidden && (novedadesForUser.length > 0 || canCreateNovedades);
-  const showAdminWidgets = isCalidad || isAdmin || isSuperAdmin;
-
-  const novedadesWidget = showNovedades ? (
-    <NovedadesWidget
-      uid={uid}
-      user={user}
-      updates={novedadesForUser}
-      seenRevision={novedadesSeenRevision}
-      canCreate={canCreateNovedades}
-      onSelect={setSelectedNovedad}
-      onCompose={() => setShowComposeNovedad(true)}
-      onHide={() => handleNovedadesWidgetHiddenChange(true)}
-    />
-  ) : null;
-
-  const widgetsDesktop = (
-    <div className="flex flex-col gap-4 min-h-64">
-      {novedadesWidget}
-      {showAdminWidgets && (
-        <>
-          <PatronesWidget navigateTo={navigateTo} />
-          <TechnicianStatusWidget />
-        </>
-      )}
-      <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
+  if (!localUser || loadingPrefs) return (
+    <div className="min-h-full flex-shrink-0 ag-bg flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="animate-spin w-8 h-8 acc-text" />
+        <p className="text-sm ag-muted">Cargando...</p>
+      </div>
     </div>
   );
 
   return (
     <>
       <ThemeStyle />
-      <div className="min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-mesh ag-text transition-colors relative" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div className="min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-text transition-colors" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
         {/* HEADER */}
-        <header className="sticky top-0 z-40 border-b ag-header shadow-sm" style={{ backdropFilter: 'blur(20px)' }}>
-          <div className="max-w-7xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <header className="sticky top-0 z-40 border-b ag-header" style={{ backdropFilter: 'blur(16px)' }}>
+          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
               <img
                 src={labLogo}
                 alt="Equipos y Servicios AG"
-                className="h-9 sm:h-10 w-auto object-contain shrink-0"
+                className="h-10 w-auto object-contain shrink-0"
                 onError={e => { e.currentTarget.style.display = 'none'; }}
               />
-              <div className="hidden sm:block min-w-0">
-                <p className="text-sm font-bold ag-text truncate">Equipos y Servicios AG</p>
-                <p className="text-[10px] ag-faint truncate">Sistema de gestión metrológica</p>
+              <div className="hidden md:block">
+                <p className="text-sm font-bold ag-text">Equipos y Servicios AG</p>
+                <p className="text-[10px] ag-faint">Sistema de gestión metrológica</p>
               </div>
             </div>
 
-            <div className="hidden lg:block text-xs font-medium ag-muted truncate max-w-[14rem] xl:max-w-none">{formattedDate}</div>
+            <div className="hidden md:block text-xs font-medium ag-muted truncate max-w-[12rem] lg:max-w-none">{formattedDate}</div>
 
-            <div className="flex items-center gap-0.5 sm:gap-1">
+            <div className="flex items-center gap-1">
+              {/* Notificaciones */}
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => { setShowNotif(v => !v); setShowTheme(false); setShowMobileMenu(false); }}
+                  onClick={() => { setShowNotif(v => !v); setShowTheme(false); }}
                   aria-label={unreadCount > 0 ? `Notificaciones, ${unreadCount} sin leer` : 'Notificaciones'}
                   aria-expanded={showNotif}
-                  className="relative p-2.5 rounded-xl ag-muted acc-hover transition-all"
+                  className="relative p-2 rounded-xl ag-muted acc-hover transition-all"
                 >
-                  <Bell size={18} />
+                  <Bell size={17} />
                   {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 min-w-[1rem] h-4 px-0.5 flex items-center justify-center text-[9px] font-bold rounded-full acc text-white" aria-hidden>
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full acc border-2" style={{ borderColor: 'var(--bg)' }} aria-hidden />
                   )}
                 </button>
                 <AnimatePresence>
@@ -1556,16 +1293,17 @@ export const MainMenu: React.FC = () => {
                 </AnimatePresence>
               </div>
 
-              <div className="relative hidden md:block">
+              {/* Tema */}
+              <div className="relative">
                 <button
                   type="button"
                   onClick={() => { setShowTheme(v => !v); setShowNotif(false); }}
                   aria-label="Personalización"
                   aria-expanded={showTheme}
-                  className="p-2.5 rounded-xl ag-muted acc-hover transition-all"
+                  className="p-2 rounded-xl ag-muted acc-hover transition-all"
                   title="Mi personalización"
                 >
-                  <Palette size={18} />
+                  <Palette size={17} />
                 </button>
                 <AnimatePresence>
                   {showTheme && (
@@ -1580,145 +1318,95 @@ export const MainMenu: React.FC = () => {
                 </AnimatePresence>
               </div>
 
+              {/* Vista */}
               <button
                 type="button"
                 onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
                 aria-label={viewMode === 'grid' ? 'Cambiar a vista lista' : 'Cambiar a vista cuadrícula'}
-                className="hidden md:flex p-2.5 rounded-xl ag-muted acc-hover transition-all"
+                className="p-2 rounded-xl ag-muted acc-hover transition-all"
               >
-                {viewMode === 'grid' ? <AlignLeft size={18} /> : <LayoutGrid size={18} />}
+                {viewMode === 'grid' ? <AlignLeft size={17} /> : <LayoutGrid size={17} />}
               </button>
 
-              <div className="hidden md:block w-px h-6 mx-1 ag-border" />
+              <div className="w-px h-5 mx-1 ag-border" />
 
+              {/* Perfil */}
               <button
                 type="button"
                 onClick={() => setShowProfile(true)}
                 aria-label="Editar perfil"
                 className="flex items-center gap-2 px-2 py-1.5 rounded-xl border ag-border acc-hover transition-all"
               >
-                <div className="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center ag-surface-hi ring-1 ring-white/5">
-                  {localUser.photoUrl ? <img src={localUser.photoUrl} className="w-full h-full object-cover" alt="" /> : <User className="w-3.5 h-3.5 ag-muted" />}
+                <div className="w-6 h-6 rounded-lg overflow-hidden flex items-center justify-center ag-surface-hi">
+                  {localUser.photoUrl ? <img src={localUser.photoUrl} className="w-full h-full object-cover" /> : <User className="w-3.5 h-3.5 ag-muted" />}
                 </div>
-                <span className="text-xs font-medium ag-text hidden lg:block">{firstName}</span>
+                <span className="text-xs font-medium ag-text hidden sm:block">{localUser.name.split(' ')[0]}</span>
               </button>
 
-              <button type="button" onClick={logout} aria-label="Cerrar sesión" className="hidden md:flex p-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all">
-                <LogOut size={18} />
+              <button type="button" onClick={logout} aria-label="Cerrar sesión" className="p-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all ml-0.5">
+                <LogOut size={17} />
               </button>
-
-              <div className="relative md:hidden">
-                <button
-                  type="button"
-                  onClick={() => { setShowMobileMenu(v => !v); setShowNotif(false); setShowTheme(false); }}
-                  aria-label="Más opciones"
-                  aria-expanded={showMobileMenu}
-                  className="p-2.5 rounded-xl ag-muted acc-hover transition-all"
-                >
-                  <MoreHorizontal size={18} />
-                </button>
-                <MobileActionsMenu
-                  open={showMobileMenu}
-                  onClose={() => setShowMobileMenu(false)}
-                  viewMode={viewMode}
-                  onToggleView={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-                  onOpenTheme={() => setShowTheme(true)}
-                  onLogout={logout}
-                  formattedDate={formattedDate}
-                />
-              </div>
             </div>
           </div>
-          <AnimatePresence>
-            {showTheme && (
-              <div className="md:hidden relative max-w-7xl mx-auto px-4 pb-3">
-                <ThemeSelector
-                  prefs={prefs}
-                  setPrefs={setPrefs}
-                  onClose={() => setShowTheme(false)}
-                  novedadesWidgetHidden={novedadesWidgetHidden}
-                  onNovedadesWidgetHiddenChange={handleNovedadesWidgetHiddenChange}
-                />
-              </div>
-            )}
-          </AnimatePresence>
         </header>
 
         {canSeePatronAlerts && patronAlertCount > 0 && !patronBannerDismissed && (
           <div className="max-w-7xl mx-auto px-4 pt-3 w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-amber-500/5 px-4 py-3.5 text-sm shadow-sm">
-              <div className="flex items-start gap-3 flex-1 min-w-0">
-                <div className="p-2 rounded-xl bg-amber-500/20 shrink-0">
-                  <AlertTriangle className="w-5 h-5 text-amber-400" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold ag-text">
-                    {patronAlertCount} patrón{patronAlertCount !== 1 ? 'es' : ''} requieren atención de calibración
-                  </p>
-                  <p className="text-xs ag-muted mt-0.5">
-                    Revisa el calendario para vencimientos (avisos a 30, 15, 7, 3 y 1 día).
-                  </p>
-                </div>
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-500/10 px-4 py-3 text-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold ag-text">
+                  {patronAlertCount} patrón{patronAlertCount !== 1 ? 'es' : ''} requieren atención de calibración
+                </p>
+                <p className="text-xs ag-muted mt-0.5">
+                  Revisa el calendario para vencimientos (avisos a 30, 15, 7, 3 y 1 día).
+                </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0 sm:ml-auto">
-                <button
-                  type="button"
-                  onClick={() => navigateTo('calendario')}
-                  className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold text-white acc hover:opacity-90 transition-opacity"
-                >
-                  Ver calendario
-                </button>
-                <button type="button" onClick={dismissPatronBanner} className="p-2 rounded-lg ag-muted hover:ag-text" aria-label="Cerrar aviso">
-                  <X size={16} />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => navigateTo('calendario')}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold acc text-white"
+                style={{ background: 'var(--accent)' }}
+              >
+                Ver calendario
+              </button>
+              <button type="button" onClick={dismissPatronBanner} className="p-1 ag-muted hover:ag-text shrink-0" aria-label="Cerrar aviso">
+                <X size={16} />
+              </button>
             </div>
           </div>
         )}
 
         {/* MAIN */}
-        <main className="flex-1 max-w-7xl mx-auto px-4 py-5 sm:py-6 w-full">
-          <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
-
-            {/* Widgets — carrusel móvil / tablet */}
-            <div className="lg:hidden order-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2.5 px-0.5">Resumen rápido</p>
-              <div className="flex gap-3 overflow-x-auto ag-widgets-scroll snap-x snap-mandatory pb-1 -mx-4 px-4">
-                {novedadesWidget && (
-                  <div className="snap-start shrink-0 w-[min(88vw,20rem)]">{novedadesWidget}</div>
-                )}
-                {showAdminWidgets && (
-                  <>
-                    <div className="snap-start shrink-0 w-[min(88vw,20rem)]"><PatronesWidget navigateTo={navigateTo} /></div>
-                    <div className="snap-start shrink-0 w-[min(88vw,20rem)]"><TechnicianStatusWidget /></div>
-                  </>
-                )}
-                <div className="snap-start shrink-0 w-[min(88vw,20rem)] min-h-[16rem]">
-                  <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-6 w-full">
+          <div className="flex flex-col lg:flex-row gap-6 lg:items-stretch lg:min-h-full">
+            <div className="flex-1">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+                <div className="flex-1">
+                  <h2 className="text-lg font-bold ag-text">Hola, {localUser.name.split(' ')[0]} 👋</h2>
+                  <p className="text-xs ag-muted md:hidden">{formattedDate}</p>
+                </div>
+                <div className="relative w-full sm:flex-1 sm:max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint pointer-events-none" aria-hidden />
+                  <input
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder="Buscar módulo..."
+                    aria-label="Buscar módulo"
+                    className="w-full pl-9 pr-9 py-2.5 text-sm rounded-xl border ag-input"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      aria-label="Limpiar búsqueda"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg ag-muted hover:ag-text transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
-            </div>
-
-            <div className="flex-1 order-2 lg:order-1 min-w-0">
-              <WelcomeHero
-                firstName={firstName}
-                roleLabel={roleLabel}
-                moduleCount={permittedMenu.length}
-                unreadCount={unreadCount}
-                formattedDate={formattedDate}
-                searchTerm={searchTerm}
-                onSearchChange={setSearchTerm}
-              />
-
-              {availableCategories.length > 1 && (
-                <div className="mb-5">
-                  <CategoryChips
-                    categories={availableCategories}
-                    selected={selectedCategory}
-                    onSelect={setSelectedCategory}
-                  />
-                </div>
-              )}
 
               <AnimatePresence mode="wait">
                 {filteredMenu.length === 0 ? (
@@ -1727,79 +1415,86 @@ export const MainMenu: React.FC = () => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="flex flex-col items-center justify-center py-16 gap-4 rounded-2xl border ag-border ag-card ag-menu-card"
+                    className="flex flex-col items-center justify-center py-16 gap-3 rounded-2xl border ag-border ag-card"
                   >
-                    <div className="p-4 rounded-2xl ag-surface-hi">
-                      <Search className="w-10 h-10 ag-faint opacity-40" aria-hidden />
-                    </div>
-                    <p className="text-sm ag-muted text-center px-4 max-w-xs">
-                      {isSearching
-                        ? `Ningún módulo coincide con tu búsqueda${searchTerm ? ` «${searchTerm}»` : ''}${selectedCategory ? ` en ${selectedCategory}` : ''}`
-                        : 'No hay módulos disponibles'}
+                    <Search className="w-10 h-10 ag-faint opacity-30" aria-hidden />
+                    <p className="text-sm ag-muted text-center px-4">
+                      {isSearching ? `Ningún módulo coincide con «${searchTerm}»` : 'No hay módulos disponibles'}
                     </p>
                     {isSearching && (
-                      <button type="button" onClick={clearFilters} className="text-xs acc-text font-semibold hover:underline px-4 py-2 rounded-lg acc-soft">
-                        Limpiar filtros
+                      <button type="button" onClick={() => setSearchTerm('')} className="text-xs acc-text font-semibold hover:underline">
+                        Limpiar búsqueda
                       </button>
                     )}
                   </motion.div>
                 ) : viewMode === 'grid' ? (
                   <motion.div key="grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className={isSearching ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3' : 'space-y-4'}
+                    className={isSearching ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3' : 'space-y-5'}
                   >
-                    {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => {
-                      const rgb = getCategoryRgb(category);
-                      return (
-                        <div key={category || 'search'} className={isSearching ? 'contents' : 'ag-section'}>
-                          {!isSearching && (
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="w-1 h-5 rounded-full" style={{ background: `rgb(${rgb})` }} />
-                              <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: `rgb(${rgb})` }}>{category}</h3>
-                              <span className="text-[10px] ag-faint font-medium">{items.length}</span>
-                            </div>
-                          )}
-                          <div className={isSearching ? 'contents' : 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3'}>
-                            {items.map((item, i) => (
-                              <MenuGridCard
-                                key={item.id}
-                                item={item}
-                                index={i}
-                                hideCategory={!isSearching}
-                                isDisabled={item.id === 'formatos' && !isAdmin}
-                                onNavigate={navigateTo}
-                                badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
-                              />
-                            ))}
-                          </div>
+                    {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => (
+                      <div key={category || 'search'} className={isSearching ? 'contents' : undefined}>
+                        {!isSearching && (
+                          <h3 className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2 px-0.5 col-span-full">{category}</h3>
+                        )}
+                        <div className={isSearching ? 'contents' : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3'}>
+                          {items.map((item, i) => (
+                            <MenuGridCard
+                              key={item.id}
+                              item={item}
+                              index={i}
+                              hideCategory={!isSearching}
+                              isDisabled={item.id === 'formatos' && !isAdmin}
+                              onNavigate={navigateTo}
+                              badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
+                            />
+                          ))}
                         </div>
+                      </div>
+                    ))}
+                    {false && filteredMenu.map((item, i) => {
+                      const isDisabled = item.id === 'formatos' && !isAdmin;
+                      return (
+                        <motion.div key={item.id}
+                          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.025 }}
+                          whileHover={isDisabled ? {} : { y: -3 }} whileTap={isDisabled ? {} : { scale: 0.97 }}
+                          onClick={() => !isDisabled && navigateTo(item.id)}
+                          className={`group relative rounded-2xl border p-4 cursor-pointer card-interact ag-card overflow-hidden
+                            ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+                          `}
+                        >
+                          {isDisabled && (
+                            <span className="absolute top-2 right-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
+                          )}
+                          {!isDisabled && (
+                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl"
+                              style={{ background: `radial-gradient(circle at 20% 80%, rgba(var(--acc-rgb)/0.08) 0%, transparent 60%)` }} />
+                          )}
+                          <div className="relative z-10 flex flex-col h-full gap-4">
+                            <div className="p-2.5 rounded-xl w-fit ag-surface-hi transition-colors">
+                              <item.icon className="w-5 h-5 ag-muted ci-icon transition-colors" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-semibold ag-text leading-tight">{item.title}</h3>
+                              <span className="text-[10px] uppercase font-bold tracking-wide ag-faint mt-0.5 block">{item.category}</span>
+                            </div>
+                          </div>
+                        </motion.div>
                       );
                     })}
                   </motion.div>
                 ) : (
-                  <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                    {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => {
-                      const rgb = getCategoryRgb(category);
+                  <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-1.5">
+                    {filteredMenu.map((item, i) => {
+                      const isDisabled = item.id === 'formatos' && !isAdmin;
                       return (
-                        <div key={category || 'all'}>
-                          {!isSearching && (
-                            <div className="flex items-center gap-2 mb-2 px-1">
-                              <span className="w-1 h-4 rounded-full" style={{ background: `rgb(${rgb})` }} />
-                              <h3 className="text-[10px] font-bold uppercase tracking-wider" style={{ color: `rgb(${rgb})` }}>{category}</h3>
-                            </div>
-                          )}
-                          <div className="space-y-1.5">
-                            {items.map((item, i) => (
-                              <MenuListRow
-                                key={item.id}
-                                item={item}
-                                index={i}
-                                isDisabled={item.id === 'formatos' && !isAdmin}
-                                onNavigate={navigateTo}
-                                badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
-                              />
-                            ))}
-                          </div>
-                        </div>
+                        <MenuListRow
+                          key={item.id}
+                          item={item}
+                          index={i}
+                          isDisabled={isDisabled}
+                          onNavigate={navigateTo}
+                          badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
+                        />
                       );
                     })}
                   </motion.div>
@@ -1807,10 +1502,27 @@ export const MainMenu: React.FC = () => {
               </AnimatePresence>
             </div>
 
-            {/* Widgets — sidebar desktop */}
-            <div className="hidden lg:flex lg:w-80 flex-col gap-4 lg:order-2 lg:sticky lg:top-[4.5rem] lg:self-start">
-              <p className="text-[10px] font-bold uppercase tracking-wider ag-muted px-0.5">Resumen</p>
-              {widgetsDesktop}
+            {/* WIDGETS */}
+            <div className="lg:w-72 flex flex-col gap-4 lg:self-stretch">
+              {!novedadesWidgetHidden && (novedadesForUser.length > 0 || canCreateNovedades) && (
+                <NovedadesWidget
+                  uid={uid}
+                  user={user}
+                  updates={novedadesForUser}
+                  seenRevision={novedadesSeenRevision}
+                  canCreate={canCreateNovedades}
+                  onSelect={setSelectedNovedad}
+                  onCompose={() => setShowComposeNovedad(true)}
+                  onHide={() => handleNovedadesWidgetHiddenChange(true)}
+                />
+              )}
+              {(isCalidad || isAdmin || isSuperAdmin) && (
+                <>
+                  <PatronesWidget navigateTo={navigateTo} />
+                  <TechnicianStatusWidget />
+                </>
+              )}
+              <div className="flex-1 min-h-64"><ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} /></div>
             </div>
           </div>
         </main>
@@ -1833,11 +1545,11 @@ export const MainMenu: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {(showTheme || showNotif || showMobileMenu) && (
+        {(showTheme || showNotif) && (
           <div
             className="fixed inset-0 z-30"
             aria-hidden
-            onClick={() => { setShowTheme(false); setShowNotif(false); setShowMobileMenu(false); }}
+            onClick={() => { setShowTheme(false); setShowNotif(false); }}
           />
         )}
       </div>

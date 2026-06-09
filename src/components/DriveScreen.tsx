@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
-import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where, writeBatch, documentId } from "firebase/firestore";
+import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where, writeBatch, documentId, onSnapshot } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
@@ -193,6 +193,23 @@ const matchDriveSearchText = (text: string, query: string): boolean =>
     query
   );
 
+/** Resalta la primera coincidencia del término dentro del texto (sin distinguir mayúsculas). */
+const HighlightText = ({ text, query }: { text: string; query: string }) => {
+  const q = (query || "").trim();
+  if (!q) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-amber-200/80 text-slate-900 rounded-sm px-0.5">
+        {text.slice(idx, idx + q.length)}
+      </mark>
+      {text.slice(idx + q.length)}
+    </>
+  );
+};
+
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
@@ -373,6 +390,24 @@ function metadataToDriveFile(
     ubicacion_real: data.ubicacion_real as string | undefined,
   };
 }
+
+/** Catálogo ampliado para que la búsqueda encuentre archivos más antiguos. */
+const SEARCH_CATALOG_LIMIT = 1500;
+/** Documentos recientes que el listener en vivo vigila fuera de una carpeta. */
+const REALTIME_RECENT_LIMIT = 400;
+
+/** Aplica cambios de fileMetadata (revisado/completado/destacado/notas) a un archivo ya cargado. */
+const applyMetaToFile = (file: DriveFile, data: Record<string, any>): DriveFile => ({
+  ...file,
+  reviewed: data.reviewed ?? file.reviewed,
+  reviewedByName: data.reviewedByName ?? file.reviewedByName,
+  completed: data.completed ?? file.completed,
+  completedByName: data.completedByName ?? file.completedByName,
+  starred: data.starred ?? file.starred,
+  notas: data.notas ?? file.notas,
+  ubicacion: data.ubicacion ?? file.ubicacion,
+  ubicacion_real: data.ubicacion_real ?? file.ubicacion_real,
+});
 
 const addBusinessDays = (startDate: Date, daysToAdd: number) => {
   let currentDate = new Date(startDate);
@@ -623,7 +658,7 @@ const ReviewMetaLine = ({ file }: { file: DriveFile }) => {
 };
 
 // ─── FILE CARD (Grid) ─────────────────────────
-const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onStar, showReviewMeta }: any) => {
+const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onStar, showReviewMeta, removing }: any) => {
   const isReadyForReview = file.completed && !file.reviewed;
   const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
   const isNoExpiration = file.fullPath?.toLowerCase().includes('hojas de servicio') || file.name?.toUpperCase().startsWith('HSDG');
@@ -636,7 +671,8 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
       onContextMenu={(e) => onContextMenu(e, file)}
       onDoubleClick={() => onDoubleClick(file)}
       className={clsx(
-        "group relative bg-white rounded-xl overflow-hidden cursor-pointer transition-all duration-200 flex flex-col select-none border shadow-sm",
+        "group relative bg-white rounded-xl overflow-hidden cursor-pointer transition-all duration-300 flex flex-col select-none border shadow-sm",
+        removing ? "opacity-0 scale-90 blur-[1px] pointer-events-none" : "opacity-100 scale-100",
         selected
           ? "ring-2 ring-blue-500 border-blue-200 shadow-md shadow-blue-100/40 -translate-y-0.5"
           : "border-slate-200/90 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5",
@@ -746,7 +782,7 @@ const FileCard = React.memo(({ file, selected, onSelect, onContextMenu, onDouble
 });
 
 // ─── FILE LIST ROW ────────────────────────────
-const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onDownload, onStar, showReviewMeta }: any) => {
+const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDoubleClick, searchActive, onDownload, onStar, showReviewMeta, removing }: any) => {
   const showFolder = searchActive && file.parentFolder && file.parentFolder !== "Raíz";
   const isNoExpiration = file.fullPath?.toLowerCase().includes('hojas de servicio') || file.name?.toUpperCase().startsWith('HSDG');
   const { status } = getDeadlineInfo(getFileWorkDate(file));
@@ -758,7 +794,8 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
       onContextMenu={(e) => onContextMenu(e, file)}
       onDoubleClick={() => onDoubleClick(file)}
       className={clsx(
-        "grid grid-cols-12 gap-2 px-4 py-3.5 border-b border-slate-100/90 cursor-pointer items-center transition-all duration-150 group select-none last:border-b-0",
+        "grid grid-cols-12 gap-2 px-4 py-3.5 border-b border-slate-100/90 cursor-pointer items-center transition-all duration-300 group select-none last:border-b-0",
+        removing ? "opacity-0 -translate-x-3 pointer-events-none" : "opacity-100 translate-x-0",
         selected ? "bg-[#e8f0fe] border-l-[3px] border-l-blue-500 shadow-sm" : "hover:bg-[#f1f3f4]",
         isOverdue && !selected ? "bg-red-50/40" : ""
       )}
@@ -1088,6 +1125,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 200);
   const searchCatalogActive = debouncedSearch.trim().length > 0;
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Realtime
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [removingPaths, setRemovingPaths] = useState<Set<string>>(new Set());
 
   // Drag & drop
   const [dragActive, setDragActive] = useState(false);
@@ -1227,7 +1271,13 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         const defaultQ = query(
           collection(db, 'fileMetadata'),
           orderBy('created', 'desc'),
-          limit(activeFilter === 'pending_review' ? PENDING_REVIEW_METADATA_LIMIT : 400)
+          limit(
+            activeFilter === 'pending_review'
+              ? PENDING_REVIEW_METADATA_LIMIT
+              : searchCatalogActive
+                ? SEARCH_CATALOG_LIMIT
+                : 400
+          )
         );
 
         let snap;
@@ -1525,6 +1575,117 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
+  // ── Realtime: refleja borrados / cambios / subidas de otros usuarios ──
+  const filesRef = useRef(files);
+  const loadContentRef = useRef(loadContent);
+  const quietReloadTimer = useRef<number | null>(null);
+  useEffect(() => { filesRef.current = files; });
+  useEffect(() => { loadContentRef.current = loadContent; });
+
+  const scheduleQuietReload = useCallback(() => {
+    if (quietReloadTimer.current) window.clearTimeout(quietReloadTimer.current);
+    quietReloadTimer.current = window.setTimeout(() => {
+      loadContentRef.current?.();
+    }, 700);
+  }, []);
+
+  const removeFileWithAnimation = useCallback((fullPath: string) => {
+    if (!filesRef.current.some((f) => f.fullPath === fullPath)) return;
+    setRemovingPaths((prev) => {
+      const next = new Set(prev);
+      next.add(fullPath);
+      return next;
+    });
+    window.setTimeout(() => {
+      setFiles((prev) => prev.filter((f) => f.fullPath !== fullPath));
+      setRemovingPaths((prev) => {
+        if (!prev.has(fullPath)) return prev;
+        const next = new Set(prev);
+        next.delete(fullPath);
+        return next;
+      });
+      setSelectedIds((prev) => {
+        if (!prev.has(fullPath)) return prev;
+        const next = new Set(prev);
+        next.delete(fullPath);
+        return next;
+      });
+      setPreviewFile((prev) => (prev?.fullPath === fullPath ? null : prev));
+    }, 320);
+  }, []);
+
+  useEffect(() => {
+    if (!currentUserData) return;
+    const scopeToFolder =
+      activeFilter === "all" && !searchCatalogActive && path.length > 0;
+
+    let liveQuery;
+    if (scopeToFolder) {
+      const prefix = [currentRoot, ...path].join("/") + "/";
+      liveQuery = query(
+        collection(db, "fileMetadata"),
+        where("filePath", ">=", prefix),
+        where("filePath", "<", prefix + "\uf8ff")
+      );
+    } else {
+      liveQuery = query(
+        collection(db, "fileMetadata"),
+        orderBy("created", "desc"),
+        limit(searchCatalogActive ? SEARCH_CATALOG_LIMIT : REALTIME_RECENT_LIMIT)
+      );
+    }
+
+    let isFirstSnapshot = true;
+    const unsubscribe = onSnapshot(
+      liveQuery,
+      (snap) => {
+        if (isFirstSnapshot) {
+          isFirstSnapshot = false;
+          setLiveConnected(true);
+          return;
+        }
+        let needsReload = false;
+        snap.docChanges().forEach((change) => {
+          const data = change.doc.data() as Record<string, any>;
+          const rawName = data.name || change.doc.id;
+          const fullPath = normalizeDriveFullPath(data.filePath, rawName, currentRoot);
+          if (change.type === "removed") {
+            removeFileWithAnimation(fullPath);
+          } else if (change.type === "modified") {
+            setFiles((prev) =>
+              prev.map((f) => (f.fullPath === fullPath ? applyMetaToFile(f, data) : f))
+            );
+            setPreviewFile((prev) =>
+              prev && prev.fullPath === fullPath ? applyMetaToFile(prev, data) : prev
+            );
+          } else if (change.type === "added") {
+            if (!filesRef.current.some((f) => f.fullPath === fullPath)) {
+              needsReload = true;
+            }
+          }
+        });
+        if (needsReload) scheduleQuietReload();
+      },
+      (err) => {
+        console.warn("[Drive] realtime listener:", err);
+        setLiveConnected(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      setLiveConnected(false);
+    };
+  }, [
+    currentUserData,
+    currentRoot,
+    path,
+    activeFilter,
+    searchCatalogActive,
+    removeFileWithAnimation,
+    scheduleQuietReload,
+  ]);
+
   // ── Búsqueda: hoja sin PDF por ID de equipo, certificado, folio o doc Firestore ──
   useEffect(() => {
     let cancelled = false;
@@ -1574,6 +1735,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (newFileMenuRef.current && !newFileMenuRef.current.contains(e.target as Node)) setNewFileMenuOpen(false);
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) setSearchFocused(false);
     };
 
     const handleScroll = (e: Event) => {
@@ -1651,6 +1813,49 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (!debouncedSearch.trim()) return folders;
     return folders.filter((f) => matchDriveSearchText(f.name, debouncedSearch));
   }, [folders, debouncedSearch]);
+
+  // ── Búsqueda estilo Google Drive: carpetas + archivos sugeridos ──
+  const folderMatches = useMemo(() => {
+    if (!searchCatalogActive) return [] as { name: string; pathSegments: string[] }[];
+    const out: { name: string; pathSegments: string[] }[] = [];
+    const seen = new Set<string>();
+    for (const f of files) {
+      const parts = (f.fullPath || "").split("/").filter(Boolean);
+      for (let i = 1; i < parts.length - 1; i++) {
+        const name = parts[i];
+        if (seen.has(name)) continue;
+        if (matchDriveSearchText(name, debouncedSearch)) {
+          seen.add(name);
+          out.push({ name, pathSegments: parts.slice(1, i + 1) });
+          if (out.length >= 4) return out;
+        }
+      }
+    }
+    return out;
+  }, [searchCatalogActive, files, debouncedSearch]);
+
+  type SearchSuggestion =
+    | { kind: "folder"; key: string; folder: { name: string; pathSegments: string[] } }
+    | { kind: "file"; key: string; file: DriveFile };
+
+  const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
+    if (!searchCatalogActive) return [];
+    const folderItems: SearchSuggestion[] = folderMatches.map((f) => ({
+      kind: "folder",
+      key: `folder-${f.pathSegments.join("/")}`,
+      folder: f,
+    }));
+    const fileItems: SearchSuggestion[] = processedFiles.slice(0, 8).map((f) => ({
+      kind: "file",
+      key: `file-${f.fullPath}`,
+      file: f,
+    }));
+    return [...folderItems, ...fileItems];
+  }, [searchCatalogActive, folderMatches, processedFiles]);
+
+  useEffect(() => {
+    setSearchActiveIndex(-1);
+  }, [debouncedSearch]);
 
   const isMetrologistFolderView = useMemo(
     () =>
@@ -1851,6 +2056,55 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       });
     }
   };
+
+  const openSearchSuggestion = useCallback(
+    (item: SearchSuggestion) => {
+      if (item.kind === "folder") {
+        setActiveFilter("all");
+        setGroupView(null);
+        setPath(item.folder.pathSegments);
+        setSearchQuery("");
+      } else if (item.file.isPendingWorksheet) {
+        handleRegeneratePdf(item.file);
+      } else {
+        handlePreview(item.file);
+      }
+      setSearchFocused(false);
+      setSearchActiveIndex(-1);
+      searchInputRef.current?.blur();
+    },
+    [handleRegeneratePdf]
+  );
+
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!searchFocused || searchSuggestions.length === 0) {
+        if (e.key === "Escape") {
+          setSearchQuery("");
+          searchInputRef.current?.blur();
+        }
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSearchActiveIndex((i) => (i + 1) % searchSuggestions.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSearchActiveIndex((i) =>
+          i <= 0 ? searchSuggestions.length - 1 : i - 1
+        );
+      } else if (e.key === "Enter") {
+        if (searchActiveIndex >= 0 && searchActiveIndex < searchSuggestions.length) {
+          e.preventDefault();
+          openSearchSuggestion(searchSuggestions[searchActiveIndex]);
+        }
+      } else if (e.key === "Escape") {
+        setSearchFocused(false);
+        setSearchActiveIndex(-1);
+      }
+    },
+    [searchFocused, searchSuggestions, searchActiveIndex, openSearchSuggestion]
+  );
 
   useEffect(() => {
     if (loading || files.length === 0) return;
@@ -2101,8 +2355,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     try {
       await deleteObject(ref(storage, file.fullPath));
       await deleteDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')));
-      setFiles(prev => prev.filter(f => f.fullPath !== file.fullPath));
-      setSelectedIds(new Set());
+      removeFileWithAnimation(file.fullPath);
       showToast("Archivo eliminado", 'success');
     } catch (e) { showToast("Error al eliminar", 'error'); }
   };
@@ -2560,6 +2813,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <FileCard
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
+                  removing={removingPaths.has(file.fullPath)}
                   searchActive={!!debouncedSearch || activeFilter !== 'all'}
                   onSelect={onCardSelect}
                   onContextMenu={onCardContextMenu}
@@ -2585,6 +2839,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                 <FileListRow
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
+                  removing={removingPaths.has(file.fullPath)}
                   searchActive={!!debouncedSearch || activeFilter !== 'all'}
                   onSelect={onCardSelect}
                   onContextMenu={onCardContextMenu}
@@ -2828,12 +3083,108 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="h-14 border-b border-slate-200/80 flex items-center gap-3 px-4 md:px-6 bg-white sticky top-0 z-30 flex-shrink-0 shadow-sm">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"><Menu size={18} /></button>
-          <div className="relative flex-1 max-w-lg group">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#2464A3] transition-colors" />
-            <input ref={searchInputRef} type="text" placeholder="Buscar (parcial, sin guiones exactos) — Ctrl+K" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#2464A3]/30 border border-slate-200/60 focus:border-[#2464A3] rounded-full py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm" />
-            {searchQuery && <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors"><X size={13} /></button>}
+          <div ref={searchContainerRef} className="relative flex-1 max-w-lg group">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#2464A3] transition-colors z-10" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Buscar en el Drive — Ctrl+K"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setSearchFocused(true); }}
+              onFocus={() => setSearchFocused(true)}
+              onKeyDown={handleSearchKeyDown}
+              autoComplete="off"
+              className={clsx(
+                "w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-[#2464A3]/30 border border-slate-200/60 focus:border-[#2464A3] py-2.5 pl-9 pr-8 text-sm outline-none transition-all text-slate-800 placeholder-slate-400 shadow-sm",
+                searchFocused && searchCatalogActive && searchSuggestions.length > 0
+                  ? "rounded-t-2xl rounded-b-none border-b-transparent"
+                  : "rounded-full"
+              )}
+            />
+            {searchQuery && <button onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors z-10"><X size={13} /></button>}
+            {searchFocused && searchCatalogActive && (
+              <div className="absolute left-0 right-0 top-full z-50 bg-white border border-[#2464A3]/40 border-t-0 rounded-b-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-[60vh] overflow-y-auto">
+                {searchSuggestions.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-xs text-slate-400">
+                    Sin resultados para "<span className="font-semibold text-slate-500">{debouncedSearch}</span>"
+                  </div>
+                ) : (
+                  <>
+                    {searchSuggestions.map((item, idx) => {
+                      const active = idx === searchActiveIndex;
+                      if (item.kind === "folder") {
+                        const style = getFolderVisualStyle(item.folder.name);
+                        return (
+                          <button
+                            key={item.key}
+                            onMouseEnter={() => setSearchActiveIndex(idx)}
+                            onMouseDown={(e) => { e.preventDefault(); openSearchSuggestion(item); }}
+                            className={clsx("w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors", active ? "bg-[#2464A3]/10" : "hover:bg-slate-50")}
+                          >
+                            <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", style.bg)}>
+                              <Folder size={16} className={clsx(style.icon, style.fill)} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-slate-800 truncate"><HighlightText text={item.folder.name} query={debouncedSearch} /></p>
+                              <p className="text-[10px] text-slate-400">Carpeta</p>
+                            </div>
+                            <ChevronRight size={14} className="text-slate-300 flex-shrink-0" />
+                          </button>
+                        );
+                      }
+                      const f = item.file;
+                      return (
+                        <button
+                          key={item.key}
+                          onMouseEnter={() => setSearchActiveIndex(idx)}
+                          onMouseDown={(e) => { e.preventDefault(); openSearchSuggestion(item); }}
+                          className={clsx("w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors", active ? "bg-[#2464A3]/10" : "hover:bg-slate-50")}
+                        >
+                          <div className={clsx("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", getFileColorBg(f.name))}>
+                            {getFileIcon(f.name, 16)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 truncate"><HighlightText text={f.name} query={debouncedSearch} /></p>
+                            <p className="text-[10px] text-slate-400 truncate flex items-center gap-1.5">
+                              {f.isPendingWorksheet ? (
+                                <span className="text-amber-600 font-semibold">Sin PDF · generar</span>
+                              ) : (
+                                <>
+                                  {f.parentFolder && f.parentFolder !== "Raíz" && (
+                                    <span className="inline-flex items-center gap-0.5"><FolderOpen size={9} />{f.parentFolder}</span>
+                                  )}
+                                  <span>{formatDate(getFileWorkDate(f))}</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                          {f.reviewed ? (
+                            <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+                          ) : f.completed ? (
+                            <Eye size={14} className="text-blue-500 flex-shrink-0" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                    <div className="px-3.5 py-2 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
+                      <span>↑↓ navegar · Enter abrir · Esc cerrar</span>
+                      {processedFiles.length > 8 && <span>+{processedFiles.length - 8} más abajo</span>}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {liveConnected && (
+              <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-medium text-emerald-600" title="Cambios sincronizados en tiempo real">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                En vivo
+              </div>
+            )}
             {isSyncing && <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#2464A3] animate-pulse"><RefreshCw size={11} className="animate-spin" /> Sincronizando...</div>}
             <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95">{isUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}Subir</button>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
