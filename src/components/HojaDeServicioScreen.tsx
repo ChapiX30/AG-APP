@@ -12,12 +12,23 @@ import {
   onSnapshot, deleteDoc, serverTimestamp
 } from "firebase/firestore";
 import { getAuth } from 'firebase/auth';
-import { finalizeServicioFromHoja } from '../utils/servicioAutomation';
+import { finalizeServicioFromHoja, registerServicioInicioFromWorksheet } from '../utils/servicioAutomation';
 import { encolarCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
 import { watchAlertaCorreo } from '../utils/alertaCorreoWatcher';
 import { useAuth } from '../hooks/useAuth';
 import toast, { Toaster } from 'react-hot-toast';
 import logoImage from '../assets/lab_logo.png';
+import { ScreenShell } from './ui/ScreenShell';
+
+/** Colores corporativos AG — únicos permitidos en esta pantalla y su PDF */
+const AG_BLUE = '#2464A3';
+const AG_GRAY = '#8B8D8C';
+
+/**
+ * UI V2 (pantalla). PDF: diseño original.
+ * Para revertir también la pantalla: usa `HojaDeServicioScreen.backup.tsx`.
+ */
+export const HOJA_SERVICIO_DESIGN_VERSION = 'v2-ui' as const;
 
 const camposIniciales = {
   folio: '',
@@ -183,28 +194,28 @@ async function generarPDFFormal({
   campos: any;
   firmaTecnico: string;
   firmaCliente: string;
-  equiposCalibrados: Record<string, EquipoCalibrado[]>; 
+  equiposCalibrados: Record<string, EquipoCalibrado[]>;
   outputType?: 'save' | 'blob';
 }) {
   const jsPDF = (await import('jspdf')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  
+
   const azulPrimario = [36, 100, 163];
   const azulSecundario = [45, 114, 184];
   const grisTexto = [60, 60, 60];
   const grisClaro = [240, 242, 247];
-  const rojoRechazo = [200, 0, 0]; 
+  const rojoRechazo = [200, 0, 0];
 
   function crearNuevaPagina() {
     doc.addPage();
     doc.setFillColor(255, 255, 255);
     doc.rect(0, 0, 210, 20, 'F');
-    
+
     doc.setTextColor(...azulPrimario);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG', 15, 10);
-    
+
     doc.setTextColor(...grisTexto);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -212,8 +223,7 @@ async function generarPDFFormal({
     return 25;
   }
 
-  // --- ENCABEZADO PRINCIPAL ---
-  doc.setFillColor(255, 255, 255); 
+  doc.setFillColor(255, 255, 255);
   doc.rect(0, 0, 210, 35, 'F');
 
   try {
@@ -227,12 +237,12 @@ async function generarPDFFormal({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.text('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.', 48, 16);
-  
+
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.text('Tlaquepaque No. 140, Col. Mitras Sur Monterrey, N.L., México. C.P. 64020', 48, 22);
-  
+
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
   doc.text('Teléfonos:', 48, 27);
@@ -249,35 +259,33 @@ async function generarPDFFormal({
 
   let currentY = 53;
 
-  // --- 1. FRANJA DE FOLIO Y FECHA ---
-  doc.setFillColor(245, 247, 250); 
+  doc.setFillColor(245, 247, 250);
   doc.rect(10, currentY, 190, 10, 'F');
   doc.setDrawColor(...azulSecundario);
   doc.setLineWidth(0.2);
   doc.rect(10, currentY, 190, 10, 'S');
-  
+
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text('FOLIO:', 15, currentY + 7);
-  
-  doc.setTextColor(...azulSecundario); 
+
+  doc.setTextColor(...azulSecundario);
   doc.text(campos.folio || '__________', 30, currentY + 7);
-  
+
   doc.setTextColor(...azulPrimario);
   doc.text('FECHA DEL SERVICIO:', 120, currentY + 7);
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.text(formatDate(campos.fecha), 162, currentY + 7);
-  
+
   currentY += 18;
 
-  // --- 2. SECCIÓN: DATOS DEL CLIENTE ---
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('DATOS DEL CLIENTE', 10, currentY);
-  
+
   currentY += 2;
   doc.setDrawColor(...azulSecundario);
   doc.setLineWidth(0.4);
@@ -291,7 +299,6 @@ async function generarPDFFormal({
 
   doc.setFontSize(9);
 
-  // Fila 1
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.text('Planta:', col1, currentY);
@@ -305,10 +312,9 @@ async function generarPDFFormal({
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.text(truncateText(campos.telefono || 'Sin especificar', 40), val2, currentY);
-  
+
   currentY += 8;
 
-  // Fila 2
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.text('Contacto:', col1, currentY);
@@ -325,18 +331,17 @@ async function generarPDFFormal({
 
   currentY += 8;
 
-  // Fila 3
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.text('Domicilio:', col1, currentY);
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
-  
-  const direccionLines = doc.splitTextToSize(campos.direccion || 'Sin especificar', 155); 
+
+  const direccionLines = doc.splitTextToSize(campos.direccion || 'Sin especificar', 155);
   doc.text(direccionLines, val1, currentY);
-  
-  currentY += (direccionLines.length * 4.5) + 6; 
-  
+
+  currentY += (direccionLines.length * 4.5) + 6;
+
   const equiposUnificados = organizarEquiposUnificado(equiposCalibrados);
 
   doc.setTextColor(...azulPrimario);
@@ -356,29 +361,29 @@ async function generarPDFFormal({
     const anchoTotal = 180;
     const equiposPorFila = 5;
     const anchoColumna = anchoTotal / equiposPorFila;
-    const altoFila = 5.5; 
+    const altoFila = 5.5;
     const altoEncabezado = 7;
-    
+
     equiposUnificados.forEach((grupo, tecnicoIndex) => {
       grupo.equipos.sort((a, b) => a.id.localeCompare(b.id));
 
       const numFilas = Math.ceil(grupo.equipos.length / equiposPorFila);
       const altoTotalGrupo = altoEncabezado + (numFilas * altoFila) + 3;
-      
+
       if (currentY + altoTotalGrupo + 50 > 280) {
         currentY = crearNuevaPagina();
       }
-      
+
       doc.setFillColor(245, 248, 255);
       doc.setDrawColor(...azulSecundario);
       doc.setLineWidth(0.3);
       doc.roundedRect(margenIzq, currentY, anchoTotal, altoEncabezado, 1, 1, 'FD');
-      
+
       doc.setTextColor(...azulSecundario);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.text(`${grupo.tecnico} (${grupo.equipos.length} equipos)`, margenIzq + 2, currentY + 4.5);
-      
+
       currentY += altoEncabezado;
 
       doc.setFont('helvetica', 'normal');
@@ -389,7 +394,7 @@ async function generarPDFFormal({
 
       while (equipoIndex < grupo.equipos.length) {
         const yFila = currentY + (numFila * altoFila);
-        
+
         if (numFila % 2 === 0) {
           doc.setFillColor(252, 253, 255);
           doc.rect(margenIzq, yFila, anchoTotal, altoFila, 'F');
@@ -406,16 +411,16 @@ async function generarPDFFormal({
           const equipo = grupo.equipos[equipoIndex];
           const xPos = margenIzq + (col * anchoColumna) + 2;
           const equipoTexto = truncateText(equipo.id, 16);
-          
+
           if (equipo.estado === 'RECHAZADO') {
-             doc.setTextColor(...rojoRechazo);
-             doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...rojoRechazo);
+            doc.setFont('helvetica', 'bold');
           } else {
-             doc.setTextColor(...grisTexto);
-             doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...grisTexto);
+            doc.setFont('helvetica', 'normal');
           }
-          
-          doc.text(equipoTexto, xPos, yFila + 3.5); 
+
+          doc.text(equipoTexto, xPos, yFila + 3.5);
           equipoIndex++;
         }
         numFila++;
@@ -437,7 +442,7 @@ async function generarPDFFormal({
   if (campos.comentarios && campos.comentarios.trim()) {
     currentY += 3;
     if (currentY + 50 > 280) {
-        currentY = crearNuevaPagina();
+      currentY = crearNuevaPagina();
     }
     doc.setTextColor(...azulPrimario);
     doc.setFont('helvetica', 'bold');
@@ -453,7 +458,7 @@ async function generarPDFFormal({
     const maxLines = 2;
     const linesToShow = comentarioLines.slice(0, maxLines);
     linesToShow.forEach((line: string, index: number) => {
-      doc.text(line, 15, currentY + 4 + (index * 4.5)); 
+      doc.text(line, 15, currentY + 4 + (index * 4.5));
     });
     currentY += 16;
   }
@@ -461,41 +466,41 @@ async function generarPDFFormal({
   const espacioMinimo = 50;
   const posicionMinimaFirmas = 195;
   const posicionFinalPagina = 225;
-  
+
   let firmasY = (currentY < posicionMinimaFirmas) ? posicionFinalPagina : currentY + 8;
   if (currentY + espacioMinimo > 280) {
     firmasY = crearNuevaPagina();
   }
-  
+
   const equiposUnificadosParaCalculo = organizarEquiposUnificado(equiposCalibrados);
   const totalEquipos = equiposUnificadosParaCalculo.reduce((sum, grupo) => sum + grupo.equipos.length, 0);
-  
+
   const initialX = 15;
-  const spacing = 60; 
-  
+  const spacing = 60;
+
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  
+
   doc.text('CALIDAD DEL SERVICIO:', initialX, firmasY);
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
-  doc.text(campos.calidadServicio, initialX + 55, firmasY); 
-  
+  doc.text(campos.calidadServicio, initialX + 55, firmasY);
+
   doc.setTextColor(...azulPrimario);
   doc.setFont('helvetica', 'bold');
   doc.text('TOTAL EQUIPOS:', initialX + spacing * 2, firmasY);
   doc.setTextColor(...azulSecundario);
   doc.setFont('helvetica', 'bold');
-  doc.text(totalEquipos.toString(), initialX + spacing * 2 + 38, firmasY); 
-  
+  doc.text(totalEquipos.toString(), initialX + spacing * 2 + 38, firmasY);
+
   firmasY += 8;
 
   doc.setFillColor(...grisClaro);
   doc.rect(10, firmasY, 190, 40, 'F');
   const firmaWidth = 80;
   const firmaHeight = 20;
-  
+
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(20, firmasY + 2, firmaWidth, firmaHeight, 2, 2, 'F');
   doc.setDrawColor(...azulSecundario);
@@ -514,7 +519,7 @@ async function generarPDFFormal({
   doc.setFontSize(9);
   doc.text('TÉCNICO RESPONSABLE', 60, firmasY + 26, { align: 'center' });
   doc.text('CLIENTE AUTORIZADO', 150, firmasY + 26, { align: 'center' });
-  
+
   doc.setTextColor(...grisTexto);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -526,13 +531,13 @@ async function generarPDFFormal({
   const tecnicoNombres = campos.tecnicoResponsable || '[Nombre del técnico]';
   const tecnicoLines = doc.splitTextToSize(tecnicoNombres, maxNombreWidth);
   tecnicoLines.forEach((line: string, index: number) => {
-      doc.text(line, 60, nombreInitialY + (index * lineHeight), { align: 'center' });
+    doc.text(line, 60, nombreInitialY + (index * lineHeight), { align: 'center' });
   });
 
   const clienteNombre = campos.contacto || '[Nombre del cliente]';
   const clienteLines = doc.splitTextToSize(clienteNombre, maxNombreWidth);
   clienteLines.forEach((line: string, index: number) => {
-      doc.text(line, 150, nombreInitialY + (index * lineHeight), { align: 'center' });
+    doc.text(line, 150, nombreInitialY + (index * lineHeight), { align: 'center' });
   });
 
   const pieY = 272;
@@ -549,10 +554,9 @@ async function generarPDFFormal({
 
   if (outputType === 'blob') {
     return doc.output('blob');
-  } else {
-    doc.save(`HojaServicio_${campos.folio || new Date().getTime()}.pdf`);
-    return null;
   }
+  doc.save(`HojaServicio_${campos.folio || new Date().getTime()}.pdf`);
+  return null;
 }
 
 const qualityMap: { [key: string]: number } = {
@@ -576,6 +580,7 @@ export default function HojaDeServicioScreen() {
   const [autoFolioLoading, setAutoFolioLoading] = useState(false);
   const [savingService, setSavingService] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const servicioInicioSyncRef = useRef<Set<string>>(new Set());
   const { goBack } = useNavigation();
   const { user } = useAuth();
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
@@ -636,25 +641,27 @@ export default function HojaDeServicioScreen() {
       await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
 
       try {
-        const authUser = getAuth().currentUser;
-        const userId = authUser?.uid || '';
-        const hasSignature = !!(firmaTecnico || firmaCliente);
         const finalizedAt = new Date();
-
-        if (userId && (campos.servicioId || (campos.empresaId && campos.fecha))) {
-          await finalizeServicioFromHoja({
+        if (campos.fecha && (campos.empresaId || campos.empresa)) {
+          const finalizedIds = await finalizeServicioFromHoja({
             servicioId: campos.servicioId || undefined,
-            clienteId: campos.empresaId,
+            clienteId: campos.empresaId || undefined,
+            clienteNombre: campos.empresa || undefined,
             fecha: campos.fecha,
-            userId,
             finalizedAt,
           });
-          if (!hasSignature) {
-            console.info('[HojaDeServicio] Servicio finalizado al guardar (sin firmas).');
+          if (finalizedIds.length > 0) {
+            toast.success('Servicio actualizado en Friday y Dashboard TV');
+          } else {
+            toast('Hoja guardada. No se encontró un servicio activo de ese día para finalizar.', {
+              icon: 'ℹ️',
+              duration: 5000,
+            });
           }
         }
       } catch (finalizeError) {
         console.error('Error al finalizar servicio vinculado:', finalizeError);
+        toast.error('Hoja guardada, pero no se pudo finalizar el servicio en el calendario.');
       }
       
       const folderPath = `worksheets/Hojas de Trabajo/${campos.folio}`;
@@ -891,26 +898,52 @@ export default function HojaDeServicioScreen() {
 
     const unsubscribe = onSnapshot(q, (qs) => {
       const equiposPorTecnico: Record<string, EquipoCalibrado[]> = {};
-      
+      let earliestSitioMs: number | null = null;
+
       qs.forEach(docSnap => {
         const data = docSnap.data();
         if (data.lugarCalibracion && data.lugarCalibracion.toLowerCase().includes("sitio")) {
           const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
           if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
-          
+
+          const ts = new Date(data.createdAt || data.timestamp || 0).getTime();
+          if (ts > 0 && (earliestSitioMs === null || ts < earliestSitioMs)) {
+            earliestSitioMs = ts;
+          }
+
           const idBase = String(data.id || '').toUpperCase().trim();
           const certificadoString = String(data.certificado || '').toUpperCase().trim();
-          
+
           const classificationString = certificadoString || idBase;
-          const isAGRD = classificationString.includes('AGRD-'); 
+          const isAGRD = classificationString.includes('AGRD-');
           const estado: 'CALIBRADO' | 'RECHAZADO' = isAGRD ? 'RECHAZADO' : 'CALIBRADO';
 
           if (idBase) {
-             equiposPorTecnico[tecnico].push({ id: idBase, docId: docSnap.id, estado: estado }); 
+             equiposPorTecnico[tecnico].push({ id: idBase, docId: docSnap.id, estado: estado });
           }
         }
       });
-      
+
+      if (earliestSitioMs !== null && campos.empresa && campos.fecha) {
+        const syncKey = `${campos.empresaId}|${campos.empresa}|${campos.fecha}`;
+        if (!servicioInicioSyncRef.current.has(syncKey)) {
+          servicioInicioSyncRef.current.add(syncKey);
+          void registerServicioInicioFromWorksheet({
+            fecha: campos.fecha,
+            clienteId: campos.empresaId || undefined,
+            clienteNombre: campos.empresa,
+            startedAt: new Date(earliestSitioMs),
+          })
+            .then((ids) => {
+              if (ids.length === 0) servicioInicioSyncRef.current.delete(syncKey);
+            })
+            .catch((err) => {
+              servicioInicioSyncRef.current.delete(syncKey);
+              console.error('[HojaDeServicio] Recuperación inicio servicio:', err);
+            });
+        }
+      }
+
       setEquiposCalibrados(equiposPorTecnico);
 
       const nombresTecnicos = Object.keys(equiposPorTecnico).filter(nombre => nombre !== 'Sin Técnico');
@@ -1008,7 +1041,7 @@ export default function HojaDeServicioScreen() {
       x = (e.clientX - rect.left) * scaleX;
       y = (e.clientY - rect.top) * scaleY;
     }
-    ctx.strokeStyle = '#1e40af';
+    ctx.strokeStyle = AG_BLUE;
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -1052,29 +1085,29 @@ export default function HojaDeServicioScreen() {
 
   if (firmando) {
     return (
-        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col transform transition-all">
-                <div className="p-6 border-b border-gray-100">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50">
+            <div className="w-full max-w-xl bg-white rounded-xl shadow-2xl flex flex-col">
+                <div className="p-4 sm:p-5 border-b border-[#8B8D8C]/20">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-                            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Edit3 size={24} /></div>
+                        <h2 className="text-lg sm:text-xl font-bold text-[#2464A3] flex items-center gap-2">
+                            <div className="p-1.5 bg-[#2464A3]/10 text-[#2464A3] rounded-lg"><Edit3 size={20} /></div>
                             Firma {firmando === "tecnico" ? "del Técnico" : "del Cliente"}
                         </h2>
-                        <button 
+                        <button
                             onClick={() => setFirmando(null)}
-                            className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-50 transition-colors"
+                            className="text-[#8B8D8C] hover:text-[#2464A3] p-2 rounded-lg hover:bg-[#8B8D8C]/10 transition-colors"
                         >
-                            <ArrowLeft size={24} />
+                            <ArrowLeft size={20} />
                         </button>
                     </div>
-                    <p className="text-gray-500 mt-2 text-sm">Dibuja tu firma en el área blanca de abajo.</p>
+                    <p className="text-[#8B8D8C] mt-1.5 text-sm">Dibuja tu firma en el área blanca.</p>
                 </div>
-                <div className="p-6 bg-gray-50/50">
+                <div className="p-4 sm:p-5 bg-[#8B8D8C]/5">
                     <canvas
                         ref={canvasRef}
                         width={600}
                         height={300}
-                        className="border-2 border-dashed border-gray-300 rounded-xl w-full bg-white shadow-sm hover:border-blue-400 transition-colors cursor-crosshair"
+                        className="border-2 border-dashed border-[#8B8D8C]/40 rounded-lg w-full max-h-[40vh] bg-white hover:border-[#2464A3] transition-colors cursor-crosshair"
                         onPointerDown={handlePointerDown}
                         onPointerMove={handlePointerMove}
                         onPointerUp={handlePointerUp}
@@ -1084,26 +1117,26 @@ export default function HojaDeServicioScreen() {
                         style={{ touchAction: 'none' }}
                     />
                 </div>
-                <div className="p-6 border-t border-gray-100">
-                    <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
-                        <button 
+                <div className="p-4 sm:p-5 border-t border-[#8B8D8C]/20">
+                    <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-3">
+                        <button
                             onClick={limpiarFirma}
-                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors font-medium"
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-[#8B8D8C] bg-[#8B8D8C]/10 hover:bg-[#8B8D8C]/20 rounded-lg transition-colors font-medium text-sm"
                         >
-                            <RotateCcw size={18} /> Limpiar
+                            <RotateCcw size={16} /> Limpiar
                         </button>
-                        <div className="w-full sm:w-auto flex flex-col-reverse sm:flex-row gap-3">
-                            <button 
+                        <div className="w-full sm:w-auto flex flex-col-reverse sm:flex-row gap-2">
+                            <button
                                 onClick={() => setFirmando(null)}
-                                className="w-full sm:w-auto px-6 py-2.5 text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors font-medium"
+                                className="w-full sm:w-auto px-5 py-2 text-[#8B8D8C] bg-white border border-[#8B8D8C]/30 hover:bg-[#8B8D8C]/5 rounded-lg transition-colors font-medium text-sm"
                             >
                                 Cancelar
                             </button>
-                            <button 
+                            <button
                                 onClick={guardarFirma}
-                                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl transition-all shadow-md hover:shadow-lg font-medium"
+                                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-[#2464A3] hover:opacity-90 text-white rounded-lg transition-all font-medium text-sm"
                             >
-                                <Save size={18} /> Guardar Firma
+                                <Save size={16} /> Guardar Firma
                             </button>
                         </div>
                     </div>
@@ -1123,514 +1156,428 @@ export default function HojaDeServicioScreen() {
     }));
 
     return (
-      <div className="min-h-full flex-shrink-0 flex flex-col bg-gray-50 p-4 sm:p-8">
+      <ScreenShell variant="scroll" className="bg-[#8B8D8C]/5">
         <Toaster
           position="top-center"
           toastOptions={{ duration: 4000, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }}
         />
-        <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
-          <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-6 sm:p-8">
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              {logoImage ? (
-                <div className="bg-white p-3 rounded-2xl shadow-sm">
-                  <img src={logoImage} alt="Logo" className="w-16 h-16 object-contain" />
+        <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-24 sm:pb-8">
+          <div className="bg-white shadow-md rounded-xl overflow-hidden border border-[#8B8D8C]/20">
+            <div className="p-4 sm:p-5 border-b border-[#8B8D8C]/20">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                {logoImage ? (
+                  <div className="bg-white p-2 rounded-lg border border-[#8B8D8C]/20 shrink-0">
+                    <img src={logoImage} alt="Logo" className="w-12 h-12 sm:w-14 sm:h-14 object-contain" />
+                  </div>
+                ) : (
+                  <div className="w-14 h-14 bg-white text-[#2464A3] rounded-lg flex items-center justify-center font-bold text-lg border border-[#8B8D8C]/20">ESE</div>
+                )}
+                <div className="flex-1 text-center sm:text-left min-w-0">
+                  <h1 className="text-sm sm:text-base font-bold text-[#2464A3] leading-snug">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h1>
+                  <p className="text-xs text-[#8B8D8C] mt-1">Tlaquepaque No. 140, Col. Mitras Sur Monterrey, N.L., México. C.P. 64020</p>
+                  <p className="text-xs text-[#8B8D8C]">Teléfonos: 8127116538 / 8127116357</p>
                 </div>
-              ) : (
-                <div className="w-20 h-20 bg-white text-blue-700 rounded-2xl flex items-center justify-center font-bold text-2xl shadow-sm">
-                  ESE
+              </div>
+            </div>
+
+            <div className="bg-[#2464A3] text-white py-2.5">
+              <h2 className="text-center text-sm sm:text-base font-bold tracking-wide">HOJA DE SERVICIO TÉCNICO</h2>
+            </div>
+
+            <div className="p-4 sm:p-5 bg-[#8B8D8C]/5 border-b border-[#8B8D8C]/15">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div><span className="font-bold text-[#2464A3]">FOLIO: </span><span className="text-[#8B8D8C]">{campos.folio || '__________'}</span></div>
+                <div><span className="font-bold text-[#2464A3]">FECHA: </span><span className="text-[#8B8D8C]">{formatDate(campos.fecha)}</span></div>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 border-b border-[#8B8D8C]/15">
+              <h3 className="text-xs font-bold text-[#2464A3] uppercase mb-3 border-b border-[#2464A3]/30 pb-1">Datos del cliente</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-2.5">
+                  <div><span className="text-[#2464A3] font-semibold text-xs uppercase block mb-0.5">Planta</span><span className="text-[#8B8D8C]">{campos.empresa || 'Sin especificar'}</span></div>
+                  <div><span className="text-[#2464A3] font-semibold text-xs uppercase block mb-0.5">Domicilio</span><span className="text-[#8B8D8C]">{campos.direccion || 'Sin especificar'}</span></div>
+                  <div><span className="text-[#2464A3] font-semibold text-xs uppercase block mb-0.5">Contacto</span><span className="text-[#8B8D8C]">{campos.contacto || 'Sin especificar'}</span></div>
                 </div>
-              )}
-              <div className="flex-1 text-center sm:text-left">
-                <h1 className="text-xl sm:text-2xl font-bold mb-2 tracking-wide">EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.</h1>
-                <p className="text-sm opacity-90 font-light">Tlaquepaque No. 140, Col. Mitras Sur Monterrey, N.L., México. C.P.64020</p>
-                <p className="text-sm opacity-90 font-light">Teléfonos: 8127116538 / 8127116357</p>
+                <div className="space-y-2.5">
+                  <div><span className="text-[#2464A3] font-semibold text-xs uppercase block mb-0.5">Teléfono</span><span className="text-[#8B8D8C]">{campos.telefono || 'Sin especificar'}</span></div>
+                  <div><span className="text-[#2464A3] font-semibold text-xs uppercase block mb-0.5">Correo</span><span className="text-[#8B8D8C]">{campos.correo || 'Sin especificar'}</span></div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-blue-800 text-white py-3">
-            <h2 className="text-center text-lg font-bold tracking-widest">HOJA DE SERVICIO TÉCNICO</h2>
-          </div>
-
-          <div className="p-6 bg-gray-50/50 border-b border-gray-100">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div className="flex items-center gap-2"><strong className="text-gray-700">FOLIO:</strong> <span className="text-gray-900 font-medium">{campos.folio || '__________'}</span></div>
-              <div className="flex items-center gap-2"><strong className="text-gray-700">FECHA:</strong> <span className="text-gray-900 font-medium">{formatDate(campos.fecha)}</span></div>
-            </div>
-          </div>
-
-          <div className="p-6 border-b border-gray-100">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-              <div className="space-y-3">
-                <div className="flex flex-col"><strong className="text-gray-500 text-xs uppercase mb-1">Planta</strong> <span className="text-gray-800 font-medium">{truncateText(campos.empresa || 'Sin especificar', 35)}</span></div>
-                <div className="flex flex-col"><strong className="text-gray-500 text-xs uppercase mb-1">Domicilio</strong> <span className="text-gray-800 font-medium">{truncateText(campos.direccion || 'Sin especificar', 70)}</span></div>
-                <div className="flex flex-col"><strong className="text-gray-500 text-xs uppercase mb-1">Contacto</strong> <span className="text-gray-800 font-medium">{truncateText(campos.contacto || 'Sin especificar', 28)}</span></div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex flex-col"><strong className="text-gray-500 text-xs uppercase mb-1">Teléfono</strong> <span className="text-gray-800 font-medium">{truncateText(campos.telefono || 'Sin especificar', 30)}</span></div>
-                <div className="flex flex-col"><strong className="text-gray-500 text-xs uppercase mb-1">Correo</strong> <span className="text-gray-800 font-medium">{truncateText(campos.correo || 'Sin especificar', 28)}</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6 border-b border-gray-100">
-            <h3 className="text-lg font-bold text-blue-800 mb-6 flex items-center gap-2"><Wrench size={20}/> EQUIPOS CALIBRADOS EN SITIO</h3>
-            {loadingEquipos ? (
-              <div className="text-center py-6 text-gray-500 flex flex-col items-center"><Loader2 className="animate-spin mb-2" size={24}/> Cargando equipos...</div>
-            ) : (
-              equiposUnificados.length === 0 ? (
-                <div className="text-center py-6 bg-gray-50 rounded-xl text-gray-500 italic border border-gray-200">No se registraron equipos en sitio para esta fecha.</div>
+            <div className="p-4 sm:p-5 border-b border-[#8B8D8C]/15">
+              <h3 className="text-xs font-bold text-[#2464A3] uppercase mb-3 flex items-center gap-2 border-b border-[#2464A3]/30 pb-1"><Wrench size={16}/> Equipos calibrados en sitio</h3>
+              {loadingEquipos ? (
+                <div className="text-center py-5 text-[#8B8D8C] flex flex-col items-center text-sm"><Loader2 className="animate-spin mb-2" size={20}/> Cargando equipos...</div>
+              ) : equiposUnificados.length === 0 ? (
+                <div className="text-center py-5 bg-[#8B8D8C]/5 rounded-lg text-[#8B8D8C] italic text-sm border border-[#8B8D8C]/20">No se registraron equipos en sitio para esta fecha.</div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
                   {equiposUnificadosVP.map((grupo, groupIndex) => (
-                      <div key={groupIndex} className="p-5 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <div className="flex items-center gap-2 mb-4">
-                          <User size={18} className="text-blue-600"/>
-                          <h4 className="font-bold text-blue-900">{grupo.tecnico} <span className="text-blue-500 font-normal text-sm ml-1">({grupo.equipos.length} equipos)</span></h4>
-                        </div>
-                        <div className="flex flex-wrap gap-2 text-sm">
-                          {grupo.equipos.map((equipo, equipoIndex) => (
-                            <div 
-                              key={equipoIndex} 
-                              className={`
-                                  px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5 shadow-sm border
-                                  ${equipo.estado === 'RECHAZADO' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-white text-gray-700 border-gray-200'}
-                              `}
-                            >
-                              {equipo.estado === 'RECHAZADO' ? <XCircle size={14} className="text-red-500"/> : <CheckCircle2 size={14} className="text-green-500"/>}
-                              {truncateText(equipo.id, 22)}
-                            </div>
-                          ))}
-                        </div>
+                    <div key={groupIndex} className="rounded-lg border border-[#8B8D8C]/20 overflow-hidden">
+                      <div className="px-3 py-2 bg-[#2464A3] text-white text-sm font-semibold flex items-center gap-2">
+                        <User size={14}/> {grupo.tecnico} <span className="font-normal opacity-90">({grupo.equipos.length})</span>
                       </div>
+                      <div className="p-3 flex flex-wrap gap-1.5 text-xs sm:text-sm bg-white">
+                        {grupo.equipos.map((equipo, equipoIndex) => (
+                          <span
+                            key={equipoIndex}
+                            className={`px-2.5 py-1 rounded-md border flex items-center gap-1 ${
+                              equipo.estado === 'RECHAZADO'
+                                ? 'border-[#8B8D8C] text-[#8B8D8C] font-bold bg-[#8B8D8C]/10'
+                                : 'border-[#2464A3]/30 text-[#8B8D8C] bg-[#2464A3]/5'
+                            }`}
+                          >
+                            {equipo.estado === 'RECHAZADO' ? <XCircle size={12}/> : <CheckCircle2 size={12} className="text-[#2464A3]"/>}
+                            {truncateText(equipo.id, 24)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
-              )
+              )}
+            </div>
+
+            {campos.comentarios?.trim() && (
+              <div className="p-4 sm:p-5 border-b border-[#8B8D8C]/15 bg-[#8B8D8C]/5">
+                <h4 className="font-bold text-[#2464A3] mb-2 text-xs uppercase flex items-center gap-2"><FileText size={14}/> Observaciones</h4>
+                <p className="text-sm text-[#8B8D8C] bg-white p-3 rounded-lg border border-[#8B8D8C]/20 leading-relaxed">{campos.comentarios}</p>
+              </div>
             )}
-          </div>
-          
-          {campos.comentarios && campos.comentarios.trim() && (
-            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-              <h4 className="font-bold text-gray-700 mb-3 text-sm uppercase flex items-center gap-2"><FileText size={16}/> OBSERVACIONES:</h4>
-              <p className="text-sm text-gray-700 bg-white p-4 rounded-xl border border-gray-200 shadow-sm leading-relaxed">
-                {truncateText(campos.comentarios, 200)}
-              </p>
-            </div>
-          )}
 
-          <div className="p-6 border-b border-gray-100 bg-white">
-            <div className="grid grid-cols-2 gap-6 text-sm bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <div className="flex flex-col">
-                    <strong className="text-blue-900 text-xs uppercase mb-1">Calidad del Servicio</strong>
-                    <span className="font-bold text-blue-700 text-lg">{campos.calidadServicio}</span>
-                </div>
-                <div className="flex flex-col">
-                    <strong className="text-blue-900 text-xs uppercase mb-1">Total Equipos</strong>
-                    <span className="font-bold text-blue-700 text-lg">{totalEquiposAtendidos}</span>
-                </div>
-            </div>
-          </div>
-
-          <div className="p-8 bg-gray-50/80">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-              <div className="flex flex-col items-center">
-                <div className="w-full max-w-[240px] border-b-2 border-gray-300 h-24 flex items-end justify-center pb-2 mb-3">
-                  {firmaTecnico ? (
-                    <img src={firmaTecnico} alt="Firma Técnico" className="max-w-full max-h-full object-contain drop-shadow-sm" />
-                  ) : (
-                    <span className="text-gray-300 italic mb-2">Firma pendiente</span>
-                  )}
-                </div>
-                <div className="text-sm font-bold text-gray-800 tracking-wide">TÉCNICO RESPONSABLE</div>
-                <div className="text-xs text-gray-500 mt-1 uppercase text-center">
-                    {campos.tecnicoResponsable || 'Nombre del técnico'}
-                </div>
-              </div>
-              <div className="flex flex-col items-center">
-                <div className="w-full max-w-[240px] border-b-2 border-gray-300 h-24 flex items-end justify-center pb-2 mb-3">
-                  {firmaCliente ? (
-                    <img src={firmaCliente} alt="Firma Cliente" className="max-w-full max-h-full object-contain drop-shadow-sm" />
-                  ) : (
-                    <span className="text-gray-300 italic mb-2">Firma pendiente</span>
-                  )}
-                </div>
-                <div className="text-sm font-bold text-gray-800 tracking-wide">CLIENTE AUTORIZADO</div>
-                <div className="text-xs text-gray-500 mt-1 uppercase text-center">
-                    {campos.contacto || 'Nombre del cliente'}
-                </div>
+            <div className="p-4 sm:p-5 border-b border-[#8B8D8C]/15">
+              <div className="grid grid-cols-2 gap-4 text-sm bg-[#2464A3]/5 p-3 rounded-lg border border-[#2464A3]/20">
+                <div><span className="text-[#2464A3] text-xs uppercase font-semibold block mb-0.5">Calidad</span><span className="font-bold text-[#2464A3]">{campos.calidadServicio}</span></div>
+                <div><span className="text-[#2464A3] text-xs uppercase font-semibold block mb-0.5">Total equipos</span><span className="font-bold text-[#2464A3]">{totalEquiposAtendidos}</span></div>
               </div>
             </div>
+
+            <div className="p-4 sm:p-6 bg-[#8B8D8C]/5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {(['tecnico', 'cliente'] as const).map((tipo) => {
+                  const firma = tipo === 'tecnico' ? firmaTecnico : firmaCliente;
+                  const titulo = tipo === 'tecnico' ? 'TÉCNICO RESPONSABLE' : 'CLIENTE AUTORIZADO';
+                  const nombre = tipo === 'tecnico' ? (campos.tecnicoResponsable || 'Nombre del técnico') : (campos.contacto || 'Nombre del cliente');
+                  return (
+                    <div key={tipo} className="flex flex-col items-center">
+                      <div className="w-full max-w-[200px] border border-[#8B8D8C]/30 rounded-lg h-20 sm:h-24 flex items-end justify-center pb-1 mb-2 bg-white">
+                        {firma ? <img src={firma} alt={titulo} className="max-w-full max-h-full object-contain" /> : <span className="text-[#8B8D8C]/50 italic text-xs mb-2">Firma pendiente</span>}
+                      </div>
+                      <div className="text-xs font-bold text-[#2464A3]">{titulo}</div>
+                      <div className="text-xs text-[#8B8D8C] mt-0.5 text-center">{nombre}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-[#2464A3] text-white p-3 text-center text-[10px] sm:text-xs font-medium">
+              DOCUMENTO VÁLIDO CON FIRMA DEL TÉCNICO RESPONSABLE Y AUTORIZACIÓN DEL CLIENTE
+            </div>
           </div>
 
-          <div className="bg-blue-800 text-blue-100 p-4 text-center text-xs font-medium tracking-wide">
-            DOCUMENTO VÁLIDO CON FIRMA DEL TÉCNICO RESPONSABLE Y AUTORIZACIÓN DEL CLIENTE
+          <div className="fixed bottom-0 left-0 right-0 sm:static sm:mt-6 p-3 sm:p-0 bg-white/95 sm:bg-transparent backdrop-blur-sm border-t sm:border-0 border-[#8B8D8C]/20 z-40">
+            <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-center gap-2 sm:gap-3">
+              <button onClick={() => setVistaPrevia(false)} className="w-full sm:w-auto bg-white border border-[#8B8D8C]/30 hover:bg-[#8B8D8C]/5 text-[#8B8D8C] px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-medium">
+                <Edit3 size={18} /> Editar
+              </button>
+              <button onClick={handleDescargarPDF} className="w-full sm:w-auto bg-[#8B8D8C]/15 hover:bg-[#8B8D8C]/25 text-[#2464A3] border border-[#8B8D8C]/30 px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-medium">
+                <Download size={18} /> Descargar PDF
+              </button>
+              <button onClick={handleSaveService} disabled={savingService} className="w-full sm:w-auto bg-[#2464A3] hover:opacity-90 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-medium">
+                {savingService ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {savingService ? 'Guardando...' : 'Guardar y Finalizar'}
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="flex flex-col sm:flex-row justify-center gap-4 mt-8">
-          <button
-            onClick={() => setVistaPrevia(false)}
-            className="w-full sm:w-auto bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-8 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all font-medium shadow-sm"
-          >
-            <Edit3 size={20} /> Editar Datos
-          </button>
-          <button onClick={handleDescargarPDF} className="w-full sm:w-auto bg-green-600 hover:bg-green-700 active:bg-green-800 text-white px-8 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all font-medium shadow-md hover:shadow-lg hover:-translate-y-0.5">
-            <Download size={20} /> Descargar PDF
-          </button>
-          <button onClick={handleSaveService} disabled={savingService} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-400 text-white px-8 py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all font-medium shadow-md hover:shadow-lg hover:-translate-y-0.5">
-            {savingService ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-            {savingService ? 'Guardando...' : 'Guardar y Finalizar'}
-          </button>
-        </div>
-      </div>
+      </ScreenShell>
     );
   }
 
   const currentRating = qualityMap[campos.calidadServicio] || 0;
 
+  const inputCls =
+    'w-full px-3 py-2 sm:py-2.5 bg-white text-[#8B8D8C] placeholder-[#8B8D8C]/50 border border-[#8B8D8C]/30 rounded-lg focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/15 outline-none text-sm transition-all';
+  const sectionCls = 'rounded-lg border border-[#8B8D8C]/20 bg-[#8B8D8C]/5 p-4 sm:p-5';
+  const sectionBadge = 'w-7 h-7 bg-[#2464A3]/10 text-[#2464A3] rounded-md flex items-center justify-center text-xs font-bold shrink-0';
+
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-blue-50 via-indigo-50/50 to-purple-50 p-4 sm:p-6 lg:p-8">
+    <ScreenShell variant="scroll" className="bg-[#8B8D8C]/5">
       <Toaster
         position="top-center"
         toastOptions={{ duration: 4000, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }}
       />
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-            <div className="flex items-center gap-5">
+      <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-28 sm:pb-8">
+        <div className="bg-white shadow-sm border border-[#8B8D8C]/20 rounded-xl overflow-hidden">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 sm:p-5 border-b border-[#8B8D8C]/15">
+            <div className="flex items-center gap-3 min-w-0">
               {logoImage && (
-                <div className="p-3 bg-blue-50 rounded-2xl shadow-sm border border-blue-100">
-                  <img src={logoImage} alt="Logo" className="w-14 h-14 object-contain" />
+                <div className="p-2 bg-[#2464A3]/5 rounded-lg border border-[#8B8D8C]/20 shrink-0">
+                  <img src={logoImage} alt="Logo" className="w-10 h-10 sm:w-11 sm:h-11 object-contain" />
                 </div>
               )}
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Hoja de Servicio</h1>
-                <p className="text-gray-500 mt-1">
-                  Al finalizar, se envía un correo profesional al cliente con el PDF adjunto
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-bold text-[#2464A3] truncate">Hoja de Servicio</h1>
+                <p className="text-[#8B8D8C] text-xs sm:text-sm mt-0.5 line-clamp-2">
+                  Al finalizar se envía el PDF al cliente por correo
                 </p>
               </div>
             </div>
-            <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-3">
-              <button 
+            <div className="w-full sm:w-auto flex gap-2 shrink-0">
+              <button
                 onClick={() => goBack()}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 hover:text-blue-600 text-gray-600 rounded-xl transition-colors font-medium shadow-sm"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white border border-[#8B8D8C]/30 hover:bg-[#8B8D8C]/5 text-[#8B8D8C] rounded-lg text-sm font-medium"
               >
-                <Home size={18} /> Menú
+                <Home size={16} /> Menú
               </button>
-              <button 
-                onClick={() => setVistaPrevia(true)} 
-                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-6 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 font-medium"
+              <button
+                onClick={() => setVistaPrevia(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-[#2464A3] hover:opacity-90 text-white px-4 py-2 rounded-lg text-sm font-medium"
               >
-                <Eye size={18} /> Vista Previa
+                <Eye size={16} /> Vista Previa
               </button>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white shadow-sm border border-gray-100 rounded-2xl p-6 sm:p-8 space-y-10">
+        <div className="p-4 sm:p-5 space-y-5 sm:space-y-6">
           
-          {/* SECCION 1 */}
-          <section className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">1</div>
-              <h2 className="text-lg font-semibold text-gray-900">Información Básica</h2>
+          <section className={sectionCls}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className={sectionBadge}>1</div>
+              <h2 className="text-base font-semibold text-[#2464A3]">Información básica</h2>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><FileText size={16} className="text-blue-500" /> Folio</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><FileText size={14} /> Folio</label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={campos.folio}
-                    onChange={(e) => setCampos({ ...campos, folio: e.target.value })}
-                    className="flex-1 px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
-                    placeholder="HSDG-0001"
-                  />
-                  <button 
-                    onClick={generarFolioUnico} 
-                    disabled={autoFolioLoading} 
-                    className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition-colors font-medium flex items-center justify-center min-w-[80px]"
-                  >
-                    {autoFolioLoading ? <Loader2 size={18} className="animate-spin" /> : "Auto"}
+                  <input type="text" value={campos.folio} onChange={(e) => setCampos({ ...campos, folio: e.target.value })} className={`flex-1 ${inputCls}`} placeholder="HSDG-0001" />
+                  <button onClick={generarFolioUnico} disabled={autoFolioLoading} className="px-3 py-2 bg-[#2464A3]/10 hover:bg-[#2464A3]/20 text-[#2464A3] border border-[#2464A3]/30 rounded-lg text-sm font-medium min-w-[64px] flex items-center justify-center">
+                    {autoFolioLoading ? <Loader2 size={16} className="animate-spin" /> : 'Auto'}
                   </button>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Calendar size={16} className="text-blue-500" /> Fecha de Servicio</label>
-                <input
-                  type="date"
-                  value={campos.fecha}
-                  onChange={(e) => setCampos({ ...campos, fecha: e.target.value })}
-                  className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
-                />
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Calendar size={14} /> Fecha de servicio</label>
+                <input type="date" value={campos.fecha} onChange={(e) => setCampos({ ...campos, fecha: e.target.value })} className={inputCls} />
               </div>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><User size={16} className="text-blue-500" /> Técnico Responsable</label>
-                <textarea
-                  value={campos.tecnicoResponsable}
-                  onChange={(e) => setCampos({ ...campos, tecnicoResponsable: e.target.value })}
-                  rows={1}
-                  className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none"
-                  placeholder="Se llenará automáticamente..."
-                />
+              <div className="space-y-1.5 md:col-span-2 lg:col-span-1">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><User size={14} /> Técnico responsable</label>
+                <textarea value={campos.tecnicoResponsable} onChange={(e) => setCampos({ ...campos, tecnicoResponsable: e.target.value })} rows={1} className={`${inputCls} resize-none`} placeholder="Se llenará automáticamente..." />
               </div>
             </div>
           </section>
 
-          {/* SECCION 2 */}
-          <section className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">2</div>
-              <h2 className="text-lg font-semibold text-gray-900">Información del Cliente</h2>
+          <section className={sectionCls}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className={sectionBadge}>2</div>
+              <h2 className="text-base font-semibold text-[#2464A3]">Información del cliente</h2>
             </div>
-            <div className="space-y-6">
-                <div className="space-y-2" ref={dropdownRef}>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Building size={16} className="text-emerald-500" /> Empresa / Planta</label>
+            <div className="space-y-4">
+              <div className="space-y-1.5" ref={dropdownRef}>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Building size={14} /> Empresa / Planta</label>
                 <div className="relative">
-                    <button
-                    onClick={() => setDropdownAbierto(!dropdownAbierto)}
-                    className="w-full flex justify-between items-center text-left px-4 py-3 bg-white border border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none"
-                    >
-                    <span className={campos.empresa ? 'text-gray-900 font-medium' : 'text-gray-400'}>
-                        {campos.empresa || 'Seleccionar empresa...'}
-                    </span>
-                    <ChevronDown size={20} className={`text-gray-400 transition-transform duration-200 ${dropdownAbierto ? 'transform rotate-180' : ''}`} />
-                    </button>
-
-                    {dropdownAbierto && (
-                    <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-y-auto overflow-x-hidden">
-                        <div className="p-3 sticky top-0 bg-white/90 backdrop-blur-sm border-b border-gray-100">
+                  <button onClick={() => setDropdownAbierto(!dropdownAbierto)} className={`w-full flex justify-between items-center text-left ${inputCls}`}>
+                    <span className={`truncate ${campos.empresa ? 'font-medium' : 'opacity-60'}`}>{campos.empresa || 'Seleccionar empresa...'}</span>
+                    <ChevronDown size={18} className={`text-[#8B8D8C] shrink-0 ml-2 transition-transform ${dropdownAbierto ? 'rotate-180' : ''}`} />
+                  </button>
+                  {dropdownAbierto && (
+                    <div className="absolute z-20 w-full mt-1.5 bg-white border border-[#8B8D8C]/30 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      <div className="p-2 sticky top-0 bg-white border-b border-[#8B8D8C]/15">
                         <div className="relative">
-                            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input
-                            type="text"
-                            placeholder="Buscar empresa..."
-                            value={busquedaEmpresa}
-                            onChange={(e) => setBusquedaEmpresa(e.target.value)}
-                            className="w-full px-4 py-2 pl-10 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:bg-white focus:border-emerald-500 outline-none transition-colors"
-                            />
+                          <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8B8D8C]" />
+                          <input type="text" placeholder="Buscar empresa..." value={busquedaEmpresa} onChange={(e) => setBusquedaEmpresa(e.target.value)} className="w-full pl-8 pr-3 py-2 text-sm border border-[#8B8D8C]/30 rounded-md focus:border-[#2464A3] outline-none" />
                         </div>
-                        </div>
-                        {Object.keys(empresasFiltradasYAgrupadas).length > 0 ? (
-                        Object.keys(empresasFiltradasYAgrupadas).map(letra => (
-                            <div key={letra}>
-                            <div className="px-4 py-1.5 bg-gray-50 text-xs font-bold text-gray-500 sticky top-[69px] border-y border-gray-100 uppercase">
-                                {letra}
-                            </div>
-                            <ul className="py-1">
-                                {empresasFiltradasYAgrupadas[letra].map(emp => (
-                                <li
-                                    key={emp.id}
-                                    onClick={() => {
-                                    setCampos({ ...campos, empresaId: emp.id });
-                                    setDropdownAbierto(false);
-                                    setBusquedaEmpresa('');
-                                    }}
-                                    className="px-4 py-2.5 cursor-pointer hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-gray-700 font-medium"
-                                >
-                                    {emp.nombre}
+                      </div>
+                      {Object.keys(empresasFiltradasYAgrupadas).length > 0 ? (
+                        Object.keys(empresasFiltradasYAgrupadas).map((letra) => (
+                          <div key={letra}>
+                            <div className="px-3 py-1 bg-[#8B8D8C]/10 text-[10px] font-bold text-[#8B8D8C] sticky top-[49px] border-y border-[#8B8D8C]/15 uppercase">{letra}</div>
+                            <ul>
+                              {empresasFiltradasYAgrupadas[letra].map((emp) => (
+                                <li key={emp.id} onClick={() => { setCampos({ ...campos, empresaId: emp.id }); setDropdownAbierto(false); setBusquedaEmpresa(''); }} className="px-3 py-2 cursor-pointer hover:bg-[#2464A3]/10 hover:text-[#2464A3] text-sm text-[#8B8D8C] font-medium">
+                                  {emp.nombre}
                                 </li>
-                                ))}
+                              ))}
                             </ul>
-                            </div>
+                          </div>
                         ))
-                        ) : (
-                        <div className="px-4 py-6 text-center text-gray-500 italic">No se encontraron empresas.</div>
-                        )}
+                      ) : (
+                        <div className="px-3 py-4 text-center text-[#8B8D8C] italic text-sm">No se encontraron empresas.</div>
+                      )}
                     </div>
-                    )}
+                  )}
                 </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Building size={16} className="text-emerald-500" /> Domicilio</label>
-                    <input type="text" value={campos.direccion} onChange={(e) => setCampos({ ...campos, direccion: e.target.value })} className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none" placeholder="Dirección completa" />
-                </div>
-                <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><User size={16} className="text-emerald-500" /> Contacto</label>
-                    <input type="text" value={campos.contacto} onChange={(e) => setCampos({ ...campos, contacto: e.target.value })} className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none" placeholder="Nombre del contacto" />
-                </div>
-                <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Phone size={16} className="text-emerald-500" /> Teléfono</label>
-                    <input type="text" value={campos.telefono} onChange={(e) => setCampos({ ...campos, telefono: e.target.value })} className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none" placeholder="(81) 1234-5678" />
-                </div>
-                <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Mail size={16} className="text-emerald-500" /> Correo</label>
-                    <input type="email" value={campos.correo} onChange={(e) => setCampos({ ...campos, correo: e.target.value })} className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none" placeholder="contacto@empresa.com" />
-                </div>
-                </div>
-            </div>
-          </section>
-
-          {/* SECCION 3 */}
-          <section className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">3</div>
-              <h2 className="text-lg font-semibold text-gray-900">Observaciones y Calidad</h2>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><FileText size={16} className="text-purple-500" /> Comentarios Extras</label>
-                <textarea value={campos.comentarios} onChange={(e) => setCampos({ ...campos, comentarios: e.target.value })} rows={4} className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 transition-all outline-none resize-none" placeholder="Anota cualquier observación importante..." />
               </div>
-              <div className="space-y-4">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Star size={16} className="text-purple-500" /> Nivel de Calidad</label>
-                <div className="flex flex-col gap-4">
-                    <div 
-                        className="flex items-center gap-3 cursor-pointer p-4 bg-white rounded-xl border border-gray-200 shadow-sm w-fit"
-                        onMouseLeave={() => setHoverRating(0)}
-                    >
-                        {[1, 2, 3, 4, 5].map((rating) => (
-                            <Wrench
-                                key={rating}
-                                size={28}
-                                className={`transition-all duration-200 ease-out hover:scale-125 hover:-rotate-12 ${
-                                (hoverRating || currentRating) >= rating ? 'text-purple-500 drop-shadow-sm' : 'text-gray-200'
-                                }`}
-                                onMouseEnter={() => setHoverRating(rating)}
-                                onClick={() => {
-                                    const newQuality = qualityLabels[rating - 1];
-                                    setCampos({ ...campos, calidadServicio: newQuality });
-                                }}
-                            />
-                        ))}
-                    </div>
-                    <span className="font-semibold text-purple-700 bg-purple-50 border border-purple-100 px-4 py-1.5 rounded-lg text-sm text-center w-fit shadow-sm">
-                        { qualityLabels[(hoverRating || currentRating) - 1] || 'Selecciona una calificación' }
-                    </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Building size={14} /> Domicilio</label>
+                  <input type="text" value={campos.direccion} onChange={(e) => setCampos({ ...campos, direccion: e.target.value })} className={inputCls} placeholder="Dirección completa" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><User size={14} /> Contacto</label>
+                  <input type="text" value={campos.contacto} onChange={(e) => setCampos({ ...campos, contacto: e.target.value })} className={inputCls} placeholder="Nombre del contacto" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Phone size={14} /> Teléfono</label>
+                  <input type="text" value={campos.telefono} onChange={(e) => setCampos({ ...campos, telefono: e.target.value })} className={inputCls} placeholder="(81) 1234-5678" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Mail size={14} /> Correo</label>
+                  <input type="email" value={campos.correo} onChange={(e) => setCampos({ ...campos, correo: e.target.value })} className={inputCls} placeholder="contacto@empresa.com" />
                 </div>
               </div>
             </div>
           </section>
 
-          {/* SECCION 4 */}
-          <section className="bg-orange-50/30 rounded-2xl p-6 border border-orange-100">
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-orange-100 text-orange-700 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">4</div>
-                    <h2 className="text-lg font-semibold text-gray-900">Equipos Calibrados en Sitio</h2>
-                </div>
-                <div className="text-sm font-medium text-orange-700 bg-orange-100 px-3 py-1 rounded-full border border-orange-200">
-                    Total: {totalEquiposAtendidos}
-                </div>
+          <section className={sectionCls}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className={sectionBadge}>3</div>
+              <h2 className="text-base font-semibold text-[#2464A3]">Observaciones y calidad</h2>
             </div>
-            
-            <div className="bg-white border border-orange-100 rounded-xl p-4 sm:p-6 shadow-sm min-h-[150px]">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><FileText size={14} /> Comentarios</label>
+                <textarea value={campos.comentarios} onChange={(e) => setCampos({ ...campos, comentarios: e.target.value })} rows={3} className={`${inputCls} resize-none`} placeholder="Observaciones importantes..." />
+              </div>
+              <div className="space-y-2">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Star size={14} /> Nivel de calidad</label>
+                <div className="flex flex-col gap-2" onMouseLeave={() => setHoverRating(0)}>
+                  <div className="flex items-center gap-2 p-3 bg-white rounded-lg border border-[#8B8D8C]/20 w-fit">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <Wrench
+                        key={rating}
+                        size={22}
+                        className={`transition-all cursor-pointer ${(hoverRating || currentRating) >= rating ? 'text-[#2464A3]' : 'text-[#8B8D8C]/30'}`}
+                        onMouseEnter={() => setHoverRating(rating)}
+                        onClick={() => setCampos({ ...campos, calidadServicio: qualityLabels[rating - 1] })}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-sm font-semibold text-[#2464A3] bg-[#2464A3]/10 border border-[#2464A3]/20 px-3 py-1 rounded-md w-fit">
+                    {qualityLabels[(hoverRating || currentRating) - 1] || 'Selecciona calificación'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className={sectionCls}>
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className={sectionBadge}>4</div>
+                <h2 className="text-base font-semibold text-[#2464A3]">Equipos en sitio</h2>
+              </div>
+              <span className="text-xs font-semibold text-[#2464A3] bg-[#2464A3]/10 px-2.5 py-1 rounded-full border border-[#2464A3]/20">
+                Total: {totalEquiposAtendidos}
+              </span>
+            </div>
+            <div className="bg-white border border-[#8B8D8C]/20 rounded-lg p-3 sm:p-4 min-h-[120px] max-h-72 overflow-y-auto">
               {loadingEquipos ? (
-                <div className="text-center py-10 flex flex-col items-center justify-center h-full">
-                  <Loader2 className="animate-spin mb-3 text-orange-500" size={32} />
-                  <p className="text-orange-800 font-medium">Sincronizando equipos...</p>
+                <div className="text-center py-8 flex flex-col items-center text-[#8B8D8C] text-sm">
+                  <Loader2 className="animate-spin mb-2 text-[#2464A3]" size={24} />
+                  Sincronizando equipos...
+                </div>
+              ) : equiposUnificados.length === 0 ? (
+                <div className="text-center py-8 text-[#8B8D8C] flex flex-col items-center">
+                  <FileText className="mb-2 opacity-40" size={32} />
+                  <p className="font-semibold text-[#2464A3] text-sm">Sin equipos registrados</p>
+                  <p className="text-xs mt-1">Selecciona empresa y fecha válidas.</p>
                 </div>
               ) : (
-                equiposUnificados.length === 0 ? (
-                  <div className="text-center py-10 text-orange-400 flex flex-col items-center justify-center h-full">
-                    <FileText className="mb-3 opacity-50" size={48} />
-                    <p className="text-lg font-semibold text-orange-800 mb-1">Sin equipos registrados</p>
-                    <p className="text-sm text-orange-600">Asegúrate de seleccionar una empresa y fecha válidas.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {equiposUnificados.map(grupo => {
-                        const equiposOrdenados = [...grupo.equipos].sort((a, b) => a.id.localeCompare(b.id));
-
-                        return (
-                          <div key={grupo.tecnico} className="rounded-xl border border-gray-100 p-4 bg-gray-50/50">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
-                              <h4 className="font-bold text-gray-800 text-base flex items-center gap-2">
-                                <User size={18} className="text-orange-500" />
-                                {grupo.tecnico}
-                              </h4>
-                              <span className="text-gray-500 text-sm font-medium">
-                                {grupo.equipos.length} equipos atendidos
+                <div className="space-y-4">
+                  {equiposUnificados.map((grupo) => {
+                    const equiposOrdenados = [...grupo.equipos].sort((a, b) => a.id.localeCompare(b.id));
+                    return (
+                      <div key={grupo.tecnico} className="rounded-lg border border-[#8B8D8C]/20 overflow-hidden">
+                        <div className="px-3 py-2 bg-[#2464A3] text-white text-sm font-semibold flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 truncate"><User size={14} /> {grupo.tecnico}</span>
+                          <span className="text-xs font-normal opacity-90 shrink-0">{grupo.equipos.length} eq.</span>
+                        </div>
+                        <div className="p-2.5 flex flex-wrap gap-1.5 bg-white">
+                          {equiposOrdenados.map((equipo, equipoIndex) => (
+                            <div
+                              key={`${equipo.docId}-${equipoIndex}`}
+                              className={`group relative pl-2 pr-7 py-1.5 rounded-md text-xs border ${
+                                equipo.estado === 'RECHAZADO'
+                                  ? 'border-[#8B8D8C] text-[#8B8D8C] font-bold bg-[#8B8D8C]/10'
+                                  : 'border-[#2464A3]/25 text-[#8B8D8C] bg-[#2464A3]/5'
+                              }`}
+                              title={equipo.estado === 'RECHAZADO' ? 'RECHAZADO' : 'CALIBRADO'}
+                            >
+                              <span className="flex items-center gap-1">
+                                {equipo.estado === 'RECHAZADO' ? <XCircle size={12} /> : <CheckCircle2 size={12} className="text-[#2464A3]" />}
+                                <span className="truncate max-w-[140px] sm:max-w-none">{equipo.id}</span>
                               </span>
+                              <button
+                                onClick={() => handleEliminarEquipo(equipo.docId, equipo.id)}
+                                className="absolute right-0.5 top-1/2 -translate-y-1/2 p-1 text-[#8B8D8C] hover:text-[#2464A3] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                title="Eliminar de la base de datos"
+                              >
+                                <Trash2 size={11} />
+                              </button>
                             </div>
-                            <div className="flex flex-wrap gap-2.5">
-                              {equiposOrdenados.map((equipo, equipoIndex) => (
-                                <div 
-                                    key={`${equipo.docId}-${equipoIndex}`} 
-                                    className={`
-                                        group relative px-4 py-2 pr-9 rounded-full text-xs sm:text-sm font-medium text-center truncate border shadow-sm transition-all duration-200
-                                        ${equipo.estado === 'RECHAZADO' 
-                                            ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' 
-                                            : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'}
-                                    `}
-                                    title={equipo.estado === 'RECHAZADO' ? 'RECHAZADO' : 'CALIBRADO'}
-                                >
-                                  <span className="flex items-center gap-1.5">
-                                    {equipo.estado === 'RECHAZADO' ? <XCircle size={14} className="text-red-500"/> : <CheckCircle2 size={14} className="text-green-500"/>}
-                                    {equipo.id}
-                                  </span>
-                                  <button
-                                    onClick={() => handleEliminarEquipo(equipo.docId, equipo.id)}
-                                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/90 hover:bg-white rounded-full shadow-sm hover:scale-110"
-                                    title="Eliminar de la base de datos"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                    })}
-                  </div>
-                )
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </section>
 
-          {/* SECCION 5 */}
-          <section className="bg-indigo-50/30 rounded-2xl p-6 border border-indigo-100">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">5</div>
-              <h2 className="text-lg font-semibold text-gray-900">Firmas Digitales</h2>
+          <section className={sectionCls}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className={sectionBadge}>5</div>
+              <h2 className="text-base font-semibold text-[#2464A3]">Firmas digitales</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-4 bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
-                <label className="flex items-center justify-center gap-2 text-sm font-bold text-gray-700 uppercase tracking-wide">
-                  Técnico Responsable
-                </label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50 h-32 flex items-center justify-center overflow-hidden transition-colors hover:border-indigo-300">
-                  {firmaTecnico ? <img src={firmaTecnico} alt="Firma Técnico" className="max-w-full max-h-full object-contain drop-shadow-sm" /> : <div className="text-center text-gray-400"><Edit3 className="mx-auto mb-2 opacity-50" size={28} /><p className="text-xs">Espacio para firma</p></div>}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => comenzarFirma('tecnico')} className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-2.5 px-4 rounded-xl transition-colors font-medium">
-                    <Edit3 size={16} />{firmaTecnico ? 'Re-firmar' : 'Firmar aquí'}
-                  </button>
-                  {firmaTecnico && <button onClick={() => borrarFirma('tecnico')} className="flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2.5 px-4 rounded-xl transition-colors"><Trash2 size={16} /></button>}
-                </div>
-              </div>
-
-              <div className="space-y-4 bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
-                <label className="flex items-center justify-center gap-2 text-sm font-bold text-gray-700 uppercase tracking-wide">
-                  Cliente Autorizado
-                </label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50 h-32 flex items-center justify-center overflow-hidden transition-colors hover:border-indigo-300">
-                  {firmaCliente ? <img src={firmaCliente} alt="Firma Cliente" className="max-w-full max-h-full object-contain drop-shadow-sm" /> : <div className="text-center text-gray-400"><Edit3 className="mx-auto mb-2 opacity-50" size={28} /><p className="text-xs">Espacio para firma</p></div>}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => comenzarFirma('cliente')} className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-2.5 px-4 rounded-xl transition-colors font-medium">
-                    <Edit3 size={16} />{firmaCliente ? 'Re-firmar' : 'Firmar aquí'}
-                  </button>
-                  {firmaCliente && <button onClick={() => borrarFirma('cliente')} className="flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2.5 px-4 rounded-xl transition-colors"><Trash2 size={16} /></button>}
-                </div>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(['tecnico', 'cliente'] as const).map((tipo) => {
+                const firma = tipo === 'tecnico' ? firmaTecnico : firmaCliente;
+                const label = tipo === 'tecnico' ? 'Técnico responsable' : 'Cliente autorizado';
+                return (
+                  <div key={tipo} className="space-y-2.5 bg-white p-3 sm:p-4 rounded-lg border border-[#8B8D8C]/20">
+                    <label className="block text-center text-xs font-bold text-[#2464A3] uppercase tracking-wide">{label}</label>
+                    <div className="border border-dashed border-[#8B8D8C]/40 rounded-lg p-2 bg-[#8B8D8C]/5 h-24 sm:h-28 flex items-center justify-center overflow-hidden hover:border-[#2464A3] transition-colors">
+                      {firma ? (
+                        <img src={firma} alt={label} className="max-w-full max-h-full object-contain" />
+                      ) : (
+                        <div className="text-center text-[#8B8D8C]"><Edit3 className="mx-auto mb-1 opacity-50" size={22} /><p className="text-[10px]">Espacio para firma</p></div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => comenzarFirma(tipo)} className="flex-1 flex items-center justify-center gap-1.5 bg-[#2464A3]/10 hover:bg-[#2464A3]/20 text-[#2464A3] border border-[#2464A3]/25 py-2 px-3 rounded-lg text-sm font-medium">
+                        <Edit3 size={14} />{firma ? 'Re-firmar' : 'Firmar'}
+                      </button>
+                      {firma && (
+                        <button onClick={() => borrarFirma(tipo)} className="px-3 py-2 text-[#8B8D8C] border border-[#8B8D8C]/30 hover:bg-[#8B8D8C]/10 rounded-lg transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
+        </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row justify-end gap-4 pt-6 mt-6 border-t border-gray-100">
-            <button onClick={handleDescargarPDF} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-8 py-3.5 rounded-xl transition-all font-medium shadow-sm">
-              <Download size={20} className="text-gray-500" />
-              Descargar Borrador
+        <div className="fixed bottom-0 left-0 right-0 sm:static sm:mt-4 p-3 sm:p-0 bg-white/95 sm:bg-transparent backdrop-blur-sm border-t sm:border-0 border-[#8B8D8C]/20 z-30">
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:justify-end gap-2">
+            <button onClick={handleDescargarPDF} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border border-[#8B8D8C]/30 hover:bg-[#8B8D8C]/5 text-[#8B8D8C] px-5 py-2.5 rounded-lg text-sm font-medium">
+              <Download size={18} /> Descargar borrador
             </button>
-            <button onClick={handleSaveService} disabled={savingService} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-blue-400 text-white px-10 py-3.5 rounded-xl transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 font-medium">
-              {savingService ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-              {savingService ? 'Guardando en la nube...' : 'Finalizar Servicio'}
+            <button onClick={handleSaveService} disabled={savingService} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#2464A3] hover:opacity-90 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg text-sm font-medium">
+              {savingService ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+              {savingService ? 'Guardando...' : 'Finalizar servicio'}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </ScreenShell>
   );
 }

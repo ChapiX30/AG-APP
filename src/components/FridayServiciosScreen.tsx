@@ -24,7 +24,7 @@ import labLogo from '../assets/lab_logo.png';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import es from 'date-fns/locale/es';
-import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { autoStartServiciosIfDue, formatHoraFin } from '../utils/servicioAutomation';
 import { shouldShowInFridayServicios } from '../utils/calibrationShared';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
@@ -1381,7 +1381,14 @@ const FridayServiciosScreen: React.FC = () => {
 
   const handleQuickStatus = async (id: string, newStatus: string) => {
     try {
-      await updateDoc(doc(db, 'servicios', id), { estado: newStatus });
+      const payload: Record<string, unknown> = {
+        estado: newStatus,
+        ultimaActualizacion: serverTimestamp(),
+      };
+      if (newStatus === 'finalizado') {
+        payload.horaFin = formatHoraFin(new Date());
+      }
+      await updateDoc(doc(db, 'servicios', id), payload);
       toast.success(`Estado actualizado: ${CONSTANTS.estados.find(e => e.value === newStatus)?.label}`);
     } catch (e) {
       toast.error('Error al actualizar estado');

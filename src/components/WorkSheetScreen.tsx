@@ -32,6 +32,7 @@ import {
   clearWorksheetDraft,
 } from "../utils/worksheetDraftAutosave";
 import { generateTemplatePDF, getTechnicianFolderName } from "../utils/worksheetPdfGenerator";
+import { syncServicioInicioFromWorksheetRecord } from "../utils/servicioAutomation";
 
 // ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
@@ -599,6 +600,18 @@ async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void> {
   if (docRefId) {
     await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
   }
+
+  try {
+    await syncServicioInicioFromWorksheetRecord({
+      fecha: state.fecha,
+      cliente: state.cliente,
+      lugarCalibracion: lugarNormalizado,
+      createdAt: fullData.createdAt as string,
+      timestamp: fullData.timestamp as number,
+    });
+  } catch (syncErr) {
+    console.error("[WorkSheet] No se pudo sincronizar inicio del servicio:", syncErr);
+  }
 }
 
 // ====================================================================
@@ -965,6 +978,18 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             await updateDoc(doc(db, "hojasDeTrabajo", item.finalDocId), fullData);
           } else {
             await addDoc(collection(db, "hojasDeTrabajo"), fullData);
+          }
+          try {
+            await syncServicioInicioFromWorksheetRecord({
+              ...fullData,
+              fecha: String(fullData.fecha || ''),
+              cliente: String(fullData.cliente || ''),
+              lugarCalibracion: String(fullData.lugarCalibracion || ''),
+              createdAt: String(fullData.createdAt || ''),
+              timestamp: typeof fullData.timestamp === 'number' ? fullData.timestamp : item.timestamp,
+            });
+          } catch (syncErr) {
+            console.error("[WorkSheet] Sync servicio tras cola offline:", syncErr);
           }
           removeFromOfflineQueue(item.id);
           uploaded++;
