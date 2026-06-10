@@ -7,14 +7,35 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import {
-  Calendar, Building2, ClipboardList, BookOpen, Database, FolderKanban,
-  Bell, TrendingUp, X, ChevronRight, Activity, Award,
-  ArrowRightLeft, FileOutput, LogOut, User, CheckCircle2,
-  AlertTriangle, Briefcase, MapPin, Clock, Search, Loader2,
-  FileText, Users, History, Palette, LayoutGrid, AlignLeft, Check,
-  Info, AlertCircle, Send, Megaphone, Trash2, Sparkles,
-  MoreHorizontal, Layers,
+  X, ChevronRight, Search, Loader2, Check, MoreHorizontal,
 } from 'lucide-react';
+import {
+  PiPulseDuotone, PiBriefcaseDuotone, PiClipboardTextDuotone, PiClockCounterClockwiseDuotone,
+  PiFileTextDuotone, PiAirplaneTiltDuotone, PiUsersThreeDuotone, PiCalendarDotsDuotone,
+  PiDatabaseDuotone, PiFilesDuotone, PiFolderOpenDuotone, PiBuildingsDuotone,
+  PiChartLineUpDuotone, PiWrenchDuotone, PiExportDuotone, PiMedalDuotone,
+  PiArrowsLeftRightDuotone, PiBellRingingDuotone,
+  // Iconos de la interfaz (widgets, header, notificaciones) — alias a los nombres usados
+  PiBellDuotone as Bell,
+  PiMedalDuotone as Award,
+  PiSignOutDuotone as LogOut,
+  PiUserDuotone as User,
+  PiCheckCircleDuotone as CheckCircle2,
+  PiWarningDuotone as AlertTriangle,
+  PiBriefcaseDuotone as Briefcase,
+  PiMapPinDuotone as MapPin,
+  PiClockDuotone as Clock,
+  PiUsersThreeDuotone as Users,
+  PiPaletteDuotone as Palette,
+  PiSquaresFourDuotone as LayoutGrid,
+  PiListDuotone as AlignLeft,
+  PiInfoDuotone as Info,
+  PiWarningCircleDuotone as AlertCircle,
+  PiPaperPlaneTiltDuotone as Send,
+  PiMegaphoneDuotone as Megaphone,
+  PiTrashDuotone as Trash2,
+  PiSparkleDuotone as Sparkles,
+} from 'react-icons/pi';
 import { NovedadesWidget } from './NovedadesWidget';
 import { NovedadesComposeModal } from './NovedadesComposeModal';
 import { WhatsNewModal } from './WhatsNewModal';
@@ -122,24 +143,24 @@ const prefetchMenuScreen = (menuId: string) => {
 };
 
 const MENU_ITEMS = [
-  { id: 'friday', title: 'Friday Projects', icon: Activity, category: 'Gestión' },
-  { id: 'friday-servicios', title: 'Servicios', icon: Briefcase, category: 'Operativo' },
-  { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: ClipboardList, category: 'Operativo' },
-  { id: 'directorio-empresas', title: 'Historial Equipos', icon: History, category: 'Análisis' },
-  { id: 'permisos-trabajo', title: 'Permisos TR', icon: FileText, category: 'Operativo' },
-  { id: 'solicitud-vacaciones', title: 'Vacaciones', icon: Calendar, category: 'Operativo' },
-  { id: 'control-vacaciones-rh', title: 'Control Vacaciones RH', icon: Users, category: 'Operativo' },
-  { id: 'calendario', title: 'Calendario', icon: Calendar, category: 'Gestión' },
-  { id: 'consecutivos', title: 'Consecutivos', icon: Database, category: 'Técnico' },
-  { id: 'formatos', title: 'Formatos Máster', icon: FileText, category: 'Calidad' },
-  { id: 'drive', title: 'Drive', icon: FolderKanban, category: 'Archivos' },
-  { id: 'empresas', title: 'Empresas', icon: Building2, category: 'Gestión' },
-  { id: 'calibration-stats', title: 'Estadísticas', icon: TrendingUp, category: 'Análisis' },
-  { id: 'normas', title: 'Hoja de Herramienta', icon: BookOpen, category: 'Técnico' },
-  { id: 'entrada-salida', title: 'Hoja de Salida', icon: FileOutput, category: 'Logística' },
-  { id: 'programa-calibracion', title: 'Patrones', icon: Award, category: 'Técnico' },
-  { id: 'control-prestamos', title: 'Préstamos', icon: ArrowRightLeft, category: 'Logística' },
-  { id: 'vencimientos', title: 'Vencimientos', icon: Bell, category: 'Análisis' },
+  { id: 'friday', title: 'Friday Projects', icon: PiPulseDuotone, category: 'Gestión' },
+  { id: 'friday-servicios', title: 'Servicios', icon: PiBriefcaseDuotone, category: 'Operativo' },
+  { id: 'hoja-servicio', title: 'Hoja de Servicio', icon: PiClipboardTextDuotone, category: 'Operativo' },
+  { id: 'directorio-empresas', title: 'Historial Equipos', icon: PiClockCounterClockwiseDuotone, category: 'Análisis' },
+  { id: 'permisos-trabajo', title: 'Permisos TR', icon: PiFileTextDuotone, category: 'Operativo' },
+  { id: 'solicitud-vacaciones', title: 'Vacaciones', icon: PiAirplaneTiltDuotone, category: 'Operativo' },
+  { id: 'control-vacaciones-rh', title: 'Control Vacaciones RH', icon: PiUsersThreeDuotone, category: 'Operativo' },
+  { id: 'calendario', title: 'Calendario', icon: PiCalendarDotsDuotone, category: 'Gestión' },
+  { id: 'consecutivos', title: 'Consecutivos', icon: PiDatabaseDuotone, category: 'Técnico' },
+  { id: 'formatos', title: 'Formatos Máster', icon: PiFilesDuotone, category: 'Calidad' },
+  { id: 'drive', title: 'Drive', icon: PiFolderOpenDuotone, category: 'Archivos' },
+  { id: 'empresas', title: 'Empresas', icon: PiBuildingsDuotone, category: 'Gestión' },
+  { id: 'calibration-stats', title: 'Estadísticas', icon: PiChartLineUpDuotone, category: 'Análisis' },
+  { id: 'normas', title: 'Hoja de Herramienta', icon: PiWrenchDuotone, category: 'Técnico' },
+  { id: 'entrada-salida', title: 'Hoja de Salida', icon: PiExportDuotone, category: 'Logística' },
+  { id: 'programa-calibracion', title: 'Patrones', icon: PiMedalDuotone, category: 'Técnico' },
+  { id: 'control-prestamos', title: 'Préstamos', icon: PiArrowsLeftRightDuotone, category: 'Logística' },
+  { id: 'vencimientos', title: 'Vencimientos', icon: PiBellRingingDuotone, category: 'Análisis' },
 ];
 
 const SUPER_ADMINS = ['jesus.sustaita@agsolutions.com', 'admin@agsolutions.com'];
@@ -172,23 +193,24 @@ const applyTheme = (prefs: UserPrefs) => {
   root.style.setProperty('--acc', prefs.accentColor);
   root.style.setProperty('--acc-rgb', hexToRgb(prefs.accentColor));
   if (prefs.themeMode === 'dark') {
-    root.style.setProperty('--bg', '#030712');
-    root.style.setProperty('--surface', '#0f172a');
-    root.style.setProperty('--surface-hi', '#1e293b');
-    root.style.setProperty('--border-color', 'rgba(255,255,255,0.07)');
-    root.style.setProperty('--text', '#f1f5f9');
-    root.style.setProperty('--text-muted', '#94a3b8');
-    root.style.setProperty('--text-faint', '#334155');
-    root.style.setProperty('--header', 'rgba(3,7,18,0.85)');
+    // Grises neutros reales (sin tinte azul) — inspirado en Ant Design 5 / shadcn neutral
+    root.style.setProperty('--bg', '#0a0a0a');
+    root.style.setProperty('--surface', '#161616');
+    root.style.setProperty('--surface-hi', '#242424');
+    root.style.setProperty('--border-color', 'rgba(255,255,255,0.10)');
+    root.style.setProperty('--text', '#f5f5f5');
+    root.style.setProperty('--text-muted', '#a3a3a3');
+    root.style.setProperty('--text-faint', '#525252');
+    root.style.setProperty('--header', 'rgba(10,10,10,0.80)');
   } else {
-    root.style.setProperty('--bg', '#f8fafc');
+    root.style.setProperty('--bg', '#fafafa');
     root.style.setProperty('--surface', '#ffffff');
-    root.style.setProperty('--surface-hi', '#f1f5f9');
-    root.style.setProperty('--border-color', 'rgba(0,0,0,0.09)');
-    root.style.setProperty('--text', '#0f172a');
-    root.style.setProperty('--text-muted', '#64748b');
-    root.style.setProperty('--text-faint', '#cbd5e1');
-    root.style.setProperty('--header', 'rgba(248,250,252,0.90)');
+    root.style.setProperty('--surface-hi', '#f5f5f5');
+    root.style.setProperty('--border-color', 'rgba(0,0,0,0.10)');
+    root.style.setProperty('--text', '#171717');
+    root.style.setProperty('--text-muted', '#737373');
+    root.style.setProperty('--text-faint', '#d4d4d4');
+    root.style.setProperty('--header', 'rgba(250,250,250,0.85)');
   }
 };
 
@@ -197,10 +219,10 @@ const ThemeStyle = () => (
   <style>{`
     :root {
       --acc: #2464A3; --acc-rgb: 36 100 163;
-      --bg: #030712; --surface: #0f172a; --surface-hi: #1e293b;
-      --border-color: rgba(255,255,255,0.07);
-      --text: #f1f5f9; --text-muted: #94a3b8; --text-faint: #334155;
-      --header: rgba(3,7,18,0.85);
+      --bg: #0a0a0a; --surface: #161616; --surface-hi: #242424;
+      --border-color: rgba(255,255,255,0.10);
+      --text: #f5f5f5; --text-muted: #a3a3a3; --text-faint: #525252;
+      --header: rgba(10,10,10,0.80);
     }
     * { box-sizing: border-box; }
     .ag-bg { background: var(--bg); }
@@ -222,48 +244,39 @@ const ThemeStyle = () => (
     .acc-soft { background: rgba(var(--acc-rgb)/0.12); }
     .acc-ring:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px rgba(var(--acc-rgb)/0.18); }
     .acc-hover:hover { background: rgba(var(--acc-rgb)/0.10); }
-    .card-interact { transition: all 0.18s ease; }
-    .card-interact:hover { border-color: rgba(var(--acc-rgb)/0.4) !important; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.35); transform: translateY(-2px); }
+    .card-interact { transition: transform 0.2s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s ease, border-color 0.2s ease; }
+    .card-interact:hover { transform: translateY(-2px); }
+    .card-interact:active { transform: translateY(0) scale(0.995); }
     .card-interact:hover .ci-icon { color: var(--acc); }
     .ag-mesh {
       background:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(var(--acc-rgb)/0.14) 0%, transparent 55%),
-        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(var(--acc-rgb)/0.08) 0%, transparent 50%),
-        radial-gradient(ellipse 50% 30% at 50% 100%, rgba(var(--acc-rgb)/0.06) 0%, transparent 45%),
+        radial-gradient(ellipse 60% 42% at 10% -14%, rgba(var(--acc-rgb)/0.06) 0%, transparent 52%),
+        radial-gradient(ellipse 50% 36% at 96% 2%, rgba(var(--acc-rgb)/0.04) 0%, transparent 50%),
         var(--bg);
     }
-    .ag-hero {
-      background:
-        linear-gradient(135deg, rgba(var(--acc-rgb)/0.18) 0%, rgba(var(--acc-rgb)/0.04) 50%, transparent 100%),
-        var(--surface);
-      border-color: rgba(var(--acc-rgb)/0.22);
-      box-shadow: 0 4px 24px -6px rgba(var(--acc-rgb)/0.12);
-    }
-    .ag-chip {
-      background: var(--surface-hi);
-      border: 1px solid var(--border-color);
-      color: var(--text-muted);
-      transition: all 0.15s ease;
-    }
-    .ag-chip:hover { border-color: rgba(var(--acc-rgb)/0.35); color: var(--text); }
-    .ag-chip-active {
-      background: rgba(var(--acc-rgb)/0.15);
-      border-color: rgba(var(--acc-rgb)/0.45);
-      color: var(--acc);
-      box-shadow: 0 0 0 1px rgba(var(--acc-rgb)/0.1);
-    }
     .ag-section {
-      background:
-        linear-gradient(160deg, rgba(var(--acc-rgb)/0.05) 0%, transparent 70%),
-        var(--surface);
+      background: var(--surface);
       border: 1px solid var(--border-color);
       border-radius: 1.25rem;
-      padding: 1rem;
+      padding: 1.1rem 1.1rem 1.25rem;
     }
+    /* Tarjeta de módulo — plana y nítida, hover con borde de acento */
     .ag-menu-card {
-      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      position: relative;
+      background: var(--surface);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.14);
     }
-    .ag-menu-card:hover { box-shadow: 0 12px 28px -10px rgba(0,0,0,0.4); }
+    .ag-menu-card:hover {
+      border-color: rgba(var(--acc-rgb)/0.55) !important;
+      box-shadow: 0 10px 28px -14px rgba(0,0,0,0.5), 0 0 0 1px rgba(var(--acc-rgb)/0.22);
+    }
+    .ag-tile-icon { transition: transform 0.22s cubic-bezier(0.22,1,0.36,1); }
+    .ag-menu-card:hover .ag-tile-icon { transform: scale(1.05); }
+    .ag-arrow { opacity: 0; transform: translateX(-4px); transition: all 0.22s ease; }
+    .ag-menu-card:hover .ag-arrow { opacity: 1; transform: translateX(0); }
+    /* Acciones del header */
+    .ag-icon-btn { transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease; }
+    .ag-icon-btn:hover { transform: translateY(-1px); }
     .ag-widgets-scroll { scrollbar-width: none; -ms-overflow-style: none; }
     .ag-widgets-scroll::-webkit-scrollbar { display: none; }
     .ag-skeleton { background: linear-gradient(90deg, var(--surface-hi) 25%, var(--surface) 50%, var(--surface-hi) 75%); background-size: 200% 100%; animation: ag-shimmer 1.4s ease infinite; }
@@ -990,94 +1003,64 @@ type MenuItem = (typeof MENU_ITEMS)[number];
 const MenuLoadingSkeleton = () => (
   <div className="min-h-full flex-shrink-0 ag-bg ag-mesh flex flex-col">
     <div className="h-16 border-b ag-border ag-header" />
-    <div className="max-w-7xl mx-auto px-4 py-6 w-full space-y-5">
-      <div className="h-36 rounded-2xl ag-skeleton" />
-      <div className="flex gap-2 overflow-hidden">
-        {[1, 2, 3, 4].map(i => <div key={i} className="h-9 w-24 rounded-full ag-skeleton shrink-0" />)}
+    <div className="max-w-7xl mx-auto px-4 py-6 w-full space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="h-9 w-48 rounded-lg ag-skeleton" />
+        <div className="h-10 w-64 rounded-xl ag-skeleton" />
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-28 rounded-2xl ag-skeleton" />)}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map(i => <div key={i} className="h-[4.5rem] rounded-2xl ag-skeleton" />)}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5">
+        {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-32 rounded-2xl ag-skeleton" />)}
       </div>
     </div>
   </div>
 );
 
-const CategoryChips = ({
-  categories, selected, onSelect,
-}: { categories: string[]; selected: string; onSelect: (cat: string) => void }) => (
-  <div className="flex gap-2 overflow-x-auto ag-widgets-scroll pb-1 -mx-1 px-1">
-    <button
-      type="button"
-      onClick={() => onSelect('')}
-      className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold ag-chip ${!selected ? 'ag-chip-active' : ''}`}
-    >
-      Todos
-    </button>
-    {categories.map(cat => {
-      const rgb = getCategoryRgb(cat);
-      const active = selected === cat;
-      return (
-        <button
-          key={cat}
-          type="button"
-          onClick={() => onSelect(active ? '' : cat)}
-          className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold ag-chip flex items-center gap-1.5 ${active ? 'ag-chip-active' : ''}`}
-          style={active ? undefined : { borderColor: `rgba(${rgb}/0.25)` }}
-        >
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: `rgb(${rgb})` }} />
-          {cat}
-        </button>
-      );
-    })}
-  </div>
-);
+const getGreeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Buenos días';
+  if (h < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+};
 
 const WelcomeHero = ({
-  firstName, roleLabel, moduleCount, unreadCount, formattedDate, searchTerm, onSearchChange,
+  firstName, roleLabel, formattedDate, searchTerm, onSearchChange,
 }: {
-  firstName: string; roleLabel: string; moduleCount: number; unreadCount: number;
+  firstName: string; roleLabel: string;
   formattedDate: string; searchTerm: string; onSearchChange: (v: string) => void;
 }) => (
-  <div className="rounded-2xl border ag-hero p-4 sm:p-5 mb-5">
-    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-      <div className="min-w-0">
-        <p className="text-[11px] font-bold uppercase tracking-wider acc-text mb-1">Panel principal</p>
-        <h2 className="text-xl sm:text-2xl font-bold ag-text tracking-tight">Hola, {firstName} 👋</h2>
-        <p className="text-xs ag-muted mt-1 md:hidden">{formattedDate}</p>
-        <div className="flex flex-wrap items-center gap-2 mt-3">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full acc-soft acc-text border" style={{ borderColor: 'rgba(var(--acc-rgb)/0.25)' }}>
-            <User className="w-3 h-3" />{roleLabel}
-          </span>
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full ag-surface-hi ag-muted border ag-border">
-            <Layers className="w-3 h-3" />{moduleCount} módulo{moduleCount !== 1 ? 's' : ''}
-          </span>
-          {unreadCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/25">
-              <Bell className="w-3 h-3" />{unreadCount} sin leer
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="relative w-full sm:w-72 lg:w-80 shrink-0">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint pointer-events-none" aria-hidden />
-        <input
-          value={searchTerm}
-          onChange={e => onSearchChange(e.target.value)}
-          placeholder="Buscar módulo..."
-          aria-label="Buscar módulo"
-          className="w-full pl-10 pr-10 py-3 text-sm rounded-xl border ag-input shadow-sm"
-        />
-        {searchTerm && (
-          <button
-            type="button"
-            onClick={() => onSearchChange('')}
-            aria-label="Limpiar búsqueda"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg ag-muted hover:ag-text transition-colors"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div className="min-w-0">
+      <h2 className="text-2xl sm:text-[1.75rem] font-bold ag-text tracking-tight leading-tight">
+        {getGreeting()}, <span className="acc-text">{firstName}</span>
+      </h2>
+      <p className="text-xs sm:text-sm ag-muted mt-1 flex items-center gap-1.5 flex-wrap">
+        <span>{formattedDate}</span>
+        <span className="ag-faint">•</span>
+        <span className="inline-flex items-center gap-1"><User className="w-3 h-3" />{roleLabel}</span>
+      </p>
+    </div>
+    <div className="relative w-full sm:w-72 lg:w-80 shrink-0">
+      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint pointer-events-none" aria-hidden />
+      <input
+        value={searchTerm}
+        onChange={e => onSearchChange(e.target.value)}
+        placeholder="Buscar módulo..."
+        aria-label="Buscar módulo"
+        className="w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border ag-input"
+      />
+      {searchTerm && (
+        <button
+          type="button"
+          onClick={() => onSearchChange('')}
+          aria-label="Limpiar búsqueda"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg ag-muted hover:ag-text transition-colors"
+        >
+          <X size={14} />
+        </button>
+      )}
     </div>
   </div>
 );
@@ -1144,34 +1127,34 @@ const MenuGridCard = ({
       onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
       onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
       onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
-      className={`group relative rounded-2xl border p-4 sm:p-5 min-h-[7.5rem] cursor-pointer card-interact ag-card ag-menu-card overflow-hidden
+      className={`group relative rounded-[1.35rem] border p-4 sm:p-5 min-h-[8rem] sm:min-h-[8.5rem] cursor-pointer card-interact ag-card ag-menu-card overflow-hidden
         ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
       `}
     >
       {isDisabled && (
-        <span className="absolute top-2.5 right-2.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
+        <span className="absolute top-3 right-3 z-20 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
       )}
       {!isDisabled && badgeCount != null && badgeCount > 0 && (
-        <span className="absolute top-2.5 right-2.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
+        <span className="absolute top-3 right-3 z-20 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
           {badgeCount > 99 ? '99+' : badgeCount}
         </span>
       )}
       <div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl"
-        style={{ background: `radial-gradient(circle at 15% 85%, rgba(${rgb}/0.14) 0%, transparent 65%)` }}
+        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-[1.35rem]"
+        style={{ background: `radial-gradient(circle at 18% 88%, rgba(${rgb}/0.16) 0%, transparent 62%)` }}
       />
-      <div className="relative z-10 flex flex-col h-full gap-3 sm:gap-4">
+      <div className="relative z-10 flex flex-col h-full gap-3.5">
         <div
-          className="p-3 rounded-xl w-fit transition-colors"
-          style={{ background: `rgba(${rgb}/0.14)` }}
+          className="ag-tile-icon p-3 rounded-2xl w-fit border"
+          style={{ background: `rgba(${rgb}/0.13)`, borderColor: `rgba(${rgb}/0.22)`, boxShadow: `inset 0 0 0 1px rgba(${rgb}/0.05)` }}
         >
-          <item.icon className="w-5 h-5 sm:w-6 sm:h-6 transition-colors" style={{ color: `rgb(${rgb})` }} />
+          <item.icon className="w-5 h-5 sm:w-[1.4rem] sm:h-[1.4rem]" style={{ color: `rgb(${rgb})` }} />
         </div>
-        <div>
-          <h3 className="text-sm sm:text-[15px] font-semibold ag-text leading-snug">{item.title}</h3>
+        <div className="mt-auto">
+          <h3 className="text-[15px] sm:text-base font-semibold ag-text leading-snug tracking-tight">{item.title}</h3>
           {!hideCategory && (
             <span
-              className="text-[10px] uppercase font-bold tracking-wide mt-1 inline-block px-1.5 py-0.5 rounded-md"
+              className="text-[10px] uppercase font-bold tracking-wide mt-1.5 inline-block px-2 py-0.5 rounded-md"
               style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}
             >
               {item.category}
@@ -1179,6 +1162,13 @@ const MenuGridCard = ({
           )}
         </div>
       </div>
+      {!isDisabled && (
+        <ChevronRight
+          className="ag-arrow absolute bottom-4 right-4 z-10 w-4 h-4"
+          style={{ color: `rgb(${rgb})` }}
+          aria-hidden
+        />
+      )}
     </motion.div>
   );
 };
@@ -1199,14 +1189,14 @@ const MenuListRow = ({
       onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
       onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
       onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
-      className={`group flex items-center gap-3 px-4 py-3.5 sm:py-4 rounded-xl border cursor-pointer card-interact ag-card ag-menu-card min-h-[3.25rem]
+      className={`group flex items-center gap-3.5 px-3.5 py-3 sm:py-3.5 rounded-2xl border cursor-pointer card-interact ag-card ag-menu-card min-h-[3.5rem]
         ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
       `}
     >
-      <div className="p-2.5 rounded-xl transition-colors" style={{ background: `rgba(${rgb}/0.14)` }}>
+      <div className="ag-tile-icon p-2.5 rounded-xl border" style={{ background: `rgba(${rgb}/0.13)`, borderColor: `rgba(${rgb}/0.22)` }}>
         <item.icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: `rgb(${rgb})` }} />
       </div>
-      <span className="flex-1 text-sm font-medium ag-text">{item.title}</span>
+      <span className="flex-1 text-sm sm:text-[15px] font-medium ag-text tracking-tight">{item.title}</span>
       {!isDisabled && badgeCount != null && badgeCount > 0 && (
         <span className="min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white">
           {badgeCount > 99 ? '99+' : badgeCount}
@@ -1228,7 +1218,6 @@ export const MainMenu: React.FC = () => {
   const { logout, user } = useAuth();
   const [localUser, setLocalUser] = useState<UserData | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
@@ -1442,20 +1431,13 @@ export const MainMenu: React.FC = () => {
     });
   }, [localUser, isJefe, isCalidad, isSuperAdmin, isAdministrativo]);
 
-  const availableCategories = useMemo(
-    () => CATEGORY_ORDER.filter(cat => permittedMenu.some(i => i.category === cat)),
-    [permittedMenu],
-  );
-
   const filteredMenu = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    return permittedMenu
-      .filter(i => !term || i.title.toLowerCase().includes(term))
-      .filter(i => !selectedCategory || i.category === selectedCategory);
-  }, [permittedMenu, searchTerm, selectedCategory]);
+    return permittedMenu.filter(i => !term || i.title.toLowerCase().includes(term));
+  }, [permittedMenu, searchTerm]);
 
   const menuGroups = useMemo(() => groupMenuByCategory(filteredMenu), [filteredMenu]);
-  const isSearching = searchTerm.trim().length > 0 || !!selectedCategory;
+  const isSearching = searchTerm.trim().length > 0;
   const roleLabel = formatRoleLabel(localUser?.role || '');
 
   useEffect(() => {
@@ -1477,7 +1459,7 @@ export const MainMenu: React.FC = () => {
   if (!localUser || loadingPrefs) return <MenuLoadingSkeleton />;
 
   const firstName = localUser.name.split(' ')[0];
-  const clearFilters = () => { setSearchTerm(''); setSelectedCategory(''); };
+  const clearFilters = () => { setSearchTerm(''); };
 
   const showNovedades = !novedadesWidgetHidden && (novedadesForUser.length > 0 || canCreateNovedades);
   const showAdminWidgets = isCalidad || isAdmin || isSuperAdmin;
@@ -1703,20 +1685,17 @@ export const MainMenu: React.FC = () => {
               <WelcomeHero
                 firstName={firstName}
                 roleLabel={roleLabel}
-                moduleCount={permittedMenu.length}
-                unreadCount={unreadCount}
                 formattedDate={formattedDate}
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
               />
 
-              {availableCategories.length > 1 && (
-                <div className="mb-5">
-                  <CategoryChips
-                    categories={availableCategories}
-                    selected={selectedCategory}
-                    onSelect={setSelectedCategory}
-                  />
+              {!isSearching && (
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold ag-text flex items-center gap-2">
+                    <LayoutGrid className="w-4 h-4 acc-text" /> Tus módulos
+                  </h3>
+                  <span className="text-xs ag-faint font-medium">{filteredMenu.length} disponibles</span>
                 </div>
               )}
 
@@ -1734,7 +1713,7 @@ export const MainMenu: React.FC = () => {
                     </div>
                     <p className="text-sm ag-muted text-center px-4 max-w-xs">
                       {isSearching
-                        ? `Ningún módulo coincide con tu búsqueda${searchTerm ? ` «${searchTerm}»` : ''}${selectedCategory ? ` en ${selectedCategory}` : ''}`
+                        ? `Ningún módulo coincide con tu búsqueda${searchTerm ? ` «${searchTerm}»` : ''}`
                         : 'No hay módulos disponibles'}
                     </p>
                     {isSearching && (
@@ -1745,20 +1724,20 @@ export const MainMenu: React.FC = () => {
                   </motion.div>
                 ) : viewMode === 'grid' ? (
                   <motion.div key="grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className={isSearching ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3' : 'space-y-4'}
+                    className={isSearching ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4' : 'space-y-5'}
                   >
                     {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => {
                       const rgb = getCategoryRgb(category);
                       return (
                         <div key={category || 'search'} className={isSearching ? 'contents' : 'ag-section'}>
                           {!isSearching && (
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="w-1 h-5 rounded-full" style={{ background: `rgb(${rgb})` }} />
-                              <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: `rgb(${rgb})` }}>{category}</h3>
-                              <span className="text-[10px] ag-faint font-medium">{items.length}</span>
+                            <div className="flex items-center gap-2.5 mb-4">
+                              <span className="w-1.5 h-5 rounded-full" style={{ background: `rgb(${rgb})`, boxShadow: `0 0 12px rgba(${rgb}/0.5)` }} />
+                              <h3 className="text-[13px] font-bold uppercase tracking-wider ag-text">{category}</h3>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}>{items.length}</span>
                             </div>
                           )}
-                          <div className={isSearching ? 'contents' : 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3'}>
+                          <div className={isSearching ? 'contents' : 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4'}>
                             {items.map((item, i) => (
                               <MenuGridCard
                                 key={item.id}
@@ -1782,12 +1761,13 @@ export const MainMenu: React.FC = () => {
                       return (
                         <div key={category || 'all'}>
                           {!isSearching && (
-                            <div className="flex items-center gap-2 mb-2 px-1">
-                              <span className="w-1 h-4 rounded-full" style={{ background: `rgb(${rgb})` }} />
-                              <h3 className="text-[10px] font-bold uppercase tracking-wider" style={{ color: `rgb(${rgb})` }}>{category}</h3>
+                            <div className="flex items-center gap-2.5 mb-2.5 px-1">
+                              <span className="w-1.5 h-4 rounded-full" style={{ background: `rgb(${rgb})`, boxShadow: `0 0 12px rgba(${rgb}/0.5)` }} />
+                              <h3 className="text-[11px] font-bold uppercase tracking-wider ag-text">{category}</h3>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}>{items.length}</span>
                             </div>
                           )}
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             {items.map((item, i) => (
                               <MenuListRow
                                 key={item.id}
