@@ -1,16 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback, useReducer, useMemo } from "react";
 import { useNavigation } from "../hooks/useNavigation";
 import {
-  ArrowLeft, Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
+  Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
   Loader2, NotebookPen, Search, Calculator, ArrowRightLeft, AlertTriangle,
   CheckCircle2, WifiOff, AlertOctagon, Printer, Settings2, FileText, Info, Scale,
   Camera, ShieldCheck, ShieldAlert, CloudOff, CloudUpload, CheckSquare, XCircle, Upload
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { writeDriveFileMetadata } from "../utils/driveFileMetadata";
 import { useAuth } from "../hooks/useAuth";
-import { storage, db, firebaseConfig } from "../utils/firebase";
+import { db, firebaseConfig } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
@@ -31,8 +29,22 @@ import {
   loadWorksheetDraft,
   clearWorksheetDraft,
 } from "../utils/worksheetDraftAutosave";
-import { generateTemplatePDF, getTechnicianFolderName } from "../utils/worksheetPdfGenerator";
-import { syncServicioInicioFromWorksheetRecord } from "../utils/servicioAutomation";
+import { getTechnicianFolderName } from "../utils/worksheetPdfGenerator";
+import { unidadesPorMagnitud } from "../utils/worksheetUnits";
+import { addPendingSave, removePendingSave } from "../utils/worksheetPendingSaves";
+import { persistWorksheetJob, persistWorksheetToOfflineQueue } from "../utils/worksheetPersist";
+import { processWorksheetOfflineQueue } from "../utils/worksheetSaveProcessor";
+import { getTotalWorksheetQueueCount } from "../utils/worksheetQueueRunner";
+import {
+  dispatchWorksheetQueueSync,
+  dispatchWorksheetSaveComplete,
+} from "../utils/worksheetEvents";
+import { canSaveDirectlyToFirebase } from "../utils/firebaseConnectivity";
+import { isRetriableNetworkError } from "../utils/worksheetOfflineQueue";
+import type { WorksheetState, BackgroundSaveJob } from "../types/worksheet";
+import { FlowScreenHeader } from "./worksheet-flow/FlowScreenHeader";
+import { FlowCard, FlowSection } from "./worksheet-flow/FlowCard";
+import { accentFromMagnitude } from "./worksheet-flow/flowTheme";
 
 // ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
@@ -305,42 +317,6 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 type ClienteRecord = { id: string; nombre: string; requerimientos?: string; }
 type MasterRecord = { A: string; B: string; C: string; D: string; E: string; };
 
-interface WorksheetState {
-  lugarCalibracion: "Sitio" | "Laboratorio" | "";
-  frecuenciaCalibracion: string;
-  fecha: string;
-  fechaRecepcion: string;
-  certificado: string;
-  nombre: string;
-  cliente: string;
-  id: string;
-  equipo: string;
-  marca: string;
-  modelo: string;
-  numeroSerie: string;
-  magnitud: string;
-  unidad: string[];
-  alcance: string;
-  resolucion: string;
-  medicionPatron: string;
-  medicionInstrumento: string;
-  excentricidad: string;
-  linealidad: string;
-  repetibilidad: string;
-  notas: string;
-  tempAmbiente: string | number;
-  humedadRelativa: string | number;
-  idBlocked: boolean;
-  idErrorMessage: string;
-  permitirExcepcion: boolean;
-  isMasterData: boolean;
-  fieldsLocked: boolean;
-  condicionEquipo: "buenas" | "dano" | "";
-  descripcionDano: string;
-  fotoEquipoBase64: string;
-  fotoEquipoURL: string;
-}
-
 type WorksheetAction =
   | { type: 'SET_FIELD'; field: keyof WorksheetState; payload: string | string[] | number | boolean }
   | { type: 'SET_USER_NAME'; payload: string }
@@ -356,58 +332,8 @@ type WorksheetAction =
   | { type: 'CHANGE_CONDICION'; condicion: "buenas" | "dano" | "" };
 
 // ====================================================================
-// OFFLINE QUEUE HELPERS
-// ====================================================================
-const OFFLINE_QUEUE_KEY = 'ag_offline_save_queue';
-
-interface OfflineQueueItem {
-  id: string;
-  timestamp: number;
-  data: any;
-  pdfBlob: string;
-  nombreArchivo: string;
-  finalDocId: string | null;
-  worksheetId: string | undefined;
-}
-
-const getOfflineQueue = (): OfflineQueueItem[] => {
-  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]'); } catch { return []; }
-};
-const saveOfflineQueue = (q: OfflineQueueItem[]) => {
-  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
-};
-const addToOfflineQueue = (item: OfflineQueueItem) => {
-  const q = getOfflineQueue();
-  if (item.finalDocId) {
-    const existingIdx = q.findIndex((i) => i.finalDocId === item.finalDocId);
-    if (existingIdx >= 0) {
-      q[existingIdx] = item;
-      saveOfflineQueue(q);
-      return;
-    }
-  }
-  q.push(item);
-  saveOfflineQueue(q);
-};
-const removeFromOfflineQueue = (id: string) => {
-  const q = getOfflineQueue().filter(i => i.id !== id);
-  saveOfflineQueue(q);
-};
-
-const sanitizeWorksheetText = (str: string) => str.replace(/<script.*?>.*?<\/script>/gi, "").trim();
-
-// ====================================================================
 // BACKGROUND SAVE QUEUE (serializa guardados sin bloquear UI)
 // ====================================================================
-interface BackgroundSaveJob {
-  id: string;
-  state: WorksheetState;
-  electricalValues: Record<string, { patron: string; instrumento: string }>;
-  localExc: { p1: string; p2: string; p3: string; p4: string; p5: string };
-  user: { id?: string } | null;
-  worksheetId?: string;
-}
-
 type BgSaveToastFn = (t: { message: string; type: "success" | "error" | "warning" }) => void;
 
 let bgSaveQueue: BackgroundSaveJob[] = [];
@@ -415,6 +341,16 @@ let bgSaveRunning = false;
 let bgSaveToast: BgSaveToastFn | null = null;
 
 const enqueueBackgroundSave = (job: BackgroundSaveJob, onToast: BgSaveToastFn) => {
+  addPendingSave({
+    id: job.id,
+    timestamp: Date.now(),
+    state: job.state as unknown as Record<string, unknown>,
+    electricalValues: job.electricalValues,
+    localExc: job.localExc,
+    user: job.user,
+    worksheetId: job.worksheetId,
+    magnitudConsecutivo: job.magnitudConsecutivo,
+  });
   bgSaveToast = onToast;
   bgSaveQueue.push(job);
   void drainBackgroundSaveQueue();
@@ -425,16 +361,41 @@ async function drainBackgroundSaveQueue() {
   bgSaveRunning = true;
   while (bgSaveQueue.length > 0) {
     const job = bgSaveQueue.shift()!;
+    const cert = job.state.certificado || "";
     try {
       await persistWorksheetJob(job);
+      removePendingSave(job.id);
       clearWorksheetDraft();
       localStorage.removeItem("backup_worksheet_data");
       bgSaveToast?.({ message: "✅ Hoja de trabajo guardada correctamente.", type: "success" });
+      dispatchWorksheetSaveComplete({
+        certificado: cert,
+        success: true,
+        message: `Hoja ${cert} guardada correctamente.`,
+      });
+      dispatchWorksheetQueueSync({
+        pendingCount: getTotalWorksheetQueueCount(),
+        uploaded: 1,
+        certificado: cert,
+      });
     } catch (e: unknown) {
       if (e instanceof Error && e.message === "OFFLINE_QUEUED") {
+        removePendingSave(job.id);
+        clearWorksheetDraft();
         bgSaveToast?.({
-          message: "Sin conexión. La hoja se guardó en cola para sincronizar.",
+          message: "Guardado en cola offline. Se subirá al reconectar.",
           type: "warning",
+        });
+        dispatchWorksheetSaveComplete({
+          certificado: cert,
+          success: true,
+          queuedOffline: true,
+          message: `Hoja ${cert} en cola offline.`,
+        });
+        dispatchWorksheetQueueSync({
+          pendingCount: getTotalWorksheetQueueCount(),
+          uploaded: 0,
+          certificado: cert,
         });
         continue;
       }
@@ -445,173 +406,64 @@ async function drainBackgroundSaveQueue() {
         message: "Error al guardar. Se conservó borrador y respaldo local.",
         type: "warning",
       });
+      dispatchWorksheetSaveComplete({
+        certificado: cert,
+        success: false,
+        message: `Error al guardar ${cert}. Revisa borrador local.`,
+      });
     }
   }
   bgSaveRunning = false;
 }
 
-function mergeJobState(job: BackgroundSaveJob): WorksheetState {
-  let merged = { ...job.state };
-  if (merged.magnitud === "Masa") {
-    const str = `1 (Centro): ${job.localExc.p1}\n2 (Inf Izq): ${job.localExc.p2}\n3 (Sup Izq): ${job.localExc.p3}\n4 (Sup Der): ${job.localExc.p4}\n5 (Inf Der): ${job.localExc.p5}`;
-    merged = { ...merged, excentricidad: str };
-  }
-  if (merged.magnitud === "Electrica") {
-    let textoPatron = "";
-    let textoInstrumento = "";
-    merged.unidad.forEach((u) => {
-      const vals = job.electricalValues[u] || { patron: "", instrumento: "" };
-      if (vals.patron) textoPatron += `${u}:\n${vals.patron}\n\n`;
-      if (vals.instrumento) textoInstrumento += `${u}:\n${vals.instrumento}\n\n`;
-    });
-    merged = {
-      ...merged,
-      medicionPatron: textoPatron.trim(),
-      medicionInstrumento: textoInstrumento.trim(),
-    };
-  }
-  return merged;
-}
-
-async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void> {
-  const state = mergeJobState(job);
-  const user = job.user;
-  const worksheetId = job.worksheetId;
-
-  const { jsPDF } = await import("jspdf");
-  const pdfDoc = generateTemplatePDF(state, jsPDF as Parameters<typeof generateTemplatePDF>[1]);
-  const blob = pdfDoc.output("blob");
-  const technicianName = getTechnicianFolderName(user);
-  const nombreArchivo = `worksheets/${technicianName}/${state.certificado}_${state.id || "SINID"}.pdf`;
-
-  let finalDocId: string | null = worksheetId || null;
-  let existingData: Record<string, unknown> | null = null;
-
-  if (!finalDocId && navigator.onLine) {
-    const qDupe = query(
-      collection(db, "hojasDeTrabajo"),
-      where("id", "==", state.id.trim()),
-      where("cliente", "==", state.cliente)
-    );
-    const dupeDocs = await getDocs(qDupe);
-    let bestMatchDate = -1;
-    dupeDocs.forEach((d) => {
-      const data = d.data();
-      if (
-        !data.pdfURL ||
-        data.status_certificado === "Pendiente de Certificado" ||
-        data.status_equipo === "Desconocido" ||
-        data.status_equipo === "Recepción"
-      ) {
-        const docTime = new Date(data.createdAt || data.fechaEntrada || 0).getTime();
-        if (docTime > bestMatchDate) {
-          bestMatchDate = docTime;
-          finalDocId = d.id;
-          existingData = data;
-        }
-      }
-    });
-  }
-
-  const sanitizedState: WorksheetState = { ...state, magnitud: toWorksheetMagnitud(state.magnitud) };
-  for (const key in sanitizedState) {
-    if (typeof sanitizedState[key as keyof WorksheetState] === "string") {
-      sanitizedState[key as keyof WorksheetState] = sanitizeWorksheetText(
-        sanitizedState[key as keyof WorksheetState] as string
-      ) as never;
-    }
-  }
-
-  const { fotoEquipoBase64, ...stateForFirestore } = sanitizedState;
-  const lugarNormalizado = stateForFirestore.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
-
-  const fullData: Record<string, unknown> = {
-    ...stateForFirestore,
-    lugarCalibracion: lugarNormalizado,
-    folio: stateForFirestore.certificado,
-    serie: stateForFirestore.numeroSerie,
-    status: "completed",
-    priority: "medium",
-    status_equipo: "Calibrado",
-    status_certificado: "Generado",
-    cargado_drive: "Pendiente",
+/** Guarda en cola local en segundo plano y regresa de inmediato a la pantalla anterior. */
+function scheduleOfflineSaveAndGoBack(
+  job: BackgroundSaveJob,
+  goBack: () => void,
+  onPendingCount: (n: number) => void
+) {
+  addPendingSave({
+    id: job.id,
     timestamp: Date.now(),
-    createdAt: (existingData?.createdAt as string) || new Date().toISOString(),
-    userId: user?.id || "unknown",
-  };
-
-  if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
-    fullData.fechaRecepcion = existingData.fechaEntrada;
-    fullData.fechaEntrada = existingData.fechaEntrada;
-  }
-
-  const pdfBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
+    state: job.state as unknown as Record<string, unknown>,
+    electricalValues: job.electricalValues,
+    localExc: job.localExc,
+    user: job.user,
+    worksheetId: job.worksheetId,
+    magnitudConsecutivo: job.magnitudConsecutivo,
   });
 
-  if (!navigator.onLine) {
-    addToOfflineQueue({
-      id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-      timestamp: Date.now(),
-      data: fullData,
-      pdfBlob: pdfBase64,
-      nombreArchivo,
-      finalDocId,
-      worksheetId,
-    });
-    throw new Error("OFFLINE_QUEUED");
-  }
+  const cert = job.state.certificado || "";
+  dispatchWorksheetSaveComplete({
+    certificado: cert,
+    success: true,
+    queuedOffline: true,
+    message: `Hoja ${cert} guardada localmente. Puedes seguir calibrando.`,
+  });
+  dispatchWorksheetQueueSync({
+    pendingCount: getTotalWorksheetQueueCount(),
+    uploaded: 0,
+    certificado: cert,
+  });
+  onPendingCount(getTotalWorksheetQueueCount());
+  goBack();
 
-  let docRefId = finalDocId;
-  if (docRefId) {
-    await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
-  } else {
-    const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
-    docRefId = newDoc.id;
-  }
-
-  const updates: Record<string, string> = {};
-  if (fotoEquipoBase64) {
-    const imgData = fotoEquipoBase64.startsWith("data:")
-      ? fotoEquipoBase64
-      : `data:image/jpeg;base64,${fotoEquipoBase64}`;
-    const imgBlob = await fetch(imgData).then((r) => r.blob());
-    const fotoRef = ref(storage, `worksheets/fotos/${state.certificado}_${state.id || "SINID"}.jpg`);
-    await uploadBytes(fotoRef, imgBlob);
-    updates.fotoEquipoURL = await getDownloadURL(fotoRef);
-  }
-
-  const pdfRef = ref(storage, nombreArchivo);
-  const uploadResult = await uploadBytes(pdfRef, blob);
-  updates.pdfURL = await getDownloadURL(pdfRef);
-  try {
-    await writeDriveFileMetadata(nombreArchivo, uploadResult, technicianName, {
-      ubicacion_real: lugarNormalizado === "sitio" ? "Servicio en Sitio" : "Laboratorio",
-      workDate: state.fecha,
-    });
-  } catch (metaErr) {
-    console.error("[WorkSheet] Error al registrar metadata en Drive:", metaErr);
-  }
-  updates.cargado_drive = "Si";
-
-  if (docRefId) {
-    await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
-  }
-
-  try {
-    await syncServicioInicioFromWorksheetRecord({
-      fecha: state.fecha,
-      cliente: state.cliente,
-      lugarCalibracion: lugarNormalizado,
-      createdAt: fullData.createdAt as string,
-      timestamp: fullData.timestamp as number,
-    });
-  } catch (syncErr) {
-    console.error("[WorkSheet] No se pudo sincronizar inicio del servicio:", syncErr);
-  }
+  void (async () => {
+    try {
+      await persistWorksheetToOfflineQueue(job);
+      removePendingSave(job.id);
+      clearWorksheetDraft();
+      localStorage.removeItem("backup_worksheet_data");
+      dispatchWorksheetQueueSync({
+        pendingCount: getTotalWorksheetQueueCount(),
+        uploaded: 0,
+        certificado: cert,
+      });
+    } catch (e) {
+      console.error("Guardado offline en segundo plano:", e);
+      saveWorksheetDraft(job.state as unknown as Record<string, unknown>);
+    }
+  })();
 }
 
 // ====================================================================
@@ -753,17 +605,6 @@ const getLocalISODate = () => {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-};
-
-const unidadesPorMagnitud: Record<string, any> = {
-  Acustica: ["dB", "Hz", "Pa"], Dimensional: ["m", "cm", "mm", "in", "min", "°", "µm"], Fuerza: ["N", "kgf", "lbf"],
-  Flujo: ["m3/h", "slpm", "lpm", "scfm", "cfh", "m3/pm", "gpm", "ccm", "SCMH", "SCFH"], Frecuencia: ["RPM", "Hz", "kHz", "MHz", "GHz", "rad/s"],
-  Presión: ["kPa", "bar", "mBar", "psi", "InH2O", "MPa", "Pa", "mmH20"], Quimica: ["µS", "pH"],
-  Electrica: { DC: ["mV", "V", "A", "µA", "mA", "Ω"], AC: ["mV", "V", "A", "µA", "mA", "Ω"], Otros: ["Hz", "kHz", "MHz", "°C", "°F"] },
-  Temperatura: ["°C", "°F", "°K"], Optica: ["BRIX", "°"], Masa: ["g", "kg", "lb"], Tiempo: ["s", "min", "h"],
-  "Reporte de Diagnostico": ["check"], Velocidad: ["m/s", "km/h"], Vacio: ["atm", "Psi", "mbar", "Torr", "mmHg", "micron", "inHg"],
-  Vibracion: ["g", "rad/s"], "Par Torsional": ["N*m", "Lbf*ft", "kgf*cm", "Lbf*in", "c*N", "oz*in", "oz*ft"],
-  Humedad: ["% HR", "%", "°C Punto de Rocío"]
 };
 
 const findTechopsById = (id: string): MasterRecord | null => {
@@ -943,85 +784,48 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   useEffect(() => {
     const updatePendingCount = () => {
-      setPendingUploads(getOfflineQueue().length);
+      setPendingUploads(getTotalWorksheetQueueCount());
     };
 
-    const processOfflineQueue = async () => {
-      if (processingQueueRef.current) return;
-      const queue = getOfflineQueue();
-      if (queue.length === 0) return;
+    const runQueue = async () => {
+      if (processingQueueRef.current || !(await canSaveDirectlyToFirebase())) return;
       processingQueueRef.current = true;
-      let uploaded = 0;
-      for (const item of queue) {
-        try {
-          const { jsPDF: JsPDF } = await import("jspdf");
-          const binaryStr = atob(item.pdfBlob);
-          const bytes = new Uint8Array(binaryStr.length);
-          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-          const blob = new Blob([bytes], { type: 'application/pdf' });
-          const pdfRef = ref(storage, item.nombreArchivo);
-          const uploadResult = await uploadBytes(pdfRef, blob);
-          const pdfURL = await getDownloadURL(pdfRef);
-          try {
-            const uploadedBy =
-              getTechnicianFolderName(user) ||
-              item.nombreArchivo.split("/")[1] ||
-              "Desconocido";
-            await writeDriveFileMetadata(item.nombreArchivo, uploadResult, uploadedBy, {
-              workDate: item.data?.fecha,
-            });
-          } catch (metaErr) {
-            console.error("[WorkSheet] Error al registrar metadata en Drive (cola offline):", metaErr);
-          }
-          const fullData = { ...item.data, pdfURL, cargado_drive: "Si", status: "completed" };
-          if (item.finalDocId) {
-            await updateDoc(doc(db, "hojasDeTrabajo", item.finalDocId), fullData);
-          } else {
-            await addDoc(collection(db, "hojasDeTrabajo"), fullData);
-          }
-          try {
-            await syncServicioInicioFromWorksheetRecord({
-              ...fullData,
-              fecha: String(fullData.fecha || ''),
-              cliente: String(fullData.cliente || ''),
-              lugarCalibracion: String(fullData.lugarCalibracion || ''),
-              createdAt: String(fullData.createdAt || ''),
-              timestamp: typeof fullData.timestamp === 'number' ? fullData.timestamp : item.timestamp,
-            });
-          } catch (syncErr) {
-            console.error("[WorkSheet] Sync servicio tras cola offline:", syncErr);
-          }
-          removeFromOfflineQueue(item.id);
-          uploaded++;
-        } catch (err) {
-          console.error("Error procesando cola offline:", err);
+      try {
+        const result = await processWorksheetOfflineQueue(user);
+        updatePendingCount();
+        if (result.uploaded > 0) {
+          setToast({
+            message: `☁️ ${result.uploaded} hoja${result.uploaded > 1 ? "s" : ""} subida${result.uploaded > 1 ? "s" : ""} correctamente.`,
+            type: "success",
+          });
         }
-      }
-      processingQueueRef.current = false;
-      updatePendingCount();
-      if (uploaded > 0) {
-        setToast({ message: `☁️ ${uploaded} hoja${uploaded > 1 ? 's' : ''} de trabajo subida${uploaded > 1 ? 's' : ''} correctamente al reconectarse.`, type: 'success' });
+      } finally {
+        processingQueueRef.current = false;
       }
     };
 
     const handleOnline = () => {
       setIsOnline(true);
-      setTimeout(processOfflineQueue, 1500);
+      setTimeout(runQueue, 1500);
     };
     const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    const handleQueueSync = () => updatePendingCount();
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("ag-worksheet-queue-sync", handleQueueSync);
 
     updatePendingCount();
-    if (navigator.onLine) {
-      setTimeout(processOfflineQueue, 2000);
-    }
+    void canSaveDirectlyToFirebase().then((ok) => {
+      if (ok) setTimeout(runQueue, 2000);
+    });
 
     return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("ag-worksheet-queue-sync", handleQueueSync);
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (worksheetId) {
@@ -1427,72 +1231,93 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
     setIsSaving(true);
 
+    const saveJob: BackgroundSaveJob = {
+      id: `save_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      state: { ...state },
+      electricalValues: { ...electricalValues },
+      localExc: { ...localExc },
+      user,
+      worksheetId,
+      magnitudConsecutivo: selectedMagnitude || undefined,
+    };
+
     try {
-      if (!state.permitirExcepcion && state.id?.trim() && state.cliente) {
-        const qPeriodo = query(
-          collection(db, "hojasDeTrabajo"),
-          where("id", "==", state.id.trim()),
-          where("cliente", "==", state.cliente)
-        );
-        const docs = await getDocs(qPeriodo);
-        if (!docs.empty) {
-          let maxFecha: Date | null = null;
-          let frecuenciaAnterior: string | undefined;
-          docs.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (data.fecha) {
-              const parts = data.fecha.split("-");
-              if (parts.length === 3) {
-                const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-                if (!isNaN(dateObj.getTime()) && (!maxFecha || dateObj.getTime() > maxFecha.getTime())) {
-                  maxFecha = dateObj;
-                  frecuenciaAnterior = data.frecuenciaCalibracion;
+      const firebaseOk = navigator.onLine ? await canSaveDirectlyToFirebase() : false;
+
+      if (!firebaseOk) {
+        setToast({ message: "Sin red: guardando en segundo plano…", type: "warning" });
+        scheduleOfflineSaveAndGoBack(saveJob, goBack, setPendingUploads);
+        return;
+      }
+
+      if (firebaseOk) {
+        if (!state.permitirExcepcion && state.id?.trim() && state.cliente) {
+          const qPeriodo = query(
+            collection(db, "hojasDeTrabajo"),
+            where("id", "==", state.id.trim()),
+            where("cliente", "==", state.cliente)
+          );
+          const docs = await getDocs(qPeriodo);
+          if (!docs.empty) {
+            let maxFecha: Date | null = null;
+            let frecuenciaAnterior: string | undefined;
+            docs.forEach((docSnap) => {
+              const data = docSnap.data();
+              if (data.fecha) {
+                const parts = data.fecha.split("-");
+                if (parts.length === 3) {
+                  const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                  if (!isNaN(dateObj.getTime()) && (!maxFecha || dateObj.getTime() > maxFecha.getTime())) {
+                    maxFecha = dateObj;
+                    frecuenciaAnterior = data.frecuenciaCalibracion;
+                  }
                 }
               }
+            });
+            if (maxFecha && frecuenciaAnterior) {
+              const nextAllowed = calcularSiguienteFecha(format(maxFecha, "yyyy-MM-dd"), frecuenciaAnterior);
+              const fechaReferencia = parseWorksheetDate(state.fecha);
+              if (nextAllowed && isBefore(fechaReferencia, nextAllowed)) {
+                setToast({
+                  message: "⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.",
+                  type: "error",
+                });
+                return;
+              }
             }
-          });
-          if (maxFecha && frecuenciaAnterior) {
-            const nextAllowed = calcularSiguienteFecha(format(maxFecha, "yyyy-MM-dd"), frecuenciaAnterior);
-            const fechaReferencia = parseWorksheetDate(state.fecha);
-            if (nextAllowed && isBefore(fechaReferencia, nextAllowed)) {
-              setToast({
-                message: "⛔️ ERROR: Equipo calibrado recientemente. Habilita 'Permitir excepción' para continuar.",
-                type: "error",
-              });
-              return;
-            }
+          }
+        }
+
+        if (!worksheetId) {
+          const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
+          if (!(await getDocs(qCert)).empty) {
+            setToast({ message: "El número de certificado ya existe.", type: "error" });
+            return;
           }
         }
       }
 
-      if (!worksheetId && navigator.onLine) {
-        const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
-        if (!(await getDocs(qCert)).empty) {
-          setToast({ message: "El número de certificado ya existe.", type: "error" });
-          return;
-        }
-      }
-
-      setToast({ message: "Guardando en segundo plano...", type: "warning" });
       enqueueBackgroundSave(
-        {
-          id: `save_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          state: { ...state },
-          electricalValues: { ...electricalValues },
-          localExc: { ...localExc },
-          user,
-          worksheetId,
-        },
+        saveJob,
         (t) => {
           setToast(t);
           if (t.type === "success" || t.type === "warning") {
-            setPendingUploads(getOfflineQueue().length);
+            setPendingUploads(getTotalWorksheetQueueCount());
           }
         }
       );
       goBack();
     } catch (e: unknown) {
       console.error("Error al validar/guardar:", e);
+      const shouldQueueOffline =
+        !navigator.onLine ||
+        isRetriableNetworkError(e) ||
+        (navigator.onLine && !(await canSaveDirectlyToFirebase()));
+      if (shouldQueueOffline) {
+        setToast({ message: "Sin red: guardando en segundo plano…", type: "warning" });
+        scheduleOfflineSaveAndGoBack(saveJob, goBack, setPendingUploads);
+        return;
+      }
       localStorage.setItem("backup_worksheet_data", JSON.stringify(state));
       saveWorksheetDraft(state as unknown as Record<string, unknown>);
       setToast({ message: "Error al guardar. Se conservó borrador y respaldo local.", type: "warning" });
@@ -1508,6 +1333,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     localExc,
     syncElectricalToGlobalState,
     syncMasaToGlobalState,
+    selectedMagnitude,
   ]);
 
   const slaInfo = React.useMemo(() => {
@@ -1543,63 +1369,69 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   const labelData = buildLabelData();
 
+  const flowAccent = accentFromMagnitude(state.magnitud || selectedMagnitude);
+
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 to-blue-50 relative">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50/40 relative pb-28">
       
       {toast && <ToastNotification message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      <div className="bg-gradient-to-r from-indigo-600 to-blue-700 text-white shadow-lg sticky top-0 z-40">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button onClick={goBack} className="p-2 hover:bg-white/10 rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><Tag className="w-6 h-6" /></div>
-              <div>
-                <h1 className="text-xl font-bold flex items-center gap-2">
-                  Hoja de Trabajo {worksheetId ? "(Edición)" : ""}
-                  <div className={`w-3 h-3 rounded-full shadow-md ${isOnline ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`} title={isOnline ? "Online" : "Offline - Guardando Localmente"}></div>
-                </h1>
-                <p className="text-blue-100 text-sm flex items-center gap-2">
-                  Consecutivo: {state.certificado || "SIN CERTIFICADO"}
-                  {!isOnline && <span className="text-xs bg-orange-500/80 px-2 py-0.5 rounded text-white flex items-center gap-1"><WifiOff className="w-3 h-3"/> Offline</span>}
-                  {pendingUploads > 0 && isOnline && (
-                    <span className="text-xs bg-yellow-500/90 px-2 py-0.5 rounded text-white flex items-center gap-1 animate-pulse">
-                      <CloudUpload className="w-3 h-3"/> Subiendo {pendingUploads} pendiente{pendingUploads > 1 ? 's' : ''}…
-                    </span>
-                  )}
-                  {pendingUploads > 0 && !isOnline && (
-                    <span className="text-xs bg-orange-600/90 px-2 py-0.5 rounded text-white flex items-center gap-1">
-                      <CloudOff className="w-3 h-3"/> {pendingUploads} en cola offline
-                    </span>
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            
+      <FlowScreenHeader
+        accent={flowAccent === "trazable" ? "trazable" : "worksheet"}
+        title={`Hoja de Trabajo${worksheetId ? " (Edición)" : ""}`}
+        subtitle={
+          <>
+            <span className="font-mono font-semibold">{state.certificado || "SIN CERTIFICADO"}</span>
+            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-400" : "bg-orange-400 animate-pulse"}`} />
+            {!isOnline && (
+              <span className="text-xs bg-orange-500/80 px-2 py-0.5 rounded-full text-white flex items-center gap-1">
+                <WifiOff className="w-3 h-3" /> Offline
+              </span>
+            )}
+            {pendingUploads > 0 && isOnline && (
+              <span className="text-xs bg-amber-500/90 px-2 py-0.5 rounded-full text-white flex items-center gap-1">
+                <CloudUpload className="w-3 h-3" /> Subiendo {pendingUploads}…
+              </span>
+            )}
+            {pendingUploads > 0 && !isOnline && (
+              <span className="text-xs bg-orange-600/90 px-2 py-0.5 rounded-full text-white flex items-center gap-1">
+                <CloudOff className="w-3 h-3" /> {pendingUploads} en cola
+              </span>
+            )}
+          </>
+        }
+        onBack={goBack}
+        icon={<Tag className="w-6 h-6" />}
+        rightSlot={
+          <>
             <LabelPrinterButton data={labelData} logo={logoAg} />
-
-            <button onClick={() => setShowConverter(true)} className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105 active:scale-95">
-              <Calculator className="w-4 h-4" /><span className="text-sm font-medium hidden md:inline">Convertidor</span>
+            <button
+              type="button"
+              onClick={() => setShowConverter(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl transition-all bg-white/10 text-white border border-white/20 hover:bg-white/20 active:scale-95"
+            >
+              <Calculator className="w-4 h-4" />
+              <span className="text-sm font-medium hidden md:inline">Convertidor</span>
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         
         <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
           <div className={activeClientNotes ? "lg:col-span-8 transition-all duration-300" : "lg:col-span-10 lg:col-start-2 transition-all duration-300"}>
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200">
-              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b border-gray-200 rounded-t-2xl">
-                <h2 className="text-2xl font-bold text-gray-900">Información de Calibración</h2>
-                <p className="text-gray-600 mt-1">Complete los datos obligatorios marcados con *.</p>
-              </div>
-              <div className="p-8 space-y-8">
+            <FlowCard
+              accent={flowAccent === "trazable" ? "trazable" : "worksheet"}
+              title="Información de Calibración"
+              description="Complete los datos obligatorios marcados con *"
+              icon={<NotebookPen className="w-5 h-5" />}
+              bodyClassName="space-y-8"
+            >
+                <FlowSection icon={<MapPin className="w-4 h-4" />} title="Ubicación" accentClass="text-orange-500">
                 <div>
-                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><MapPin className="w-4 h-4 text-orange-500" /><span>Lugar de Calibración*</span></label>
+                  <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><span>Lugar de Calibración*</span></label>
                   <div className={`grid grid-cols-3 gap-4 text-gray-700 p-1 rounded-lg ${validationErrors.lugarCalibracion ? 'bg-red-50 border border-red-200' : ''}`}>
                     {["Sitio", "Laboratorio"].map((opt) => (
                       <button key={opt} onClick={() => { 
@@ -1613,11 +1445,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 {state.lugarCalibracion === "Laboratorio" && (
                   <div className="mt-4 animate-in fade-in slide-in-from-top-2">
                     <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
-                    <input type="date" className={`w-full border rounded px-3 py-2 text-sm text-gray-900 font-semibold shadow-inner bg-white ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
+                    <input type="date" className={`w-full border rounded-xl px-3 py-2.5 text-sm text-gray-900 font-semibold bg-white ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
                   </div>
                 )}
+                </FlowSection>
                 
-                {/* --- SECCIÓN FRECUENCIA / FECHA --- */}
+                <FlowSection icon={<Calendar className="w-4 h-4" />} title="Programación" accentClass="text-green-500">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
@@ -1665,8 +1498,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     )}
                   </div>
                 </div>
+                </FlowSection>
 
-                {/* --- SECCIÓN CERTIFICADO / NOMBRE --- */}
+                <FlowSection icon={<Hash className="w-4 h-4" />} title="Identificación" accentClass="text-purple-500">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Hash className="w-4 h-4 text-purple-500" /><span>N.Certificado*</span></label>
@@ -1677,8 +1511,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     <input type="text" value={state.nombre} readOnly className={`w-full p-4 border rounded-lg bg-white text-gray-900 font-semibold shadow-inner ${validationErrors.nombre ? 'border-red-500 ring-1 ring-red-500' : 'border-indigo-200'}`} />
                   </div>
                 </div>
+                </FlowSection>
 
-                {/* --- SECCIÓN CLIENTE / ID --- */}
+                <FlowSection icon={<Building2 className="w-4 h-4" />} title="Cliente y Equipo" accentClass="text-blue-500">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Building2 className="w-4 h-4 text-indigo-500" /><span>Cliente*</span></label>
@@ -1870,11 +1705,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     />
                   </div>
                 </div>
+                </FlowSection>
 
-                {/* ============================================================ */}
-                {/* SECCIÓN: CONDICIÓN DEL EQUIPO + FOTO                         */}
-                {/* ============================================================ */}
-                <div className="rounded-2xl border-2 border-gray-200 shadow-sm">
+                <FlowSection icon={<ShieldCheck className="w-4 h-4" />} title="Inspección Visual" accentClass="text-emerald-500">
+                <div className="rounded-2xl border border-slate-200 shadow-md overflow-hidden">
                   <div className="bg-gradient-to-r from-gray-800 to-slate-700 px-6 py-4 flex items-center gap-3 rounded-t-2xl">
                     <ShieldCheck className="w-5 h-5 text-emerald-400" />
                     <div>
@@ -1999,7 +1833,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     </div>
                   </div>
                 </div>
-                
+                </FlowSection>
+
+                <FlowSection icon={<Scale className="w-4 h-4" />} title="Mediciones" accentClass="text-indigo-500">
                 {state.magnitud === "Masa" ? (
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
                     <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
@@ -2171,8 +2007,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
+                </FlowSection>
+            </FlowCard>
           </div>
 
           {activeClientNotes && (
@@ -2202,21 +2038,33 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
         </div>
 
-        <div className="bg-gray-50 px-8 py-6 border-t border-gray-200 mt-8 rounded-lg">
-          <div className="flex justify-end space-x-4">
-            <button onClick={() => goBack()} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all flex items-center space-x-2" disabled={isSaving}><X className="w-4 h-4" /><span>Cancelar</span></button>
-            <button 
-              onClick={handleSave} 
-              disabled={isSaving || (state.idBlocked && !state.permitirExcepcion)} 
-              className={`px-6 py-3 text-white font-medium rounded-lg transition-all flex items-center space-x-2 shadow-lg 
-              ${(isSaving || (state.idBlocked && !state.permitirExcepcion)) 
-                  ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800'}`}
-            >
-              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{isSaving ? "Validando..." : "Guardar"}</span>
-            </button>
-          </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 py-4 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => goBack()}
+            className="px-5 py-3 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2"
+            disabled={isSaving}
+          >
+            <X className="w-4 h-4" /><span>Cancelar</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || (state.idBlocked && !state.permitirExcepcion)}
+            className={`px-6 py-3 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg ${
+              isSaving || (state.idBlocked && !state.permitirExcepcion)
+                ? "bg-slate-400 cursor-not-allowed"
+                : flowAccent === "trazable"
+                  ? "bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 shadow-orange-500/25"
+                  : "bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-500/25"
+            }`}
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>{isSaving ? "Guardando…" : "Guardar Hoja"}</span>
+          </button>
         </div>
       </div>
 

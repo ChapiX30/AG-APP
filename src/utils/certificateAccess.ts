@@ -21,6 +21,10 @@ export type CertificateAuthUser = {
 
 const QUALITY_EMAIL_ALLOWLIST = ['eaaese07@gmail.com'];
 
+export function isQualityEmailAllowlisted(email: string): boolean {
+  return QUALITY_EMAIL_ALLOWLIST.includes(email.toLowerCase().trim());
+}
+
 export function normalizeRoleText(...parts: (string | undefined)[]): string {
   return parts
     .filter(Boolean)

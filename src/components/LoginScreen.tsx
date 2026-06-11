@@ -2,23 +2,29 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Eye, EyeOff, Lock, Mail, ArrowRight,
   X, CheckCircle, AlertCircle,
-  Shield, Gauge, Radio, Zap, ShieldCheck,
+  Shield, Gauge, Radio, ShieldCheck,
 } from "lucide-react";
 import {
-  isMetrologyRole,
   isQualityRole,
   type UsuarioRow,
 } from "../utils/calibrationShared";
+import { isQualityEmailAllowlisted } from "../utils/certificateAccess";
 import {
   motion, AnimatePresence,
   useMotionValue, useMotionTemplate,
 } from "framer-motion";
-import { sendPasswordResetEmail, AuthError } from "firebase/auth";
+import { sendPasswordResetEmail, signOut, AuthError } from "firebase/auth";
 import { collection, query, where, getDocs, limit } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigation } from "../hooks/useNavigation";
 import { auth, db } from "../utils/firebase";
 import labLogo from "../assets/lab_logo.png";
+import { MetrologyLoginVisual } from "./ui/MetrologyLoginVisual";
+import {
+  METROLOGY_SCENE_MSG,
+  resolveMetrologyScene,
+  type MetrologyScene,
+} from "../utils/loginScenes";
 
 /* ─── helpers ─── */
 const isValidEmail = (e: string) =>
@@ -33,30 +39,37 @@ const errorMsg = (code: string) =>
     "auth/invalid-credential":"Credenciales inválidas.",
   }[code] ?? "Error inesperado. Intenta nuevamente.");
 
+const profileFromFirestore = (d: Record<string, unknown>, fallbackName = "Usuario") => {
+  const name = String(d.nombre || d.name || fallbackName);
+  return {
+    name,
+    initial: name[0]?.toUpperCase() || "U",
+    photoUrl: (d.photoUrl || d.photoURL || null) as string | null,
+    role: String(d.role || d.rol || "").trim(),
+    puesto: String(d.puesto || d.cargo || "").trim(),
+  };
+};
+
 const fetchUser = async (email: string) => {
   try {
-    const snap = await getDocs(
-      query(collection(db, "usuarios"), where("email", "==", email), limit(1))
-    );
-    if (snap.empty) return null;
-    const d = snap.docs[0].data() as any;
-    const name = d.nombre || d.name || "Usuario";
-    return {
-      name,
-      initial: name[0].toUpperCase(),
-      photoUrl: d.photoUrl || d.photoURL || null,
-      role: typeof d.role === "string" ? d.role.trim() : "",
-      puesto: typeof d.puesto === "string" ? d.puesto.trim() : "",
-    };
+    for (const field of ["email", "correo"] as const) {
+      const snap = await getDocs(
+        query(collection(db, "usuarios"), where(field, "==", email), limit(1))
+      );
+      if (!snap.empty) {
+        return profileFromFirestore(snap.docs[0].data() as Record<string, unknown>);
+      }
+    }
   } catch {
     return null;
   }
+  return null;
 };
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-/** Tiempo mínimo para que la animación se aprecie (login rápido en caché). */
-const MIN_LOGIN_OVERLAY_MS = 1650;
+/** Tiempo mínimo para que la aguja del voltímetro recorra 0→100%. */
+const MIN_LOGIN_OVERLAY_MS = 2600;
 
 type DetectedUser = {
   name: string;
@@ -68,8 +81,39 @@ type DetectedUser = {
 
 type LoginVariant = "metrology" | "quality" | "general";
 
-const resolveLoginVariant = (u: DetectedUser | null): LoginVariant => {
-  if (!u) return "general";
+const leadershipText = (u: DetectedUser) =>
+  `${u.puesto || ""} ${u.role || ""}`
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const isLeadershipRole = (u: DetectedUser) => {
+  const t = leadershipText(u);
+  return (
+    t.includes("admin") ||
+    t.includes("jefe") ||
+    t.includes("director") ||
+    t.includes("gerente") ||
+    t.includes("coordinador")
+  );
+};
+
+/** Calidad → escudo; jefatura → gauge; resto (metrólogos/técnicos) → voltímetro animado */
+const resolveLoginVariant = (u: DetectedUser | null, email: string): LoginVariant => {
+  if (isQualityEmailAllowlisted(email)) return "quality";
+  if (!u) return "metrology";
+
+  const roleL = (u.role || "").toLowerCase();
+  const puestoL = (u.puesto || "").toLowerCase();
+  if (
+    roleL.includes("calidad") ||
+    puestoL.includes("calidad") ||
+    roleL.includes("quality") ||
+    puestoL.includes("quality")
+  ) {
+    return "quality";
+  }
+
   const row: UsuarioRow = {
     id: "",
     name: u.name,
@@ -78,66 +122,47 @@ const resolveLoginVariant = (u: DetectedUser | null): LoginVariant => {
     puesto: u.puesto,
   };
   if (isQualityRole(row)) return "quality";
-  if (isMetrologyRole(row)) return "metrology";
-  return "general";
+  if (isLeadershipRole(u)) return "general";
+  return "metrology";
 };
 
-const VARIANT_MSG: Record<LoginVariant, { sub: string }> = {
-  metrology: { sub: "Calibrando instrumentos · multímetros y fuentes" },
-  quality:   { sub: "Trazabilidad y aseguramiento de calidad" },
-  general:   { sub: "Plataforma de calibración · Equipos AG" },
+const VARIANT_MSG: Record<Exclude<LoginVariant, "metrology">, { title: string; sub: string }> = {
+  quality: { title: "Verificando acceso", sub: "Trazabilidad y aseguramiento de calidad" },
+  general: { title: "Verificando acceso", sub: "Plataforma de calibración · Equipos AG" },
 };
 
 const waitMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const waitForPaint = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+
+/** Espera a que el overlay monte y complete la animación de carga. */
+const waitForLoginOverlay = async (durationMs: number) => {
+  await waitForPaint();
+  await waitMs(durationMs);
+  await waitForPaint();
+};
+
 /* ─── animaciones por rol ─── */
-const MetrologyLoginVisual: React.FC = () => (
-  <div className="relative flex h-[7.5rem] w-36 flex-col items-center justify-end">
-    <div className="relative z-10 w-full rounded-xl border-2 border-[#5a93c9]/55 bg-gradient-to-b from-slate-800 to-slate-900 p-2.5 shadow-lg">
-      <div className="mb-2 h-1 w-8 rounded-full bg-slate-600 mx-auto" />
-      <div className="rounded-md bg-[#061018] border border-emerald-500/30 px-2 py-1.5 font-mono text-sm text-emerald-400 tabular-nums tracking-wider">
-        <motion.span
-          animate={{ opacity: [1, 0.35, 1] }}
-          transition={{ duration: 0.9, repeat: Infinity }}
-        >
-          12.034
-        </motion.span>
-        <span className="text-emerald-600/80 text-xs ml-0.5">V</span>
-      </div>
-      <div className="mt-2 flex justify-center gap-1">
-        {["V", "Ω", "A"].map((m, i) => (
-          <motion.span
-            key={m}
-            className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#2464A3]/30 text-[#8bb5d9]"
-            animate={{ opacity: i === 0 ? [0.5, 1, 0.5] : 0.45 }}
-            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }}
-          >
-            {m}
-          </motion.span>
-        ))}
-      </div>
-    </div>
-    <svg className="absolute bottom-0 w-full h-10 opacity-80" viewBox="0 0 144 40" aria-hidden>
-      <motion.path
-        d="M0,20 Q18,6 36,20 T72,20 T108,20 T144,20"
-        fill="none"
-        stroke="#5a93c9"
-        strokeWidth="2"
-        strokeLinecap="round"
-        animate={{ d: [
-          "M0,20 Q18,6 36,20 T72,20 T108,20 T144,20",
-          "M0,20 Q18,34 36,20 T72,20 T108,20 T144,20",
-          "M0,20 Q18,6 36,20 T72,20 T108,20 T144,20",
-        ]}}
-        transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+const GeneralLoginVisual: React.FC = () => (
+  <div className="relative flex h-28 w-28 items-center justify-center">
+    {[0, 0.5].map((delay) => (
+      <motion.span
+        key={delay}
+        className="absolute inset-0 rounded-full border border-[#2464A3]/40"
+        animate={{ scale: [0.7, 1.25], opacity: [0.5, 0] }}
+        transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay }}
       />
-    </svg>
+    ))}
     <motion.div
-      className="absolute -top-1 right-2"
-      animate={{ opacity: [0.4, 1, 0.4], scale: [0.9, 1.05, 0.9] }}
-      transition={{ duration: 1.5, repeat: Infinity }}
+      animate={{ rotate: [0, 8, -8, 0] }}
+      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
     >
-      <Zap className="h-5 w-5 text-[#8bb5d9]" />
+      <Gauge className="h-16 w-16 text-[#5a93c9]" strokeWidth={1.5} />
     </motion.div>
   </div>
 );
@@ -182,31 +207,16 @@ const QualityLoginVisual: React.FC = () => (
   </div>
 );
 
-const GeneralLoginVisual: React.FC = () => (
-  <div className="relative flex h-28 w-28 items-center justify-center">
-    {[0, 0.5].map((delay) => (
-      <motion.span
-        key={delay}
-        className="absolute inset-0 rounded-full border border-[#2464A3]/40"
-        animate={{ scale: [0.7, 1.25], opacity: [0.5, 0] }}
-        transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay }}
-      />
-    ))}
-    <motion.div
-      animate={{ rotate: [0, 8, -8, 0] }}
-      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-    >
-      <Gauge className="h-16 w-16 text-[#5a93c9]" strokeWidth={1.5} />
-    </motion.div>
-  </div>
-);
-
 const LoginTransitionOverlay: React.FC<{
   active: boolean;
   reducedMotion: boolean;
   variant: LoginVariant;
-}> = ({ active, reducedMotion, variant }) => {
-  const copy = VARIANT_MSG[variant];
+  metrologyScene: MetrologyScene;
+}> = ({ active, reducedMotion, variant, metrologyScene }) => {
+  const copy =
+    variant === "metrology"
+      ? METROLOGY_SCENE_MSG[metrologyScene]
+      : VARIANT_MSG[variant];
 
   return (
     <AnimatePresence>
@@ -223,25 +233,29 @@ const LoginTransitionOverlay: React.FC<{
           aria-label="Verificando acceso"
         >
           <motion.div
-            className="relative flex flex-col items-center gap-5 rounded-3xl border border-[#2464A3]/45 bg-slate-900/92 px-8 py-8 w-full max-w-xs shadow-[0_0_72px_rgba(36,100,163,0.28)]"
+            className="relative flex flex-col items-center gap-5 rounded-3xl border border-[#2464A3]/45 bg-slate-900/92 px-6 py-8 w-full max-w-sm shadow-[0_0_72px_rgba(36,100,163,0.28)]"
             initial={{ scale: 0.96, opacity: 0, y: 8 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.98, opacity: 0, y: 4 }}
             transition={{ duration: 0.28 }}
           >
-            {reducedMotion ? (
-              <span className="h-9 w-9 rounded-full border-2 border-[#5a93c9] border-t-transparent animate-spin" />
+            {variant === "quality" ? (
+              <QualityLoginVisual key="login-quality" />
             ) : variant === "metrology" ? (
-              <MetrologyLoginVisual />
-            ) : variant === "quality" ? (
-              <QualityLoginVisual />
+              <MetrologyLoginVisual
+                key={`metrology-${metrologyScene}`}
+                scene={metrologyScene}
+                active={active}
+                durationMs={MIN_LOGIN_OVERLAY_MS}
+                reducedMotion={false}
+              />
             ) : (
-              <GeneralLoginVisual />
+              <GeneralLoginVisual key="login-general" />
             )}
 
             <div className="text-center space-y-1.5">
               <p className="text-sm font-medium text-slate-100">
-                Verificando acceso
+                {copy.title}
               </p>
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 {reducedMotion ? "Un momento…" : copy.sub}
@@ -426,7 +440,7 @@ const labelCls =
 export const LoginScreen: React.FC<{
   onNavigateToRegister: () => void;
 }> = ({ onNavigateToRegister }) => {
-  const { login }      = useAuth();
+  const { login, completeLogin } = useAuth();
   const { navigateTo } = useNavigation();
 
   const [email, setEmail]       = useState("");
@@ -437,7 +451,8 @@ export const LoginScreen: React.FC<{
   const [attempts, setAttempts] = useState(0);
   const [user, setUser]         = useState<DetectedUser | null>(null);
   const [loginTransition, setLoginTransition] = useState(false);
-  const [loginVariant, setLoginVariant]     = useState<LoginVariant>("general");
+  const [loginVariant, setLoginVariant]     = useState<LoginVariant>("metrology");
+  const [metrologyScene, setMetrologyScene] = useState<MetrologyScene>("electrical");
   const [fetching, setFetching]     = useState(false);
   const [showReset, setShowReset]   = useState(false);
   const [resetStatus, setResetStatus] = useState<{
@@ -448,6 +463,7 @@ export const LoginScreen: React.FC<{
   const cacheRef = useRef<Record<string, any>>({});
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastRef  = useRef<string | null>(null);
+  const submittingRef = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -495,30 +511,71 @@ export const LoginScreen: React.FC<{
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const variant = resolveLoginVariant(user);
-    setLoginVariant(variant);
-    setLoginTransition(true);
+    if (submittingRef.current || loading) return;
+
+    const emailKey = email.trim().toLowerCase();
+    submittingRef.current = true;
     setLoading(true);
     setError("");
-    const started = Date.now();
+    setLoginTransition(false);
+
+    let overlayShown = false;
 
     try {
-      const ok = await login(email.trim().toLowerCase(), password);
-      const remain = MIN_LOGIN_OVERLAY_MS - (Date.now() - started);
-      if (remain > 0) await waitMs(remain);
-      if (ok) navigateTo("menu");
-      else {
-        setAttempts((p) => p + 1);
-        setError("Credenciales incorrectas.");
+      const authProfile = await login(emailKey, password);
+
+      let detected: DetectedUser = {
+        name: authProfile.name,
+        initial: authProfile.name[0]?.toUpperCase() || "U",
+        role: authProfile.role,
+        puesto: authProfile.puesto,
+      };
+
+      if (!detected.role && !detected.puesto) {
+        const byEmail = await fetchUser(emailKey);
+        if (byEmail) {
+          detected = {
+            ...byEmail,
+            role: byEmail.role || detected.role,
+            puesto: byEmail.puesto || detected.puesto,
+          };
+        }
       }
+
+      cacheRef.current[emailKey] = detected;
+
+      const variant = resolveLoginVariant(detected, emailKey);
+      const scene = resolveMetrologyScene(detected.name);
+
+      setLoginVariant(variant);
+      setMetrologyScene(scene);
+      setLoginTransition(true);
+      overlayShown = true;
+
+      await waitForLoginOverlay(MIN_LOGIN_OVERLAY_MS);
+
+      completeLogin({
+        id: authProfile.id,
+        name: detected.name,
+        email: emailKey,
+        role: detected.role,
+        puesto: detected.puesto,
+      });
+      navigateTo("menu");
     } catch (err) {
-      const remain = MIN_LOGIN_OVERLAY_MS - (Date.now() - started);
-      if (remain > 0) await waitMs(remain);
+      if (auth.currentUser) {
+        try {
+          await signOut(auth);
+        } catch {
+          /* limpiar sesión parcial */
+        }
+      }
       setAttempts((p) => p + 1);
       setError(errorMsg((err as AuthError).code ?? ""));
+      if (overlayShown) setLoginTransition(false);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
-      setLoginTransition(false);
     }
   };
 
@@ -864,6 +921,7 @@ export const LoginScreen: React.FC<{
         active={loginTransition}
         reducedMotion={reducedMotion}
         variant={loginVariant}
+        metrologyScene={metrologyScene}
       />
     </div>
   );

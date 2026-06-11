@@ -65,6 +65,7 @@ import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { getTotalWorksheetQueueCount } from '../utils/worksheetQueueRunner';
 import { isUserOnline } from '../hooks/usePresence';
 import { COLLECTION_PATRONES, countPatronesEnAlerta, isCalidadRole } from '../utils/patronCalibracion';
 import {
@@ -1226,6 +1227,7 @@ export const MainMenu: React.FC = () => {
   const [loadingServices, setLoadingServices] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [patronAlertCount, setPatronAlertCount] = useState(0);
+  const [worksheetQueueCount, setWorksheetQueueCount] = useState(0);
   const pendingJuntaSyncRef = useRef<Set<string>>(new Set());
 
   const [patronBannerDismissed, setPatronBannerDismissed] = useState(isPatronBannerDismissed);
@@ -1246,6 +1248,46 @@ export const MainMenu: React.FC = () => {
   useEffect(() => {
     if (uid) setNovedadesWidgetHiddenState(isNovedadesWidgetHidden(uid));
   }, [uid]);
+
+  useEffect(() => {
+    const refreshQueue = () => setWorksheetQueueCount(getTotalWorksheetQueueCount());
+    refreshQueue();
+
+    const onQueueSync = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        pendingCount?: number;
+        uploaded?: number;
+        recovered?: number;
+        message?: string;
+      };
+      if (typeof detail?.pendingCount === 'number') setWorksheetQueueCount(detail.pendingCount);
+      else refreshQueue();
+      if (detail?.uploaded && detail.uploaded > 0) {
+        toast.success(detail.message || `${detail.uploaded} hoja(s) sincronizada(s).`);
+      } else if (detail?.recovered && detail.recovered > 0 && detail.message) {
+        toast.warning(detail.message);
+      }
+    };
+
+    const onSaveComplete = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { success?: boolean; queuedOffline?: boolean; message?: string };
+      refreshQueue();
+      if (detail?.message) {
+        if (detail.success) {
+          toast[detail.queuedOffline ? 'warning' : 'success'](detail.message);
+        } else {
+          toast.error(detail.message);
+        }
+      }
+    };
+
+    window.addEventListener('ag-worksheet-queue-sync', onQueueSync);
+    window.addEventListener('ag-worksheet-save-complete', onSaveComplete);
+    return () => {
+      window.removeEventListener('ag-worksheet-queue-sync', onQueueSync);
+      window.removeEventListener('ag-worksheet-save-complete', onSaveComplete);
+    };
+  }, []);
 
   const handleNovedadesWidgetHiddenChange = useCallback((hidden: boolean) => {
     setNovedadesWidgetHiddenState(hidden);
@@ -1746,7 +1788,13 @@ export const MainMenu: React.FC = () => {
                                 hideCategory={!isSearching}
                                 isDisabled={item.id === 'formatos' && !isAdmin}
                                 onNavigate={navigateTo}
-                                badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
+                                badgeCount={
+                                  item.id === 'calendario' && canSeePatronAlerts
+                                    ? patronAlertCount
+                                    : item.id === 'consecutivos' && worksheetQueueCount > 0
+                                      ? worksheetQueueCount
+                                      : undefined
+                                }
                               />
                             ))}
                           </div>
@@ -1775,7 +1823,13 @@ export const MainMenu: React.FC = () => {
                                 index={i}
                                 isDisabled={item.id === 'formatos' && !isAdmin}
                                 onNavigate={navigateTo}
-                                badgeCount={item.id === 'calendario' && canSeePatronAlerts ? patronAlertCount : undefined}
+                                badgeCount={
+                                  item.id === 'calendario' && canSeePatronAlerts
+                                    ? patronAlertCount
+                                    : item.id === 'consecutivos' && worksheetQueueCount > 0
+                                      ? worksheetQueueCount
+                                      : undefined
+                                }
                               />
                             ))}
                           </div>

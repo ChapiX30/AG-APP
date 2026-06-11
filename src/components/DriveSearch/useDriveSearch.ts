@@ -91,7 +91,8 @@ export function useDriveSearch({
     }
 
     let pinnedPending: DriveSearchFile | null = null;
-    const minPendingLen = isEquipmentIdQuery(activeSearchTerm) ? 2 : 3;
+    const isCertQuery = /^ag[a-z]{0,4}-?\d/i.test(activeSearchTerm.replace(/\s/g, ""));
+    const minPendingLen = isEquipmentIdQuery(activeSearchTerm) || isCertQuery ? 2 : 3;
     if (pendingWorksheetFile && activeSearchTerm.length >= minPendingLen) {
       const equipId =
         pendingWorksheetFile.worksheetId ||

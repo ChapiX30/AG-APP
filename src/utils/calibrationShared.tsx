@@ -287,12 +287,26 @@ export const isMetrologyRole = (user: UsuarioRow) => {
   ) {
     return false;
   }
-  return text.includes("metrologo") || text.includes("tecnico");
+  return (
+    text.includes("metrolog") ||
+    text.includes("tecnico") ||
+    text.includes("calibr")
+  );
 };
 
 export const isQualityRole = (user: UsuarioRow) => {
-  const text = ((user.puesto || "") + " " + (user.role || "")).toLowerCase();
-  return text.includes("calidad") || text.includes("quality") || text.includes("aseguramiento");
+  const text = ((user.puesto || "") + " " + (user.role || ""))
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return (
+    text.includes("calidad") ||
+    text.includes("quality") ||
+    text.includes("aseguramiento") ||
+    text.includes("qc") ||
+    text.includes("gestion de calidad") ||
+    text.includes("sistema de gestion")
+  );
 };
 
 export const normalizeCompany = (cliente?: string) => {

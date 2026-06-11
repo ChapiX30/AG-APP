@@ -57,6 +57,13 @@ import {
   matchDriveSearchText,
   normalizeText,
 } from "../utils/driveSearch";
+import {
+  buildOfflineDriveEntry,
+  findOfflineQueueBySearch,
+  getAllOfflineDriveEntries,
+} from "../utils/worksheetOfflineQueue";
+import { recoverWorksheetByCertificado, isConsecutivoLike } from "../utils/worksheetRecover";
+import { getTotalWorksheetQueueCount } from "../utils/worksheetQueueRunner";
 
 const BRAND_NAME = 'Equipos y Servicios AG';
 const BRAND_SUBTITLE = 'Sistema de gestión metrológica';
@@ -87,6 +94,8 @@ interface DriveFile {
   workDate?: string;
   /** Virtual row: hoja en Firestore sin PDF en Storage (solo vía búsqueda por ID). */
   isPendingWorksheet?: boolean;
+  /** Hoja en cola offline del dispositivo (aún no en Firebase/Drive). */
+  isLocalOfflineQueue?: boolean;
   worksheetDocId?: string;
   worksheetId?: string;
   worksheetCliente?: string;
@@ -1105,6 +1114,29 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [generatingPdfLinkId, setGeneratingPdfLinkId] = useState<string | null>(null);
   const [pendingWorksheetFile, setPendingWorksheetFile] = useState<PendingWorksheetDriveEntry | null>(null);
   const [pendingWorksheetLoading, setPendingWorksheetLoading] = useState(false);
+  const [offlineQueueTick, setOfflineQueueTick] = useState(0);
+  const [localQueueCount, setLocalQueueCount] = useState(() => getTotalWorksheetQueueCount());
+
+  const offlineDriveFiles = useMemo((): DriveFile[] => {
+    void offlineQueueTick;
+    if (currentRoot !== "worksheets") return [];
+    return getAllOfflineDriveEntries() as DriveFile[];
+  }, [currentRoot, offlineQueueTick]);
+
+  const filesWithOffline = useMemo(() => {
+    const offlinePaths = new Set(offlineDriveFiles.map((f) => f.fullPath));
+    return [...offlineDriveFiles, ...files.filter((f) => !offlinePaths.has(f.fullPath))];
+  }, [offlineDriveFiles, files]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setOfflineQueueTick((t) => t + 1);
+      setLocalQueueCount(getTotalWorksheetQueueCount());
+    };
+    refresh();
+    window.addEventListener("ag-worksheet-queue-sync", refresh);
+    return () => window.removeEventListener("ag-worksheet-queue-sync", refresh);
+  }, []);
 
   const {
     searchInputRef,
@@ -1126,11 +1158,20 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     clearSearch,
     handleFilterQueryChange,
   } = useDriveSearch({
-    files,
+    files: filesWithOffline,
     folders,
     sortBy,
     pendingWorksheetFile,
   });
+
+  const filesForList = useMemo(() => {
+    if (currentRoot !== "worksheets" || activeFilter !== "all") return processedFiles;
+    const offlinePaths = new Set(offlineDriveFiles.map((f) => f.fullPath));
+    return [
+      ...offlineDriveFiles,
+      ...processedFiles.filter((f) => !offlinePaths.has(f.fullPath)),
+    ];
+  }, [processedFiles, offlineDriveFiles, currentRoot, activeFilter]);
 
   const handleBack = () => { onBack ? onBack() : goBack(); };
 
@@ -1728,7 +1769,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     const lookupPendingWorksheet = async () => {
       const term = debouncedSearch.trim();
-      const minLen = isEquipmentIdQuery(term) ? 2 : 3;
+      const minLen =
+        isEquipmentIdQuery(term) || isConsecutivoLike(term) ? 2 : 3;
       if (
         !term ||
         term.length < minLen ||
@@ -1742,6 +1784,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
       setPendingWorksheetLoading(true);
       try {
+        let offlineHit = findOfflineQueueBySearch(term);
+        if (!offlineHit && (isConsecutivoLike(term) || term.length >= 3)) {
+          const recovered = await recoverWorksheetByCertificado(term);
+          if (recovered) {
+            setOfflineQueueTick((t) => t + 1);
+            offlineHit = findOfflineQueueBySearch(term);
+          }
+        }
+        if (offlineHit) {
+          setPendingWorksheetFile(buildOfflineDriveEntry(offlineHit) as PendingWorksheetDriveEntry);
+          return;
+        }
+
         const wsDoc = await resolveWorksheetBySearchTerm(term);
         if (cancelled) return;
         if (!wsDoc) {
@@ -2761,7 +2816,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     let displayFiles = useBrowseBehindSearch
       ? browseBehindDisplay!.files
-      : processedFiles;
+      : filesForList;
     if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView && !useBrowseBehindSearch) {
       displayFiles = groupedFiles[groupView] || [];
     }
@@ -2867,6 +2922,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
     return (
       <div className="animate-in slide-in-from-bottom-1 duration-200 pb-24">
+        {currentRoot === "worksheets" && localQueueCount > 0 && (
+          <div className="mb-4 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm flex items-start gap-2">
+            <AlertCircle size={18} className="shrink-0 mt-0.5 text-amber-600" />
+            <div>
+              <p className="font-semibold">
+                {localQueueCount} hoja{localQueueCount > 1 ? "s" : ""} pendiente{localQueueCount > 1 ? "s" : ""} en este dispositivo
+              </p>
+              <p className="text-xs mt-1 text-amber-800/90">
+                Aparecen abajo con etiqueta «Sin PDF» o búscalas por certificado/ID. Se suben a Drive al reconectar WiFi.
+              </p>
+            </div>
+          </div>
+        )}
         {contentPath.length === 0 && activeFilter === 'all' && (useBrowseBehindSearch || !debouncedSearch) && suggestedFiles.length > 0 && (
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">

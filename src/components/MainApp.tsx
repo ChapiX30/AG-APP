@@ -13,6 +13,7 @@ import { ScreenTransition } from './ui/ScreenTransition';
 import { WhatsNewModal } from './WhatsNewModal';
 import { useWhatsNew } from '../hooks/useWhatsNew';
 import { useAppUpdates } from '../hooks/useAppUpdates';
+import { useWorksheetQueueSync } from '../hooks/useWorksheetQueueSync';
 
 // --- IMPORT DE LA NUEVA PANTALLA PÚBLICA ---
 const ShareView = lazy(() => import('./ShareView').then(module => ({ default: module.ShareView })));
@@ -90,6 +91,7 @@ export const MainApp: React.FC = () => {
 
   usePushNotifications(uid, user?.email || localStorage.getItem('usuario.email') || '');
   usePresence(isAuthenticated ? uid : undefined);
+  useWorksheetQueueSync(user, isAuthenticated);
   const { allUpdates } = useAppUpdates();
   const { update: whatsNewUpdate, dismiss: dismissWhatsNew } = useWhatsNew(
     isAuthenticated ? uid : undefined,

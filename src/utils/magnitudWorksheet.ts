@@ -36,6 +36,7 @@ const PREFIJO_WORKSHEET: Record<string, string> = {
   AGTT: "Temperatura",
   AGT: "Temperatura",
   AGTI: "Tiempo",
+  AGV: "Volumen",
   AGVT: "Volumen",
   AGVBT: "Vibracion",
   AGRD: "Reporte de Diagnostico",
@@ -63,7 +64,26 @@ export function toWorksheetMagnitud(magnitud: string): string {
 
 /** Canonical magnitudes for worksheet UI (matches unidadesPorMagnitud keys). */
 export const WORKSHEET_MAGNITUDES = [
-  "Acustica", "Dimensional", "Electrica", "Flujo", "Frecuencia", "Fuerza", "Humedad", "Masa", "Optica", "Par Torsional", "Presión", "Quimica", "Reporte de Diagnostico", "Temperatura", "Tiempo", "Vacio", "Velocidad", "Vibracion",
+  "Acustica",
+  "Dimensional",
+  "Dureza",
+  "Electrica",
+  "Flujo",
+  "Frecuencia",
+  "Fuerza",
+  "Humedad",
+  "Masa",
+  "Optica",
+  "Par Torsional",
+  "Presión",
+  "Quimica",
+  "Reporte de Diagnostico",
+  "Temperatura",
+  "Tiempo",
+  "Vacio",
+  "Velocidad",
+  "Vibracion",
+  "Volumen",
 ] as const;
 
 export function extractMagnitudFromConsecutivo(consecutivo: string): string {

@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useMemo } from 'react';
 import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -8,7 +8,7 @@ import {
 import { auth, db } from "../utils/firebase";
 import { doc, getDoc } from "firebase/firestore";
 
-interface User {
+export interface AuthUser {
   id: string;
   name: string;
   email: string;
@@ -17,8 +17,11 @@ interface User {
 }
 
 interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  user: AuthUser | null;
+  /** Autentica en Firebase y devuelve el perfil sin activar la sesión en la app. */
+  login: (email: string, password: string) => Promise<AuthUser>;
+  /** Activa la sesión tras la animación de entrada (mantiene LoginScreen montado). */
+  completeLogin: (profile: AuthUser) => void;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
 }
@@ -33,22 +36,22 @@ export const useAuth = () => {
   return context;
 };
 
-const loadUserProfile = async (uid: string, email: string): Promise<User> => {
+export const loadUserProfile = async (uid: string, email: string): Promise<AuthUser> => {
   const docSnap = await getDoc(doc(db, "usuarios", uid));
   let name = email;
   let puesto = "";
   let role = "";
   if (docSnap.exists()) {
     const data = docSnap.data();
-    name = data.name || data.nombre || name;
-    puesto = typeof data.puesto === 'string' ? data.puesto.trim() : '';
-    role = typeof data.role === 'string' ? data.role.trim() : '';
+    name = String(data.name || data.nombre || name);
+    puesto = String(data.puesto || data.cargo || "").trim();
+    role = String(data.role || data.rol || "").trim();
   }
   return { id: uid, name, email, puesto, role };
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   // Sin sesión al recargar: no restaurar usuario desde Firebase (comportamiento original)
   useEffect(() => {
@@ -56,23 +59,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     void firebaseSignOut(auth);
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (email: string, password: string): Promise<AuthUser> => {
     const cred = await signInWithEmailAndPassword(auth, email, password);
-    setUser(await loadUserProfile(cred.user.uid, cred.user.email || email));
-    return true;
-  };
+    return loadUserProfile(cred.user.uid, cred.user.email || email);
+  }, []);
 
-  const logout = async () => {
+  const completeLogin = useCallback((profile: AuthUser) => {
+    setUser(profile);
+  }, []);
+
+  const logout = useCallback(async () => {
     await firebaseSignOut(auth);
     setUser(null);
-  };
+  }, []);
 
-  const value = {
-    user,
-    login,
-    logout,
-    isAuthenticated: !!user,
-  };
+  const value = useMemo(
+    () => ({
+      user,
+      login,
+      completeLogin,
+      logout,
+      isAuthenticated: !!user,
+    }),
+    [user, login, completeLogin, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

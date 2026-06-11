@@ -1,54 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
-import { 
-  ArrowLeft, 
-  Search, 
-  Activity, 
-  Ruler, 
-  Zap, 
-  Waves, 
-  Radio, 
-  Dumbbell, 
-  Droplets, 
-  Scale, 
-  Wrench, 
-  Gauge, 
-  FlaskConical, 
-  FileText, 
-  Thermometer, 
-  Timer, 
-  Box, 
-  Eye, 
-  Vibrate,
-  ChevronRight
+import {
+  Search,
+  ChevronRight,
+  Hash,
 } from 'lucide-react';
-import labLogo from '../assets/lab_logo.png'; 
+import labLogo from '../assets/lab_logo.png';
+import { FlowScreenHeader } from './worksheet-flow/FlowScreenHeader';
+import { flowAccents } from './worksheet-flow/flowTheme';
+import { MagnitudeCardVisual } from './worksheet-flow/MagnitudeCardVisual';
+import { ElectricServiceTabs, type ServiceTab } from './worksheet-flow/ElectricServiceTabs';
+import { isTrazableMagnitudId } from '../utils/magnitudAssets';
 
-// Helper to render the correct icon based on the ID or Name
-const getIcon = (id: string) => {
-  const normalized = id.toLowerCase();
-  if (normalized.includes('acustica')) return <Activity className="w-6 h-6" />;
-  if (normalized.includes('dimensional')) return <Ruler className="w-6 h-6" />;
-  if (normalized.includes('electrica')) return <Zap className="w-6 h-6" />;
-  if (normalized.includes('flujo')) return <Waves className="w-6 h-6" />;
-  if (normalized.includes('frecuencia')) return <Radio className="w-6 h-6" />;
-  if (normalized.includes('fuerza')) return <Dumbbell className="w-6 h-6" />;
-  if (normalized.includes('humedad')) return <Droplets className="w-6 h-6" />;
-  if (normalized.includes('masa')) return <Scale className="w-6 h-6" />;
-  if (normalized.includes('torsional')) return <Wrench className="w-6 h-6" />;
-  if (normalized.includes('presion')) return <Gauge className="w-6 h-6" />;
-  if (normalized.includes('quimica')) return <FlaskConical className="w-6 h-6" />;
-  if (normalized.includes('reporte')) return <FileText className="w-6 h-6" />;
-  if (normalized.includes('temperatura')) return <Thermometer className="w-6 h-6" />;
-  if (normalized.includes('tiempo')) return <Timer className="w-6 h-6" />;
-  if (normalized.includes('volumen')) return <Box className="w-6 h-6" />;
-  if (normalized.includes('optica')) return <Eye className="w-6 h-6" />;
-  if (normalized.includes('vibracion')) return <Vibrate className="w-6 h-6" />;
-  if (normalized.includes('dureza')) return <Dumbbell className="w-6 h-6" />;
-  return <Activity className="w-6 h-6" />;
-};
-
-// DATA: Using the EXACT names required by the Database logic
 const magnitudesAcreditadas = [
   { id: 'acustica', name: 'Acustica', description: 'Medición de sonido y vibraciones' },
   { id: 'dimensional', name: 'Dimensional', description: 'Mediciones de longitud y dimensiones' },
@@ -86,9 +49,11 @@ const magnitudesTrazables = [
 
 export const ConsecutivosScreen: React.FC = () => {
   const { navigateTo, goBack } = useNavigation();
-  const [activeTab, setActiveTab] = useState<'acreditado' | 'trazable'>('acreditado');
+  const [activeTab, setActiveTab] = useState<ServiceTab>('acreditado');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const accent = activeTab === 'acreditado' ? 'acreditado' : 'trazable';
+  const theme = flowAccents[accent];
   const currentList = activeTab === 'acreditado' ? magnitudesAcreditadas : magnitudesTrazables;
   
   const filteredList = currentList.filter(m => 
@@ -96,126 +61,102 @@ export const ConsecutivosScreen: React.FC = () => {
     m.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleMagnitudeClick = (magnitude: any) => {
-    // IMPORTANT: We pass the whole object. The logic relies on magnitude.name
+  const handleMagnitudeClick = (magnitude: { id: string; name: string; description: string }) => {
     navigateTo('magnitude-detail', { magnitude });
   };
 
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={goBack} 
-              className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-center overflow-hidden">
-                 <img 
-                    src={labLogo} 
-                    className="w-6 h-6 object-contain" 
-                    alt="Logo" 
-                    onError={(e) => e.currentTarget.style.display='none'} 
-                 />
-              </div>
-              <h1 className="text-lg font-bold text-slate-800 tracking-tight">Gestión de Consecutivos</h1>
-            </div>
-          </div>
-          
-          <div className={`hidden sm:flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border ${activeTab === 'acreditado' ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
-            <div className={`w-2 h-2 rounded-full ${activeTab === 'acreditado' ? 'bg-blue-500' : 'bg-amber-500'}`}></div>
-            <span className="font-semibold capitalize">{activeTab}</span>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50/40 text-slate-900 font-sans">
+      <FlowScreenHeader
+        accent={accent}
+        iconVariant="brand"
+        title="Gestión de Consecutivos"
+        subtitle="Selecciona la magnitud para generar un nuevo folio"
+        onBack={goBack}
+        icon={
+          <img
+            src={labLogo}
+            className="w-full h-full object-contain"
+            alt="AGG Metrología"
+          />
+        }
+        badge={
+          <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${theme.chipSolid}`}>
+            {activeTab}
+          </span>
+        }
+        rightSlot={
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-white">
+            <Hash className="w-3.5 h-3.5 shrink-0" />
+            {filteredList.length} magnitudes
+          </span>
+        }
+      />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8 justify-between items-start sm:items-center">
-          <div className="p-1 bg-slate-200/60 rounded-lg flex w-full sm:w-auto">
-            <button
-              onClick={() => setActiveTab('acreditado')}
-              className={`flex-1 sm:flex-none px-6 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                activeTab === 'acreditado' 
-                  ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' 
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Acreditado
-            </button>
-            <button
-              onClick={() => setActiveTab('trazable')}
-              className={`flex-1 sm:flex-none px-6 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                activeTab === 'trazable' 
-                  ? 'bg-white text-amber-700 shadow-sm ring-1 ring-black/5' 
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Activity className="w-4 h-4" />
-              Trazable
-            </button>
-          </div>
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-5 sm:mb-8">
+          <ElectricServiceTabs value={activeTab} onChange={setActiveTab} />
 
-          <div className="relative w-full sm:w-72 group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input 
-              type="text" 
-              placeholder="Buscar magnitud..." 
+          <div className="relative w-full sm:flex-1 sm:max-w-md lg:max-w-sm group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors pointer-events-none" />
+            <input
+              type="search"
+              placeholder="Buscar magnitud..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+              className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
             />
           </div>
         </div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredList.map((magnitude) => (
-            <div
-              key={magnitude.id}
-              onClick={() => handleMagnitudeClick(magnitude)}
-              className="group bg-white rounded-xl p-5 border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer relative overflow-hidden"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className={`p-3 rounded-lg ${activeTab === 'acreditado' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'} group-hover:scale-110 transition-transform`}>
-                  {getIcon(magnitude.id)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-4">
+          {filteredList.map((magnitude) => {
+            const cardAccent = isTrazableMagnitudId(magnitude.id) ? 'trazable' : 'acreditado';
+            return (
+              <button
+                key={magnitude.id}
+                type="button"
+                onClick={() => handleMagnitudeClick(magnitude)}
+                className={`group text-left bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-slate-300 active:scale-[0.99] transition-all duration-200 overflow-hidden ring-1 ${theme.cardRing} ${theme.cardAccent} border-l-[5px] flex flex-row sm:flex-col items-stretch sm:items-start gap-3 sm:gap-0 p-3.5 sm:p-5 min-h-[5.5rem] sm:min-h-0`}
+              >
+                <div className="flex items-start justify-between sm:w-full sm:mb-4 shrink-0">
+                  <MagnitudeCardVisual magnitudeId={magnitude.id} accent={cardAccent} size="sm" />
+                  <ChevronRight className="hidden sm:block w-5 h-5 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all ml-auto" />
                 </div>
-                {activeTab === 'trazable' && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-1 rounded-full border border-amber-100">
-                    Trazable
-                  </span>
-                )}
-              </div>
-              
-              <div>
-                <h3 className="text-slate-900 font-semibold text-base group-hover:text-blue-700 transition-colors truncate" title={magnitude.name}>
-                  {magnitude.name}
-                </h3>
-                <p className="text-slate-500 text-xs mt-1 line-clamp-2">
-                  {magnitude.description}
-                </p>
-              </div>
 
-              <div className="absolute bottom-4 right-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500" />
-              </div>
-            </div>
-          ))}
+                <div className="flex-1 min-w-0 flex flex-col justify-center sm:justify-start pr-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 className="text-slate-900 font-bold text-sm sm:text-base truncate" title={magnitude.name}>
+                      {magnitude.name}
+                    </h3>
+                    {cardAccent === 'trazable' && (
+                      <span className="sm:hidden shrink-0 text-[9px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                        TRZ
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-500 text-xs sm:text-sm mt-0.5 sm:mt-1.5 line-clamp-2 leading-snug sm:leading-relaxed">
+                    {magnitude.description}
+                  </p>
+                  <div className="mt-2 hidden sm:flex items-center gap-1 text-[11px] font-semibold text-slate-400 group-hover:text-blue-600 transition-colors">
+                    <span>Abrir</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <ChevronRight className="sm:hidden w-5 h-5 text-slate-300 self-center shrink-0" />
+              </button>
+            );
+          })}
         </div>
 
         {filteredList.length === 0 && (
-          <div className="text-center py-20">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 rounded-full mb-4">
-              <Search className="w-8 h-8 text-slate-300" />
+          <div className="text-center py-16 sm:py-20 bg-white/70 rounded-2xl border border-dashed border-slate-200 mt-4 px-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 bg-slate-100 rounded-2xl mb-4">
+              <Search className="w-7 h-7 sm:w-8 sm:h-8 text-slate-300" />
             </div>
-            <h3 className="text-slate-900 font-medium">No se encontraron resultados</h3>
-            <p className="text-slate-500 text-sm">Intenta buscar con otro término.</p>
+            <h3 className="text-slate-900 font-semibold">No se encontraron resultados</h3>
+            <p className="text-slate-500 text-sm mt-1">Intenta buscar con otro término.</p>
           </div>
         )}
       </main>
