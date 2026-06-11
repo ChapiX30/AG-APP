@@ -13,16 +13,217 @@ import {
     updateDoc,
     arrayUnion,
     increment,
+    limit,
 } from "firebase/firestore";
 import { getPrefijo } from "./prefijos";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// generarConsecutivo
-// Genera el siguiente consecutivo para una magnitud/año dados.
-// El documento en "consecutivos" se crea con worksheetConfirmado: false.
-// Solo se considera "completo" una vez que confirmarWorksheet() sea llamado
-// desde la pantalla de la hoja de trabajo al guardarse exitosamente.
-// ─────────────────────────────────────────────────────────────────────────────
+export type ConsecutivoPartes = {
+    prefijo: string;
+    numero: number;
+    anio: string;
+};
+
+const RECONCILE_COOLDOWN_MS = 30 * 60 * 1000;
+
+/** Firestore a veces devuelve huecos como objeto {0: n, 1: m} en lugar de array. */
+export function normalizeHuecos(raw: unknown): number[] {
+    if (Array.isArray(raw)) {
+        return raw.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+    }
+    if (raw && typeof raw === "object") {
+        return Object.values(raw as Record<string, unknown>)
+            .map((n) => Number(n))
+            .filter((n) => Number.isFinite(n) && n > 0);
+    }
+    return [];
+}
+
+export function parseConsecutivo(consecutivo: string): ConsecutivoPartes | null {
+    const partes = consecutivo.trim().split("-");
+    if (partes.length < 3) return null;
+    const anio = partes[partes.length - 1];
+    const numero = parseInt(partes[partes.length - 2], 10);
+    const prefijo = partes.slice(0, -2).join("-");
+    if (!prefijo || isNaN(numero)) return null;
+    return { prefijo, numero, anio };
+}
+
+export function formatConsecutivo(prefijo: string, numero: number, anio: string): string {
+    return `${prefijo}-${String(numero).padStart(4, "0")}-${anio}`;
+}
+
+/** ¿Ya hay hoja guardada con este certificado? */
+export async function hojaTrabajoExiste(consecutivo: string): Promise<boolean> {
+    const cert = consecutivo.replace(/\s+/g, "").toUpperCase();
+    if (!cert) return false;
+
+    const snap = await getDocs(
+        query(collection(db, "hojasDeTrabajo"), where("certificado", "==", cert), limit(1))
+    );
+    if (!snap.empty) return true;
+
+    const spaced = cert.replace(/^([A-Z]+)-(\d+)-(\d+)$/i, "$1 - $2 - $3");
+    if (spaced !== cert) {
+        const snap2 = await getDocs(
+            query(collection(db, "hojasDeTrabajo"), where("certificado", "==", spaced), limit(1))
+        );
+        return !snap2.empty;
+    }
+    return false;
+}
+
+async function certificadosConHoja(certs: string[]): Promise<Set<string>> {
+    const existentes = new Set<string>();
+    const unicos = [...new Set(certs.map((c) => c.replace(/\s+/g, "").toUpperCase()))];
+    for (let i = 0; i < unicos.length; i += 30) {
+        const chunk = unicos.slice(i, i + 30);
+        const snap = await getDocs(
+            query(collection(db, "hojasDeTrabajo"), where("certificado", "in", chunk))
+        );
+        snap.forEach((d) => {
+            const c = String(d.data().certificado || "").replace(/\s+/g, "").toUpperCase();
+            if (c) existentes.add(c);
+        });
+    }
+    return existentes;
+}
+
+function reconcileCooldownKey(prefijo: string, anio: string) {
+    return `consecutivos_reconcile_${prefijo}_${anio}`;
+}
+
+/** Máximo número emitido en hojas para prefijo/año (rango por certificado). */
+async function maxNumeroEnHojas(prefijo: string, anio: string): Promise<number> {
+    const yearSuffix = `-${anio}`;
+    const snap = await getDocs(
+        query(
+            collection(db, "hojasDeTrabajo"),
+            where("certificado", ">=", `${prefijo}-`),
+            where("certificado", "<=", `${prefijo}-\uf8ff`)
+        )
+    );
+    let max = 0;
+    snap.forEach((d) => {
+        const parsed = parseConsecutivo(String(d.data().certificado || ""));
+        if (!parsed || parsed.prefijo !== prefijo || parsed.anio !== anio) return;
+        if (parsed.numero > max) max = parsed.numero;
+    });
+    return max;
+}
+
+export type ReconcileResult = {
+    huecosAntes: number;
+    huecosDespues: number;
+    huecosEliminados: number;
+    valorAnterior: number;
+    valorNuevo: number;
+    confirmados: number;
+};
+
+/**
+ * Limpia huecos falsos (número ya tiene hoja) y alinea valor con el máximo real del año.
+ */
+export async function reconciliarContadorHuecos(
+    magnitud: string,
+    anio: string,
+    force = false
+): Promise<ReconcileResult | null> {
+    const prefijo = getPrefijo(magnitud);
+    const key = reconcileCooldownKey(prefijo, anio);
+
+    if (!force) {
+        try {
+            const last = Number(sessionStorage.getItem(key) || 0);
+            if (Date.now() - last < RECONCILE_COOLDOWN_MS) return null;
+        } catch {
+            /* ignore */
+        }
+    }
+
+    const contadorRef = doc(db, "contadores", prefijo);
+    const contadorSnap = await getDoc(contadorRef);
+    if (!contadorSnap.exists()) return null;
+
+    const data = contadorSnap.data();
+    const anioContador = String(data.anio || anio);
+    if (anioContador !== anio) return null;
+
+    const huecosAntes = normalizeHuecos(data.huecos);
+    const valorAnterior = Number(data.valor) || 0;
+
+    const certs = huecosAntes.map((n) => formatConsecutivo(prefijo, n, anio));
+    const conHoja = await certificadosConHoja(certs);
+
+    const huecosValidos = huecosAntes.filter((n) => {
+        const cert = formatConsecutivo(prefijo, n, anio).replace(/\s+/g, "").toUpperCase();
+        return !conHoja.has(cert);
+    });
+
+    const maxHojas = await maxNumeroEnHojas(prefijo, anio);
+    const valorNuevo = Math.max(valorAnterior, maxHojas);
+
+    const updates: Record<string, unknown> = {};
+    if (huecosValidos.length !== huecosAntes.length) {
+        updates.huecos = huecosValidos;
+    }
+    if (valorNuevo !== valorAnterior) {
+        updates.valor = valorNuevo;
+    }
+    if (Object.keys(updates).length > 0) {
+        await updateDoc(contadorRef, updates);
+    }
+
+    let confirmados = 0;
+    for (const n of huecosAntes) {
+        const cert = formatConsecutivo(prefijo, n, anio);
+        if (!conHoja.has(cert.replace(/\s+/g, "").toUpperCase())) continue;
+        await confirmarWorksheet(cert, magnitud);
+        confirmados++;
+    }
+
+    try {
+        sessionStorage.setItem(key, String(Date.now()));
+    } catch {
+        /* ignore */
+    }
+
+    return {
+        huecosAntes: huecosAntes.length,
+        huecosDespues: huecosValidos.length,
+        huecosEliminados: huecosAntes.length - huecosValidos.length,
+        valorAnterior,
+        valorNuevo,
+        confirmados,
+    };
+}
+
+/** Quita del contador huecos que ya tienen hoja (antes de asignar reciclado). */
+async function limpiarHuecosInvalidosEnContador(
+    contadorRef: ReturnType<typeof doc>,
+    prefijo: string,
+    anio: string
+): Promise<void> {
+    const snap = await getDoc(contadorRef);
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    if (String(data.anio || anio) !== anio) return;
+
+    const huecos = normalizeHuecos(data.huecos);
+    if (huecos.length === 0) return;
+
+    const certs = huecos.map((n) => formatConsecutivo(prefijo, n, anio));
+    const conHoja = await certificadosConHoja(certs);
+    const validos = huecos.filter((n) => {
+        const cert = formatConsecutivo(prefijo, n, anio).replace(/\s+/g, "").toUpperCase();
+        return !conHoja.has(cert);
+    });
+
+    if (validos.length !== huecos.length) {
+        await updateDoc(contadorRef, { huecos: validos });
+    }
+}
+
 export async function generarConsecutivo(
     magnitud: string,
     anio: string,
@@ -31,6 +232,8 @@ export async function generarConsecutivo(
     const prefijo = getPrefijo(magnitud);
     const contadorRef = doc(db, "contadores", prefijo);
     let consecutivoFinal = "";
+
+    await limpiarHuecosInvalidosEnContador(contadorRef, prefijo, anio);
 
     await runTransaction(db, async (transaction) => {
         const contadorDoc = await transaction.get(contadorRef);
@@ -41,11 +244,10 @@ export async function generarConsecutivo(
             transaction.set(contadorRef, { valor: 1, anio: anio, huecos: [] });
         } else {
             const data = contadorDoc.data();
-            const huecos: number[] = data.huecos || [];
+            let huecos = normalizeHuecos(data.huecos);
             const anioRegistrado = data.anio || "25";
 
             if (anioRegistrado === anio && huecos.length > 0) {
-                // Llenar hueco más antiguo primero
                 huecos.sort((a, b) => a - b);
                 nuevo = huecos[0];
                 esReciclado = true;
@@ -54,7 +256,6 @@ export async function generarConsecutivo(
                 const ultimoValor = data.valor || 0;
 
                 if (anioRegistrado !== anio) {
-                    // Año nuevo: reiniciar contador
                     nuevo = 1;
                     transaction.update(contadorRef, { valor: 1, anio: anio, huecos: [] });
                 } else {
@@ -64,11 +265,9 @@ export async function generarConsecutivo(
             }
         }
 
-        const consecutivoStr = `${prefijo}-${String(nuevo).padStart(4, "0")}-${anio}`;
+        const consecutivoStr = formatConsecutivo(prefijo, nuevo, anio);
         consecutivoFinal = consecutivoStr;
 
-        // Guardar en historial marcado como NO confirmado.
-        // worksheetConfirmado se pondrá en true cuando la worksheet se guarde.
         const nuevoDocHistorial = doc(collection(db, "consecutivos"));
         transaction.set(nuevoDocHistorial, {
             consecutivo: consecutivoStr,
@@ -78,47 +277,40 @@ export async function generarConsecutivo(
             fecha: Timestamp.now(),
             fechaCreacion: Timestamp.now(),
             esReciclado,
-            worksheetConfirmado: false,   // <── clave del mecanismo
+            worksheetConfirmado: false,
         });
     });
 
     return consecutivoFinal;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// confirmarWorksheet
-// Llama esta función desde tu pantalla/hook de trabajo DESPUÉS de que la
-// worksheet se haya guardado correctamente en Firestore.
-// Marca el consecutivo como confirmado para que no sea tratado como huérfano.
-// ─────────────────────────────────────────────────────────────────────────────
 export async function confirmarWorksheet(
     consecutivo: string,
-    magnitud: string
+    magnitud?: string
 ): Promise<void> {
-    const q = query(
-        collection(db, "consecutivos"),
-        where("consecutivo", "==", consecutivo),
-        where("magnitud", "==", magnitud)
-    );
-    const snap = await getDocs(q);
-    for (const docSnap of snap.docs) {
-        await updateDoc(docSnap.ref, { worksheetConfirmado: true });
+    const cert = consecutivo.replace(/\s+/g, "").toUpperCase();
+
+    const queries = magnitud
+        ? [
+              query(
+                  collection(db, "consecutivos"),
+                  where("consecutivo", "==", cert),
+                  where("magnitud", "==", magnitud)
+              ),
+              query(collection(db, "consecutivos"), where("consecutivo", "==", cert)),
+          ]
+        : [query(collection(db, "consecutivos"), where("consecutivo", "==", cert))];
+
+    for (const q of queries) {
+        const snap = await getDocs(q);
+        if (snap.empty) continue;
+        for (const docSnap of snap.docs) {
+            await updateDoc(docSnap.ref, { worksheetConfirmado: true });
+        }
+        return;
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// auditarHuerfanos
-// Busca consecutivos de esta magnitud que tengan worksheetConfirmado: false
-// y que lleven más de N minutos sin confirmarse (por defecto 10 min).
-//
-// Para cada huérfano encontrado:
-//   1. Elimina el documento de "consecutivos"
-//   2. Registra el número como hueco en el contador correspondiente
-//      (solo si es del año actual, para no alterar contadores de otros años)
-//
-// Devuelve la lista de consecutivos que fueron limpiados, para que la UI
-// pueda notificar al usuario si lo desea.
-// ─────────────────────────────────────────────────────────────────────────────
 export async function auditarHuerfanos(
     magnitud: string,
     anio: string,
@@ -129,7 +321,6 @@ export async function auditarHuerfanos(
     const ahora = Date.now();
     const limpiados: string[] = [];
 
-    // Buscar todos los consecutivos no confirmados de esta magnitud
     const q = query(
         collection(db, "consecutivos"),
         where("magnitud", "==", magnitud),
@@ -142,23 +333,22 @@ export async function auditarHuerfanos(
         const data = docSnap.data();
         const fechaCreacion: Timestamp = data.fechaCreacion;
 
-        // Solo procesar si ya pasó el tiempo de tolerancia
         if (!fechaCreacion) continue;
         const edadMs = ahora - fechaCreacion.toMillis();
         if (edadMs < limiteMs) continue;
 
         const consecutivoStr: string = data.consecutivo;
+        const parsed = parseConsecutivo(consecutivoStr);
+        if (!parsed) continue;
 
-        // Extraer número y año del consecutivo (formato: PREFIJO-NNNN-AA)
-        const partes = consecutivoStr.split("-");
-        if (partes.length < 3) continue;
+        const { numero, anio: anioDelDoc } = parsed;
 
-        const anioDelDoc = partes[partes.length - 1];
-        const numeroStr = partes[partes.length - 2];
-        const numero = parseInt(numeroStr, 10);
-        if (isNaN(numero)) continue;
+        if (await hojaTrabajoExiste(consecutivoStr)) {
+            await confirmarWorksheet(consecutivoStr, magnitud);
+            await deleteDoc(docSnap.ref);
+            continue;
+        }
 
-        // Solo meter al hueco si el año coincide con el año actual del contador
         const contadorRef = doc(db, "contadores", prefijo);
         const contadorSnap = await getDoc(contadorRef);
 
@@ -168,19 +358,16 @@ export async function auditarHuerfanos(
 
             if (anioEnContador === anioDelDoc && anioDelDoc === anio) {
                 const valorActual: number = contadorData.valor || 0;
+                const huecosActuales = normalizeHuecos(contadorData.huecos);
 
                 if (valorActual === numero) {
-                    // Es el último: decrementar directamente
                     await updateDoc(contadorRef, { valor: increment(-1) });
-                } else {
-                    // Está en medio: registrar como hueco
+                } else if (!huecosActuales.includes(numero)) {
                     await updateDoc(contadorRef, { huecos: arrayUnion(numero) });
                 }
             }
-            // Si es de un año distinto, simplemente borramos el doc sin tocar el contador
         }
 
-        // Borrar el consecutivo huérfano
         await deleteDoc(docSnap.ref);
         limpiados.push(consecutivoStr);
     }

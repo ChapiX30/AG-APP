@@ -131,7 +131,7 @@ export async function tryConfirmarWorksheet(
   certificado: string,
   magnitudConsecutivo?: string
 ): Promise<void> {
-  if (!certificado || !magnitudConsecutivo) return;
+  if (!certificado) return;
   try {
     await confirmarWorksheet(certificado, magnitudConsecutivo);
   } catch (e) {

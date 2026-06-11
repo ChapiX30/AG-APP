@@ -17,7 +17,13 @@ import {
   Award,
 } from 'lucide-react';
 import { getMagnitudImageSrc } from '../utils/magnitudAssets';
-import { generarConsecutivo, auditarHuerfanos } from '../utils/firebaseConsecutivos';
+import {
+  generarConsecutivo,
+  auditarHuerfanos,
+  reconciliarContadorHuecos,
+  normalizeHuecos,
+  parseConsecutivo,
+} from '../utils/firebaseConsecutivos';
 import { deleteWorksheetStorageForHoja } from '../utils/worksheetStorageCleanup';
 import { 
   collection, query, where, orderBy, limit, onSnapshot, 
@@ -98,6 +104,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const [consecutivoAEliminar, setConsecutivoAEliminar] = useState<any | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [huecosPendientes, setHuecosPendientes] = useState<number | null>(null);
 
   const accent = accentFromMagnitude(selectedMagnitude);
   const theme = flowAccents[accent];
@@ -114,9 +121,26 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
     const anio = new Date().getFullYear().toString().slice(-2);
 
-    void auditarHuerfanos(selectedMagnitude, anio, 10).catch((e) =>
-      console.warn("[MagnitudeDetail] auditarHuerfanos:", e)
-    );
+    const prefijo = getPrefijo(selectedMagnitude);
+
+    void (async () => {
+      try {
+        const reconciliado = await reconciliarContadorHuecos(selectedMagnitude, anio);
+        if (reconciliado && reconciliado.huecosEliminados > 0) {
+          console.info(
+            `[Consecutivos] ${prefijo}: ${reconciliado.huecosEliminados} huecos falsos eliminados, valor ${reconciliado.valorAnterior}→${reconciliado.valorNuevo}`
+          );
+        }
+        await auditarHuerfanos(selectedMagnitude, anio, 10);
+
+        const contadorSnap = await getDoc(doc(db, "contadores", prefijo));
+        if (contadorSnap.exists() && String(contadorSnap.data().anio) === anio) {
+          setHuecosPendientes(normalizeHuecos(contadorSnap.data().huecos).length);
+        }
+      } catch (e) {
+        console.warn("[MagnitudeDetail] reconciliar/auditar:", e);
+      }
+    })();
 
     const q = query(
       collection(db, "consecutivos"),
@@ -161,13 +185,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
     try {
       const prefijoContador = getPrefijo(selectedMagnitude);
-      const partes = consecutivoAEliminar.consecutivo.split('-');
-      
-      if (partes.length >= 3) {
-        const anioDelBorrado = partes[partes.length - 1]; 
-        const numeroStr = partes[partes.length - 2];
-        const numeroBorrado = parseInt(numeroStr, 10);
-
+      const parsed = parseConsecutivo(consecutivoAEliminar.consecutivo);
+      if (parsed) {
+        const { numero: numeroBorrado, anio: anioDelBorrado } = parsed;
         const contadorRef = doc(db, "contadores", prefijoContador);
         const contadorSnap = await getDoc(contadorRef);
 
@@ -175,11 +195,12 @@ export const MagnitudeDetailScreen: React.FC = () => {
           const dataContador = contadorSnap.data();
           const valorActualEnBaseDatos = dataContador.valor;
           const anioEnBaseDatos = dataContador.anio || anioDelBorrado;
+          const huecosActuales = normalizeHuecos(dataContador.huecos);
 
           if (valorActualEnBaseDatos === numeroBorrado && anioEnBaseDatos === anioDelBorrado) {
-             await updateDoc(contadorRef, { valor: increment(-1) });
-          } else if (anioEnBaseDatos === anioDelBorrado) {
-             await updateDoc(contadorRef, { huecos: arrayUnion(numeroBorrado) });
+            await updateDoc(contadorRef, { valor: increment(-1) });
+          } else if (anioEnBaseDatos === anioDelBorrado && !huecosActuales.includes(numeroBorrado)) {
+            await updateDoc(contadorRef, { huecos: arrayUnion(numeroBorrado) });
           }
         }
       }
@@ -308,7 +329,12 @@ export const MagnitudeDetailScreen: React.FC = () => {
               </div>
             )}
 
-            <div className="mt-6 pt-6 border-t border-slate-100">
+            <div className="mt-6 pt-6 border-t border-slate-100 space-y-3">
+              {huecosPendientes !== null && huecosPendientes > 0 && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200/80 rounded-xl px-3 py-2 text-center">
+                  {huecosPendientes} folio{huecosPendientes === 1 ? "" : "s"} pendiente{huecosPendientes === 1 ? "" : "s"} de reutilizar (sin hoja guardada)
+                </p>
+              )}
               <button
                 type="button"
                 onClick={handleGenerarConsecutivo}
