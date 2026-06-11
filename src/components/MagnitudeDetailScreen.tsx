@@ -125,13 +125,13 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
     void (async () => {
       try {
-        const reconciliado = await reconciliarContadorHuecos(selectedMagnitude, anio);
+        const reconciliado = await reconciliarContadorHuecos(selectedMagnitude, anio, true);
         if (reconciliado && reconciliado.huecosEliminados > 0) {
           console.info(
             `[Consecutivos] ${prefijo}: ${reconciliado.huecosEliminados} huecos falsos eliminados, valor ${reconciliado.valorAnterior}→${reconciliado.valorNuevo}`
           );
         }
-        await auditarHuerfanos(selectedMagnitude, anio, 10);
+        await auditarHuerfanos(selectedMagnitude, anio, 60);
 
         const contadorSnap = await getDoc(doc(db, "contadores", prefijo));
         if (contadorSnap.exists() && String(contadorSnap.data().anio) === anio) {

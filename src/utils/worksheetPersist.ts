@@ -220,6 +220,8 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
     throw e;
   }
 
+  await tryConfirmarWorksheet(state.certificado, job.magnitudConsecutivo);
+
   const updates: Record<string, string> = {};
 
   try {
@@ -270,6 +272,4 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
   } catch (syncErr) {
     console.error("[WorkSheet] No se pudo sincronizar inicio del servicio:", syncErr);
   }
-
-  await tryConfirmarWorksheet(state.certificado, job.magnitudConsecutivo);
 }

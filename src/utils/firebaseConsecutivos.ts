@@ -15,7 +15,8 @@ import {
     increment,
     limit,
 } from "firebase/firestore";
-import { getPrefijo } from "./prefijos";
+import { getPrefijo, getMagnitudFromPrefijo } from "./prefijos";
+import { extractMagnitudFromConsecutivo } from "./magnitudWorksheet";
 
 export type ConsecutivoPartes = {
     prefijo: string;
@@ -52,9 +53,36 @@ export function formatConsecutivo(prefijo: string, numero: number, anio: string)
     return `${prefijo}-${String(numero).padStart(4, "0")}-${anio}`;
 }
 
+export function normalizeCertificado(consecutivo: string): string {
+    return consecutivo.replace(/\s+/g, "").toUpperCase();
+}
+
+/** Magnitudes posibles para localizar el doc en `consecutivos` (prefijo, hint, alias). */
+export function resolveMagnitudesConsecutivo(cert: string, hint?: string): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const add = (m?: string) => {
+        const t = (m || "").trim();
+        if (!t || seen.has(t)) return;
+        seen.add(t);
+        out.push(t);
+    };
+
+    add(hint);
+    const parsed = parseConsecutivo(cert);
+    if (parsed) add(getMagnitudFromPrefijo(parsed.prefijo) ?? undefined);
+
+    const fromCert = extractMagnitudFromConsecutivo(cert);
+    add(fromCert);
+    if (fromCert === "Presión") add("Presion");
+    if (fromCert === "Reporte de Diagnostico") add("Reporte Diagnostico");
+
+    return out;
+}
+
 /** ¿Ya hay hoja guardada con este certificado? */
 export async function hojaTrabajoExiste(consecutivo: string): Promise<boolean> {
-    const cert = consecutivo.replace(/\s+/g, "").toUpperCase();
+    const cert = normalizeCertificado(consecutivo);
     if (!cert) return false;
 
     const snap = await getDocs(
@@ -224,7 +252,9 @@ async function limpiarHuecosInvalidosEnContador(
     }
 }
 
-export async function generarConsecutivo(
+const MAX_GEN_RETRIES = 8;
+
+async function generarConsecutivoUnaVez(
     magnitud: string,
     anio: string,
     usuario: string
@@ -284,37 +314,88 @@ export async function generarConsecutivo(
     return consecutivoFinal;
 }
 
+export async function generarConsecutivo(
+    magnitud: string,
+    anio: string,
+    usuario: string
+): Promise<string> {
+    for (let intento = 0; intento < MAX_GEN_RETRIES; intento++) {
+        const cert = await generarConsecutivoUnaVez(magnitud, anio, usuario);
+        if (!(await hojaTrabajoExiste(cert))) return cert;
+
+        console.warn(`[Consecutivos] ${cert} ya tiene hoja; confirmando y reasignando`);
+        await confirmarWorksheet(cert, magnitud);
+        await reconciliarContadorHuecos(magnitud, anio, true);
+    }
+
+    throw new Error("No se pudo asignar un consecutivo disponible. Intenta de nuevo.");
+}
+
 export async function confirmarWorksheet(
     consecutivo: string,
     magnitud?: string
-): Promise<void> {
-    const cert = consecutivo.replace(/\s+/g, "").toUpperCase();
+): Promise<boolean> {
+    const cert = normalizeCertificado(consecutivo);
+    if (!cert) return false;
 
-    const queries = magnitud
-        ? [
-              query(
-                  collection(db, "consecutivos"),
-                  where("consecutivo", "==", cert),
-                  where("magnitud", "==", magnitud)
-              ),
-              query(collection(db, "consecutivos"), where("consecutivo", "==", cert)),
-          ]
-        : [query(collection(db, "consecutivos"), where("consecutivo", "==", cert))];
-
-    for (const q of queries) {
-        const snap = await getDocs(q);
+    const magnitudes = resolveMagnitudesConsecutivo(cert, magnitud);
+    for (const mag of magnitudes) {
+        const snap = await getDocs(
+            query(
+                collection(db, "consecutivos"),
+                where("consecutivo", "==", cert),
+                where("magnitud", "==", mag)
+            )
+        );
         if (snap.empty) continue;
-        for (const docSnap of snap.docs) {
-            await updateDoc(docSnap.ref, { worksheetConfirmado: true });
-        }
-        return;
+        await Promise.all(
+            snap.docs.map((docSnap) =>
+                updateDoc(docSnap.ref, { worksheetConfirmado: true })
+            )
+        );
+        return true;
     }
+
+    const snap = await getDocs(
+        query(collection(db, "consecutivos"), where("consecutivo", "==", cert))
+    );
+    if (snap.empty) return false;
+
+    await Promise.all(
+        snap.docs.map((docSnap) => updateDoc(docSnap.ref, { worksheetConfirmado: true }))
+    );
+    return true;
+}
+
+/**
+ * Reconcilia en segundo plano todos los contadores del año que aún tienen huecos.
+ */
+export async function reconciliarContadoresConHuecos(anio?: string): Promise<number> {
+    const year = anio || new Date().getFullYear().toString().slice(-2);
+    const snap = await getDocs(collection(db, "contadores"));
+    let reconciliados = 0;
+
+    for (const docSnap of snap.docs) {
+        const data = docSnap.data();
+        if (String(data.anio || year) !== year) continue;
+
+        const huecos = normalizeHuecos(data.huecos);
+        if (huecos.length === 0) continue;
+
+        const magnitud = getMagnitudFromPrefijo(docSnap.id);
+        if (!magnitud) continue;
+
+        const r = await reconciliarContadorHuecos(magnitud, year, true);
+        if (r) reconciliados++;
+    }
+
+    return reconciliados;
 }
 
 export async function auditarHuerfanos(
     magnitud: string,
     anio: string,
-    toleranciaMinutos: number = 10
+    toleranciaMinutos: number = 60
 ): Promise<string[]> {
     const prefijo = getPrefijo(magnitud);
     const limiteMs = toleranciaMinutos * 60 * 1000;
@@ -357,6 +438,12 @@ export async function auditarHuerfanos(
             const anioEnContador = contadorData.anio || "25";
 
             if (anioEnContador === anioDelDoc && anioDelDoc === anio) {
+                if (await hojaTrabajoExiste(consecutivoStr)) {
+                    await confirmarWorksheet(consecutivoStr, magnitud);
+                    await deleteDoc(docSnap.ref);
+                    continue;
+                }
+
                 const valorActual: number = contadorData.valor || 0;
                 const huecosActuales = normalizeHuecos(contadorData.huecos);
 

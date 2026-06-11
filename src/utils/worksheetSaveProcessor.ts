@@ -8,7 +8,11 @@ import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
 import { getTechnicianFolderName } from "./worksheetPdfGenerator";
 import { syncServicioInicioFromWorksheetRecord } from "./servicioAutomation";
-import { confirmarWorksheet } from "./firebaseConsecutivos";
+import {
+  confirmarWorksheet,
+  resolveMagnitudesConsecutivo,
+  normalizeCertificado,
+} from "./firebaseConsecutivos";
 import { canSaveDirectlyToFirebase } from "./firebaseConnectivity";
 import {
   getOfflineQueue,
@@ -96,12 +100,8 @@ async function processOneOfflineItem(
   const mag =
     item.magnitudConsecutivo ||
     String(item.data.magnitudConsecutivo || item.data.magnitud || "");
-  if (cert && mag) {
-    try {
-      await confirmarWorksheet(cert, mag);
-    } catch (e) {
-      console.warn("[SaveProcessor] confirmarWorksheet:", e);
-    }
+  if (cert) {
+    await tryConfirmarWorksheet(cert, mag || undefined);
   }
 }
 
@@ -131,9 +131,17 @@ export async function tryConfirmarWorksheet(
   certificado: string,
   magnitudConsecutivo?: string
 ): Promise<void> {
-  if (!certificado) return;
+  const cert = normalizeCertificado(certificado);
+  if (!cert) return;
+
+  const candidatos = resolveMagnitudesConsecutivo(cert, magnitudConsecutivo);
   try {
-    await confirmarWorksheet(certificado, magnitudConsecutivo);
+    const ok = await confirmarWorksheet(cert, magnitudConsecutivo);
+    if (!ok && candidatos.length > 0) {
+      console.warn(
+        `[SaveProcessor] Sin doc en consecutivos para ${cert} (magnitudes: ${candidatos.join(", ")})`
+      );
+    }
   } catch (e) {
     console.warn("[SaveProcessor] confirmarWorksheet:", e);
   }
