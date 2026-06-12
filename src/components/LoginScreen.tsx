@@ -441,7 +441,7 @@ export const LoginScreen: React.FC<{
   onNavigateToRegister: () => void;
 }> = ({ onNavigateToRegister }) => {
   const { login, completeLogin } = useAuth();
-  const { navigateTo } = useNavigation();
+  const { resetTo } = useNavigation();
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -561,7 +561,7 @@ export const LoginScreen: React.FC<{
         role: detected.role,
         puesto: detected.puesto,
       });
-      navigateTo("menu");
+      resetTo("menu");
     } catch (err) {
       if (auth.currentUser) {
         try {

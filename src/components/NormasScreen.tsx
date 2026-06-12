@@ -3,11 +3,11 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { differenceInDays, parseISO } from 'date-fns'; 
-import { useNavigation } from '../hooks/useNavigation';
 import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore'; 
 import { db } from '../utils/firebase';
+import { useAppDialog } from '../hooks/useAppDialog';
 import { 
-  ArrowLeft, Package, Plus, Loader2, AlertTriangle, 
+  Package, Plus, Loader2, AlertTriangle, 
   Camera, X, Save, FileText, Briefcase, Info, Printer
 } from 'lucide-react'; 
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
@@ -17,9 +17,13 @@ import {
   isPatronCalibracionVencido,
   isPatronUnavailable,
 } from '../utils/patronLink';
-import labLogo from '../assets/lab_logo.png';
+import {
+  AG_BRAND_BLUE,
+  OperationalScreenHeader,
+  OperationalScreenShell,
+} from './ui/OperationalScreenShell';
 
-const AG_BLUE = '#2464A3';
+const AG_BLUE = AG_BRAND_BLUE;
 const COLLECTION_NAME_PATRONES = COLLECTION_PATRONES;
 const INPUT_CLASS =
   'w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/15 transition-colors';
@@ -245,7 +249,7 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
     saveAs(blob, `Registro_Celestica_${data.usuario}.pdf`);
   } catch (error: any) { 
     console.error(error);
-    alert('Error generando PDF Celestica: ' + error.message); 
+    throw error;
   }
 }
 
@@ -282,7 +286,7 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
 
     const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Generico_${data.usuario}.pdf`);
-  } catch (e) { alert('Error generando PDF Genérico.'); }
+  } catch (e) { throw new Error('Error generando PDF Genérico.'); }
 }
 
 // ==================================================================
@@ -290,7 +294,7 @@ async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
 // ==================================================================
 
 const NormasScreen = () => {
-  const { navigateTo } = useNavigation();
+  const { confirm, alert: showAlert } = useAppDialog();
   const [metrologos, setMetrologos] = useState<{ id: string; nombre: string; }[]>([]);
   const [isLoadingMetrologos, setIsLoadingMetrologos] = useState(true);
   const [patronesMap, setPatronesMap] = useState<Map<string, PatronBase>>(new Map());
@@ -437,22 +441,36 @@ const NormasScreen = () => {
   // --- FUNCIÓN PARA DESCARGAR PDF ---
   const handlePdf = async (type: 'cel' | 'gen') => {
     const isValid = await trigger(['usuario', 'noEmpleado']);
-    if (!isValid) return alert("Por favor completa los datos del responsable.");
+    if (!isValid) {
+      await showAlert({ title: 'Aviso', message: 'Por favor completa los datos del responsable.' });
+      return;
+    }
 
     const data = getValues();
     const allTools = [...aggregatedTools, ...watchedManualTools];
 
-    if (allTools.length === 0) return alert("No hay equipos en la lista.");
+    if (allTools.length === 0) {
+      await showAlert({ title: 'Aviso', message: 'No hay equipos en la lista.' });
+      return;
+    }
 
     if (hasPatronVencidoEnLista) {
       setLinkNotice('Hay patrones vencidos en la lista. Retírelos antes de generar el PDF.');
       return;
     }
 
-    if (type === 'cel') {
-        await generateCelesticaPdf(data, allTools);
-    } else {
-        await generateGenericPdf(data, allTools);
+    try {
+      if (type === 'cel') {
+          await generateCelesticaPdf(data, allTools);
+      } else {
+          await generateGenericPdf(data, allTools);
+      }
+    } catch (error: any) {
+      await showAlert({
+        title: 'Error',
+        message: error?.message || 'Error generando PDF.',
+        variant: 'danger',
+      });
     }
   };
 
@@ -500,11 +518,17 @@ const NormasScreen = () => {
   }, [isScannerOpen, handleScan]);
 
   const handleRegistrarSalida = async () => {
-    if (!(await trigger('usuario'))) return alert('Falta Usuario');
+    if (!(await trigger('usuario'))) {
+      await showAlert({ title: 'Aviso', message: 'Falta Usuario' });
+      return;
+    }
     const usuario = getValues('usuario');
     const tools = watchedManualTools.filter(t => patronesMap.has(t.herramienta));
 
-    if (!tools.length) return alert('Debes agregar al menos un patrón manualmente para registrar salida en base de datos.');
+    if (!tools.length) {
+      await showAlert({ title: 'Aviso', message: 'Debes agregar al menos un patrón manualmente para registrar salida en base de datos.' });
+      return;
+    }
 
     const vencidos = tools.filter(t => {
       const p = patronesMap.get(t.herramienta);
@@ -515,7 +539,7 @@ const NormasScreen = () => {
       return;
     }
 
-    if (!window.confirm(`¿Confirmar salida de ${tools.length} equipos a ${usuario}?`)) return;
+    if (!(await confirm({ message: `¿Confirmar salida de ${tools.length} equipos a ${usuario}?` }))) return;
 
     setIsSavingBatch(true);
     try {
@@ -534,17 +558,18 @@ const NormasScreen = () => {
         });
         await batch.commit();
         await reloadPatrones();
-        alert('Salida registrada correctamente en Firebase.');
+        await showAlert({ title: 'Aviso', message: 'Salida registrada correctamente en Firebase.' });
         setValue('manualTools', []);
         setLinkNotice('Salida registrada. Los estados se sincronizaron con Programa de Calibración.');
-    } catch (e) { alert('Error al guardar en base de datos.'); } 
-    finally { setIsSavingBatch(false); }
+    } catch (e) {
+      await showAlert({ title: 'Error', message: 'Error al guardar en base de datos.', variant: 'danger' });
+    } finally { setIsSavingBatch(false); }
   };
 
   const totalEquipos = aggregatedTools.length + fields.length;
 
   return (
-    <div className="min-h-full w-full flex-shrink-0 bg-[#eef2f7] text-slate-800 font-sans">
+    <OperationalScreenShell>
       <datalist id="patrones-list">
         {sortedPatronOptions.map(op => {
           const isSelected = watchedManualTools.some(t => t.herramienta === op.nombre);
@@ -569,28 +594,15 @@ const NormasScreen = () => {
         </div>
       )}
 
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => navigateTo('menu')}
-            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-            aria-label="Volver al menú"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <img src={labLogo} alt="Equipos y Servicios AG" className="h-10 w-auto object-contain" />
-          <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
-            <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight">Hoja de Herramienta</h1>
-            <p className="text-xs sm:text-sm text-slate-500 truncate">
-              Registro de salida · Laboratorio de Metrología
-            </p>
-          </div>
-          <span className="hidden sm:inline-block text-xs text-slate-500 font-medium tabular-nums">
+      <OperationalScreenHeader
+        title="Hoja de Herramienta"
+        subtitle="Registro de salida · Laboratorio de Metrología"
+        badge={
+          <span className="text-xs text-slate-500 font-medium tabular-nums">
             {new Date().toLocaleDateString('es-MX')}
           </span>
-        </div>
-      </div>
+        }
+      />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6 pb-8">
         {linkNotice && (
@@ -946,7 +958,7 @@ const NormasScreen = () => {
           </div>
         </section>
       </div>
-    </div>
+    </OperationalScreenShell>
   );
 };
 

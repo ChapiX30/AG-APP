@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft,
   CalendarDays,
   Edit3,
   Loader2,
@@ -9,15 +8,20 @@ import {
   X,
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
+import clsx from 'clsx';
 import {
   collection,
   doc,
   onSnapshot,
   updateDoc,
 } from 'firebase/firestore';
-import labLogo from '../assets/lab_logo.png';
 import { useAuth } from '../hooks/useAuth';
-import { useNavigation } from '../hooks/useNavigation';
+import {
+  AG_BRAND_BLUE,
+  OPERATIONAL_SCREEN_BG,
+  OperationalScreenHeader,
+  OperationalScreenShell,
+} from './ui/OperationalScreenShell';
 import { db } from '../utils/firebase';
 import { isMetrologyRole, isQualityRole } from '../utils/calibrationShared';
 import {
@@ -27,7 +31,7 @@ import {
   type VacacionesSaldoYear,
 } from '../utils/vacationBalance';
 
-const AG_BLUE = '#2464A3';
+const AG_BLUE = AG_BRAND_BLUE;
 const CURRENT_YEAR = getVacationYear();
 
 const isTestUser = (name: string, email: string): boolean => {
@@ -64,7 +68,6 @@ type TabId = 'metrologia' | 'calidad';
 
 export const ControlVacacionesRhScreen: React.FC = () => {
   const { user } = useAuth();
-  const { navigateTo } = useNavigation();
 
   const [usuarios, setUsuarios] = useState<UsuarioRh[]>([]);
   const [solicitudes, setSolicitudes] = useState<SolicitudResumen[]>([]);
@@ -201,39 +204,23 @@ export const ControlVacacionesRhScreen: React.FC = () => {
 
   if (!isAdminRh) {
     return (
-      <div className="min-h-full flex items-center justify-center bg-[#eef2f7]">
+      <div className={clsx('min-h-full flex items-center justify-center', OPERATIONAL_SCREEN_BG)}>
         <p className="text-slate-500 text-sm">Acceso restringido a Recursos Humanos.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-full w-full flex-shrink-0 bg-[#eef2f7] text-slate-800 font-sans">
+    <OperationalScreenShell>
       <Toaster position="top-center" toastOptions={{ className: 'text-sm font-medium' }} />
 
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => navigateTo('menu')}
-            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-            title="Menú"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <img src={labLogo} alt="Equipos y Servicios AG" className="h-10 w-auto object-contain" />
-          <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
-            <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight flex items-center gap-2">
-              <CalendarDays size={20} style={{ color: AG_BLUE }} />
-              Control de Vacaciones
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 truncate">
-              Recursos Humanos · Año {CURRENT_YEAR}
-            </p>
-          </div>
-        </div>
-      </div>
+      <OperationalScreenHeader
+        maxWidth="5xl"
+        title="Control de Vacaciones"
+        subtitle={`Recursos Humanos · Año ${CURRENT_YEAR}`}
+        titleIcon={<CalendarDays size={20} style={{ color: AG_BLUE }} />}
+        backLabel="Menú"
+      />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-5">
 
@@ -381,7 +368,7 @@ export const ControlVacacionesRhScreen: React.FC = () => {
           Los días tomados y en trámite se calculan solos. Toca el lápiz para asignar cuántos días le corresponden a cada colaborador en {CURRENT_YEAR}.
         </p>
       </div>
-    </div>
+    </OperationalScreenShell>
   );
 };
 

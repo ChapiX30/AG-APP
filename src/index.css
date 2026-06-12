@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tokens base (MainMenu los actualiza al cargar preferencias del usuario) */
+:root {
+  --bg: #0a0a0a;
+  --surface: #161616;
+  --surface-hi: #242424;
+  --acc: #2464A3;
+  --acc-rgb: 36 100 163;
+}
+
 /* ========= Global fixes anti-franja/overflow ========= */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -34,4 +43,25 @@ img, video, canvas, svg {
 /* Si usas overflow-x-hidden/clip, aísla el pintado para evitar 1px de sangrado */
 :is(.overflow-x-hidden, .overflow-x-clip) {
   contain: paint;
+}
+
+/* PDF: capa de texto seleccionable en Drive y visores */
+.ag-pdf-viewer-scroll .react-pdf__Page {
+  position: relative;
+}
+
+.ag-pdf-viewer-scroll .react-pdf__Page__textContent {
+  pointer-events: auto !important;
+  z-index: 2;
+}
+
+.ag-pdf-viewer-scroll .react-pdf__Page__textContent,
+.ag-pdf-viewer-scroll .react-pdf__Page__textContent span {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
+}
+
+.ag-pdf-viewer-scroll .react-pdf__Page__textContent span::selection {
+  background: rgba(36, 100, 163, 0.35);
 }

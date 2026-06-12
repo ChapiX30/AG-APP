@@ -12,7 +12,7 @@ import {
 } from "./calibration/TVDashboardPanels";
 
 const TVDashboardScreen: React.FC = () => {
-  const { navigateTo } = useNavigation();
+  const { navigateTo, goBack } = useNavigation();
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -67,7 +67,7 @@ const TVDashboardScreen: React.FC = () => {
       <header className="relative bg-slate-900/70 backdrop-blur-xl border-b border-white/[0.06] px-4 lg:px-6 py-3 flex flex-wrap justify-between items-center gap-3 shrink-0 z-40 shadow-lg shadow-black/20">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigateTo("mainmenu")}
+            onClick={goBack}
             className="p-2 rounded-full hover:bg-white/10 transition-colors group"
           >
             <ArrowLeft className="w-5 h-5 text-gray-400 group-hover:text-white" />

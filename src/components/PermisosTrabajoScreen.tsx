@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Printer, Users, ShieldCheck, ArrowLeft, ClipboardList } from 'lucide-react';
+import { FileText, Printer, Users, ShieldCheck, ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
-import { db } from '../utils/firebase'; 
-import { useNavigation } from '../hooks/useNavigation';
-import labLogo from '../assets/lab_logo.png';
+import { db } from '../utils/firebase';
+import { useAppDialog } from '../hooks/useAppDialog';
+import {
+  AG_BRAND_BLUE,
+  OperationalScreenHeader,
+  OperationalScreenShell,
+} from './ui/OperationalScreenShell';
 
-const AG_BLUE = '#2464A3';
+const AG_BLUE = AG_BRAND_BLUE;
 const INPUT_CLASS =
   'w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/15 transition-colors';
 
@@ -48,8 +52,7 @@ const FormField = ({ label, children }: { label: string; children: React.ReactNo
 );
 
 export const PermisosTrabajoScreen: React.FC = () => {
-  const { navigateTo } = useNavigation(); 
-  
+  const { alert: showAlert } = useAppDialog();
   const [fecha, setFecha] = useState(format(new Date(), "dd/MM/yyyy"));
   const [compania, setCompania] = useState('Equipos y Servicios AG');
   const [jefe, setJefe] = useState('Jorge Amador');
@@ -89,7 +92,7 @@ export const PermisosTrabajoScreen: React.FC = () => {
 
   const generarPDF = async () => {
     if (metrologosSel.length === 0 || procesosSel.length === 0) {
-      alert("Por favor selecciona al menos un metrólogo y un proceso.");
+      await showAlert({ title: 'Aviso', message: 'Por favor selecciona al menos un metrólogo y un proceso.' });
       return;
     }
 
@@ -266,7 +269,7 @@ export const PermisosTrabajoScreen: React.FC = () => {
       const pdfBytes = await pdfDoc.save();
       saveAs(new Blob([pdfBytes]), `Permiso_TR_${fecha.replace(/\//g, '-')}_${metrologosActivos[0]?.nombre.split(' ')[0]}.pdf`);
     } catch (e) {
-      alert('Error al generar PDF. Revisa la consola.');
+      await showAlert({ title: 'Error', message: 'Error al generar PDF. Revisa la consola.', variant: 'danger' });
       console.error(e);
     }
   };
@@ -274,32 +277,17 @@ export const PermisosTrabajoScreen: React.FC = () => {
   const puedeGenerar = metrologosSel.length > 0 && procesosSel.length > 0;
 
   return (
-    <div className="min-h-full w-full flex-shrink-0 bg-[#eef2f7] text-slate-800 font-sans">
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => navigateTo('menu')}
-            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-            title="Regresar al menú"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <img src={labLogo} alt="Equipos y Servicios AG" className="h-10 w-auto object-contain" />
-          <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
-            <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight">
-              Permisos de Trabajo No Rutinarios
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 truncate">
-              Seguridad y Medio Ambiente · Formato DOC0040218
-            </p>
-          </div>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600">
+    <OperationalScreenShell>
+      <OperationalScreenHeader
+        title="Permisos de Trabajo No Rutinarios"
+        subtitle="Seguridad y Medio Ambiente · Formato DOC0040218"
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600">
             <FileText size={14} style={{ color: AG_BLUE }} />
             Permiso TR
           </span>
-        </div>
-      </div>
+        }
+      />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
         <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -441,7 +429,7 @@ export const PermisosTrabajoScreen: React.FC = () => {
           </button>
         </section>
       </div>
-    </div>
+    </OperationalScreenShell>
   );
 };
 

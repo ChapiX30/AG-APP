@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AuthProvider } from './hooks/useAuth';
 import { NavigationProvider } from './hooks/useNavigation';
 import { AppUpdatesProvider } from './hooks/useAppUpdates';
+import { AppDialogProvider } from './hooks/useAppDialog';
 import { MainApp } from './components/MainApp';
 import UpdateBanner from './components/UpdateBanner';
 import { SplashScreen } from './components/SplashScreen';
@@ -40,11 +41,13 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppUpdatesProvider>
-        <NavigationProvider>
-          <AppContent />
-        </NavigationProvider>
-      </AppUpdatesProvider>
+      <AppDialogProvider>
+        <AppUpdatesProvider>
+          <NavigationProvider>
+            <AppContent />
+          </NavigationProvider>
+        </AppUpdatesProvider>
+      </AppDialogProvider>
     </AuthProvider>
   );
 }

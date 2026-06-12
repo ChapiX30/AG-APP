@@ -7,6 +7,7 @@ import type { AppUpdate } from '../config/appUpdates';
 import { VernierIcon } from './icons/VernierIcon';
 import { deleteAppNovedad, isFirestoreAppNovedad } from '../utils/appNovedades';
 import { getSeenUpdateIds, getUnreadUpdateCount } from '../utils/appUpdatesStorage';
+import { useAppDialog } from '../hooks/useAppDialog';
 
 const PREVIEW_LIMIT = 3;
 
@@ -39,6 +40,7 @@ export const NovedadesWidget: React.FC<NovedadesWidgetProps> = ({
   onHide,
   user,
 }) => {
+  const { confirm } = useAppDialog();
   const [expanded, setExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -54,9 +56,11 @@ export const NovedadesWidget: React.FC<NovedadesWidgetProps> = ({
 
   const handleDelete = async (update: AppUpdate) => {
     if (!canCreate || !isFirestoreAppNovedad(update.id)) return;
-    const ok = window.confirm(
-      `¿Eliminar la novedad «${update.title}»?\n\nYa no la verá nadie en la app.`,
-    );
+    const ok = await confirm({
+      message: `¿Eliminar la novedad «${update.title}»?\n\nYa no la verá nadie en la app.`,
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    });
     if (!ok) return;
 
     setDeletingId(update.id);

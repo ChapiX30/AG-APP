@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { jsPDF } from "jspdf"; 
 import { useAuth } from "../hooks/useAuth";
+import { useAppDialog } from "../hooks/useAppDialog";
 import { db, firebaseConfig } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
@@ -60,6 +61,7 @@ interface LabelData {
 
 const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data, logo }) => {
   const labelRef = useRef<HTMLDivElement>(null);
+  const { alert: showAlert } = useAppDialog();
   const [isGenerating, setIsGenerating] = useState(false);
   const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
   const [showOptions, setShowOptions] = useState(false);
@@ -97,7 +99,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
 
   } catch (error: any) {
     console.error("Error al generar etiqueta", error);
-    alert("Error: " + (error.message || error));
+    await showAlert({ title: 'Error', message: `Error: ${error.message || error}`, variant: 'danger' });
     setIsGenerating(false);
   }
 };
@@ -713,6 +715,7 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
 export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetId }) => {
   const { currentConsecutive, goBack, selectedMagnitude } = useNavigation();
   const { user } = useAuth();
+  const { confirm } = useAppDialog();
   
   // Usamos el initWorksheet
   const [state, dispatch] = useReducer(worksheetReducer, initialState, initWorksheet);
@@ -1008,35 +1011,42 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   useEffect(() => {
     if (worksheetId || draftRestoredRef.current) return;
 
-    const backup = localStorage.getItem("backup_worksheet_data");
-    if (backup) {
-      try {
-        const parsedBackup = JSON.parse(backup) as WorksheetState;
-        if (window.confirm("Se encontró una hoja de trabajo no guardada (respaldo de error). ¿Desea restaurarla?")) {
-          dispatch({ type: "RESTORE_BACKUP", payload: parsedBackup });
+    const restoreDrafts = async () => {
+      const backup = localStorage.getItem("backup_worksheet_data");
+      if (backup) {
+        try {
+          const parsedBackup = JSON.parse(backup) as WorksheetState;
+          if (await confirm({
+            title: 'Respaldo encontrado',
+            message: 'Se encontró una hoja de trabajo no guardada (respaldo de error). ¿Desea restaurarla?',
+          })) {
+            dispatch({ type: "RESTORE_BACKUP", payload: parsedBackup });
+          }
+          localStorage.removeItem("backup_worksheet_data");
+        } catch (e) {
+          console.error("Error al restaurar respaldo", e);
+          localStorage.removeItem("backup_worksheet_data");
         }
-        localStorage.removeItem("backup_worksheet_data");
-      } catch (e) {
-        console.error("Error al restaurar respaldo", e);
-        localStorage.removeItem("backup_worksheet_data");
+        draftRestoredRef.current = true;
+        return;
       }
+
+      const draft = loadWorksheetDraft();
+      if (!draft?.state) return;
+      const draftCert = String(draft.certificado || "");
+      const navCert = currentConsecutive || "";
+      if (navCert && draftCert && draftCert !== navCert) return;
+
+      dispatch({ type: "RESTORE_BACKUP", payload: draft.state as WorksheetState });
       draftRestoredRef.current = true;
-      return;
-    }
+      setToast({
+        message: "Se restauró automáticamente el borrador local de la hoja.",
+        type: "warning",
+      });
+    };
 
-    const draft = loadWorksheetDraft();
-    if (!draft?.state) return;
-    const draftCert = String(draft.certificado || "");
-    const navCert = currentConsecutive || "";
-    if (navCert && draftCert && draftCert !== navCert) return;
-
-    dispatch({ type: "RESTORE_BACKUP", payload: draft.state as WorksheetState });
-    draftRestoredRef.current = true;
-    setToast({
-      message: "Se restauró automáticamente el borrador local de la hoja.",
-      type: "warning",
-    });
-  }, [worksheetId, currentConsecutive]);
+    void restoreDrafts();
+  }, [worksheetId, currentConsecutive, confirm]);
 
   const unidadesDisponibles = React.useMemo(() => {
     if (state.magnitud === "Electrica") return [...unidadesPorMagnitud.Electrica.DC, ...unidadesPorMagnitud.Electrica.AC, ...unidadesPorMagnitud.Electrica.Otros] as string[];
@@ -1210,7 +1220,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
 
     if (advertenciaNorma) {
-      if (!window.confirm(`⚠️ ADVERTENCIA DE NORMA (ISO 17025):\n\n${advertenciaNorma}\n\n¿Deseas guardar de todos modos?`)) {
+      if (!(await confirm({
+        title: 'Advertencia de norma (ISO 17025)',
+        message: `${advertenciaNorma}\n\n¿Deseas guardar de todos modos?`,
+        variant: 'warning',
+        confirmLabel: 'Guardar de todos modos',
+      }))) {
         return;
       }
     }

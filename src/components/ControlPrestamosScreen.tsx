@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { notificarPrestamoPatronPlanta } from '../utils/notificacionesPrestamoPatron';
 import toast, { Toaster } from 'react-hot-toast';
+import { useAppDialog } from '../hooks/useAppDialog';
 
 // --- Interfaces ---
 export interface HistorialEntry {
@@ -42,6 +43,7 @@ const COLLECTION_NAME = "patronesCalibracion";
 
 export const ControlPrestamosScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
+  const { confirm, alert: showAlert } = useAppDialog();
   const [metrologos, setMetrologos] = useState<Metrologo[]>([]);
   const [usuarioSeleccionado, setUsuarioSeleccionado] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
@@ -101,7 +103,7 @@ export const ControlPrestamosScreen: React.FC = () => {
 
   // Lógica Unificada de Transacción (Entrada/Salida)
   const procesarTransaccion = async (noControl: string, tipo: 'entrada' | 'salida') => {
-      if (!usuarioSeleccionado) { alert("Selecciona un usuario primero"); return; }
+      if (!usuarioSeleccionado) { await showAlert({ title: 'Aviso', message: 'Selecciona un usuario primero' }); return; }
       
       setIsProcessing(true);
       setShowManualModal(false);
@@ -114,7 +116,7 @@ export const ControlPrestamosScreen: React.FC = () => {
           const querySnapshot = await getDocs(q);
 
           if (querySnapshot.empty) {
-              alert(`❌ Equipo "${noControl}" no encontrado.`);
+              await showAlert({ title: 'Error', message: `❌ Equipo "${noControl}" no encontrado.`, variant: 'danger' });
               setIsProcessing(false);
               return;
           }
@@ -127,11 +129,11 @@ export const ControlPrestamosScreen: React.FC = () => {
           if (tipo === 'salida') {
               // Validaciones Salida
               if (['en_servicio', 'en_prestamo', 'en_uso'].includes(patronData.estadoProceso)) {
-                  alert(`⚠️ El equipo ya está prestado a: ${patronData.usuarioEnUso}`);
+                  await showAlert({ title: 'Atención', message: `⚠️ El equipo ya está prestado a: ${patronData.usuarioEnUso}`, variant: 'warning' });
                   setIsProcessing(false); return;
               }
               if (patronData.estadoProceso === 'en_mantenimiento' || patronData.estadoProceso === 'baja') {
-                  alert(`⚠️ El equipo no está disponible (Estado: ${patronData.estadoProceso})`);
+                  await showAlert({ title: 'Atención', message: `⚠️ El equipo no está disponible (Estado: ${patronData.estadoProceso})`, variant: 'warning' });
                   setIsProcessing(false); return;
               }
 
@@ -168,7 +170,10 @@ export const ControlPrestamosScreen: React.FC = () => {
           } else {
               // Validaciones Entrada
               if (patronData.usuarioEnUso !== usuarioSeleccionado && patronData.usuarioEnUso) {
-                   const confirmar = window.confirm(`⚠️ Este equipo figura prestado a ${patronData.usuarioEnUso}, ¿Confirmar devolución por ${usuarioSeleccionado}?`);
+                   const confirmar = await confirm({
+                     message: `⚠️ Este equipo figura prestado a ${patronData.usuarioEnUso}, ¿Confirmar devolución por ${usuarioSeleccionado}?`,
+                     variant: 'warning',
+                   });
                    if(!confirmar) { setIsProcessing(false); return; }
               }
 
@@ -192,7 +197,7 @@ export const ControlPrestamosScreen: React.FC = () => {
           
       } catch (e) {
           console.error(e);
-          alert("Error al procesar movimiento");
+          await showAlert({ title: 'Error', message: 'Error al procesar movimiento', variant: 'danger' });
       } finally {
           setIsProcessing(false);
           stopScan();
@@ -210,7 +215,7 @@ export const ControlPrestamosScreen: React.FC = () => {
               setSearchResult({ id: snap.docs[0].id, ...snap.docs[0].data() } as RegistroPatron);
           } else {
               setSearchResult(null);
-              alert("Equipo no encontrado");
+              await showAlert({ title: 'Error', message: 'Equipo no encontrado', variant: 'danger' });
           }
       } catch(e) { console.error(e); }
       finally { setIsProcessing(false); }
@@ -221,8 +226,8 @@ export const ControlPrestamosScreen: React.FC = () => {
       procesarTransaccion(code, scanMode);
   }, [scanMode, usuarioSeleccionado]); // Dependencias corregidas
 
-  const startScanner = (mode: 'entrada' | 'salida') => {
-      if (!usuarioSeleccionado) { alert("Selecciona un usuario primero"); return; }
+  const startScanner = async (mode: 'entrada' | 'salida') => {
+      if (!usuarioSeleccionado) { await showAlert({ title: 'Aviso', message: 'Selecciona un usuario primero' }); return; }
       setScanMode(mode);
       setIsScannerOpen(true);
   };
@@ -363,8 +368,9 @@ export const ControlPrestamosScreen: React.FC = () => {
                                 </div>
                                 
                                 <button 
-                                    onClick={() => {
-                                        if(window.confirm(`¿Confirmar devolución de ${item.descripcion}?`)) {
+                                    onClick={async () => {
+                                        const ok = await confirm({ message: `¿Confirmar devolución de ${item.descripcion}?` });
+                                        if (ok) {
                                             procesarTransaccion(item.noControl, 'entrada');
                                         }
                                     }}

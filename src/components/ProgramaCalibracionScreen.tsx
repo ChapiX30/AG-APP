@@ -13,6 +13,7 @@ import {
 
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
+import { useAppDialog } from '../hooks/useAppDialog';
 import { FirebaseError } from 'firebase/app';
 import { collection, getDocs, getDoc, setDoc, doc, query, deleteField } from 'firebase/firestore';
 import { ref, uploadBytes, deleteObject, getDownloadURL } from 'firebase/storage';
@@ -228,6 +229,7 @@ const urgencyRowClass: Record<CalibracionUrgency, string> = {
 // --- 2. LÓGICA DE NEGOCIO ---
 
 const usePatronesLogic = (actorName: string) => {
+  const { confirm } = useAppDialog();
   const [data, setData] = useState<RegistroPatron[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -477,9 +479,11 @@ const usePatronesLogic = (actorName: string) => {
     const path = cert.certificadoStoragePath?.trim();
     if (!path) return false;
 
-    const ok = window.confirm(
-      `¿Eliminar el certificado "${cert.label}"?\n\nPodrá subir otro archivo después. El archivo en la nube también se borrará.`,
-    );
+    const ok = await confirm({
+      message: `¿Eliminar el certificado "${cert.label}"?\n\nPodrá subir otro archivo después. El archivo en la nube también se borrará.`,
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    });
     if (!ok) return false;
 
     try {

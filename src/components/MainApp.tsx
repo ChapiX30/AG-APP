@@ -14,6 +14,7 @@ import { WhatsNewModal } from './WhatsNewModal';
 import { useWhatsNew } from '../hooks/useWhatsNew';
 import { useAppUpdates } from '../hooks/useAppUpdates';
 import { useWorksheetQueueSync } from '../hooks/useWorksheetQueueSync';
+import { MobileBackHandler } from './MobileBackHandler';
 
 // --- IMPORT DE LA NUEVA PANTALLA PÚBLICA ---
 const ShareView = lazy(() => import('./ShareView').then(module => ({ default: module.ShareView })));
@@ -79,7 +80,7 @@ const authScreenTransition = {
 
 export const MainApp: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
-  const { currentScreen, navigateTo } = useNavigation();
+  const { currentScreen, navigateTo, resetTo } = useNavigation();
   
   // --- ESTADO SÍNCRONO PARA DETECTAR CONSULTA PÚBLICA DE QR AL INSTANTE ---
   // Leemos el parámetro directamente en la inicialización para evitar el parpadeo del Login
@@ -99,6 +100,12 @@ export const MainApp: React.FC = () => {
     allUpdates,
   );
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      resetTo('login');
+    }
+  }, [isAuthenticated, resetTo]);
+
   // --- PRIORIDAD 1: SI ES UNA CONSULTA DE QR, MOSTRAR VISTA PÚBLICA SIN LOGIN ---
   if (shareCertificado) {
     return (
@@ -112,6 +119,7 @@ export const MainApp: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <div className="relative h-screen w-full overflow-hidden bg-slate-950">
+        <MobileBackHandler />
         <AnimatePresence mode="wait">
           {currentScreen === 'register' ? (
             <motion.div
@@ -147,6 +155,7 @@ export const MainApp: React.FC = () => {
   // --- PRIORIDAD 3: APP PRINCIPAL (USUARIO LOGUEADO) ---
   return (
     <Layout>
+      <MobileBackHandler />
       <div className="flex min-h-0 flex-1 flex-col h-full">
         <Suspense fallback={<ScreenSuspenseFallback />}>
           <ScreenTransition screenKey={currentScreen}>

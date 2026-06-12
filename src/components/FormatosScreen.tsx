@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigation } from '../hooks/useNavigation'; // <--- Importamos el hook de navegación
+import { useAppDialog } from '../hooks/useAppDialog';
 import { db, storage } from '../utils/firebase';
 import { 
   collection, query, where, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, updateDoc 
@@ -55,6 +56,7 @@ interface Formato {
 export const FormatosScreen: React.FC = () => {
   const { user } = useAuth();
   const { navigateTo } = useNavigation(); // <--- Hook para volver al menú
+  const { confirm, alert: showAlert } = useAppDialog();
   
   const [categoriaActual, setCategoriaActual] = useState<string | null>(null);
   const [formatos, setFormatos] = useState<Formato[]>([]);
@@ -141,7 +143,7 @@ export const FormatosScreen: React.FC = () => {
       }
 
       if (!formFile) {
-        alert("Selecciona un archivo primero");
+        await showAlert({ title: 'Aviso', message: 'Selecciona un archivo primero' });
         return;
       }
 
@@ -157,7 +159,7 @@ export const FormatosScreen: React.FC = () => {
         (error) => {
           console.error(error);
           setUploadProgress(null);
-          alert("Error al subir.");
+          void showAlert({ title: 'Error', message: 'Error al subir.', variant: 'danger' });
         },
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
@@ -180,18 +182,18 @@ export const FormatosScreen: React.FC = () => {
 
     } catch (error) {
       console.error(error);
-      alert("Ocurrió un error.");
+      await showAlert({ title: 'Error', message: 'Ocurrió un error.', variant: 'danger' });
     }
   };
 
   const handleEliminar = async (formato: Formato) => {
-    if (!confirm(`¿Eliminar definitivamente "${formato.nombre}"?`)) return;
+    if (!(await confirm({ message: `¿Eliminar definitivamente "${formato.nombre}"?`, variant: 'danger', confirmLabel: 'Eliminar' }))) return;
     try {
       const fileRef = storageRef(storage, formato.refPath);
       await deleteObject(fileRef).catch(() => console.log("Archivo no encontrado en storage, borrando ref db"));
       await deleteDoc(doc(db, 'formatos_master', formato.id));
     } catch (error) {
-      alert("Error al eliminar.");
+      await showAlert({ title: 'Error', message: 'Error al eliminar.', variant: 'danger' });
     }
   };
 

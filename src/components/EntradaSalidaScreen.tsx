@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
+import { useAppDialog } from '../hooks/useAppDialog';
 import { db } from '../utils/firebase';
 import {
   collection, query, orderBy, limit, getDocs, doc,
@@ -64,6 +65,7 @@ const CampoEquipo: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, 
 
 export const EntradaSalidaScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
+  const { confirm, alert: showAlert } = useAppDialog();
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<ItemEquipo[]>([]);
@@ -192,19 +194,22 @@ export const EntradaSalidaScreen: React.FC = () => {
   const handleConfirmarSalida = async () => {
     if (!clienteActivo) return;
     if (!comparacion.puedeConfirmar || salidaCliente.length === 0) {
-      alert('Selecciona al menos un equipo en la columna SALIDA.');
+      await showAlert({ title: 'Aviso', message: 'Selecciona al menos un equipo en la columna SALIDA.' });
       return;
     }
-    if (!customFolio.trim()) return alert('Escribe un folio válido.');
+    if (!customFolio.trim()) {
+      await showAlert({ title: 'Aviso', message: 'Escribe un folio válido.' });
+      return;
+    }
 
     const esCompleta = comparacion.estado === 'completa';
     const msgParcial = esCompleta
       ? 'Salida completa: todos los equipos del cliente.'
       : `Salida parcial: ${salidaCliente.length} de ${entradaCliente.length} equipos.\nQuedan ${comparacion.pendientes.length} en laboratorio.`;
 
-    const confirmacion = window.confirm(
-      `CONFIRMAR SALIDA\n\nFolio: ${customFolio}\nCliente: ${clienteActivo}\nEquipos en esta salida: ${salidaCliente.length}\n\n${msgParcial}\n\n¿Generar PDF y registrar?`
-    );
+    const confirmacion = await confirm({
+      message: `CONFIRMAR SALIDA\n\nFolio: ${customFolio}\nCliente: ${clienteActivo}\nEquipos en esta salida: ${salidaCliente.length}\n\n${msgParcial}\n\n¿Generar PDF y registrar?`,
+    });
     if (!confirmacion) return;
 
     setLoading(true);
@@ -239,13 +244,13 @@ export const EntradaSalidaScreen: React.FC = () => {
       }
 
       await batch.commit();
-      alert(esCompleta ? 'Salida completa registrada.' : `Salida parcial registrada (${salidaCliente.length} equipos).`);
+      await showAlert({ title: 'Aviso', message: esCompleta ? 'Salida completa registrada.' : `Salida parcial registrada (${salidaCliente.length} equipos).` });
       volverAClientes();
       fetchItems();
       fetchNextFolio();
     } catch (error) {
       console.error(error);
-      alert('Error al registrar salida.');
+      await showAlert({ title: 'Error', message: 'Error al registrar salida.', variant: 'danger' });
     } finally {
       setLoading(false);
     }

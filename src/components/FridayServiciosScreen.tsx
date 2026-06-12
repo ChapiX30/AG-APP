@@ -16,6 +16,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, storage } from '../utils/firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useNavigation } from '../hooks/useNavigation';
+import { useAppDialog } from '../hooks/useAppDialog';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { FileViewer } from './FileViewer';
@@ -1188,6 +1189,7 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
 
 const FridayServiciosScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
+  const { confirm } = useAppDialog();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [servicios, setServicios] = useState<Service[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -1486,7 +1488,7 @@ const FridayServiciosScreen: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('¿Confirmar eliminación del servicio?')) {
+    if (await confirm({ message: '¿Confirmar eliminación del servicio?', variant: 'danger', confirmLabel: 'Eliminar' })) {
       await deleteDoc(doc(db, 'servicios', id));
       setIsDetailOpen(false);
       toast.success('Servicio eliminado');

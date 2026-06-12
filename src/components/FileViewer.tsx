@@ -573,6 +573,7 @@ export const FileViewer: React.FC<Props> = ({
       >
         <div
           ref={pdfScrollRef}
+          className="ag-pdf-viewer-scroll select-text"
           style={{
             flex: 1,
             minHeight: 0,
@@ -621,7 +622,7 @@ export const FileViewer: React.FC<Props> = ({
                   width={pageRenderWidth}
                   scale={pageRenderWidth ? undefined : escalaZoom}
                   rotate={rotacionPDF}
-                  renderTextLayer={false}
+                  renderTextLayer
                   renderAnnotationLayer={false}
                   loading={
                     <div style={{ padding: 16 }}>

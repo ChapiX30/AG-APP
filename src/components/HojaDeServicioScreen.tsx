@@ -16,6 +16,7 @@ import { finalizeServicioFromHoja, registerServicioInicioFromWorksheet } from '.
 import { encolarCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
 import { watchAlertaCorreo } from '../utils/alertaCorreoWatcher';
 import { useAuth } from '../hooks/useAuth';
+import { useAppDialog } from '../hooks/useAppDialog';
 import toast, { Toaster } from 'react-hot-toast';
 import logoImage from '../assets/lab_logo.png';
 import { ScreenShell } from './ui/ScreenShell';
@@ -583,6 +584,7 @@ export default function HojaDeServicioScreen() {
   const servicioInicioSyncRef = useRef<Set<string>>(new Set());
   const { goBack } = useNavigation();
   const { user } = useAuth();
+  const { confirm, alert: showAlert } = useAppDialog();
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
   const [dropdownAbierto, setDropdownAbierto] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -594,7 +596,7 @@ export default function HojaDeServicioScreen() {
       const newFolio = await getNextFolio();
       setCampos(c => ({ ...c, folio: newFolio }));
     } catch (error) {
-      alert('Error al generar folio automático. Intenta de nuevo.');
+      await showAlert({ title: 'Error', message: 'Error al generar folio automático. Intenta de nuevo.', variant: 'danger' });
     } finally {
       setAutoFolioLoading(false);
     }
@@ -602,11 +604,11 @@ export default function HojaDeServicioScreen() {
 
   const handleSaveService = async () => {
     if (!campos.folio) {
-      alert('Por favor genera o ingresa un folio');
+      await showAlert({ title: 'Aviso', message: 'Por favor genera o ingresa un folio' });
       return;
     }
     if (!campos.empresa || !campos.fecha || !campos.tecnicoResponsable) {
-      alert('Por favor completa todos los campos requeridos (Empresa, Fecha, Técnico)');
+      await showAlert({ title: 'Aviso', message: 'Por favor completa todos los campos requeridos (Empresa, Fecha, Técnico)' });
       return;
     }
 
@@ -802,7 +804,7 @@ export default function HojaDeServicioScreen() {
 
     } catch (error: any) {
       console.error("Error al guardar:", error);
-      alert(error.message || 'Error al guardar la hoja de servicio');
+      await showAlert({ title: 'Error', message: error.message || 'Error al guardar la hoja de servicio', variant: 'danger' });
     } finally {
       setSavingService(false);
     }
@@ -829,13 +831,17 @@ export default function HojaDeServicioScreen() {
   };
 
   const handleEliminarEquipo = async (docId: string, equipoNombre: string) => {
-    const confirmar = window.confirm(`¿Estás seguro de que deseas eliminar el equipo "${equipoNombre}" de la base de datos?\n\n⚠️ OJO: Si este equipo se registró junto con otros (separados por comas en un mismo registro), se eliminarán todos los de ese registro.`);
+    const confirmar = await confirm({
+      message: `¿Estás seguro de que deseas eliminar el equipo "${equipoNombre}" de la base de datos?\n\n⚠️ OJO: Si este equipo se registró junto con otros (separados por comas en un mismo registro), se eliminarán todos los de ese registro.`,
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    });
     if (confirmar) {
       try {
         await deleteDoc(doc(db, "hojasDeTrabajo", docId));
       } catch (error) {
         console.error("Error al eliminar el equipo:", error);
-        alert("Hubo un error al eliminar el equipo. Intenta de nuevo.");
+        await showAlert({ title: 'Error', message: 'Hubo un error al eliminar el equipo. Intenta de nuevo.', variant: 'danger' });
       }
     }
   };

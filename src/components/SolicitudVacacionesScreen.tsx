@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -32,9 +31,13 @@ import {
   where,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import labLogo from '../assets/lab_logo.png';
 import { useAuth } from '../hooks/useAuth';
-import { useNavigation } from '../hooks/useNavigation';
+import { useAppDialog } from '../hooks/useAppDialog';
+import {
+  AG_BRAND_BLUE,
+  OperationalScreenHeader,
+  OperationalScreenShell,
+} from './ui/OperationalScreenShell';
 import { db, storage } from '../utils/firebase';
 import {
   canSubmitVacationRequest,
@@ -80,12 +83,12 @@ import {
 
 type TabId = 'nueva' | 'mis' | 'pendientes';
 
-const AG_BLUE = '#2464A3';
+const AG_BLUE = AG_BRAND_BLUE;
 const nowISO = () => new Date().toISOString();
 
 export const SolicitudVacacionesScreen: React.FC = () => {
   const { user } = useAuth();
-  const { navigateTo } = useNavigation();
+  const { confirm } = useAppDialog();
 
   const calendarUser = useMemo(
     () =>
@@ -303,9 +306,11 @@ export const SolicitudVacacionesScreen: React.FC = () => {
 
   const handleEliminarSolicitud = async (s: SolicitudVacacionesDoc) => {
     if (!s.id || !puedeEliminarSolicitud(s)) return;
-    const ok = window.confirm(
-      '¿Eliminar esta solicitud de vacaciones? Esta acción no se puede deshacer.',
-    );
+    const ok = await confirm({
+      message: '¿Eliminar esta solicitud de vacaciones? Esta acción no se puede deshacer.',
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    });
     if (!ok) return;
 
     setBusy(true);
@@ -582,31 +587,15 @@ export const SolicitudVacacionesScreen: React.FC = () => {
   }
 
   return (
-    <div className="min-h-full w-full flex-shrink-0 bg-[#eef2f7] text-slate-800 font-sans">
+    <OperationalScreenShell>
       <Toaster position="top-center" toastOptions={{ className: 'text-sm font-medium' }} />
 
-      {/* Header corporativo */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => navigateTo('menu')}
-            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-            title="Menú"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <img src={labLogo} alt="Equipos y Servicios AG" className="h-10 w-auto object-contain" />
-          <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
-            <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight">
-              Solicitud de Vacaciones
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 truncate">
-              Recursos Humanos · Equipos y Servicios Especializados AG
-            </p>
-          </div>
-        </div>
-      </div>
+      <OperationalScreenHeader
+        maxWidth="5xl"
+        title="Solicitud de Vacaciones"
+        subtitle="Recursos Humanos · Equipos y Servicios Especializados AG"
+        backLabel="Menú"
+      />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
         {/* Tabs */}
@@ -956,7 +945,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           box-shadow: 0 0 0 3px rgba(36, 100, 163, 0.12);
         }
       `}</style>
-    </div>
+    </OperationalScreenShell>
   );
 };
 

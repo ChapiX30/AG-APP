@@ -2,11 +2,21 @@ import { useState, createContext, useContext, ReactNode, useMemo, useCallback } 
 
 export type Screen = string;
 
+const SCREEN_ALIASES: Record<string, Screen> = {
+  mainmenu: 'menu',
+  servicios: 'friday-servicios',
+};
+
+const resolveScreen = (screen: Screen): Screen => SCREEN_ALIASES[screen] ?? screen;
+
 interface NavigationContextType {
   currentScreen: Screen;
   selectedMagnitude: string | null;
   currentConsecutive: string | null;
+  canGoBack: boolean;
   navigateTo: (screen: Screen, data?: Record<string, unknown>) => void;
+  /** Reemplaza el stack (p. ej. tras login o logout). */
+  resetTo: (screen: Screen, data?: Record<string, unknown>) => void;
   goBack: () => void;
   /** Limpia consecutivo activo al salir de hoja de trabajo */
   clearWorksheetSession: () => void;
@@ -28,17 +38,32 @@ export const NavigationProvider = ({ children }: { children: ReactNode }) => {
   const [currentConsecutive, setCurrentConsecutive] = useState<string | null>(null);
   const [screenStack, setScreenStack] = useState<Screen[]>(['login']);
 
-  const navigateTo = useCallback((screen: Screen, data?: Record<string, unknown>) => {
-    setScreenStack(prev => [...prev, screen]);
-    setCurrentScreen(screen);
-
+  const applyNavigationData = useCallback((data?: Record<string, unknown>) => {
     if (data?.magnitude) {
-      setSelectedMagnitude(typeof data.magnitude === 'string' ? data.magnitude : (data.magnitude as { name?: string }).name ?? null);
+      setSelectedMagnitude(
+        typeof data.magnitude === 'string'
+          ? data.magnitude
+          : (data.magnitude as { name?: string }).name ?? null,
+      );
     }
     if (data?.consecutive) {
       setCurrentConsecutive(String(data.consecutive));
     }
   }, []);
+
+  const navigateTo = useCallback((screen: Screen, data?: Record<string, unknown>) => {
+    const resolved = resolveScreen(screen);
+    setScreenStack(prev => [...prev, resolved]);
+    setCurrentScreen(resolved);
+    applyNavigationData(data);
+  }, [applyNavigationData]);
+
+  const resetTo = useCallback((screen: Screen, data?: Record<string, unknown>) => {
+    const resolved = resolveScreen(screen);
+    setScreenStack([resolved]);
+    setCurrentScreen(resolved);
+    applyNavigationData(data);
+  }, [applyNavigationData]);
 
   const clearWorksheetSession = useCallback(() => {
     setCurrentConsecutive(null);
@@ -57,16 +82,20 @@ export const NavigationProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const canGoBack = screenStack.length > 1;
+
   const value = useMemo(
     () => ({
       currentScreen,
       selectedMagnitude,
       currentConsecutive,
+      canGoBack,
       navigateTo,
+      resetTo,
       goBack,
       clearWorksheetSession,
     }),
-    [currentScreen, selectedMagnitude, currentConsecutive, navigateTo, goBack, clearWorksheetSession],
+    [currentScreen, selectedMagnitude, currentConsecutive, canGoBack, navigateTo, resetTo, goBack, clearWorksheetSession],
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

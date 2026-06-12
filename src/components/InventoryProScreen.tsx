@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Plus, ArrowLeft, Search, X, Trash2, Archive, Tags, AlertTriangle, Box, UserCheck, RotateCw,
 } from "lucide-react";
+import { useNavigation } from "../hooks/useNavigation";
+import { useAppDialog } from "../hooks/useAppDialog";
 
 // ======= TIPOS ============
 type Tool = {
@@ -34,7 +36,11 @@ const defaultColumns = [
   { key: "notas", label: "Notas", width: 180 },
 ];
 
-export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
+export default function InventoryProScreen({ onBack }: { onBack?: () => void }) {
+  const { goBack } = useNavigation();
+  const { confirm, alert: showAlert } = useAppDialog();
+  const handleBack = onBack ?? goBack;
+
   // Estados
   const [rows, setRows] = useState<Tool[]>([]);
   const [search, setSearch] = useState("");
@@ -43,27 +49,6 @@ export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
   const [prestamoCantidad, setPrestamoCantidad] = useState(1);
   const [prestamoResponsable, setPrestamoResponsable] = useState("");
   const [showBaja, setShowBaja] = useState(false);
-
-  // Swipe-back (retroceso en móvil)
-  const touchStartX = useRef<number | null>(null);
-  useEffect(() => {
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartX.current = e.touches[0].clientX;
-    };
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (touchStartX.current !== null) {
-        const dx = e.changedTouches[0].clientX - touchStartX.current;
-        if (dx > 70 && onBack) onBack(); // swipe derecho para regresar
-      }
-      touchStartX.current = null;
-    };
-    window.addEventListener("touchstart", handleTouchStart, { passive: true });
-    window.addEventListener("touchend", handleTouchEnd, { passive: true });
-    return () => {
-      window.removeEventListener("touchstart", handleTouchStart);
-      window.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [onBack]);
 
   // Persistencia local
   useEffect(() => {
@@ -120,17 +105,17 @@ export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
   };
 
   // Eliminar herramienta
-  const deleteSelected = () => {
+  const deleteSelected = async () => {
     if (!selected.size) return;
-    if (!window.confirm(`¿Eliminar ${selected.size} herramienta(s)?`)) return;
+    if (!(await confirm({ message: `¿Eliminar ${selected.size} herramienta(s)?`, variant: 'danger', confirmLabel: 'Eliminar' }))) return;
     setRows(r => r.filter((_, idx) => !selected.has(idx)));
     setSelected(new Set());
   };
 
   // Pedir prestado
-  const handlePrestamo = () => {
+  const handlePrestamo = async () => {
     if (!prestamoResponsable.trim()) {
-      alert("Captura el nombre del responsable.");
+      await showAlert({ title: 'Aviso', message: 'Captura el nombre del responsable.' });
       return;
     }
     setRows(r =>
@@ -199,7 +184,7 @@ export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
       <div className="flex items-center mb-6 gap-2">
         <button
           className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-900 shadow hover:bg-indigo-100 dark:hover:bg-indigo-900 transition"
-          onClick={onBack}
+          onClick={handleBack}
           title="Regresar"
         >
           <ArrowLeft className="w-6 h-6 text-indigo-700" />
@@ -378,7 +363,7 @@ export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
             </button>
             <button
               className="flex items-center gap-1 text-zinc-700 dark:text-zinc-300 hover:underline font-medium"
-              onClick={deleteSelected}
+              onClick={() => void deleteSelected()}
             >
               <Trash2 className="w-4 h-4" /> Eliminar
             </button>
@@ -438,7 +423,7 @@ export default function InventoryProScreen({ onBack }: { onBack: () => void }) {
                 </button>
                 <button
                   className="px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-                  onClick={handlePrestamo}
+                  onClick={() => void handlePrestamo()}
                 >
                   Confirmar
                 </button>

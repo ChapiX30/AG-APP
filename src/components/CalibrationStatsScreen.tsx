@@ -41,7 +41,7 @@ type ViewMode = "month" | "year";
 
 // --- COMPONENTE PRINCIPAL ---
 const CalibrationStatsScreen: React.FC = () => {
-  const { navigateTo } = useNavigation();
+  const { navigateTo, goBack } = useNavigation();
   
   // Datos
   const [usuarios, setUsuarios] = useState<UsuarioRow[]>([]);
@@ -284,7 +284,7 @@ const CalibrationStatsScreen: React.FC = () => {
     <div className={`min-h-full flex-shrink-0 flex flex-col ${COLORS.background} text-white font-sans selection:bg-blue-500/30 pb-12`}>
       <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-lg border-b border-white/5 px-6 py-4 flex flex-col md:flex-row justify-between items-center shadow-lg gap-4">
         <div className="flex items-center gap-4 w-full md:w-auto">
-          <button onClick={() => navigateTo("mainmenu")} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ArrowLeft className="w-6 h-6 text-gray-300" /></button>
+          <button onClick={goBack} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ArrowLeft className="w-6 h-6 text-gray-300" /></button>
           <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 hidden sm:block">SISTEMA DE CALIBRACIÓN</h1>
               <button onClick={() => navigateTo("tvdashboard")} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400 hover:bg-indigo-500/20 transition-all text-xs font-bold" title="Abrir Modo TV"><Monitor size={14} /><span className="hidden lg:inline">MODO TV</span></button>

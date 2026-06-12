@@ -4,6 +4,7 @@ import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, 
 import { storage, db, auth } from "../utils/firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useNavigation } from "../hooks/useNavigation";
+import { useAppDialog } from "../hooks/useAppDialog";
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import {
@@ -1031,6 +1032,7 @@ const SidebarItem = ({ icon, label, active, onClick, badge, className }: any) =>
 export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const [user] = useAuthState(auth);
   const { goBack } = useNavigation();
+  const { confirm } = useAppDialog();
 
   // --- NUEVA LÓGICA DE CARPETA DINÁMICA ---
   const [currentRoot, setCurrentRoot] = useState<"worksheets" | "certificados">("worksheets");
@@ -1983,9 +1985,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
         if (!result.ok) {
           if (!allowIncomplete && result.error?.includes("mediciones")) {
-            const proceed = window.confirm(
-              `${result.error}\n\nEl PDF se generará con encabezado e identificación, pero las tablas de medición quedarán vacías.\n\n¿Continuar?`
-            );
+            const proceed = await confirm({
+              title: 'PDF incompleto',
+              message: `${result.error}\n\nEl PDF se generará con encabezado e identificación, pero las tablas de medición quedarán vacías.\n\n¿Continuar?`,
+              variant: 'warning',
+              confirmLabel: 'Continuar',
+            });
             if (proceed) {
               setGeneratingPdfLinkId(null);
               return runWorksheetPdfGeneration(docId, technicianFolder, uploadedBy, true);
@@ -2159,7 +2164,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // ── Batch delete ──
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`¿Eliminar ${selectedIds.size} archivo(s)? Esta acción no se puede deshacer.`)) return;
+    if (!(await confirm({
+      message: `¿Eliminar ${selectedIds.size} archivo(s)? Esta acción no se puede deshacer.`,
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    }))) return;
     let count = 0;
     for (const id of Array.from(selectedIds)) {
       const f = processedFiles.find(fi => fi.fullPath === id);
@@ -2229,7 +2238,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   };
 
   const executeDeleteFolder = async (folder: DriveFolder) => {
-    if (!confirm(`¿Eliminar la carpeta "${folder.name}" y TODO su contenido? Esta acción no se puede deshacer.`)) return;
+    if (!(await confirm({
+      message: `¿Eliminar la carpeta "${folder.name}" y TODO su contenido? Esta acción no se puede deshacer.`,
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    }))) return;
     setIsMoving(true);
     try { await deleteFolderRecursive(folder.fullPath); showToast("Carpeta eliminada", 'success'); loadContent(); }
     catch (e) { showToast("Error al eliminar la carpeta", 'error'); }
@@ -2380,7 +2393,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ── File actions ──
   const handleDelete = async (file: DriveFile) => {
-    if (!confirm(`¿Eliminar "${file.name}"?`)) return;
+    if (!(await confirm({
+      message: `¿Eliminar "${file.name}"?`,
+      variant: 'danger',
+      confirmLabel: 'Eliminar',
+    }))) return;
     try {
       await deleteObject(ref(storage, file.fullPath));
       await deleteDoc(doc(db, 'fileMetadata', file.fullPath.replace(/\//g, '_')));

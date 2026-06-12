@@ -13,6 +13,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, storage } from '../utils/firebase';
 import { useNavigation } from '../hooks/useNavigation';
+import { useAppDialog } from '../hooks/useAppDialog';
 import { 
   ArrowLeft, Calendar as CalendarIcon, Clock, CheckCircle2, RotateCcw, 
   X, Users, ChevronLeft, ChevronRight, ChevronDown, Search, MapPin, ShieldCheck,
@@ -245,6 +246,7 @@ async function uploadEvidenciaServicio(servicioId: string, file: File) {
 }
 
 const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff, isCalidad, canEdit, currentUser, authUid }: any) => {
+    const { confirm } = useAppDialog();
     const [formData, setFormData] = useState({
         titulo: '', tipo: 'intralaboratorio', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', 
         estado: 'programado', personas: [] as string[], magnitudPT: '', comentariosPT: '',
@@ -374,7 +376,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     };
 
     const handleDelete = async () => {
-        if (canEdit && event?.id && window.confirm('¿Eliminar esta actividad?')) {
+        if (canEdit && event?.id && await confirm({ message: '¿Eliminar esta actividad?', variant: 'danger', confirmLabel: 'Eliminar' })) {
             await deleteDoc(doc(db, 'servicios', event.id));
             onClose();
         }
@@ -1137,7 +1139,8 @@ const CustomToolbar = (toolbar: any) => (
 // --- 6. COMPONENTE PRINCIPAL (SCREEN) ---
 
 export const CalendarScreen: React.FC = () => {
-    const { navigateTo } = useNavigation();
+    const { navigateTo, goBack } = useNavigation();
+    const { confirm } = useAppDialog();
     
     const [authUser, setAuthUser] = useState<any>(null);
     const [users, setUsers] = useState<any[]>([]);
@@ -1359,7 +1362,7 @@ export const CalendarScreen: React.FC = () => {
     const handleDeleteMagnitud = async (magnitud: string, eventIds: string[]) => {
         if (!canEditEvents || !eventIds.length) return;
         const msg = `¿Eliminar toda la magnitud "${magnitud}"?\nSe borrarán ${eventIds.length} actividad${eventIds.length === 1 ? '' : 'es'}. Esta acción no se puede deshacer.`;
-        if (!window.confirm(msg)) return;
+        if (!(await confirm({ message: msg, variant: 'danger', confirmLabel: 'Eliminar' }))) return;
         try {
             await Promise.all(eventIds.map(id => deleteDoc(doc(db, 'servicios', id))));
             toast.success(`Magnitud "${magnitud}" eliminada (${eventIds.length} actividades).`);
@@ -1449,7 +1452,7 @@ export const CalendarScreen: React.FC = () => {
                 {/* --- HEADER compacto --- */}
                 <header className="bg-white border-b border-slate-200 px-2 py-1.5 sm:px-4 sm:py-2 z-30 shadow-sm shrink-0">
                     <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                        <button type="button" onClick={() => navigateTo('servicios')} aria-label="Volver" className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 shrink-0 touch-manipulation"><ArrowLeft size={17}/></button>
+                        <button type="button" onClick={goBack} aria-label="Volver" className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 shrink-0 touch-manipulation"><ArrowLeft size={17}/></button>
                         <img
                             src={labLogoG}
                             alt="Equipos y Servicios Especializados AG"

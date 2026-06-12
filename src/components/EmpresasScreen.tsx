@@ -28,6 +28,7 @@ import {
   Users,
 } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
+import { useAppDialog } from "../hooks/useAppDialog";
 import { useAuth } from "../hooks/useAuth";
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -691,6 +692,7 @@ const EmpresasScreen = () => {
   const [filterResponsable, setFilterResponsable] = useState<string>("todos");
   const { goBack } = useNavigation();
   const { user } = useAuth();
+  const { confirm } = useAppDialog();
   const canEdit = useMemo(() => canEditEmpresas(user), [user]);
 
   const responsablesUnicos = useMemo(() => {
@@ -799,7 +801,7 @@ const EmpresasScreen = () => {
       toast.error("No tienes permiso para eliminar empresas.");
       return;
     }
-    if (window.confirm("¿Estás seguro que deseas eliminar esta empresa?")) {
+    if (await confirm({ message: '¿Estás seguro que deseas eliminar esta empresa?', variant: 'danger', confirmLabel: 'Eliminar' })) {
       const deletePromise = deleteDoc(doc(db, "clientes", id));
       toast.promise(deletePromise, { loading: 'Eliminando...', success: 'Empresa eliminada.', error: 'Error al eliminar.' });
       try { await deletePromise; loadData(); } catch (error) { console.error(error); }
