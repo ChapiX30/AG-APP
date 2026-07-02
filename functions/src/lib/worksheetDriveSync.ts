@@ -2,7 +2,7 @@
  * Lógica de reconciliación Drive ↔ hojasDeTrabajo (Admin SDK).
  * Reglas espejo de src/utils/worksheetDriveSync.ts (cliente).
  */
-import type { Firestore } from "firebase-admin/firestore";
+import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
 
 export const isLinkableWorksheetId = (id: string): boolean => {
   const t = (id || "").trim();
@@ -29,6 +29,27 @@ export interface DriveTruthIndex {
   certificadoIds: Set<string>;
 }
 
+const FILE_METADATA_PATH_PREFIXES = ["worksheets/", "certificados/"] as const;
+
+const loadRelevantFileMetadata = async (db: Firestore) => {
+  const seen = new Set<string>();
+  const docs: QueryDocumentSnapshot[] = [];
+  for (const prefix of FILE_METADATA_PATH_PREFIXES) {
+    const snap = await db
+      .collection("fileMetadata")
+      .where("filePath", ">=", prefix)
+      .where("filePath", "<=", `${prefix}\uf8ff`)
+      .get();
+    for (const docSnap of snap.docs) {
+      if (!seen.has(docSnap.id)) {
+        seen.add(docSnap.id);
+        docs.push(docSnap);
+      }
+    }
+  }
+  return docs;
+};
+
 export const buildDriveTruthIndex = async (
   db: Firestore
 ): Promise<DriveTruthIndex> => {
@@ -36,8 +57,8 @@ export const buildDriveTruthIndex = async (
   const reviewedIds = new Set<string>();
   const certificadoIds = new Set<string>();
 
-  const snap = await db.collection("fileMetadata").get();
-  snap.forEach((docSnap) => {
+  const metadataDocs = await loadRelevantFileMetadata(db);
+  metadataDocs.forEach((docSnap) => {
     const data = docSnap.data();
     const rawName = String(data.name || "");
     const fullPath = String(data.filePath || "");
@@ -180,10 +201,26 @@ export const reconcileWorksheetDriveFlags = async (
   };
 };
 
-/** Carga todas las hojas (servidor; sin filtro de año del tablero). */
-export const loadAllHojasDeTrabajoRows = async (
+const DRIVE_MARKED_CARGADO = ["Si", "Realizado"] as const;
+const DRIVE_MARKED_CERT = ["Generado", "Firmado", "Finalizado"] as const;
+
+/** Solo filas marcadas en Drive/certificado (candidatas a reconciliación). */
+export const loadDriveReconcileCandidateRows = async (
   db: Firestore
 ): Promise<{ docId: string; [key: string]: unknown }[]> => {
-  const snap = await db.collection("hojasDeTrabajo").get();
-  return snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+  const byId = new Map<string, { docId: string; [key: string]: unknown }>();
+
+  const [driveSnap, certSnap] = await Promise.all([
+    db.collection("hojasDeTrabajo").where("cargado_drive", "in", [...DRIVE_MARKED_CARGADO]).get(),
+    db.collection("hojasDeTrabajo").where("status_certificado", "in", [...DRIVE_MARKED_CERT]).get(),
+  ]);
+
+  for (const d of driveSnap.docs) {
+    byId.set(d.id, { docId: d.id, ...d.data() });
+  }
+  for (const d of certSnap.docs) {
+    if (!byId.has(d.id)) byId.set(d.id, { docId: d.id, ...d.data() });
+  }
+
+  return [...byId.values()];
 };

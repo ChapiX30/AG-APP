@@ -659,9 +659,11 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 </div>
                             )}
 
-                            {!isPJLA && !isCalidad && isAssigned && (
+                            {!isPJLA && isAssigned && (!isCalidad || event.tipo === 'junta') && (
                                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Tu confirmación</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">
+                                        {event.tipo === 'junta' ? 'Tu asistencia' : 'Tu confirmación'}
+                                    </p>
                                     <div className={`flex items-center justify-between p-2.5 bg-white border rounded-xl ${yaEstaEnterado ? 'border-emerald-200' : 'border-amber-200'}`}>
                                         <div className="flex items-center gap-2">
                                             <Avatar name={getUserName(currentUser?.id || authUid || '', technicalStaff)} isEnterado={yaEstaEnterado} />
@@ -690,11 +692,6 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                     {marking ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <UserCheck size={18}/>}
                                     {ackActionLabel}
                                 </button>
-                            )}
-                            {!isPJLA && isAssigned && !yaEstaEnterado && !canAckAssigned && event?.tipo === 'junta' && (
-                                <p className="text-xs text-amber-800 text-center py-2.5 px-3 bg-amber-50 border border-amber-200 rounded-xl mt-2">
-                                    En juntas, la confirmación de asistencia la realizan Calidad o Jorge Amador. Si estás invitado, no necesitas confirmar aquí.
-                                </p>
                             )}
                             {!isPJLA && !isAssigned && !canEdit && event?.personas?.length > 0 && (
                                 <p className="text-xs text-slate-500 italic text-center py-2 border border-dashed border-slate-200 rounded-xl">

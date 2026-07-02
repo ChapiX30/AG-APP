@@ -9,7 +9,7 @@
  */
 import * as admin from "firebase-admin";
 import {
-  loadAllHojasDeTrabajoRows,
+  loadDriveReconcileCandidateRows,
   reconcileWorksheetDriveFlags,
 } from "./lib/worksheetDriveSync";
 
@@ -17,7 +17,7 @@ export async function runScheduledDriveReconcile(): Promise<null> {
   const started = Date.now();
   const db = admin.firestore();
   try {
-    const rows = await loadAllHojasDeTrabajoRows(db);
+    const rows = await loadDriveReconcileCandidateRows(db);
     const result = await reconcileWorksheetDriveFlags(db, rows, {
       maxWrites: 400,
     });

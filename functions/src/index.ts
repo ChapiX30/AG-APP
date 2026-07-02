@@ -25,13 +25,24 @@ const calcularProximoVencimiento = (fechaBase: Date, frecuenciaTexto: string): D
 // ==================================================================
 // 3. EL AUDITOR (Firestore Trigger)
 // ==================================================================
+const AGBOT_AUDITOR_FIELDS = ["fecha", "frecuenciaCalibracion", "id", "certificado"] as const;
+
 export const agbotAuditorCalibraciones = functions.firestore
     .document("hojasDeTrabajo/{docId}")
     .onWrite(async (change: any, context: any) => {
         if (!change.after.exists) return null;
 
         const data = change.after.data();
-        if (data._agbotChecked === true) return null;
+        const before = change.before.exists ? change.before.data() : null;
+
+        if (data._agbotChecked === true && before) {
+            const relevantUnchanged = AGBOT_AUDITOR_FIELDS.every(
+                (field) => data[field] === before[field]
+            );
+            if (relevantUnchanged) return null;
+        } else if (data._agbotChecked === true) {
+            return null;
+        }
 
         const fechaCalibracion = data.fecha ? parseISO(data.fecha) : null;
         const frecuencia = data.frecuenciaCalibracion || "N/A";
@@ -449,8 +460,8 @@ export const checkPJLAUpdates = functions.pubsub
     });
 
 export const scheduledDriveReconcile = functions
-    .runWith({ timeoutSeconds: 540, memory: "512MB" })
-    .pubsub.schedule("every 5 minutes")
+    .runWith({ timeoutSeconds: 300, memory: "256MB" })
+    .pubsub.schedule("every 6 hours")
     .timeZone("America/Mexico_City")
     .onRun(async () => {
         const { runScheduledDriveReconcile } = require("./scheduledDriveReconcile");

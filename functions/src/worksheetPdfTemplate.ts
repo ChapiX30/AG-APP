@@ -1,12 +1,7 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { jsPDF } from "jspdf";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import logoAg from "../assets/lab_logo.png";
-import { db, storage } from "./firebase";
-import { writeDriveFileMetadata } from "./driveFileMetadata";
-import { toWorksheetMagnitud } from "./magnitudWorksheet";
 
-/** Fields consumed by generateTemplatePDF (shared with WorkSheetScreen). */
 export interface WorksheetPdfFormData {
   lugarCalibracion: string;
   frecuenciaCalibracion: string;
@@ -37,29 +32,40 @@ export interface WorksheetPdfFormData {
   fotoEquipoBase64: string;
 }
 
-export interface WorksheetPdfReadiness {
-  ok: boolean;
-  missing: string[];
-  warnings: string[];
-}
-
-export interface GenerateWorksheetPdfResult {
-  ok: boolean;
-  pdfURL?: string;
-  storagePath?: string;
-  missing?: string[];
-  warnings?: string[];
-  error?: string;
-}
-
-export const getTechnicianFolderName = (
-  user: { name?: string; displayName?: string; email?: string } | null | undefined
-) => user?.name?.trim() || user?.displayName?.trim() || user?.email?.split("@")[0] || "Sin Usuario";
-
-export const getTechnicianFolderFromWorksheet = (data: Record<string, unknown>): string => {
-  const fromRow = String(data.nombre || data.assignedTo || "").trim();
-  return fromRow || "Sin Usuario";
+const WORKSHEET_ALIASES: Record<string, string> = {
+  Presion: "Presión",
+  "Presion Trazable": "Presión",
+  "Reporte Diagnostico": "Reporte de Diagnostico",
+  AcusticaTrazable: "Acustica",
 };
+
+function toWorksheetMagnitud(magnitud: string): string {
+  const trimmed = (magnitud || "").trim();
+  if (!trimmed) return "";
+  if (WORKSHEET_ALIASES[trimmed]) return WORKSHEET_ALIASES[trimmed];
+  const trazableMatch = trimmed.match(/^(.+?)\s+Trazable$/i);
+  if (trazableMatch) {
+    const base = trazableMatch[1].trim();
+    return WORKSHEET_ALIASES[base] ?? toWorksheetMagnitud(base);
+  }
+  return WORKSHEET_ALIASES[trimmed] ?? trimmed;
+}
+
+let cachedLogoDataUrl = "";
+function getLogoDataUrl(): string {
+  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+  const candidates = [
+    path.join(__dirname, "../assets/lab_logo.png"),
+    path.join(__dirname, "../../assets/lab_logo.png"),
+  ];
+  for (const logoPath of candidates) {
+    if (fs.existsSync(logoPath)) {
+      cachedLogoDataUrl = `data:image/png;base64,${fs.readFileSync(logoPath).toString("base64")}`;
+      return cachedLogoDataUrl;
+    }
+  }
+  return "";
+}
 
 const normalizeLugarCalibracion = (raw: unknown): string => {
   const lugar = String(raw || "").trim();
@@ -75,7 +81,6 @@ const normalizeUnidad = (raw: unknown): string[] => {
   return [];
 };
 
-/** Maps a hojasDeTrabajo document into PDF form data. */
 export const firestoreToWorksheetPdfForm = (
   data: Record<string, unknown>
 ): WorksheetPdfFormData => {
@@ -106,78 +111,12 @@ export const firestoreToWorksheetPdfForm = (
     linealidad: String(data.linealidad || "").trim(),
     repetibilidad: String(data.repetibilidad || "").trim(),
     notas: String(data.notas || "").trim(),
-    tempAmbiente: data.tempAmbiente ?? "",
-    humedadRelativa: data.humedadRelativa ?? "",
+    tempAmbiente: (data.tempAmbiente as string | number) ?? "",
+    humedadRelativa: (data.humedadRelativa as string | number) ?? "",
     condicionEquipo: (data.condicionEquipo as WorksheetPdfFormData["condicionEquipo"]) || "",
     descripcionDano: String(data.descripcionDano || "").trim(),
     fotoEquipoBase64: String(data.fotoEquipoBase64 || "").trim(),
   };
-};
-
-export const buildWorksheetPdfStoragePath = (
-  technicianFolder: string,
-  certificado: string,
-  equipmentId: string
-): string => {
-  const cert = certificado.trim() || "SIN-CERT";
-  const id = equipmentId.trim() || "SINID";
-  return `worksheets/${technicianFolder}/${cert}_${id}.pdf`;
-};
-
-/** Minimum data to build filename + meaningful PDF. Measurements may be empty (shown as "-"). */
-export const assessWorksheetPdfReadiness = (
-  form: WorksheetPdfFormData
-): WorksheetPdfReadiness => {
-  const missing: string[] = [];
-  const warnings: string[] = [];
-
-  if (!form.id.trim()) missing.push("ID del equipo");
-  if (!form.certificado.trim()) missing.push("Número de certificado / folio");
-
-  const identityFields: [string, string][] = [
-    ["Cliente", form.cliente],
-    ["Equipo", form.equipo],
-    ["Marca", form.marca],
-    ["Modelo", form.modelo],
-    ["Magnitud", form.magnitud],
-    ["Metrólogo", form.nombre],
-    ["Fecha de calibración", form.fecha],
-  ];
-  for (const [label, value] of identityFields) {
-    if (!value?.trim()) warnings.push(`${label} vacío — aparecerá como "-" en el PDF`);
-  }
-
-  if (!form.unidad.length) warnings.push("Unidad de medida vacía");
-
-  if (form.magnitud === "Masa") {
-    if (!form.excentricidad.trim()) warnings.push("Excentricidad sin datos");
-    if (!form.linealidad.trim()) warnings.push("Linealidad sin datos");
-    if (!form.repetibilidad.trim()) warnings.push("Repetibilidad sin datos");
-  } else if (form.magnitud === "Electrica") {
-    if (!form.medicionPatron.trim() && !form.medicionInstrumento.trim()) {
-      warnings.push("Mediciones eléctricas vacías");
-    }
-  } else if (form.magnitud) {
-    if (!form.medicionPatron.trim()) warnings.push("Medición patrón vacía");
-    if (!form.medicionInstrumento.trim()) warnings.push("Medición instrumento vacía");
-  } else {
-    warnings.push("Magnitud no definida — tabla de mediciones quedará vacía");
-  }
-
-  if (!form.condicionEquipo) warnings.push("Condición del equipo no registrada");
-
-  return { ok: missing.length === 0, missing, warnings };
-};
-
-const hasEmptyMeasurementSections = (form: WorksheetPdfFormData): boolean => {
-  if (form.magnitud === "Masa") {
-    return (
-      !form.excentricidad.trim() &&
-      !form.linealidad.trim() &&
-      !form.repetibilidad.trim()
-    );
-  }
-  return !form.medicionPatron.trim() && !form.medicionInstrumento.trim();
 };
 
 export const generateTemplatePDF = (
@@ -186,6 +125,7 @@ export const generateTemplatePDF = (
 ) => {
   // @ts-ignore
   const doc = new JsPDF({ orientation: "p", unit: "pt", format: "a4" });
+  const logoAg = getLogoDataUrl();
 
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
@@ -209,7 +149,9 @@ export const generateTemplatePDF = (
   let currentY = 60;
 
   const drawHeaderBase = () => {
-    doc.addImage(logoAg, "PNG", marginLeft, 25, LOGO_WIDTH, LOGO_HEIGHT);
+    if (logoAg) {
+      doc.addImage(logoAg, "PNG", marginLeft, 25, LOGO_WIDTH, LOGO_HEIGHT);
+    }
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
@@ -372,7 +314,7 @@ export const generateTemplatePDF = (
       doc.setFont("helvetica", "normal");
       doc.setTextColor(0, 0, 0);
     }
-    v1Lines.forEach((line, lineIdx) => {
+    v1Lines.forEach((line: string, lineIdx: number) => {
       doc.text(line, col1ValueX, currentY + 1 + lineIdx * infoLineHeight);
     });
 
@@ -384,7 +326,7 @@ export const generateTemplatePDF = (
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(0, 0, 0);
-      v2Lines.forEach((line, lineIdx) => {
+      v2Lines.forEach((line: string, lineIdx: number) => {
         doc.text(line, col2ValueX, currentY + 1 + lineIdx * infoLineHeight);
       });
     }
@@ -408,11 +350,7 @@ export const generateTemplatePDF = (
 
   if (isMasa) {
     const excLines = (formData.excentricidad || "").split("\n");
-    let p1 = "-",
-      p2 = "-",
-      p3 = "-",
-      p4 = "-",
-      p5 = "-";
+    let p1 = "-", p2 = "-", p3 = "-", p4 = "-", p5 = "-";
     excLines.forEach((l) => {
       if (l.startsWith("1")) p1 = l.substring(l.indexOf(":") + 1).trim() || "-";
       else if (l.startsWith("2")) p2 = l.substring(l.indexOf(":") + 1).trim() || "-";
@@ -422,10 +360,8 @@ export const generateTemplatePDF = (
     });
 
     checkPageBreak(130);
-
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(0, 0, 0);
     doc.text("Excentricidad:", tableX, currentY + 10);
     currentY += 25;
 
@@ -436,7 +372,6 @@ export const generateTemplatePDF = (
     doc.setDrawColor(150);
     doc.setLineWidth(1);
     doc.rect(boxX, boxY, boxSize, boxSize);
-
     doc.setLineWidth(0.5);
     doc.setDrawColor(200);
     doc.line(boxX + boxSize / 2, boxY, boxX + boxSize / 2, boxY + boxSize);
@@ -444,8 +379,6 @@ export const generateTemplatePDF = (
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.setTextColor(0, 0, 0);
-
     doc.text(`3: ${p3}`, boxX - 35, boxY + 10);
     doc.text(`4: ${p4}`, boxX + boxSize + 5, boxY + 10);
     doc.setFont("helvetica", "bold");
@@ -453,7 +386,6 @@ export const generateTemplatePDF = (
     doc.setFont("helvetica", "normal");
     doc.text(`2: ${p2}`, boxX - 35, boxY + boxSize - 5);
     doc.text(`5: ${p5}`, boxX + boxSize + 5, boxY + boxSize - 5);
-
     currentY += boxSize + 25;
 
     checkPageBreak(40);
@@ -462,7 +394,6 @@ export const generateTemplatePDF = (
     doc.rect(tableX, currentY, tableWidth, 20, "FD");
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-
     doc.text("Parámetro", tableX + 20, currentY + 14);
     doc.text("Valor", tableX + tableWidth / 2 + 20, currentY + 14);
     currentY += 20;
@@ -477,12 +408,10 @@ export const generateTemplatePDF = (
       const paramLines = doc.splitTextToSize(val, tableWidth / 2 - 20);
       const rowHeight = Math.max(20, paramLines.length * 15 + 10);
       checkPageBreak(rowHeight);
-
       doc.setFontSize(10);
       doc.setDrawColor(200);
       doc.rect(tableX, currentY, tableWidth / 2, rowHeight);
       doc.rect(tableX + tableWidth / 2, currentY, tableWidth / 2, rowHeight);
-
       doc.setFont("helvetica", "bold");
       doc.text(param, tableX + 10, currentY + 14);
       doc.setFont("helvetica", "normal");
@@ -499,7 +428,6 @@ export const generateTemplatePDF = (
     doc.rect(tableX, currentY, tableWidth, 20, "FD");
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-
     doc.text("Medición Patrón", tableX + 20, currentY + 14);
     doc.text("Medición Instrumento", tableX + tableWidth / 2 + 20, currentY + 14);
     currentY += 20;
@@ -524,7 +452,6 @@ export const generateTemplatePDF = (
         const headerLines = doc.splitTextToSize(headerText, tableWidth - 20);
         const rowHeight = Math.max(18, headerLines.length * 12 + 6);
         checkPageBreak(rowHeight);
-
         doc.setDrawColor(200);
         doc.setFillColor(240, 240, 240);
         doc.setFont("helvetica", "bold");
@@ -536,15 +463,10 @@ export const generateTemplatePDF = (
         continue;
       }
 
-      const pLines = pLine.trim()
-        ? doc.splitTextToSize(pLine, colHalfWidth)
-        : [""];
-      const iLines = iLine.trim()
-        ? doc.splitTextToSize(iLine, colHalfWidth)
-        : [""];
+      const pLines = pLine.trim() ? doc.splitTextToSize(pLine, colHalfWidth) : [""];
+      const iLines = iLine.trim() ? doc.splitTextToSize(iLine, colHalfWidth) : [""];
       const rowHeight = Math.max(18, Math.max(pLines.length, iLines.length) * 12 + 6);
       checkPageBreak(rowHeight);
-
       doc.setDrawColor(200);
       doc.setFont("helvetica", "normal");
       doc.setFillColor(245, 250, 255);
@@ -552,7 +474,6 @@ export const generateTemplatePDF = (
       doc.setFillColor(255, 252, 245);
       doc.rect(tableX + tableWidth / 2, currentY, tableWidth / 2, rowHeight, "FD");
       doc.setTextColor(0, 0, 0);
-
       doc.text(pLines, tableX + 10, currentY + 12);
       doc.text(iLines, tableX + tableWidth / 2 + 10, currentY + 12);
       currentY += rowHeight;
@@ -592,21 +513,11 @@ export const generateTemplatePDF = (
     checkPageBreak(imgBlockHeight);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.setTextColor(0, 0, 0);
     doc.text("Evidencia Fotográfica del Equipo:", marginLeft, currentY);
     currentY += 16;
 
     try {
-      doc.addImage(
-        imgData,
-        imgFormat,
-        marginLeft,
-        currentY,
-        maxImgWidth,
-        maxImgHeight,
-        undefined,
-        "MEDIUM"
-      );
+      doc.addImage(imgData, imgFormat, marginLeft, currentY, maxImgWidth, maxImgHeight, undefined, "MEDIUM");
       currentY += maxImgHeight + 16;
     } catch {
       doc.setFont("helvetica", "italic");
@@ -631,129 +542,13 @@ export const generateTemplatePDF = (
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.5);
   doc.rect(marginLeft, notesY - 15, contentWidth, notasHeight, "FD");
-
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
   doc.text("Observaciones / Notas:", marginLeft + 10, notesY + 2);
-
   doc.setFont("helvetica", "italic");
   doc.setFontSize(10);
   doc.text(notasLines, marginLeft + 10, notesY + 18);
 
-  currentY = notesY + notasHeight;
-
   drawFooter();
   return doc;
 };
-
-export async function generateWorksheetPdfBlob(form: WorksheetPdfFormData): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
-  const pdfDoc = generateTemplatePDF(form, jsPDF as typeof jsPDF);
-  return pdfDoc.output("blob");
-}
-
-async function attachPhotoFromUrl(form: WorksheetPdfFormData, fotoUrl: string): Promise<void> {
-  if (form.fotoEquipoBase64 || !fotoUrl) return;
-  try {
-    const resp = await fetch(fotoUrl);
-    if (!resp.ok) return;
-    const blob = await resp.blob();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    form.fotoEquipoBase64 = dataUrl;
-  } catch {
-    /* optional enrichment */
-  }
-}
-
-/**
- * Generates a worksheet PDF from Firestore data, uploads to Storage,
- * writes fileMetadata, and updates hojasDeTrabajo (pdfURL + cargado_drive).
- */
-export async function generateWorksheetPdfFromFirestore(
-  docId: string,
-  options?: {
-    technicianFolder?: string;
-    uploadedBy?: string;
-    /** When true, proceeds even if measurement sections are empty. */
-    allowIncomplete?: boolean;
-  }
-): Promise<GenerateWorksheetPdfResult> {
-  const snap = await getDoc(doc(db, "hojasDeTrabajo", docId));
-  if (!snap.exists()) {
-    return { ok: false, error: "No se encontró la hoja de trabajo en Firestore." };
-  }
-
-  const raw = snap.data() as Record<string, unknown>;
-  const form = firestoreToWorksheetPdfForm(raw);
-  const readiness = assessWorksheetPdfReadiness(form);
-
-  if (!readiness.ok) {
-    return { ok: false, missing: readiness.missing, error: "Faltan datos mínimos para generar el PDF." };
-  }
-
-  if (!options?.allowIncomplete && hasEmptyMeasurementSections(form)) {
-    return {
-      ok: false,
-      warnings: readiness.warnings,
-      error: "La hoja no tiene mediciones. Complete la Hoja de Trabajo o confirme generación parcial.",
-    };
-  }
-
-  await attachPhotoFromUrl(form, String(raw.fotoEquipoURL || ""));
-
-  const technicianFolder =
-    options?.technicianFolder?.trim() ||
-    getTechnicianFolderFromWorksheet(raw) ||
-    "Sin Usuario";
-  const uploadedBy = options?.uploadedBy?.trim() || technicianFolder;
-  const storagePath = buildWorksheetPdfStoragePath(technicianFolder, form.certificado, form.id);
-
-  try {
-    const blob = await generateWorksheetPdfBlob(form);
-    const pdfRef = ref(storage, storagePath);
-    const uploadResult = await uploadBytes(pdfRef, blob);
-    const pdfURL = await getDownloadURL(pdfRef);
-
-    const lugarLower = form.lugarCalibracion.toLowerCase();
-    try {
-      await writeDriveFileMetadata(storagePath, uploadResult, uploadedBy, {
-        ubicacion_real: lugarLower === "sitio" ? "Servicio en Sitio" : "Laboratorio",
-        workDate: form.fecha,
-      });
-    } catch (metaErr) {
-      console.error("[worksheetPdfGenerator] fileMetadata:", metaErr);
-    }
-
-    const patch: Record<string, string> = {
-      pdfURL,
-      cargado_drive: "Si",
-      lastUpdated: new Date().toISOString(),
-    };
-    const certStatus = String(raw.status_certificado || "").trim();
-    if (!certStatus || certStatus === "Pendiente de Certificado") {
-      patch.status_certificado = "Generado";
-    }
-
-    await updateDoc(doc(db, "hojasDeTrabajo", docId), patch);
-
-    return {
-      ok: true,
-      pdfURL,
-      storagePath,
-      warnings: readiness.warnings.length > 0 ? readiness.warnings : undefined,
-    };
-  } catch (err) {
-    console.error("[worksheetPdfGenerator]", err);
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Error al generar o subir el PDF.",
-      warnings: readiness.warnings,
-    };
-  }
-}

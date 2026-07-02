@@ -358,9 +358,9 @@ interface GroupData { id: string; name: string; color: string; collapsed: boolea
 interface DragItem { type: 'row' | 'column'; index: number; id?: string; groupId?: string; }
 interface AGBotThought { id: number; type: 'info' | 'warning' | 'success'; message: string; timestamp: string; }
 
-/** Reconciliación Drive: servidor `scheduledDriveReconcile` + respaldo en tablero (AG-Bot / intervalo). */
+/** Reconciliación Drive: servidor `scheduledDriveReconcile` (cada 6 h) + respaldo en tablero (AG-Bot / intervalo). */
 const AGBOT_INITIAL_DELAY_MS = 2_000;
-const DRIVE_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+const DRIVE_RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
 const DRIVE_RECONCILE_INITIAL_MS = 15_000;
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
@@ -1157,7 +1157,14 @@ const FridayScreen: React.FC = () => {
         const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), orderBy("name")), (snap) => { setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
-        const unsubRows = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
+        const yearStart = `${currentYear}-01-01`;
+        const yearEnd = `${currentYear}-12-31`;
+        const rowsQuery = query(
+            collection(db, "hojasDeTrabajo"),
+            where("fechaEntrada", ">=", yearStart),
+            where("fechaEntrada", "<=", yearEnd)
+        );
+        const unsubRows = onSnapshot(rowsQuery, (snapshot) => {
             startTransition(() => {
                 let newRows: WorksheetData[] = [];
                 const yearStr = currentYear.toString();

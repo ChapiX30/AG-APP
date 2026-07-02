@@ -241,20 +241,55 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         { value: "N*m", label: "N·m (Newton metro)" },
         { value: "lbf*in", label: "lbf·in (Libra fuerza pulgada)" },
         { value: "lbf*ft", label: "lbf·ft (Libra fuerza pie)" },
-        { value: "kgf*cm", label: "kgf·cm (Kilogramo fuerza cm)" }
+        { value: "kgf*cm", label: "kgf·cm (Kilogramo fuerza cm)" },
+        { value: "kgf*m", label: "kgf·m (Kilogramo fuerza metro)" },
+        { value: "oz*in", label: "oz·in (Onza fuerza pulgada)" },
     ],
     "Presión": [
         { value: "psi", label: "PSI" },
         { value: "bar", label: "Bar" },
         { value: "kPa", label: "kPa" },
-        { value: "Pa", label: "Pascal" }
+        { value: "MPa", label: "MPa" },
+        { value: "Pa", label: "Pascal" },
+        { value: "mmHg", label: "mmHg" },
+        { value: "atm", label: "atm" },
     ],
     "Longitud": [
         { value: "mm", label: "Milímetros" },
-        { value: "in", label: "Pulgadas" },
         { value: "cm", label: "Centímetros" },
-        { value: "m", label: "Metros" }
-    ]
+        { value: "m", label: "Metros" },
+        { value: "in", label: "Pulgadas" },
+        { value: "ft", label: "Pies" },
+        { value: "um", label: "Micrómetros (µm)" },
+    ],
+    "Masa": [
+        { value: "mg", label: "Miligramos" },
+        { value: "g", label: "Gramos" },
+        { value: "kg", label: "Kilogramos" },
+        { value: "lb", label: "Libras" },
+        { value: "oz", label: "Onzas" },
+        { value: "tonne", label: "Toneladas métricas" },
+    ],
+    "Fuerza": [
+        { value: "N", label: "Newton (N)" },
+        { value: "kN", label: "Kilonewton (kN)" },
+        { value: "lbf", label: "Libra fuerza (lbf)" },
+        { value: "kgf", label: "Kilogramo fuerza (kgf)" },
+        { value: "poundforce", label: "Pound-force" },
+    ],
+    "Temperatura": [
+        { value: "degC", label: "°C (Celsius)" },
+        { value: "degF", label: "°F (Fahrenheit)" },
+        { value: "K", label: "Kelvin (K)" },
+    ],
+    "Volumen": [
+        { value: "mL", label: "Mililitros" },
+        { value: "L", label: "Litros" },
+        { value: "cm^3", label: "Centímetros cúbicos" },
+        { value: "m^3", label: "Metros cúbicos" },
+        { value: "gal", label: "Galones (US)" },
+        { value: "in^3", label: "Pulgadas cúbicas" },
+    ],
   };
 
   const handleCategoryChange = (newCategory: string) => {
@@ -288,9 +323,9 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <button onClick={onClose}><X className="w-6 h-6" /></button>
         </div>
         <div className="p-6 overflow-y-auto">
-          <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {Object.keys(UNIT_CATEGORIES).map((cat) => (
-                <button key={cat} onClick={() => handleCategoryChange(cat)} className={`px-3 py-2 text-sm rounded-lg border transition-all text-left truncate ${category === cat ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-900'}`}>{cat}</button>
+                <button key={cat} onClick={() => handleCategoryChange(cat)} className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-all text-left truncate ${category === cat ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-900 border-gray-200 hover:border-blue-300'}`}>{cat}</button>
               ))}
           </div>
           <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-6 rounded-xl border border-gray-200">
