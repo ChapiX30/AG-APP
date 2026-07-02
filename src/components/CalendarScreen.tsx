@@ -43,11 +43,14 @@ import {
   type PatronUrgency,
 } from '../utils/patronCalibracion';
 import {
+  buildUserIdentityKeys,
   canAcknowledgeAssignedEvent,
   canEditCalendarEvents,
   canSeeAllCalendarEvents,
   getEventCreatorDisplay,
   isEdgarAmador,
+  isUserAssignedToEvent,
+  resolveAckUserId,
 } from '../utils/calendarPermissions';
 import {
   isReprogramadoEstado,
@@ -138,19 +141,6 @@ const addDaysNative = (dateStr: string, days: number) => {
     return d.toISOString().split('T')[0];
 };
 
-
-/** Coincide uid de auth, id de documento usuarios o email en `personas`. */
-const isUserAssignedToEvent = (
-    user: { id?: string; email?: string } | null,
-    personas: string[] = [],
-    authUid?: string | null,
-) => {
-    if (!personas.length) return false;
-    const keys = new Set(
-        [user?.id, user?.email, authUid].filter(Boolean).map(s => String(s).toLowerCase()),
-    );
-    return personas.some(p => keys.has(String(p).toLowerCase()));
-};
 
 const getAckLabel = (tipo?: string, user?: { nombre?: string; name?: string; email?: string; correo?: string } | null) => {
     if (tipo === 'junta') return 'Asistencia confirmada';
@@ -259,7 +249,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const [isEditingEvent, setIsEditingEvent] = useState(false);
 
     const isPJLA = event?.esAlertaAutomatica || event?.cliente === 'Perry Johnson Labs';
-    const isAssigned = event ? isUserAssignedToEvent(currentUser, event.personas || [], authUid) : false;
+    const isAssigned = event ? isUserAssignedToEvent(currentUser, event.personas || [], authUid, technicalStaff) : false;
     const canFullEdit = canEdit && !!event && !isPJLA && (!isCalidad || isEditingEvent);
     const showDetailView = !!event && (!canFullEdit || isPJLA);
     const ackLabel = getAckLabel(event?.tipo, currentUser);
@@ -382,17 +372,15 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
         }
     };
 
-    const resolveAckUserId = () => currentUser?.id || authUid || null;
+    const resolveCurrentAckUserId = () => resolveAckUserId(currentUser, authUid, technicalStaff);
 
     const userHasAcknowledged = (enterados: string[] = []) => {
-        const uid = resolveAckUserId();
-        if (!uid) return false;
-        const keys = new Set([uid, currentUser?.email, authUid].filter(Boolean).map(s => String(s).toLowerCase()));
+        const keys = buildUserIdentityKeys(currentUser, authUid, technicalStaff);
         return enterados.some(e => keys.has(String(e).toLowerCase()));
     };
 
     const handleMarcarEnterado = async () => {
-        const ackUserId = resolveAckUserId();
+        const ackUserId = resolveCurrentAckUserId();
         if (!event?.id || !ackUserId || !isAssigned || !canAckAssigned) return;
         setMarking(true);
         try {
@@ -434,7 +422,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const StatusIcon = statusConfig.icon;
     const yaEstaEnterado = userHasAcknowledged(event?.enterados);
     const isPT = event && (event.tipo === 'interlaboratorio' || event.tipo === 'intralaboratorio');
-    const canUploadEvidencia = isPT && event?.id && (canEdit || isUserAssignedToEvent(currentUser, event.personas || [], authUid));
+    const canUploadEvidencia = isPT && event?.id && (canEdit || isUserAssignedToEvent(currentUser, event.personas || [], authUid, technicalStaff));
 
     const handleEvidenciaFile = async (file: File | undefined) => {
         if (!file || !event?.id) return;
@@ -946,7 +934,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
                                             ? ev.personas.map((id: string) => getUserName(id, technicalStaff)).join(', ')
                                             : '—';
                                         const avanceReal = calculateAvance(ev);
-                                        const puedeSubirEvidencia = canEdit || isUserAssignedToEvent(currentUser, ev.personas || [], authUid);
+                                        const puedeSubirEvidencia = canEdit || isUserAssignedToEvent(currentUser, ev.personas || [], authUid, technicalStaff);
                                         const style = getActivityStyle(ev.title);
 
                                         return (
@@ -1059,7 +1047,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
 
 // --- 5. COMPONENTES DE DISEÑO DEL CALENDARIO ---
 
-const CustomEvent = ({ event, currentUser, authUid }: { event: any; currentUser?: any; authUid?: string | null }) => {
+const CustomEvent = ({ event, currentUser, authUid, usersList }: { event: any; currentUser?: any; authUid?: string | null; usersList?: any[] }) => {
     const isPJLA = event.esAlertaAutomatica || event.cliente === 'Perry Johnson Labs';
     const Icon = event.esVencimientoPatron ? Settings : isPJLA ? Bell : (CONSTANTS.estados.find(e => e.value === event.estado)?.icon || CalendarIcon);
     
@@ -1068,8 +1056,8 @@ const CustomEvent = ({ event, currentUser, authUid }: { event: any; currentUser?
     const textColorClass = useDarkText ? 'text-slate-900' : 'text-white';
     const subColorClass = useDarkText ? 'text-slate-600 font-bold' : 'text-white/80';
 
-    const assigned = !event.esVencimientoPatron && !isPJLA && isUserAssignedToEvent(currentUser, event.personas || [], authUid);
-    const ackKeys = new Set([currentUser?.id, currentUser?.email, authUid].filter(Boolean).map(s => String(s).toLowerCase()));
+    const assigned = !event.esVencimientoPatron && !isPJLA && isUserAssignedToEvent(currentUser, event.personas || [], authUid, usersList || []);
+    const ackKeys = buildUserIdentityKeys(currentUser, authUid, usersList || []);
     const acknowledged = assigned && (event.enterados || []).some((e: string) => ackKeys.has(String(e).toLowerCase()));
 
     return (
@@ -1150,7 +1138,12 @@ export const CalendarScreen: React.FC = () => {
 
     const currentUserData = useMemo(() => {
         if (!authUser || users.length === 0) return null;
-        return users.find(u => u.id === authUser.uid) || users.find(u => u.email === authUser.email) || null;
+        const authEmail = String(authUser.email || '').toLowerCase();
+        return (
+            users.find(u => u.id === authUser.uid)
+            || users.find(u => String(u.email || u.correo || '').toLowerCase() === authEmail)
+            || null
+        );
     }, [authUser, users]);
 
     const isCalidad = useMemo(() => {
@@ -1384,7 +1377,7 @@ export const CalendarScreen: React.FC = () => {
         if (canSeeAllEvents) return events;
         if (!currentUserData && !authUser?.uid) return [];
         return events.filter(ev =>
-            isUserAssignedToEvent(currentUserData, ev.personas || [], authUser?.uid),
+            isUserAssignedToEvent(currentUserData, ev.personas || [], authUser?.uid, users),
         );
     }, [events, canSeeAllEvents, currentUserData, authUser?.uid]);
 
@@ -1437,7 +1430,7 @@ export const CalendarScreen: React.FC = () => {
 
     const calendarEventComponent = useCallback(
         (props: { event: any }) => (
-            <CustomEvent event={props.event} currentUser={currentUserData} authUid={authUser?.uid} />
+            <CustomEvent event={props.event} currentUser={currentUserData} authUid={authUser?.uid} usersList={users} />
         ),
         [currentUserData, authUser?.uid],
     );

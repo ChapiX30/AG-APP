@@ -76,7 +76,98 @@ export const canAcknowledgeAssignedEvent = (
   user: CalendarPermissionUser,
   _eventTipo?: string,
   isAssigned?: boolean,
-): boolean => Boolean(isAssigned && user);
+): boolean => Boolean(isAssigned);
+
+type RosterUser = {
+  id?: string;
+  email?: string;
+  correo?: string;
+  nombre?: string;
+  name?: string;
+};
+
+const addIdentityKey = (keys: Set<string>, value?: string | null) => {
+  if (value) keys.add(String(value).toLowerCase());
+};
+
+/** Claves de identidad (id Firestore, auth uid, email/correo) para cruzar con `personas`. */
+export const buildUserIdentityKeys = (
+  user: CalendarPermissionUser,
+  authUid?: string | null,
+  usersList: RosterUser[] = [],
+): Set<string> => {
+  const keys = new Set<string>();
+  addIdentityKey(keys, user?.id);
+  addIdentityKey(keys, user?.uid);
+  addIdentityKey(keys, user?.email);
+  addIdentityKey(keys, user?.correo);
+  addIdentityKey(keys, authUid);
+
+  const authEmail = getCalendarUserEmail(user);
+  const rosterMatch = usersList.find(
+    u =>
+      (authUid && u.id === authUid) ||
+      (user?.id && u.id === user.id) ||
+      (authEmail && getCalendarUserEmail(u as CalendarPermissionUser) === authEmail),
+  );
+  if (rosterMatch) {
+    addIdentityKey(keys, rosterMatch.id);
+    addIdentityKey(keys, rosterMatch.email);
+    addIdentityKey(keys, rosterMatch.correo);
+  }
+
+  return keys;
+};
+
+export const resolvePersonaEntry = (
+  personaRef: string,
+  usersList: RosterUser[] = [],
+): RosterUser | null =>
+  usersList.find(
+    u =>
+      u.id === personaRef ||
+      getCalendarUserEmail(u as CalendarPermissionUser) === normalizeText(personaRef) ||
+      getCalendarUserName(u as CalendarPermissionUser) === normalizeText(personaRef),
+  ) ?? null;
+
+/**
+ * Coincide uid de auth, id de documento usuarios, email/correo o nombre en `personas`.
+ * Tolera entradas legacy (email o nombre en lugar de id).
+ */
+export const isUserAssignedToEvent = (
+  user: CalendarPermissionUser,
+  personas: string[] = [],
+  authUid?: string | null,
+  usersList: RosterUser[] = [],
+): boolean => {
+  if (!personas.length) return false;
+  const keys = buildUserIdentityKeys(user, authUid, usersList);
+
+  return personas.some(personaRef => {
+    const ref = String(personaRef).toLowerCase();
+    if (keys.has(ref)) return true;
+
+    const assigned = resolvePersonaEntry(personaRef, usersList);
+    if (!assigned) return false;
+
+    const assignedKeys = buildUserIdentityKeys(assigned as CalendarPermissionUser, assigned.id, usersList);
+    for (const k of keys) {
+      if (assignedKeys.has(k)) return true;
+    }
+    return false;
+  });
+};
+
+/** Id estable en Firestore para guardar en `enterados` (preferir doc usuarios sobre auth uid). */
+export const resolveAckUserId = (
+  user: CalendarPermissionUser,
+  authUid?: string | null,
+  usersList: RosterUser[] = [],
+): string | null => {
+  if (user?.id) return user.id;
+  if (!authUid) return null;
+  return usersList.find(u => u.id === authUid)?.id ?? authUid;
+};
 
 /** Resuelve quién creó el servicio (varios campos legacy en Firestore). */
 export const getEventCreatorKeys = (event: {
