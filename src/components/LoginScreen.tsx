@@ -25,19 +25,40 @@ import {
   resolveMetrologyScene,
   type MetrologyScene,
 } from "../utils/loginScenes";
+import {
+  loadSavedLoginCredentials,
+  saveLoginCredentials,
+} from "../utils/loginCredentials";
 
 /* ─── helpers ─── */
 const isValidEmail = (e: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-const errorMsg = (code: string) =>
-  ({
-    "auth/user-not-found":    "No existe una cuenta con este correo.",
-    "auth/wrong-password":    "Contraseña incorrecta.",
-    "auth/invalid-email":     "Formato de correo inválido.",
+const errorMsg = (err: unknown) => {
+  const code = (err as AuthError)?.code ?? "";
+  const message = (err as Error)?.message ?? "";
+
+  const known: Record<string, string> = {
+    "auth/user-not-found": "No existe una cuenta con este correo.",
+    "auth/wrong-password": "Contraseña incorrecta.",
+    "auth/invalid-email": "Formato de correo inválido.",
     "auth/too-many-requests": "Demasiados intentos. Intenta más tarde.",
-    "auth/invalid-credential":"Credenciales inválidas.",
-  }[code] ?? "Error inesperado. Intenta nuevamente.");
+    "auth/invalid-credential": "Correo o contraseña incorrectos.",
+    "auth/network-request-failed": "Sin conexión a internet. Revisa tu red e intenta de nuevo.",
+    "auth/user-disabled": "Esta cuenta está deshabilitada. Contacta al administrador.",
+    "auth/internal-error": "Error del servidor de autenticación. Intenta en unos minutos.",
+    "auth/operation-not-allowed": "El inicio de sesión no está habilitado para esta app.",
+    "permission-denied": "No tienes permiso para acceder. Contacta al administrador.",
+    "unavailable": "El servicio no está disponible. Revisa tu conexión.",
+  };
+
+  if (code && known[code]) return known[code];
+  if (message.toLowerCase().includes("network")) {
+    return "Sin conexión a internet. Revisa tu red e intenta de nuevo.";
+  }
+  if (message) return message;
+  return "Error inesperado. Intenta nuevamente.";
+};
 
 const profileFromFirestore = (d: Record<string, unknown>, fallbackName = "Usuario") => {
   const name = String(d.nombre || d.name || fallbackName);
@@ -440,11 +461,14 @@ const labelCls =
 export const LoginScreen: React.FC<{
   onNavigateToRegister: () => void;
 }> = ({ onNavigateToRegister }) => {
-  const { login, completeLogin } = useAuth();
+  const { login, completeLogin, authReady } = useAuth();
   const { resetTo } = useNavigation();
 
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
+  const savedLogin = loadSavedLoginCredentials();
+
+  const [email, setEmail]       = useState(savedLogin.email);
+  const [password, setPassword] = useState(savedLogin.password);
+  const [rememberMe, setRememberMe] = useState(savedLogin.rememberMe);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
@@ -561,6 +585,7 @@ export const LoginScreen: React.FC<{
         role: detected.role,
         puesto: detected.puesto,
       });
+      saveLoginCredentials(emailKey, password, rememberMe);
       resetTo("menu");
     } catch (err) {
       if (auth.currentUser) {
@@ -571,7 +596,8 @@ export const LoginScreen: React.FC<{
         }
       }
       setAttempts((p) => p + 1);
-      setError(errorMsg((err as AuthError).code ?? ""));
+      console.error("Login falló:", err);
+      setError(errorMsg(err));
       if (overlayShown) setLoginTransition(false);
     } finally {
       submittingRef.current = false;
@@ -592,7 +618,7 @@ export const LoginScreen: React.FC<{
       setResetStatus({ ok: true, msg: `Enlace enviado a ${clean}` });
       setTimeout(() => { setShowReset(false); setResetStatus(null); }, 3000);
     } catch (err) {
-      setResetStatus({ ok: false, msg: errorMsg((err as AuthError).code) });
+      setResetStatus({ ok: false, msg: errorMsg(err) });
     } finally { setResetLoading(false); }
   };
 
@@ -797,6 +823,19 @@ export const LoginScreen: React.FC<{
               </div>
             </div>
 
+            <label className="flex items-center gap-2.5 px-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                disabled={loading}
+                className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-[#2464A3] focus:ring-[#2464A3]/30"
+              />
+              <span className="text-xs text-slate-400">
+                Recordarme (correo y contraseña en este dispositivo)
+              </span>
+            </label>
+
             {/* Error */}
             <AnimatePresence>
               {error && (
@@ -819,7 +858,7 @@ export const LoginScreen: React.FC<{
             {/* Botón */}
             <motion.button
               type="submit"
-              disabled={!email || !password || loading}
+              disabled={!email || !password || loading || !authReady}
               whileTap={{ scale: 0.98 }}
               whileHover={{ scale: 1.01 }}
               className="group relative w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2464A3] to-[#5a93c9] text-white text-sm font-semibold py-3.5 mt-1 shadow-lg shadow-[#2464A3]/30 overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:from-[#2464A3] disabled:to-[#2464A3]"
@@ -827,6 +866,8 @@ export const LoginScreen: React.FC<{
               <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
               {loading ? (
                 <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
+              ) : !authReady ? (
+                "Preparando..."
               ) : (
                 <>
                   Iniciar sesión

@@ -79,7 +79,7 @@ const authScreenTransition = {
 };
 
 export const MainApp: React.FC = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, authReady } = useAuth();
   const { currentScreen, navigateTo, resetTo } = useNavigation();
   
   // --- ESTADO SÍNCRONO PARA DETECTAR CONSULTA PÚBLICA DE QR AL INSTANTE ---
@@ -112,6 +112,14 @@ export const MainApp: React.FC = () => {
       <Suspense fallback={<Loader />}>
         <ShareView certificado={shareCertificado} />
       </Suspense>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950">
+        <Loader />
+      </div>
     );
   }
 

@@ -12,6 +12,8 @@ export interface EpsonLabelPlugin {
         certificado: string;
         calibro: string;
         tapeSize: '24mm' | '12mm';
+        copies?: number;
+        printerAddress?: string;
     }): Promise<{
         success: boolean;
         printer: string;
@@ -19,15 +21,19 @@ export interface EpsonLabelPlugin {
     }>;
 
     /**
-     * DIAGNÓSTICO: lista todos los dispositivos Bluetooth emparejados.
-     * Úsalo para verificar si la impresora aparece en la lista.
-     * 
-     * Llámalo así en tu app para depurar:
-     *   const result = await EpsonLabel.findEpsonPrinters();
-     *   console.log(JSON.stringify(result, null, 2));
+     * Lista dispositivos Bluetooth emparejados y detecta la LW-PX400.
      */
     findEpsonPrinters(): Promise<{
-        devices: Array<{ name: string; address: string; isEpson: boolean; isTarget?: boolean }>;
+        devices: Array<{
+            name: string;
+            address: string;
+            macAddress?: string;
+            deviceId?: string;
+            serialNumber?: string;
+            alias?: string;
+            isEpson: boolean;
+            isTarget?: boolean;
+        }>;
         total: number;
         targetPrinter: string;
         targetFound: boolean;
@@ -35,6 +41,8 @@ export interface EpsonLabelPlugin {
     }>;
 }
 
-const EpsonLabel = registerPlugin<EpsonLabelPlugin>('EpsonLabel');
+const EpsonLabel = registerPlugin<EpsonLabelPlugin>('EpsonLabel', {
+    web: () => import('./web').then((m) => new m.EpsonLabelWeb()),
+});
 
 export default EpsonLabel;
