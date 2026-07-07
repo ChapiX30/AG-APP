@@ -133,9 +133,15 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
     magnitudConsecutivo: job.magnitudConsecutivo || "",
   };
 
+  if (!fullData.fechaEntrada) {
+    fullData.fechaEntrada =
+      (existingData?.fechaEntrada as string) ||
+      (fullData.fechaRecepcion as string) ||
+      (fullData.fecha as string) ||
+      new Date().toISOString().split("T")[0];
+  }
   if (!fullData.fechaRecepcion && existingData?.fechaEntrada) {
     fullData.fechaRecepcion = existingData.fechaEntrada;
-    fullData.fechaEntrada = existingData.fechaEntrada;
   }
 
   const pdfBase64 = await new Promise<string>((resolve, reject) => {

@@ -1,51 +1,55 @@
 import { useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { getFcmToken, subscribeForegroundMessage } from '../utils/firebase';
-import { setDoc, doc } from 'firebase/firestore';
-import { db } from '../utils/firebase';
+import { registerFcmToken } from '../utils/fcmTokenStorage';
 import { parseFcmDisplayPayload } from '../utils/pushNotificationDisplay';
+import { useNativePushNotifications } from './useNativePushNotifications';
 
-export function usePushNotifications(uid: string, email: string) {
-    useEffect(() => {
-        if (!uid) return;
+const VAPID_KEY =
+  'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
 
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
+/** Web Push (PWA / navegador). Solo corre fuera del APK. */
+function useWebPushNotifications(uid: string, email: string) {
+  useEffect(() => {
+    if (!uid) return;
+    if (Capacitor.isNativePlatform()) return;
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    let unsubscribeForeground: (() => void) | undefined;
+
+    (async () => {
+      const token = await getFcmToken(VAPID_KEY);
+      if (token) {
+        try {
+          await registerFcmToken(uid, email || null, token, 'web');
+        } catch (e) {
+          console.warn('No se pudo guardar token FCM web:', e);
         }
+      }
 
-        let unsubscribeForeground: (() => void) | undefined;
+      unsubscribeForeground = await subscribeForegroundMessage((payload) => {
+        if (Notification.permission !== 'granted') return;
+        if (document.visibilityState === 'hidden') return;
+        const { title, body, tag } = parseFcmDisplayPayload(payload);
+        new Notification(title, {
+          body,
+          icon: '/bell.png',
+          tag,
+        });
+      });
+    })();
 
-        (async () => {
-            const vapidKey = 'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
-            const token = await getFcmToken(vapidKey);
-            if (token) {
-                const prev = localStorage.getItem('fcmToken');
-                const fcmTokens: Record<string, boolean> = { [token]: true };
-                if (prev && prev !== token) {
-                    fcmTokens[prev] = false;
-                }
-                await setDoc(doc(db, 'usuarios', uid), {
-                    fcmTokens,
-                    fcmToken: token,
-                    email: email || null,
-                    lastTokenUpdate: new Date().toISOString(),
-                }, { merge: true });
-                localStorage.setItem('fcmToken', token);
-            }
+    return () => {
+      unsubscribeForeground?.();
+    };
+  }, [uid, email]);
+}
 
-            unsubscribeForeground = await subscribeForegroundMessage((payload) => {
-                if (Notification.permission !== 'granted') return;
-                if (document.visibilityState === 'hidden') return;
-                const { title, body, tag } = parseFcmDisplayPayload(payload);
-                new Notification(title, {
-                    body,
-                    icon: '/bell.png',
-                    tag,
-                });
-            });
-        })();
-
-        return () => {
-            unsubscribeForeground?.();
-        };
-    }, [uid, email]);
+/** Registra push: web en navegador, FCM nativo en APK Android. */
+export function usePushNotifications(uid: string, email: string) {
+  useWebPushNotifications(uid, email);
+  useNativePushNotifications(uid, email);
 }

@@ -276,7 +276,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
 
   try {
     if (Capacitor.isNativePlatform()) {
-      const result = await EpsonLabel.printLabel({
+      await EpsonLabel.printLabel({
         id: data.id.trim(),
         fechaCal: data.fechaCal,
         fechaSug: data.fechaSug,
@@ -520,23 +520,21 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
             </div>
         )}
         {tapeSize === "12mm" && (
-             <div ref={labelRef} style={{ width: '600px', height: '90px', backgroundColor: 'white', display: 'flex', alignItems: 'center', fontFamily: 'Arial, sans-serif', border: '1px solid black' }}>
-                <div style={{ width: '110px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '3px solid black', padding: '2px' }}>
-                    <img src={logo} alt="Logo" style={{ height: '90%', width: 'auto', objectFit: 'contain' }} />
+            <div ref={labelRef} style={{ width: '360px', height: '120px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif', border: '1px solid black', padding: 0, overflow: 'hidden' }}>
+                <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '2px 0', letterSpacing: '3px', fontSize: '10px', fontWeight: '900' }}>
+                    CALIBRADO
                 </div>
-                <div style={{ flex: 1, paddingLeft: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '28px', fontWeight: '900', color: 'black', lineHeight: '0.9' }}>{data.id}</div>
-                    <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                        <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'black' }}>CAL: {data.fechaCal}</div>
-                        <div style={{ fontSize: '15px', fontWeight: '900', color: 'black' }}>VEN: {data.fechaSug}</div>
-                        <QRCodeSVG 
-                            value={`https://ag-app-two.vercel.app/?share=${data.certificado}`} 
-                            size={30} 
-                            level="M" 
-                            style={{ marginLeft: '10px' }}
-                        />
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '2px 4px' }}>
+                    <div style={{ width: '56px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '4px' }}>
+                        <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1px' }}>
+                        <div style={{ fontSize: '17px', fontWeight: '900', color: 'black', lineHeight: '1' }}>ID: {data.id}</div>
+                        <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'black', lineHeight: '1.1' }}>CAL: {data.fechaCal}  VEN: {data.fechaSug}</div>
+                        <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'black', lineHeight: '1.1' }}>CERT: {data.certificado}</div>
                     </div>
                 </div>
+                <div style={{ padding: '0 4px 2px 4px', fontSize: '8px', fontStyle: 'italic', color: '#444' }}>AG-CAL-F14-00</div>
             </div>
         )}
       </div>

@@ -81,6 +81,16 @@ public class EpsonLabelPlugin extends Plugin {
     /** La PX400 no imprime hasta el borde: reserva extra arriba/abajo. */
     private static final float LABEL_SAFE_TOP_MM = 2.4f;
     private static final float LABEL_SAFE_BOTTOM_MM = 2.4f;
+    /** Cinta 12mm: márgenes y bloques más compactos para caber CALIBRADO + pie de forma. */
+    private static final float LABEL_SAFE_TOP_MM_12 = 1.1f;
+    private static final float LABEL_SAFE_BOTTOM_MM_12 = 1.1f;
+    private static final float LABEL_HEADER_H_MM_12 = 2.05f;
+    private static final float LABEL_FOOTER_RESERVE_MM_12 = 1.45f;
+    private static final float LABEL_PT_HEADER_12 = 5.5f;
+    private static final float LABEL_PT_FOOTER_12 = 4f;
+    private static final float LABEL_PT_ID_12 = 6.5f;
+    private static final float LABEL_PT_BODY_12 = 5.5f;
+    private static final float LABEL_PT_MIN_12 = 4f;
     private static final String LABEL_FORM_CODE = "AG-CAL-F14-00";
     /** Tamaños alineados con la plantilla Epson (Source Sans Pro). */
     private static final float LABEL_PT_FOOTER = 5f;
@@ -746,9 +756,17 @@ public class EpsonLabelPlugin extends Plugin {
     }
 
     /** Encabezado invertido a todo el ancho: franja negra con CALIBRADO en blanco. */
-    private float drawThermalHeader(Canvas canvas, int widthPx, float areaTop, float pxPerMm, int res, Paint paint) {
+    private float drawThermalHeader(
+            Canvas canvas,
+            int widthPx,
+            float areaTop,
+            float pxPerMm,
+            int res,
+            Paint paint,
+            boolean smallTape
+    ) {
         float side = LABEL_MARGIN_SIDE_MM * pxPerMm;
-        float headerH = 3.8f * pxPerMm;
+        float headerH = (smallTape ? LABEL_HEADER_H_MM_12 : 3.8f) * pxPerMm;
         float top = areaTop;
         float bottom = top + headerH;
 
@@ -761,11 +779,12 @@ public class EpsonLabelPlugin extends Plugin {
         headerText.setStyle(Paint.Style.FILL);
         headerText.setTypeface(pickLabelFont(LabelFontStyle.BOLD));
         headerText.setTextAlign(Paint.Align.LEFT);
-        float headerTextSize = ptToPx(LABEL_PT_HEADER, res);
+        float headerTextSize = ptToPx(smallTape ? LABEL_PT_HEADER_12 : LABEL_PT_HEADER, res);
         headerText.setTextSize(headerTextSize);
 
         float maxHeaderTextW = widthPx - (side * 2f);
-        while (headerTextSize > 5f && headerText.measureText("CALIBRADO") > maxHeaderTextW) {
+        float minHeaderSize = smallTape ? LABEL_PT_MIN_12 : 5f;
+        while (headerTextSize > minHeaderSize && headerText.measureText("CALIBRADO") > maxHeaderTextW) {
             headerTextSize *= 0.95f;
             headerText.setTextSize(headerTextSize);
         }
@@ -777,10 +796,17 @@ public class EpsonLabelPlugin extends Plugin {
 
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.BLACK);
-        return bottom + (0.25f * pxPerMm);
+        return bottom + ((smallTape ? 0.12f : 0.25f) * pxPerMm);
     }
 
-    private void drawFooterCode(Canvas canvas, float bodyBottom, float areaBottom, float pxPerMm, float footerSizePx) {
+    private void drawFooterCode(
+            Canvas canvas,
+            float bodyBottom,
+            float areaBottom,
+            float pxPerMm,
+            float footerSizePx,
+            boolean smallTape
+    ) {
         Paint footerPaint = new Paint();
         footerPaint.setColor(Color.BLACK);
         footerPaint.setStyle(Paint.Style.FILL);
@@ -791,7 +817,9 @@ public class EpsonLabelPlugin extends Plugin {
         footerPaint.setTextSize(footerSizePx);
 
         Paint.FontMetrics fm = footerPaint.getFontMetrics();
-        float footerBottom = Math.min(bodyBottom + (0.75f * pxPerMm), areaBottom - (0.7f * pxPerMm));
+        float padBelowBody = smallTape ? 0.35f : 0.75f;
+        float padAboveEdge = smallTape ? 0.25f : 0.7f;
+        float footerBottom = Math.min(bodyBottom + (padBelowBody * pxPerMm), areaBottom - (padAboveEdge * pxPerMm));
         float baseline = Math.round(footerBottom - fm.descent);
         float x = Math.round(LABEL_MARGIN_SIDE_MM * pxPerMm);
         canvas.drawText(LABEL_FORM_CODE, x, baseline, footerPaint);
@@ -813,22 +841,107 @@ public class EpsonLabelPlugin extends Plugin {
             int res,
             String tapeReq
     ) {
-        boolean smallTape = "12mm".equals(tapeReq);
-        float tapeWidthMm = smallTape ? TAPE_WIDTH_MM_12 : TAPE_WIDTH_MM_24;
-        float labelLengthMm = smallTape ? LABEL_LENGTH_MM_12 : LABEL_LENGTH_MM_24;
+        if ("12mm".equals(tapeReq)) {
+            return createLabel12mm(id, cal, ven, cert, res);
+        }
+        return createLabel24mm(id, cal, ven, cert, tec, res);
+    }
 
+    /** Etiqueta 36×12 mm: franja CALIBRADO, logo + datos compactos, pie AG-CAL-F14-00. */
+    private Bitmap createLabel12mm(String id, String cal, String ven, String cert, int res) {
+        float pxPerMm = res / 25.4f;
+        float safeTop = LABEL_SAFE_TOP_MM_12 * pxPerMm;
+        float safeBottom = LABEL_SAFE_BOTTOM_MM_12 * pxPerMm;
+
+        ensureLabelFonts();
+        float idSize = ptToPx(LABEL_PT_ID_12, res);
+        float rowSize = ptToPx(LABEL_PT_BODY_12, res);
+        float footerSize = ptToPx(LABEL_PT_FOOTER_12, res);
+        float minTextSize = ptToPx(LABEL_PT_MIN_12, res);
+
+        int widthPx = Math.round(LABEL_LENGTH_MM_12 * pxPerMm);
+        int heightPx = Math.round(TAPE_WIDTH_MM_12 * pxPerMm);
+
+        Bitmap bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        canvas.drawColor(Color.WHITE);
+
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.FILL);
+
+        float areaTop = safeTop;
+        float areaBottom = heightPx - safeBottom;
+        float footerReserve = LABEL_FOOTER_RESERVE_MM_12 * pxPerMm;
+
+        float bodyTop = drawThermalHeader(canvas, widthPx, areaTop, pxPerMm, res, paint, true);
+        float bodyBottom = areaBottom - footerReserve;
+        drawFooterCode(canvas, bodyBottom, areaBottom, pxPerMm, footerSize, true);
+        float bodyH = bodyBottom - bodyTop;
+
+        float logoWidth = 5.6f * pxPerMm;
+        float logoGap = 0.75f * pxPerMm;
+        float contentX = (LABEL_MARGIN_SIDE_MM * pxPerMm) + logoWidth + logoGap;
+        float contentW = widthPx - contentX - (LABEL_MARGIN_SIDE_MM * pxPerMm);
+
+        Bitmap logo = loadLogoBitmap();
+        if (logo != null) {
+            Bitmap logoPrint = prepareLogoForThermal(logo);
+            float logoMaxH = bodyH * 0.92f;
+            float scale = Math.min(logoWidth / logoPrint.getWidth(), logoMaxH / logoPrint.getHeight());
+            float scaledW = logoPrint.getWidth() * scale;
+            float scaledH = logoPrint.getHeight() * scale;
+            float logoLeft = LABEL_MARGIN_SIDE_MM * pxPerMm;
+            float left = logoLeft + (logoWidth - scaledW) / 2f;
+            float top = bodyTop + (bodyH - scaledH) / 2f;
+            canvas.drawBitmap(logoPrint, null, new RectF(left, top, left + scaledW, top + scaledH), paint);
+            if (logoPrint != logo) {
+                logoPrint.recycle();
+            }
+        } else {
+            contentX = LABEL_MARGIN_SIDE_MM * pxPerMm;
+            contentW = widthPx - contentX - (LABEL_MARGIN_SIDE_MM * pxPerMm);
+        }
+
+        int lines = 3;
+        float blockH = idSize + (rowSize * (lines - 1));
+        float firstTop = bodyTop + Math.max(0f, (bodyH - blockH) / 2f);
+
+        float y = drawBaselineFromTop(paint, firstTop, idSize);
+        drawCrispFittedText(canvas, "ID: " + id, contentX, y, contentW, idSize, minTextSize, LabelFontStyle.BOLD, false);
+
+        y = drawBaselineFromTop(paint, firstTop + idSize, rowSize);
+        drawCrispFittedText(
+                canvas,
+                "CAL: " + cal + "  VEN: " + ven,
+                contentX,
+                y,
+                contentW,
+                rowSize,
+                minTextSize,
+                LabelFontStyle.BOLD,
+                false
+        );
+
+        y = drawBaselineFromTop(paint, firstTop + idSize + rowSize, rowSize);
+        drawCrispFittedText(canvas, "CERT: " + cert, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+
+        return bmp;
+    }
+
+    private Bitmap createLabel24mm(String id, String cal, String ven, String cert, String tec, int res) {
         float pxPerMm = res / 25.4f;
         float safeTop = LABEL_SAFE_TOP_MM * pxPerMm;
         float safeBottom = LABEL_SAFE_BOTTOM_MM * pxPerMm;
 
         ensureLabelFonts();
-        float idSize = ptToPx(smallTape ? LABEL_PT_BODY : LABEL_PT_ID, res);
+        float idSize = ptToPx(LABEL_PT_ID, res);
         float rowSize = ptToPx(LABEL_PT_BODY, res);
         float footerSize = ptToPx(LABEL_PT_FOOTER, res);
         float minTextSize = ptToPx(LABEL_PT_MIN, res);
 
-        int widthPx = Math.round(labelLengthMm * pxPerMm);
-        int heightPx = Math.round(tapeWidthMm * pxPerMm);
+        int widthPx = Math.round(LABEL_LENGTH_MM_24 * pxPerMm);
+        int heightPx = Math.round(TAPE_WIDTH_MM_24 * pxPerMm);
 
         Bitmap bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
@@ -842,12 +955,12 @@ public class EpsonLabelPlugin extends Plugin {
         float areaBottom = heightPx - safeBottom;
         float footerReserve = 2.4f * pxPerMm;
 
-        float bodyTop = drawThermalHeader(canvas, widthPx, areaTop, pxPerMm, res, paint);
+        float bodyTop = drawThermalHeader(canvas, widthPx, areaTop, pxPerMm, res, paint, false);
         float bodyBottom = areaBottom - footerReserve;
-        drawFooterCode(canvas, bodyBottom, areaBottom, pxPerMm, footerSize);
+        drawFooterCode(canvas, bodyBottom, areaBottom, pxPerMm, footerSize, false);
         float bodyH = bodyBottom - bodyTop;
 
-        float logoWidth = smallTape ? 8.5f * pxPerMm : 13.5f * pxPerMm;
+        float logoWidth = 13.5f * pxPerMm;
         float contentX = (LABEL_MARGIN_SIDE_MM * pxPerMm) + logoWidth + (2.35f * pxPerMm);
         float contentW = widthPx - contentX - (LABEL_MARGIN_SIDE_MM * pxPerMm);
 

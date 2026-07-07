@@ -1079,6 +1079,7 @@ const FridayScreen: React.FC = () => {
     const [search, setSearch] = useState("");
     const debouncedSearch = useDebounce(search, 300);
     const agBotRanRef = useRef(false);
+    const orphanBackfillRanRef = useRef(false);
     const driveReconcileInFlightRef = useRef(false);
     const [permissionMenu, setPermissionMenu] = useState<{ x: number, y: number, colKey: string } | null>(null);
     const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
@@ -1189,6 +1190,56 @@ const FridayScreen: React.FC = () => {
         });
         return () => { unsubBoard(); unsubMetrologos(); unsubRows(); unsubClientes(); };
     }, [currentYear]); 
+
+    /** Recupera hojas guardadas sin fechaEntrada (invisibles al query del tablero). Una sola vez por navegador. */
+    useEffect(() => {
+        if (!userProfileResolved || !canEditBoard || orphanBackfillRanRef.current) return;
+        if (typeof localStorage !== "undefined" && localStorage.getItem("friday_orphan_backfill_v1") === "done") return;
+        orphanBackfillRanRef.current = true;
+
+        const runOrphanBackfill = async () => {
+            try {
+                const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+                const snap = await getDocs(
+                    query(collection(db, "hojasDeTrabajo"), where("timestamp", ">=", cutoff))
+                );
+                const pending: { ref: ReturnType<typeof doc>; fallback: string }[] = [];
+                snap.forEach((d) => {
+                    const data = d.data();
+                    if (data.fechaEntrada) return;
+                    const fallback =
+                        (data.fecha as string) ||
+                        (data.fecha_calib as string) ||
+                        (data.createdAt ? String(data.createdAt).split("T")[0] : "") ||
+                        new Date().toISOString().split("T")[0];
+                    pending.push({ ref: d.ref, fallback });
+                });
+                if (pending.length === 0) {
+                    localStorage.setItem("friday_orphan_backfill_v1", "done");
+                    return;
+                }
+
+                for (let i = 0; i < pending.length; i += 450) {
+                    const batch = writeBatch(db);
+                    pending.slice(i, i + 450).forEach(({ ref: rowRef, fallback }) => {
+                        batch.update(rowRef, {
+                            fechaEntrada: fallback,
+                            fechaRecepcion: fallback,
+                            lastUpdated: new Date().toISOString(),
+                        });
+                    });
+                    await batch.commit();
+                }
+                localStorage.setItem("friday_orphan_backfill_v1", "done");
+                showToast(`🤖 AG-Bot: ${pending.length} hoja(s) recuperada(s) en el tablero`, "info");
+            } catch (error) {
+                console.error("[Friday] orphan backfill:", error);
+            }
+        };
+
+        const timer = setTimeout(runOrphanBackfill, 2500);
+        return () => clearTimeout(timer);
+    }, [userProfileResolved, canEditBoard]);
 
     const toReconcileRawRows = useCallback(
         (source: WorksheetData[]) =>
