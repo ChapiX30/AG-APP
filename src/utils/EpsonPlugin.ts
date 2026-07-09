@@ -39,6 +39,17 @@ export interface EpsonLabelPlugin {
         targetFound: boolean;
         targetDevice: string;
     }>;
+
+    /**
+     * Prepara la impresora seleccionada (descubrimiento + caché), como Printer Setting en Epson.
+     */
+    preparePrinter(options?: {
+        printerAddress?: string;
+    }): Promise<{
+        ready: boolean;
+        address: string;
+        name: string;
+    }>;
 }
 
 const EpsonLabel = registerPlugin<EpsonLabelPlugin>('EpsonLabel', {

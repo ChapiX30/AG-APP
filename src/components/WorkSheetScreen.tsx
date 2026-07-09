@@ -171,6 +171,17 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
     return devices;
   };
 
+  const prepareSelectedPrinter = async (address?: string) => {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      await EpsonLabel.preparePrinter({
+        printerAddress: address || undefined,
+      });
+    } catch {
+      // Si falla, la primera impresión hará el descubrimiento completo.
+    }
+  };
+
   const openPrinterPicker = async () => {
     if (!Capacitor.isNativePlatform()) {
       await showAlert({
@@ -206,7 +217,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
-      void loadPrinterDevices().catch(() => undefined);
+      void prepareSelectedPrinter(selectedPrinterAddress || undefined);
     }
   }, []);
 
@@ -356,30 +367,40 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
       )}
 
       {showOptions && (
-        <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50 w-56">
+        <>
+          <div
+            className="fixed inset-0 z-[115] bg-black/25"
+            onClick={() => setShowOptions(false)}
+            aria-hidden
+          />
+          <div className="fixed top-20 right-4 sm:right-6 z-[120] bg-white rounded-xl shadow-2xl border border-gray-200 p-2 w-56 max-w-[calc(100vw-2rem)]">
+            <p className="px-3 pt-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+              Tamaño de cinta
+            </p>
             <div className="space-y-1">
-                <button onClick={() => setTapeSize("24mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}><span>24mm (Grande)</span> {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
-                <button onClick={() => setTapeSize("12mm")} className={`w-full text-left px-3 py-2 rounded text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"}`}><span>12mm (Pequeña)</span> {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
+                <button onClick={() => { setTapeSize("24mm"); setShowOptions(false); }} className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex justify-between ${tapeSize === "24mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700 hover:bg-gray-50"}`}><span>24mm (Grande)</span> {tapeSize === "24mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
+                <button onClick={() => { setTapeSize("12mm"); setShowOptions(false); }} className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex justify-between ${tapeSize === "12mm" ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700 hover:bg-gray-50"}`}><span>12mm (Pequeña)</span> {tapeSize === "12mm" && <CheckCircle2 className="w-3 h-3"/>}</button>
                 <div className="border-t border-gray-100 my-1" />
                 <div className="px-3 py-2 text-xs text-gray-500">
                   Impresora: <span className="font-semibold text-gray-800">{selectedPrinterName}</span>
                 </div>
                 <button
-                  onClick={() => void openPrinterPicker()}
+                  onClick={() => { setShowOptions(false); void openPrinterPicker(); }}
                   disabled={isTesting || isGenerating}
-                  className="w-full text-left px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   {isTesting ? "Buscando..." : "Seleccionar impresora"}
                 </button>
                 <button
-                  onClick={handleTestConnection}
+                  onClick={() => { setShowOptions(false); void handleTestConnection(); }}
                   disabled={isTesting || isGenerating}
-                  className="w-full text-left px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   {isTesting ? "Probando..." : "Probar conexión PX400"}
                 </button>
             </div>
-        </div>
+          </div>
+        </>
       )}
 
       {showPrinterDialog && (
@@ -405,6 +426,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
                   setSelectedPrinterAddress("");
                   localStorage.removeItem(EPSON_PRINTER_MAC_KEY);
                   setShowPrinterDialog(false);
+                  void prepareSelectedPrinter();
                 }}
                 className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${!selectedPrinterAddress ? "border-blue-300 bg-blue-50 font-bold" : "border-gray-200"}`}
               >
@@ -419,6 +441,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
                       onClick={() => {
                         setSelectedPrinterAddress(mac);
                         setShowPrinterDialog(false);
+                        void prepareSelectedPrinter(mac);
                       }}
                       className="w-full text-left"
                     >
@@ -520,21 +543,29 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
             </div>
         )}
         {tapeSize === "12mm" && (
-            <div ref={labelRef} style={{ width: '360px', height: '120px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif', border: '1px solid black', padding: 0, overflow: 'hidden' }}>
-                <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '2px 0', letterSpacing: '3px', fontSize: '10px', fontWeight: '900' }}>
-                    CALIBRADO
+            <div ref={labelRef} style={{ width: '400px', height: '120px', backgroundColor: 'white', display: 'flex', fontFamily: 'Arial, sans-serif', border: '1px solid black', padding: 0, overflow: 'hidden' }}>
+                <div style={{ width: '95px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}>
+                    <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
                 </div>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '2px 4px' }}>
-                    <div style={{ width: '56px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '4px' }}>
-                        <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '2px 0', letterSpacing: '2px', fontSize: '9px', fontWeight: '900' }}>
+                        CALIBRADO
                     </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1px' }}>
-                        <div style={{ fontSize: '17px', fontWeight: '900', color: 'black', lineHeight: '1' }}>ID: {data.id}</div>
-                        <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'black', lineHeight: '1.1' }}>CAL: {data.fechaCal}  VEN: {data.fechaSug}</div>
-                        <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'black', lineHeight: '1.1' }}>CERT: {data.certificado}</div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', padding: '2px 4px 2px 4px', fontSize: '10px', fontWeight: 'bold', lineHeight: 1.15 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>Cert: {data.certificado}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.CAL: {data.fechaCal}</span>
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>CALIBRÓ: {data.calibro}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', alignItems: 'baseline' }}>
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.SUG: {data.fechaSug}</span>
+                            <span style={{ marginLeft: 'auto', fontSize: '8px', fontStyle: 'italic', textAlign: 'right', paddingLeft: '8px' }}>AG-CAL-F14-00</span>
+                        </div>
                     </div>
                 </div>
-                <div style={{ padding: '0 4px 2px 4px', fontSize: '8px', fontStyle: 'italic', color: '#444' }}>AG-CAL-F14-00</div>
             </div>
         )}
       </div>
@@ -712,7 +743,14 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 // 3. TIPOS Y LÓGICA DE NEGOCIO
 // ====================================================================
 
-type ClienteRecord = { id: string; nombre: string; requerimientos?: string; }
+type LabelDateFormat = "full" | "year_month";
+
+type ClienteRecord = {
+  id: string;
+  nombre: string;
+  requerimientos?: string;
+  formatoFechaEtiqueta?: LabelDateFormat;
+};
 type MasterRecord = { A: string; B: string; C: string; D: string; E: string; };
 
 type WorksheetAction =
@@ -1031,7 +1069,10 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
   if (isNaN(date.getTime())) return null;
   const lowerFrecuencia = frecuencia.toLowerCase();
   if (lowerFrecuencia.includes("mes")) {
-    let meses = lowerFrecuencia.includes("3") ? 3 : lowerFrecuencia.includes("6") ? 6 : 0;
+    let meses =
+      lowerFrecuencia.includes("1") ? 1 :
+      lowerFrecuencia.includes("3") ? 3 :
+      lowerFrecuencia.includes("6") ? 6 : 0;
     return meses > 0 ? addMonths(date, meses) : null;
   }
   if (lowerFrecuencia.includes("año") || lowerFrecuencia.includes("ano")) {
@@ -1039,6 +1080,11 @@ function calcularSiguienteFecha(fechaUltima: string, frecuencia: string): Date |
     return addYears(date, años);
   }
   return null;
+}
+
+function formatLabelDate(d: Date, mode: LabelDateFormat): string {
+  const pattern = mode === "year_month" ? "yyyy-MMM" : "yyyy-MMM-dd";
+  return format(d, pattern, { locale: es }).toUpperCase().replace(".", "");
 }
 
 // Quitamos la inicialización de la fecha aquí
@@ -1377,7 +1423,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       setListaClientes(qs.docs.map((d) => ({ 
           id: d.id, 
           nombre: d.data().nombre || "Sin nombre",
-          requerimientos: d.data().requerimientos || "" 
+          requerimientos: d.data().requerimientos || "",
+          formatoFechaEtiqueta: (d.data().formatoFechaEtiqueta as LabelDateFormat | undefined) || "full",
       })));
     } catch { setListaClientes([{ id: "1", nombre: "ERROR AL CARGAR CLIENTES" }]); }
   };
@@ -1525,14 +1572,16 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     const nextDate = calcularSiguienteFecha(state.fecha, state.frecuenciaCalibracion);
     const fCalObj = state.fecha ? parseISO(state.fecha) : new Date();
     const fSugObj = nextDate ? nextDate : addYears(fCalObj, 1);
+    const clienteCfg = listaClientes.find(c => c.nombre === state.cliente);
+    const dateMode: LabelDateFormat = clienteCfg?.formatoFechaEtiqueta || "full";
     return {
       id: state.id || "PENDIENTE",
       certificado: state.certificado || "PENDIENTE",
-      fechaCal: state.fecha ? format(fCalObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace(".", "") : "---",
-      fechaSug: isValid(fSugObj) ? format(fSugObj, "yyyy-MMM-dd", { locale: es }).toUpperCase().replace(".", "") : "---",
+      fechaCal: state.fecha ? formatLabelDate(fCalObj, dateMode) : "---",
+      fechaSug: isValid(fSugObj) ? formatLabelDate(fSugObj, dateMode) : "---",
       calibro: formatTechnicianInitials(state.nombre),
     };
-  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre]);
+  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre, state.cliente, listaClientes]);
 
   const handleSave = useCallback(async () => {
     syncElectricalToGlobalState();
@@ -1866,7 +1915,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><Calendar className="w-4 h-4 text-green-500" /><span>Frecuencia*</span></label>
                     <select value={state.frecuenciaCalibracion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'frecuenciaCalibracion', payload: e.target.value })} className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner bg-white border-slate-300">
-                      <option value="">Seleccionar...</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
+                      <option value="">Seleccionar...</option><option value="1 mes">1 mes</option><option value="3 meses">3 meses</option><option value="6 meses">6 meses</option><option value="1 año">1 año</option><option value="2 años">2 años</option><option value="3 años">3 años</option>
                     </select>
                   </div>
                   

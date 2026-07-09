@@ -51,6 +51,7 @@ interface Empresa {
   contacto: string;
   requerimientos: string;
   responsable: string;
+  formatoFechaEtiqueta?: "full" | "year_month";
   fechaCreacion: Date;
 }
 
@@ -62,6 +63,7 @@ interface EmpresaFormData {
   contacto: string;
   requerimientos: string;
   responsable: string;
+  formatoFechaEtiqueta: "full" | "year_month";
 }
 
 const INITIAL_FORM_STATE: EmpresaFormData = {
@@ -71,7 +73,8 @@ const INITIAL_FORM_STATE: EmpresaFormData = {
   email: "",
   contacto: "",
   requerimientos: "",
-  responsable: ""
+  responsable: "",
+  formatoFechaEtiqueta: "full",
 };
 
 // --- Permisos de edición: solo Calidad y Edgar Amador ---
@@ -546,6 +549,30 @@ const EmpresaFormModal = ({
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none bg-white"
                   placeholder="Requerimientos, horarios, accesos, observaciones..." />
               </FormSection>
+
+              <FormSection title="Etiqueta de calibración">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Formato de fecha en etiqueta
+                  </label>
+                  <select
+                    value={data.formatoFechaEtiqueta}
+                    onChange={(e) =>
+                      setData({
+                        ...data,
+                        formatoFechaEtiqueta: e.target.value as EmpresaFormData["formatoFechaEtiqueta"],
+                      })
+                    }
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none cursor-pointer text-gray-700"
+                  >
+                    <option value="full">Completo (2026-JUL-08)</option>
+                    <option value="year_month">Año-mes (2026-JUL)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Se aplica a <span className="font-semibold">F.CAL</span> y <span className="font-semibold">F.SUG</span>.
+                  </p>
+                </div>
+              </FormSection>
             </form>
           </div>
           <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-gray-100 gap-2">
@@ -823,6 +850,7 @@ const EmpresasScreen = () => {
         contacto: empresa.contacto,
         requerimientos: empresa.requerimientos || "",
         responsable: empresa.responsable || "",
+        formatoFechaEtiqueta: empresa.formatoFechaEtiqueta || "full",
       });
     } else {
       setEditingEmpresa(null);

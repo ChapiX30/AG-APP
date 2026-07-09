@@ -15,4 +15,8 @@ export class EpsonLabelWeb extends WebPlugin implements EpsonLabelPlugin {
     }> {
         throw new Error('El diagnóstico Bluetooth Epson solo está disponible en la app Android.');
     }
+
+    async preparePrinter(): Promise<{ ready: boolean; address: string; name: string }> {
+        throw new Error('La preparación de impresora Epson solo está disponible en la app Android.');
+    }
 }

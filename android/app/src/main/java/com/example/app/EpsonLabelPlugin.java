@@ -70,27 +70,27 @@ public class EpsonLabelPlugin extends Plugin {
 
     private static final String TAG = "EpsonLabel";
     private static final String TARGET_PRINTER = "LW-PX400";
-    private static final int DISCOVERY_TIMEOUT_MS = 12000;
+    private static final int DISCOVERY_TIMEOUT_FULL_MS = 12000;
+    private static final int DISCOVERY_TIMEOUT_QUICK_MS = 5000;
 
     /** Cinta 24mm: etiqueta 40mm de largo × 24mm de ancho, margen 1mm. */
     private static final float LABEL_LENGTH_MM_24 = 40f;
     private static final float TAPE_WIDTH_MM_24 = 24f;
-    private static final float LABEL_LENGTH_MM_12 = 36f;
+    private static final float LABEL_LENGTH_MM_12 = 40f;
     private static final float TAPE_WIDTH_MM_12 = 12f;
     private static final float LABEL_MARGIN_SIDE_MM = 1f;
     /** La PX400 no imprime hasta el borde: reserva extra arriba/abajo. */
     private static final float LABEL_SAFE_TOP_MM = 2.4f;
     private static final float LABEL_SAFE_BOTTOM_MM = 2.4f;
-    /** Cinta 12mm: márgenes y bloques más compactos para caber CALIBRADO + pie de forma. */
-    private static final float LABEL_SAFE_TOP_MM_12 = 1.1f;
-    private static final float LABEL_SAFE_BOTTOM_MM_12 = 1.1f;
-    private static final float LABEL_HEADER_H_MM_12 = 2.05f;
-    private static final float LABEL_FOOTER_RESERVE_MM_12 = 1.45f;
-    private static final float LABEL_PT_HEADER_12 = 5.5f;
-    private static final float LABEL_PT_FOOTER_12 = 4f;
-    private static final float LABEL_PT_ID_12 = 6.5f;
-    private static final float LABEL_PT_BODY_12 = 5.5f;
-    private static final float LABEL_PT_MIN_12 = 4f;
+    /** Cinta 12mm — plantilla Epson 40×12: logo izq + 2 columnas. */
+    private static final float LABEL_SAFE_TOP_MM_12 = 0.9f;
+    private static final float LABEL_SAFE_BOTTOM_MM_12 = 0.9f;
+    private static final float LABEL_LOGO_COL_MM_12 = 9.5f;
+    private static final float LABEL_HEADER_H_MM_12 = 2.1f;
+    private static final float LABEL_PT_HEADER_12 = 5f;
+    private static final float LABEL_PT_ROW_12 = 5.5f;
+    private static final float LABEL_PT_FORM_12 = 4f;
+    private static final float LABEL_PT_MIN_12 = 4.2f;
     private static final String LABEL_FORM_CODE = "AG-CAL-F14-00";
     /** Tamaños alineados con la plantilla Epson (Source Sans Pro). */
     private static final float LABEL_PT_FOOTER = 5f;
@@ -101,6 +101,8 @@ public class EpsonLabelPlugin extends Plugin {
     private static final int LABEL_PRINT_DENSITY = 0;
 
     private LWPrint lwprint;
+    /** Impresora lista para imprimir (como Label Editor Mobile: se configura una vez por sesión). */
+    private Map<String, String> cachedPrinterInfo;
     private boolean isPrinting = false;
     private String pendingPermissionMethod = "printLabel";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -131,6 +133,15 @@ public class EpsonLabelPlugin extends Plugin {
         printExecutor.execute(() -> resolvePrinterList(call));
     }
 
+    /** Prepara la impresora seleccionada (descubrimiento + caché), como "Printer Setting" en Epson. */
+    @PluginMethod
+    public void preparePrinter(PluginCall call) {
+        if (!ensureBluetoothPermissions(call, "preparePrinter")) {
+            return;
+        }
+        printExecutor.execute(() -> executePreparePrinter(call));
+    }
+
     @PluginMethod
     public void printLabel(final PluginCall call) {
         if (isPrinting) {
@@ -153,6 +164,8 @@ public class EpsonLabelPlugin extends Plugin {
 
         if ("findEpsonPrinters".equals(pendingPermissionMethod)) {
             printExecutor.execute(() -> resolvePrinterList(call));
+        } else if ("preparePrinter".equals(pendingPermissionMethod)) {
+            printExecutor.execute(() -> executePreparePrinter(call));
         } else {
             printExecutor.execute(() -> executePrint(call));
         }
@@ -230,6 +243,10 @@ public class EpsonLabelPlugin extends Plugin {
             }
         }
 
+        if (targetInfo != null) {
+            cachePrinterInfo(targetInfo);
+        }
+
         JSObject result = new JSObject();
         result.put("devices", devices);
         result.put("total", discovered.size());
@@ -239,6 +256,37 @@ public class EpsonLabelPlugin extends Plugin {
         result.put("targetDevice", targetInfo != null
                 ? targetInfo.get(LWPrintDiscoverPrinter.PRINTER_INFO_NAME) : "");
         call.resolve(result);
+    }
+
+    private void executePreparePrinter(PluginCall call) {
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null) {
+            fail(call, "NO_BLUETOOTH", "Este dispositivo no tiene Bluetooth.");
+            return;
+        }
+        if (!adapter.isEnabled()) {
+            fail(call, "BT_OFF", "Activa Bluetooth en Ajustes del teléfono.");
+            return;
+        }
+
+        String preferredAddress = call.getString("printerAddress");
+        Map<String, String> printerInfo = findPrinterInfoWithDiscovery(
+                adapter, preferredAddress, DISCOVERY_TIMEOUT_FULL_MS);
+        if (printerInfo == null) {
+            fail(call, "NOT_FOUND",
+                    "No se encontró la impresora. Enciéndela, emparejala en Bluetooth y vuelve a intentar.");
+            return;
+        }
+
+        cachePrinterInfo(printerInfo);
+        String address = getPrinterAddress(printerInfo);
+        String name = printerInfo.get(LWPrintDiscoverPrinter.PRINTER_INFO_NAME);
+
+        JSObject result = new JSObject();
+        result.put("ready", true);
+        result.put("address", address);
+        result.put("name", name != null ? name : TARGET_PRINTER);
+        mainHandler.post(() -> call.resolve(result));
     }
 
     private void executePrint(final PluginCall call) {
@@ -257,15 +305,14 @@ public class EpsonLabelPlugin extends Plugin {
             return;
         }
 
-        Map<String, String> printerInfo = findPrinterInfo(btAdapter, call.getString("printerAddress"));
+        Map<String, String> printerInfo = resolvePrinterInfoForPrint(btAdapter, call.getString("printerAddress"));
         if (printerInfo == null) {
             fail(call, "NOT_FOUND",
                     "No se encontró la impresora seleccionada. Enciéndela, emparejala en Bluetooth y vuelve a intentar.");
             return;
         }
 
-        final String deviceName = printerInfo.get(LWPrintDiscoverPrinter.PRINTER_INFO_NAME);
-        final String deviceAddress = getPrinterAddress(printerInfo);
+        final Map<String, String> initialPrinterInfo = printerInfo;
 
         isPrinting = true;
         call.setKeepAlive(true);
@@ -286,6 +333,48 @@ public class EpsonLabelPlugin extends Plugin {
         final String tapeReq = call.getString("tapeSize", "24mm");
         final int copies = Math.max(1, Math.min(call.getInt("copies", 1), 9));
 
+        final Map<String, String> activePrinterInfo;
+        final Map<String, Integer> status;
+        try {
+            Map<String, String> connectedInfo = initialPrinterInfo;
+            lwprint.setPrinterInformation(connectedInfo);
+
+            Map<String, Integer> printerStatus = lwprint.fetchPrinterStatus();
+            int deviceError = lwprint.getDeviceErrorFromStatus(printerStatus);
+            if (printerStatus == null || printerStatus.isEmpty()
+                    || deviceError == LWPrintStatusError.ConnectionFailed) {
+                clearPrinterCache();
+                Log.d(TAG, "Conexión falló; redescubriendo impresora...");
+                connectedInfo = findPrinterInfoWithDiscovery(
+                        btAdapter, call.getString("printerAddress"), DISCOVERY_TIMEOUT_QUICK_MS);
+                if (connectedInfo == null) {
+                    fail(call, "CONNECT_FAILED", "No se pudo conectar con la impresora. Revisa Bluetooth y que esté encendida.");
+                    return;
+                }
+                cachePrinterInfo(connectedInfo);
+                lwprint.setPrinterInformation(connectedInfo);
+                printerStatus = lwprint.fetchPrinterStatus();
+                deviceError = lwprint.getDeviceErrorFromStatus(printerStatus);
+                if (printerStatus == null || printerStatus.isEmpty()
+                        || deviceError == LWPrintStatusError.ConnectionFailed) {
+                    clearPrinterCache();
+                    fail(call, "CONNECT_FAILED", "No se pudo conectar con la impresora. Revisa Bluetooth y que esté encendida.");
+                    return;
+                }
+            }
+
+            cachePrinterInfo(connectedInfo);
+            activePrinterInfo = connectedInfo;
+            status = printerStatus;
+        } catch (Exception e) {
+            Log.e(TAG, "Error al conectar", e);
+            fail(call, "CONNECT_FAILED", e.getMessage() != null ? e.getMessage() : "No se pudo conectar con la impresora.");
+            return;
+        }
+
+        final String deviceName = activePrinterInfo.get(LWPrintDiscoverPrinter.PRINTER_INFO_NAME);
+        final String deviceAddress = getPrinterAddress(activePrinterInfo);
+
         lwprint.setCallback(new LWPrintCallback() {
             @Override
             public void onChangePrintOperationPhase(LWPrint lw, int phase) {
@@ -302,12 +391,18 @@ public class EpsonLabelPlugin extends Plugin {
 
             @Override
             public void onAbortPrintOperation(LWPrint lw, int err, int stat) {
+                if (err == LWPrintStatusError.ConnectionFailed) {
+                    clearPrinterCache();
+                }
                 fail(call, "ABORTED", describeAbort(err, stat));
             }
 
             @Override
             public void onSuspendPrintOperation(LWPrint lw, int err, int stat) {
                 lw.cancelPrint();
+                if (err == LWPrintStatusError.ConnectionFailed) {
+                    clearPrinterCache();
+                }
                 fail(call, "SUSPENDED", describeAbort(err, stat));
             }
 
@@ -319,15 +414,6 @@ public class EpsonLabelPlugin extends Plugin {
         });
 
         try {
-            lwprint.setPrinterInformation(printerInfo);
-
-            Map<String, Integer> status = lwprint.fetchPrinterStatus();
-            int deviceError = lwprint.getDeviceErrorFromStatus(status);
-            if (status == null || status.isEmpty() || deviceError == LWPrintStatusError.ConnectionFailed) {
-                fail(call, "CONNECT_FAILED", "No se pudo conectar con la impresora. Revisa Bluetooth y que esté encendida.");
-                return;
-            }
-
             int tapeWidth = lwprint.getTapeWidthFromStatus(status);
             if (tapeWidth == LWPrintTapeWidth.None || tapeWidth == LWPrintTapeWidth.Unknown) {
                 tapeWidth = "12mm".equals(tapeReq) ? LWPrintTapeWidth.Normal_12mm : LWPrintTapeWidth.Normal_24mm;
@@ -336,6 +422,11 @@ public class EpsonLabelPlugin extends Plugin {
             int height = lwprint.getPrintableSizeFromTape(tapeWidth);
             int res = lwprint.getResolution();
             Bitmap bmp = createLabel(id, fCal, fSug, cert, tec, height, res, tapeReq);
+            Bitmap printBmp = binarizeLabelForThermal(bmp);
+            if (printBmp != bmp) {
+                bmp.recycle();
+                bmp = printBmp;
+            }
 
             Map<String, Object> params = new HashMap<>();
             params.put(LWPrintParameterKey.Copies, copies);
@@ -353,8 +444,35 @@ public class EpsonLabelPlugin extends Plugin {
         }
     }
 
-    private Map<String, String> findPrinterInfo(BluetoothAdapter adapter, String preferredAddress) {
-        List<Map<String, String>> discovered = discoverPrinters();
+    private Map<String, String> resolvePrinterInfoForPrint(BluetoothAdapter adapter, String preferredAddress) {
+        if (cachedPrinterInfo != null && matchesPrinterAddress(cachedPrinterInfo, preferredAddress)) {
+            Log.d(TAG, "Impresión: reutilizando impresora en caché");
+            return copyPrinterInfo(cachedPrinterInfo);
+        }
+
+        try {
+            Map<String, String> current = lwprint.getPrinterInformation();
+            if (current != null && !current.isEmpty() && matchesPrinterAddress(current, preferredAddress)) {
+                Log.d(TAG, "Impresión: reutilizando getPrinterInformation()");
+                cachePrinterInfo(current);
+                return copyPrinterInfo(current);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "getPrinterInformation: " + e.getMessage());
+        }
+
+        Log.d(TAG, "Impresión: descubriendo impresora (sin caché válida)");
+        Map<String, String> discovered = findPrinterInfoWithDiscovery(
+                adapter, preferredAddress, DISCOVERY_TIMEOUT_FULL_MS);
+        if (discovered != null) {
+            cachePrinterInfo(discovered);
+        }
+        return discovered;
+    }
+
+    private Map<String, String> findPrinterInfoWithDiscovery(
+            BluetoothAdapter adapter, String preferredAddress, int timeoutMs) {
+        List<Map<String, String>> discovered = discoverPrinters(timeoutMs);
         if (preferredAddress != null && !preferredAddress.trim().isEmpty()) {
             String wanted = preferredAddress.trim().toUpperCase(Locale.ROOT);
             for (Map<String, String> printer : discovered) {
@@ -368,11 +486,11 @@ public class EpsonLabelPlugin extends Plugin {
             }
             return null;
         }
-        return findTargetPrinterInfo(adapter);
+        return pickTargetFromDiscovered(adapter, discovered);
     }
 
-    private Map<String, String> findTargetPrinterInfo(BluetoothAdapter adapter) {
-        List<Map<String, String>> discovered = discoverPrinters();
+    private Map<String, String> pickTargetFromDiscovered(
+            BluetoothAdapter adapter, List<Map<String, String>> discovered) {
         for (Map<String, String> printer : discovered) {
             String name = printer.get(LWPrintDiscoverPrinter.PRINTER_INFO_NAME);
             if (isTargetPrinter(name, printer)) {
@@ -390,7 +508,37 @@ public class EpsonLabelPlugin extends Plugin {
         return bonded != null ? buildPrinterInfoFromBondedDevice(bonded) : null;
     }
 
+    private void cachePrinterInfo(Map<String, String> info) {
+        if (info == null || info.isEmpty()) {
+            return;
+        }
+        cachedPrinterInfo = new HashMap<>(info);
+        Log.d(TAG, "Impresora cacheada: " + getPrinterAddress(info));
+    }
+
+    private void clearPrinterCache() {
+        cachedPrinterInfo = null;
+    }
+
+    private boolean matchesPrinterAddress(Map<String, String> info, String preferredAddress) {
+        if (info == null) {
+            return false;
+        }
+        if (preferredAddress == null || preferredAddress.trim().isEmpty()) {
+            return true;
+        }
+        return preferredAddress.trim().equalsIgnoreCase(getPrinterAddress(info));
+    }
+
+    private Map<String, String> copyPrinterInfo(Map<String, String> info) {
+        return info == null ? null : new HashMap<>(info);
+    }
+
     private List<Map<String, String>> discoverPrinters() {
+        return discoverPrinters(DISCOVERY_TIMEOUT_FULL_MS);
+    }
+
+    private List<Map<String, String>> discoverPrinters(int timeoutMs) {
         final List<Map<String, String>> found = new ArrayList<>();
         final AtomicReference<LWPrintDiscoverPrinter> discoverRef = new AtomicReference<>();
         final CountDownLatch started = new CountDownLatch(1);
@@ -431,7 +579,7 @@ public class EpsonLabelPlugin extends Plugin {
 
         try {
             started.await(3, TimeUnit.SECONDS);
-            Thread.sleep(DISCOVERY_TIMEOUT_MS);
+            Thread.sleep(timeoutMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -624,6 +772,35 @@ public class EpsonLabelPlugin extends Plugin {
         return output;
     }
 
+    /**
+     * Fuerza blanco/negro puro. Los grises del suavizado de fuente salen
+     * borrados o raros en la LW-PX400 (sobre todo el 6, 8, 9…).
+     */
+    private Bitmap binarizeLabelForThermal(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        Bitmap output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        int[] pixels = new int[width * height];
+        source.getPixels(pixels, 0, width, 0, 0, width, height);
+        for (int i = 0; i < pixels.length; i++) {
+            int color = pixels[i];
+            if (Color.alpha(color) < 128) {
+                pixels[i] = Color.WHITE;
+                continue;
+            }
+            int luminance = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000;
+            // Umbral bajo: cualquier trazo gris oscuro de la fuente = negro sólido.
+            pixels[i] = luminance < 200 ? Color.BLACK : Color.WHITE;
+        }
+        output.setPixels(pixels, 0, width, 0, 0, width, height);
+        return output;
+    }
+
+    /** Tamaño en px enteros: evita tipografía a medias píxeles (números borrosos). */
+    private float snapThermalTextSize(float sizePx) {
+        return Math.max(1f, Math.round(sizePx));
+    }
+
     private Bitmap loadLogoBitmap() {
         try (InputStream is = getContext().getAssets().open("lab_logo.png")) {
             return BitmapFactory.decodeStream(is);
@@ -703,15 +880,20 @@ public class EpsonLabelPlugin extends Plugin {
         crisp.setColor(Color.BLACK);
         crisp.setStyle(Paint.Style.FILL);
         crisp.setAntiAlias(false);
+        crisp.setFilterBitmap(false);
+        crisp.setDither(false);
         crisp.setSubpixelText(false);
+        crisp.setLinearText(false);
+        crisp.setHinting(Paint.HINTING_ON);
         crisp.setTextAlign(Paint.Align.LEFT);
         crisp.setTypeface(pickLabelFont(style));
         crisp.setFakeBoldText(reinforce);
 
-        float size = startSize;
+        float size = snapThermalTextSize(startSize);
+        float minPx = snapThermalTextSize(minSize);
         crisp.setTextSize(size);
-        while (size > minSize && crisp.measureText(text) > maxWidth) {
-            size *= 0.92f;
+        while (size > minPx && crisp.measureText(text) > maxWidth) {
+            size = Math.max(minPx, size - 1f);
             crisp.setTextSize(size);
         }
 
@@ -721,6 +903,41 @@ public class EpsonLabelPlugin extends Plugin {
         if (reinforce) {
             canvas.drawText(text, rx + 1f, ry, crisp);
         }
+        return size;
+    }
+
+    /** Texto alineado al borde derecho (p. ej. AG-CAL-F14-00 en 12 mm). */
+    private float drawRightAlignedFittedText(
+            Canvas canvas,
+            String text,
+            float right,
+            float y,
+            float maxWidth,
+            float startSize,
+            float minSize,
+            LabelFontStyle style
+    ) {
+        Paint crisp = new Paint();
+        crisp.setColor(Color.BLACK);
+        crisp.setStyle(Paint.Style.FILL);
+        crisp.setAntiAlias(false);
+        crisp.setFilterBitmap(false);
+        crisp.setDither(false);
+        crisp.setSubpixelText(false);
+        crisp.setLinearText(false);
+        crisp.setHinting(Paint.HINTING_ON);
+        crisp.setTextAlign(Paint.Align.RIGHT);
+        crisp.setTypeface(pickLabelFont(style));
+
+        float size = snapThermalTextSize(startSize);
+        float minPx = snapThermalTextSize(minSize);
+        crisp.setTextSize(size);
+        while (size > minPx && crisp.measureText(text) > maxWidth) {
+            size = Math.max(minPx, size - 1f);
+            crisp.setTextSize(size);
+        }
+
+        canvas.drawText(text, Math.round(right), Math.round(y), crisp);
         return size;
     }
 
@@ -842,21 +1059,56 @@ public class EpsonLabelPlugin extends Plugin {
             String tapeReq
     ) {
         if ("12mm".equals(tapeReq)) {
-            return createLabel12mm(id, cal, ven, cert, res);
+            return createLabel12mm(id, cal, ven, cert, tec, res);
         }
         return createLabel24mm(id, cal, ven, cert, tec, res);
     }
 
-    /** Etiqueta 36×12 mm: franja CALIBRADO, logo + datos compactos, pie AG-CAL-F14-00. */
-    private Bitmap createLabel12mm(String id, String cal, String ven, String cert, int res) {
+    /** Franja CALIBRADO solo sobre el panel derecho (como plantilla Epson 40×12). */
+    private float drawContentHeaderBand(
+            Canvas canvas,
+            float left,
+            float right,
+            float top,
+            float pxPerMm,
+            int res,
+            Paint paint
+    ) {
+        float headerH = LABEL_HEADER_H_MM_12 * pxPerMm;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.BLACK);
+        canvas.drawRect(left, top, right, top + headerH, paint);
+
+        Paint headerText = new Paint(Paint.ANTI_ALIAS_FLAG);
+        headerText.setColor(Color.WHITE);
+        headerText.setStyle(Paint.Style.FILL);
+        headerText.setTypeface(pickLabelFont(LabelFontStyle.BOLD));
+        headerText.setTextAlign(Paint.Align.LEFT);
+        float headerTextSize = ptToPx(LABEL_PT_HEADER_12, res);
+        headerText.setTextSize(headerTextSize);
+        float pad = 0.35f * pxPerMm;
+        float maxW = (right - left) - (pad * 2f);
+        while (headerTextSize > LABEL_PT_MIN_12 && headerText.measureText("CALIBRADO") > maxW) {
+            headerTextSize *= 0.95f;
+            headerText.setTextSize(headerTextSize);
+        }
+        Paint.FontMetrics fm = headerText.getFontMetrics();
+        float baseline = top + (headerH / 2f) - ((fm.ascent + fm.descent) / 2f);
+        drawStretchedHeaderText(canvas, "CALIBRADO", left + pad, right - pad, baseline, headerText);
+
+        paint.setColor(Color.BLACK);
+        return top + headerH;
+    }
+
+    /** Etiqueta 40×12 mm: logo izquierda + CALIBRADO y datos en 2 columnas. */
+    private Bitmap createLabel12mm(String id, String cal, String ven, String cert, String tec, int res) {
         float pxPerMm = res / 25.4f;
         float safeTop = LABEL_SAFE_TOP_MM_12 * pxPerMm;
         float safeBottom = LABEL_SAFE_BOTTOM_MM_12 * pxPerMm;
 
         ensureLabelFonts();
-        float idSize = ptToPx(LABEL_PT_ID_12, res);
-        float rowSize = ptToPx(LABEL_PT_BODY_12, res);
-        float footerSize = ptToPx(LABEL_PT_FOOTER_12, res);
+        float rowSize = ptToPx(LABEL_PT_ROW_12, res);
+        float formSize = ptToPx(LABEL_PT_FORM_12, res);
         float minTextSize = ptToPx(LABEL_PT_MIN_12, res);
 
         int widthPx = Math.round(LABEL_LENGTH_MM_12 * pxPerMm);
@@ -872,59 +1124,60 @@ public class EpsonLabelPlugin extends Plugin {
 
         float areaTop = safeTop;
         float areaBottom = heightPx - safeBottom;
-        float footerReserve = LABEL_FOOTER_RESERVE_MM_12 * pxPerMm;
-
-        float bodyTop = drawThermalHeader(canvas, widthPx, areaTop, pxPerMm, res, paint, true);
-        float bodyBottom = areaBottom - footerReserve;
-        drawFooterCode(canvas, bodyBottom, areaBottom, pxPerMm, footerSize, true);
-        float bodyH = bodyBottom - bodyTop;
-
-        float logoWidth = 5.6f * pxPerMm;
-        float logoGap = 0.75f * pxPerMm;
-        float contentX = (LABEL_MARGIN_SIDE_MM * pxPerMm) + logoWidth + logoGap;
-        float contentW = widthPx - contentX - (LABEL_MARGIN_SIDE_MM * pxPerMm);
+        float side = LABEL_MARGIN_SIDE_MM * pxPerMm;
+        float logoColW = LABEL_LOGO_COL_MM_12 * pxPerMm;
+        float gap = 0.35f * pxPerMm;
+        float contentLeft = side + logoColW + gap;
+        float contentRight = widthPx - side;
 
         Bitmap logo = loadLogoBitmap();
         if (logo != null) {
             Bitmap logoPrint = prepareLogoForThermal(logo);
-            float logoMaxH = bodyH * 0.92f;
-            float scale = Math.min(logoWidth / logoPrint.getWidth(), logoMaxH / logoPrint.getHeight());
+            float areaH = areaBottom - areaTop;
+            float scale = Math.min(logoColW / logoPrint.getWidth(), areaH / logoPrint.getHeight());
             float scaledW = logoPrint.getWidth() * scale;
             float scaledH = logoPrint.getHeight() * scale;
-            float logoLeft = LABEL_MARGIN_SIDE_MM * pxPerMm;
-            float left = logoLeft + (logoWidth - scaledW) / 2f;
-            float top = bodyTop + (bodyH - scaledH) / 2f;
+            float left = side + (logoColW - scaledW) / 2f;
+            float top = areaTop + (areaH - scaledH) / 2f;
             canvas.drawBitmap(logoPrint, null, new RectF(left, top, left + scaledW, top + scaledH), paint);
             if (logoPrint != logo) {
                 logoPrint.recycle();
             }
-        } else {
-            contentX = LABEL_MARGIN_SIDE_MM * pxPerMm;
-            contentW = widthPx - contentX - (LABEL_MARGIN_SIDE_MM * pxPerMm);
         }
 
-        int lines = 3;
-        float blockH = idSize + (rowSize * (lines - 1));
-        float firstTop = bodyTop + Math.max(0f, (bodyH - blockH) / 2f);
+        float bodyTop = drawContentHeaderBand(canvas, contentLeft, contentRight, areaTop, pxPerMm, res, paint);
+        bodyTop += 0.08f * pxPerMm;
+        float bodyH = areaBottom - bodyTop;
+        float rowH = bodyH / 3f;
+        // Columna izq un poco más ancha (ID / fechas); Cert / Calibró a la derecha.
+        float splitX = contentLeft + ((contentRight - contentLeft) * 0.50f);
+        float leftColW = splitX - contentLeft - (0.12f * pxPerMm);
+        float rightColW = contentRight - splitX - (0.12f * pxPerMm);
 
-        float y = drawBaselineFromTop(paint, firstTop, idSize);
-        drawCrispFittedText(canvas, "ID: " + id, contentX, y, contentW, idSize, minTextSize, LabelFontStyle.BOLD, false);
+        float row0Top = bodyTop;
+        float row1Top = bodyTop + rowH;
+        float row2Top = bodyTop + (rowH * 2f);
 
-        y = drawBaselineFromTop(paint, firstTop + idSize, rowSize);
-        drawCrispFittedText(
+        float y0 = drawBaselineFromTop(paint, row0Top + (rowH * 0.05f), rowSize);
+        drawCrispFittedText(canvas, "ID: " + id, contentLeft, y0, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+        drawCrispFittedText(canvas, "Cert: " + cert, splitX, y0, rightColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+
+        float y1 = drawBaselineFromTop(paint, row1Top + (rowH * 0.05f), rowSize);
+        drawCrispFittedText(canvas, "F.CAL: " + cal, contentLeft, y1, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+        drawCrispFittedText(canvas, "CALIBRÓ: " + tec, splitX, y1, rightColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+
+        float y2 = drawBaselineFromTop(paint, row2Top + (rowH * 0.05f), rowSize);
+        drawCrispFittedText(canvas, "F.SUG: " + ven, contentLeft, y2, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+        drawRightAlignedFittedText(
                 canvas,
-                "CAL: " + cal + "  VEN: " + ven,
-                contentX,
-                y,
-                contentW,
-                rowSize,
+                LABEL_FORM_CODE,
+                contentRight,
+                y2,
+                rightColW,
+                formSize,
                 minTextSize,
-                LabelFontStyle.BOLD,
-                false
+                LabelFontStyle.ITALIC
         );
-
-        y = drawBaselineFromTop(paint, firstTop + idSize + rowSize, rowSize);
-        drawCrispFittedText(canvas, "CERT: " + cert, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
 
         return bmp;
     }
