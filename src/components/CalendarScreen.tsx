@@ -105,6 +105,39 @@ const PLANTILLA_PT = [
     "Realizar estudio"
 ];
 
+const PT_MAGNITUDES = ['Electrica', 'Dimensional', 'Masa', 'Fuerza', 'Presión', 'Temperatura', 'Par Torsional', 'Flujo', 'Frecuencia'];
+
+const PT_EQUIPOS_SUGERIDOS: Record<string, string[]> = {
+    Electrica: ['Hypot', 'Multímetro', 'Pinza amperimétrica', 'Decada de resistencia', 'Fuente de poder'],
+    Dimensional: ['Vernier', 'Micrómetro', 'Calibrador', 'Regla', 'Bloque patrón'],
+    Masa: ['Balanza', 'Pesa patrón', 'Báscula'],
+    Fuerza: ['Dinamómetro', 'Celda de carga', 'Máquina universal'],
+    'Presión': ['Manómetro', 'Transductor', 'Bomba calibradora'],
+    Temperatura: ['Termómetro', 'Termopar', 'Baño termostático'],
+    'Par Torsional': ['Torquímetro', 'Transductor de par'],
+    Flujo: ['Flujómetro', 'Medidor volumétrico'],
+    Frecuencia: ['Contador de frecuencia', 'Generador de señal'],
+};
+
+const formatPtEstudioLabel = (magnitud?: string, equipo?: string) => {
+    const mag = (magnitud || '').trim();
+    const eq = (equipo || '').trim();
+    if (mag && eq) return `${mag} — ${eq}`;
+    return mag || eq || '';
+};
+
+const getPtGroupKey = (ev: { magnitudPT?: string; equipoPT?: string }) => {
+    const label = formatPtEstudioLabel(ev.magnitudPT, ev.equipoPT);
+    return label || 'Sin Magnitud (Editar)';
+};
+
+const parsePtGroupKey = (groupKey: string) => {
+    const sep = ' — ';
+    const idx = groupKey.indexOf(sep);
+    if (idx === -1) return { magnitud: groupKey, equipo: '' };
+    return { magnitud: groupKey.slice(0, idx), equipo: groupKey.slice(idx + sep.length) };
+};
+
 // --- HELPERS DE COLORES Y USUARIOS ---
 const isServicioOperativo = (tipo?: string) => isServicioOperativoTipo(tipo);
 
@@ -239,7 +272,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
     const { confirm } = useAppDialog();
     const [formData, setFormData] = useState({
         titulo: '', tipo: 'intralaboratorio', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', 
-        estado: 'programado', personas: [] as string[], magnitudPT: '', comentariosPT: '',
+        estado: 'programado', personas: [] as string[], magnitudPT: '', equipoPT: '', comentariosPT: '',
         ubicacion: '', horaInicio: '', horaFin: '',
     });
     const [usarPlantilla, setUsarPlantilla] = useState(false);
@@ -272,7 +305,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                 fechaFin: event.end ? format(event.end, 'yyyy-MM-dd') : '',
                 destino: event.destino || '', laboratorioRef: event.laboratorioRef || '', descripcion: event.descripcion || '',
                 estado: event.estado || 'programado', personas: event.personas || [],
-                magnitudPT: event.magnitudPT || '', comentariosPT: event.comentariosPT || '',
+                magnitudPT: event.magnitudPT || '', equipoPT: event.equipoPT || '', comentariosPT: event.comentariosPT || '',
                 ubicacion: resolveEventLugar(event), horaInicio: event.horaInicio || '', horaFin: event.horaFin || '',
             });
             setUsarPlantilla(false);
@@ -280,7 +313,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
             setFormData(prev => ({ ...prev, ...initialData, tipo: initialData.tipo || (isCalidad ? 'intralaboratorio' : 'junta'), personas: initialData.tipo === 'mtto_patrones' && sustaitaId ? [sustaitaId] : [] }));
             setUsarPlantilla(false);
         } else {
-            setFormData({ titulo: '', tipo: isCalidad ? 'intralaboratorio' : 'junta', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', estado: 'programado', personas: [], magnitudPT: '', comentariosPT: '', ubicacion: '', horaInicio: '', horaFin: '' });
+            setFormData({ titulo: '', tipo: isCalidad ? 'intralaboratorio' : 'junta', fecha: '', fechaFin: '', destino: '', laboratorioRef: '', descripcion: '', estado: 'programado', personas: [], magnitudPT: '', equipoPT: '', comentariosPT: '', ubicacion: '', horaInicio: '', horaFin: '' });
             setUsarPlantilla(false);
         }
     }, [event, initialData, isOpen, sustaitaId, isCalidad]);
@@ -323,6 +356,11 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                 }
             } else {
                 if (usarPlantilla && (formData.tipo === 'interlaboratorio' || formData.tipo === 'intralaboratorio')) {
+                    if (!formData.magnitudPT.trim() || !formData.equipoPT.trim()) {
+                        toast.error('Indica la magnitud y el equipo para la plantilla PT.');
+                        setSaving(false);
+                        return;
+                    }
                     let curStart = formData.fecha;
                     for (const act of PLANTILLA_PT) {
                         const curEnd = addDaysNative(curStart, 2); 
@@ -331,7 +369,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                         curStart = addDaysNative(curEnd, 1); 
                     }
                     const mensajePt = buildMensajeAsignacionServicio({
-                        titulo: `Estudio PT — ${formData.magnitudPT || formData.titulo}`,
+                        titulo: `Estudio PT — ${formatPtEstudioLabel(formData.magnitudPT, formData.equipoPT) || formData.titulo}`,
                         cliente: basePayload.cliente,
                         fecha: formData.fecha,
                     });
@@ -545,7 +583,10 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 <>
                                 <div className="flex items-center justify-between bg-emerald-50 p-3 rounded-2xl border border-emerald-100">
                                     <div>
-                                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Magnitud: {event.magnitudPT || 'N/A'}</p>
+                                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+                                            Magnitud: {event.magnitudPT || 'N/A'}
+                                            {event.equipoPT ? ` · Equipo: ${event.equipoPT}` : ''}
+                                        </p>
                                         <p className="text-sm font-black text-emerald-900">Avance de Actividad: {calculateAvance(event)}%</p>
                                     </div>
                                     <div className="w-24 h-2.5 bg-emerald-200 rounded-full overflow-hidden">
@@ -760,9 +801,35 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
                                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
                                     <h4 className="text-[10px] font-bold text-blue-800 uppercase tracking-widest flex items-center gap-1"><TableProperties size={12}/> Datos Gantt PT</h4>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="col-span-2">
+                                        <div>
                                             <label className="text-[9px] font-bold text-blue-600 uppercase mb-1 block">Magnitud (Agrupador)</label>
-                                            <input required value={formData.magnitudPT} onChange={e => setFormData({...formData, magnitudPT: e.target.value})} className="w-full p-2 bg-white border border-blue-200 rounded-lg text-sm outline-none" placeholder="Ej. Fuerza, Masa..." />
+                                            <input
+                                                required
+                                                list="pt-magnitudes-list"
+                                                value={formData.magnitudPT}
+                                                onChange={e => setFormData({ ...formData, magnitudPT: e.target.value, equipoPT: formData.equipoPT })}
+                                                className="w-full p-2 bg-white border border-blue-200 rounded-lg text-sm outline-none"
+                                                placeholder="Ej. Electrica, Dimensional..."
+                                            />
+                                            <datalist id="pt-magnitudes-list">
+                                                {PT_MAGNITUDES.map(m => <option key={m} value={m} />)}
+                                            </datalist>
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-bold text-blue-600 uppercase mb-1 block">Equipo</label>
+                                            <input
+                                                required={usarPlantilla}
+                                                list="pt-equipos-list"
+                                                value={formData.equipoPT}
+                                                onChange={e => setFormData({ ...formData, equipoPT: e.target.value })}
+                                                className="w-full p-2 bg-white border border-blue-200 rounded-lg text-sm outline-none"
+                                                placeholder={usarPlantilla ? 'Ej. Hypot, Multímetro, Vernier...' : 'Opcional si no aplica...'}
+                                            />
+                                            <datalist id="pt-equipos-list">
+                                                {[...new Set(PT_EQUIPOS_SUGERIDOS[formData.magnitudPT] || Object.values(PT_EQUIPOS_SUGERIDOS).flat())].map(eq => (
+                                                    <option key={eq} value={eq} />
+                                                ))}
+                                            </datalist>
                                         </div>
                                         <div>
                                             <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Destino / Planta</label>
@@ -854,9 +921,9 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
     const SORT_ORDER = PLANTILLA_PT.reduce((acc, val, idx) => ({ ...acc, [val]: idx }), {} as any);
 
     const groupedEvents = ptEvents.reduce((acc, ev) => {
-        const mag = ev.magnitudPT || 'Sin Magnitud (Editar)';
-        if (!acc[mag]) acc[mag] = [];
-        acc[mag].push(ev);
+        const groupKey = getPtGroupKey(ev);
+        if (!acc[groupKey]) acc[groupKey] = [];
+        acc[groupKey].push(ev);
         return acc;
     }, {} as Record<string, any[]>);
 
@@ -907,8 +974,8 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
                 <table className="w-full min-w-[1500px] border-collapse bg-white text-xs">
                     <thead className="sticky top-0 z-40 bg-white shadow-sm">
                         <tr>
-                            <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-20 sticky left-0 z-50 text-[10px] shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Magnitud</th>
-                            <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-48 sticky left-[80px] z-50 text-[10px] shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Actividades</th>
+                            <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-24 sticky left-0 z-50 text-[10px] shadow-[2px_0_5px_rgba(0,0,0,0.1)] leading-tight">Magnitud<br/><span className="font-medium text-[8px]">/ Equipo</span></th>
+                            <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-48 sticky left-[96px] z-50 text-[10px] shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Actividades</th>
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-24 text-[10px]">Responsable</th>
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-16 text-[10px] leading-tight">Avance %</th>
                             <th rowSpan={2} className="border border-slate-300 p-1.5 bg-[#0070C0] text-white font-bold w-20 text-[10px]">Evidencia</th>
@@ -923,11 +990,12 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
                         </tr>
                     </thead>
                     <tbody>
-                        {Object.keys(groupedEvents).map(magnitud => {
-                            const eventosMag = groupedEvents[magnitud];
+                        {Object.keys(groupedEvents).map(groupKey => {
+                            const eventosMag = groupedEvents[groupKey];
+                            const { magnitud, equipo } = parsePtGroupKey(groupKey);
                             const avanceMagnitud = calcMagnitudAvance(eventosMag);
                             return (
-                                <React.Fragment key={magnitud}>
+                                <React.Fragment key={groupKey}>
                                     {eventosMag.map((ev, idx) => {
                                         const { startW, endW } = getWeekRangePT(ev.start, ev.end);
                                         const nombres = ev.personas?.length
@@ -942,14 +1010,19 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
                                                 {idx === 0 && (
                                                     <td rowSpan={eventosMag.length + 1} className="border border-slate-300 p-1 text-center bg-white font-bold text-slate-700 text-[9px] sticky left-0 z-30 shadow-[2px_0_5px_rgba(0,0,0,0.02)] align-top">
                                                         <div className="flex flex-col items-center gap-1 min-h-full justify-start">
-                                                            <span className="leading-tight break-words">{magnitud}</span>
+                                                            <span className="leading-tight break-words font-black">{magnitud}</span>
+                                                            {equipo && (
+                                                                <span className="leading-tight break-words text-[8px] font-semibold text-slate-500 normal-case">
+                                                                    {equipo}
+                                                                </span>
+                                                            )}
                                                             {canEdit && onDeleteMagnitud && (
                                                                 <button
                                                                     type="button"
-                                                                    title={`Eliminar magnitud "${magnitud}" y todas sus actividades`}
+                                                                    title={`Eliminar "${groupKey}" y todas sus actividades`}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        onDeleteMagnitud(magnitud, eventosMag.map((x: { id: string }) => x.id));
+                                                                        onDeleteMagnitud(groupKey, eventosMag.map((x: { id: string }) => x.id));
                                                                     }}
                                                                     className="p-1 text-red-600 hover:bg-red-50 rounded border border-red-200"
                                                                 >
@@ -960,7 +1033,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
                                                     </td>
                                                 )}
                                                 
-                                                <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-[9px] sticky left-[80px] z-30 shadow-[2px_0_5px_rgba(0,0,0,0.02)] leading-tight" style={style} title={ev.title}>
+                                                <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-[9px] sticky left-[96px] z-30 shadow-[2px_0_5px_rgba(0,0,0,0.02)] leading-tight" style={style} title={ev.title}>
                                                     {ev.title}
                                                 </td>
                                                 <td className="border border-slate-300 p-0.5 text-center bg-white">
@@ -1017,7 +1090,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
                                         );
                                     })}
                                     <tr className="bg-slate-100 border-t-2 border-slate-400 h-7">
-                                        <td colSpan={2} className="border border-slate-300 px-2 py-0.5 text-[9px] font-black text-slate-800 uppercase tracking-wide sticky left-[80px] z-30 bg-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                        <td colSpan={2} className="border border-slate-300 px-2 py-0.5 text-[9px] font-black text-slate-800 uppercase tracking-wide sticky left-[96px] z-30 bg-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                                             Avance total magnitud
                                         </td>
                                         <td className="border border-slate-300 p-0.5 bg-slate-100" />
@@ -1235,7 +1308,7 @@ export const CalendarScreen: React.FC = () => {
                         personas: data.personas || [], enterados: data.enterados || [], enteradosAt: data.enteradosAt || {},
                         documentos: data.archivos || [],
                         pjlaUrl: pjlaUrl, esAlertaAutomatica: data.esAlertaAutomatica || false,
-                        magnitudPT: data.magnitudPT || '', comentariosPT: data.comentariosPT || '',
+                        magnitudPT: data.magnitudPT || '', equipoPT: data.equipoPT || '', comentariosPT: data.comentariosPT || '',
                         evidenciaUrl: data.evidenciaUrl || null,
                         evidenciaNombre: data.evidenciaNombre || '',
                         evidenciaFecha: data.evidenciaFecha || null,
