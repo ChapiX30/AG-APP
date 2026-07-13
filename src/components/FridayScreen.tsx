@@ -358,9 +358,9 @@ interface GroupData { id: string; name: string; color: string; collapsed: boolea
 interface DragItem { type: 'row' | 'column'; index: number; id?: string; groupId?: string; }
 interface AGBotThought { id: number; type: 'info' | 'warning' | 'success'; message: string; timestamp: string; }
 
-/** Reconciliación Drive: servidor `scheduledDriveReconcile` (cada 6 h) + respaldo en tablero (AG-Bot / intervalo). */
+/** Reconciliación Drive: servidor `scheduledDriveReconcile` (1×/día) + respaldo en tablero (AG-Bot / intervalo). */
 const AGBOT_INITIAL_DELAY_MS = 2_000;
-const DRIVE_RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
+const DRIVE_RECONCILE_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const DRIVE_RECONCILE_INITIAL_MS = 15_000;
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {

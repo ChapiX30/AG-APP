@@ -82,15 +82,17 @@ public class EpsonLabelPlugin extends Plugin {
     /** La PX400 no imprime hasta el borde: reserva extra arriba/abajo. */
     private static final float LABEL_SAFE_TOP_MM = 2.4f;
     private static final float LABEL_SAFE_BOTTOM_MM = 2.4f;
-    /** Cinta 12mm — plantilla Epson 40×12: logo izq + 2 columnas. */
-    private static final float LABEL_SAFE_TOP_MM_12 = 0.9f;
-    private static final float LABEL_SAFE_BOTTOM_MM_12 = 0.9f;
+    /** Cinta 12mm — logo tamaño normal pegado a la izquierda + datos. */
+    private static final float LABEL_SAFE_TOP_MM_12 = 0.8f;
+    private static final float LABEL_SAFE_BOTTOM_MM_12 = 0.8f;
+    private static final float LABEL_MARGIN_SIDE_MM_12 = 0.5f;
+    /** Mismo tamaño de logo que antes; solo alineado al borde izquierdo. */
     private static final float LABEL_LOGO_COL_MM_12 = 9.5f;
-    private static final float LABEL_HEADER_H_MM_12 = 2.1f;
+    private static final float LABEL_HEADER_H_MM_12 = 2.0f;
     private static final float LABEL_PT_HEADER_12 = 5f;
-    private static final float LABEL_PT_ROW_12 = 5.5f;
-    private static final float LABEL_PT_FORM_12 = 4f;
-    private static final float LABEL_PT_MIN_12 = 4.2f;
+    private static final float LABEL_PT_ROW_12 = 5.8f;
+    private static final float LABEL_PT_FORM_12 = 4.8f;
+    private static final float LABEL_PT_MIN_12 = 4.5f;
     private static final String LABEL_FORM_CODE = "AG-CAL-F14-00";
     /** Tamaños alineados con la plantilla Epson (Source Sans Pro). */
     private static final float LABEL_PT_FOOTER = 5f;
@@ -99,6 +101,11 @@ public class EpsonLabelPlugin extends Plugin {
     private static final float LABEL_PT_HEADER = 9f;
     private static final float LABEL_PT_MIN = 5f;
     private static final int LABEL_PRINT_DENSITY = 0;
+    /** 12mm: un punto más suave que 24mm, sin quedar tenue. */
+    private static final int LABEL_PRINT_DENSITY_12 = -1;
+    private static final int LABEL_BINARIZE_THRESHOLD = 200;
+    /** Entre fino y sólido: evita empaste y también el aspecto “fantasma”. */
+    private static final int LABEL_BINARIZE_THRESHOLD_12 = 175;
 
     private LWPrint lwprint;
     /** Impresora lista para imprimir (como Label Editor Mobile: se configura una vez por sesión). */
@@ -422,7 +429,9 @@ public class EpsonLabelPlugin extends Plugin {
             int height = lwprint.getPrintableSizeFromTape(tapeWidth);
             int res = lwprint.getResolution();
             Bitmap bmp = createLabel(id, fCal, fSug, cert, tec, height, res, tapeReq);
-            Bitmap printBmp = binarizeLabelForThermal(bmp);
+            boolean smallTape = "12mm".equals(tapeReq);
+            Bitmap printBmp = binarizeLabelForThermal(bmp,
+                    smallTape ? LABEL_BINARIZE_THRESHOLD_12 : LABEL_BINARIZE_THRESHOLD);
             if (printBmp != bmp) {
                 bmp.recycle();
                 bmp = printBmp;
@@ -433,7 +442,7 @@ public class EpsonLabelPlugin extends Plugin {
             params.put(LWPrintParameterKey.TapeCut, LWPrintTapeCut.EachLabel);
             params.put(LWPrintParameterKey.HalfCut, lwprint.isSupportHalfCut());
             params.put(LWPrintParameterKey.PrintSpeed, false);
-            params.put(LWPrintParameterKey.Density, LABEL_PRINT_DENSITY);
+            params.put(LWPrintParameterKey.Density, smallTape ? LABEL_PRINT_DENSITY_12 : LABEL_PRINT_DENSITY);
             params.put(LWPrintParameterKey.TapeWidth, tapeWidth);
 
             Log.d(TAG, "Imprimiendo en " + deviceName + " cinta=" + tapeWidth);
@@ -776,12 +785,13 @@ public class EpsonLabelPlugin extends Plugin {
      * Fuerza blanco/negro puro. Los grises del suavizado de fuente salen
      * borrados o raros en la LW-PX400 (sobre todo el 6, 8, 9…).
      */
-    private Bitmap binarizeLabelForThermal(Bitmap source) {
+    private Bitmap binarizeLabelForThermal(Bitmap source, int luminanceThreshold) {
         int width = source.getWidth();
         int height = source.getHeight();
         Bitmap output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         int[] pixels = new int[width * height];
         source.getPixels(pixels, 0, width, 0, 0, width, height);
+        int threshold = Math.max(1, Math.min(254, luminanceThreshold));
         for (int i = 0; i < pixels.length; i++) {
             int color = pixels[i];
             if (Color.alpha(color) < 128) {
@@ -789,8 +799,8 @@ public class EpsonLabelPlugin extends Plugin {
                 continue;
             }
             int luminance = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000;
-            // Umbral bajo: cualquier trazo gris oscuro de la fuente = negro sólido.
-            pixels[i] = luminance < 200 ? Color.BLACK : Color.WHITE;
+            // Umbral más bajo → menos bordes grises pasan a negro → tipografía más fina.
+            pixels[i] = luminance < threshold ? Color.BLACK : Color.WHITE;
         }
         output.setPixels(pixels, 0, width, 0, 0, width, height);
         return output;
@@ -1100,7 +1110,7 @@ public class EpsonLabelPlugin extends Plugin {
         return top + headerH;
     }
 
-    /** Etiqueta 40×12 mm: logo izquierda + CALIBRADO y datos en 2 columnas. */
+    /** Etiqueta 40×12 mm: logo pegado a la izquierda + datos en 2 columnas (letra fina). */
     private Bitmap createLabel12mm(String id, String cal, String ven, String cert, String tec, int res) {
         float pxPerMm = res / 25.4f;
         float safeTop = LABEL_SAFE_TOP_MM_12 * pxPerMm;
@@ -1124,9 +1134,9 @@ public class EpsonLabelPlugin extends Plugin {
 
         float areaTop = safeTop;
         float areaBottom = heightPx - safeBottom;
-        float side = LABEL_MARGIN_SIDE_MM * pxPerMm;
+        float side = LABEL_MARGIN_SIDE_MM_12 * pxPerMm;
         float logoColW = LABEL_LOGO_COL_MM_12 * pxPerMm;
-        float gap = 0.35f * pxPerMm;
+        float gap = 0.55f * pxPerMm;
         float contentLeft = side + logoColW + gap;
         float contentRight = widthPx - side;
 
@@ -1134,10 +1144,11 @@ public class EpsonLabelPlugin extends Plugin {
         if (logo != null) {
             Bitmap logoPrint = prepareLogoForThermal(logo);
             float areaH = areaBottom - areaTop;
+            // Tamaño normal del logo; solo pegado al borde izquierdo (sin reducir).
             float scale = Math.min(logoColW / logoPrint.getWidth(), areaH / logoPrint.getHeight());
             float scaledW = logoPrint.getWidth() * scale;
             float scaledH = logoPrint.getHeight() * scale;
-            float left = side + (logoColW - scaledW) / 2f;
+            float left = side;
             float top = areaTop + (areaH - scaledH) / 2f;
             canvas.drawBitmap(logoPrint, null, new RectF(left, top, left + scaledW, top + scaledH), paint);
             if (logoPrint != logo) {
@@ -1149,7 +1160,6 @@ public class EpsonLabelPlugin extends Plugin {
         bodyTop += 0.08f * pxPerMm;
         float bodyH = areaBottom - bodyTop;
         float rowH = bodyH / 3f;
-        // Columna izq un poco más ancha (ID / fechas); Cert / Calibró a la derecha.
         float splitX = contentLeft + ((contentRight - contentLeft) * 0.50f);
         float leftColW = splitX - contentLeft - (0.12f * pxPerMm);
         float rightColW = contentRight - splitX - (0.12f * pxPerMm);
@@ -1158,16 +1168,17 @@ public class EpsonLabelPlugin extends Plugin {
         float row1Top = bodyTop + rowH;
         float row2Top = bodyTop + (rowH * 2f);
 
+        // REGULAR sin doble trazo (legible); sin italic en el código (evita borroso).
         float y0 = drawBaselineFromTop(paint, row0Top + (rowH * 0.05f), rowSize);
-        drawCrispFittedText(canvas, "ID: " + id, contentLeft, y0, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
-        drawCrispFittedText(canvas, "Cert: " + cert, splitX, y0, rightColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+        drawCrispFittedText(canvas, "ID: " + id, contentLeft, y0, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
+        drawCrispFittedText(canvas, "Cert: " + cert, splitX, y0, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
 
         float y1 = drawBaselineFromTop(paint, row1Top + (rowH * 0.05f), rowSize);
-        drawCrispFittedText(canvas, "F.CAL: " + cal, contentLeft, y1, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
-        drawCrispFittedText(canvas, "CALIBRÓ: " + tec, splitX, y1, rightColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+        drawCrispFittedText(canvas, "F.CAL: " + cal, contentLeft, y1, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
+        drawCrispFittedText(canvas, "CALIBRÓ: " + tec, splitX, y1, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
 
         float y2 = drawBaselineFromTop(paint, row2Top + (rowH * 0.05f), rowSize);
-        drawCrispFittedText(canvas, "F.SUG: " + ven, contentLeft, y2, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, true);
+        drawCrispFittedText(canvas, "F.SUG: " + ven, contentLeft, y2, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
         drawRightAlignedFittedText(
                 canvas,
                 LABEL_FORM_CODE,
@@ -1176,7 +1187,7 @@ public class EpsonLabelPlugin extends Plugin {
                 rightColW,
                 formSize,
                 minTextSize,
-                LabelFontStyle.ITALIC
+                LabelFontStyle.REGULAR
         );
 
         return bmp;

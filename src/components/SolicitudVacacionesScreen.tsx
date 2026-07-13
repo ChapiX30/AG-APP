@@ -55,6 +55,8 @@ import {
   approvalStepForStatus,
   validateSolicitudForm,
   inferFlowType,
+  getMinVacationStartDate,
+  VACATION_MIN_NOTICE_DAYS,
   type SolicitudVacacionesDoc,
   type VacationHistorialEntry,
 } from '../utils/vacationWorkflow';
@@ -118,6 +120,8 @@ export const SolicitudVacacionesScreen: React.FC = () => {
   const [selectedSolicitudId, setSelectedSolicitudId] = useState<string | null>(null);
   const [selectedApproverId, setSelectedApproverId] = useState<string | null>(null);
   const [vacacionesSaldo, setVacacionesSaldo] = useState<Record<string, VacacionesSaldoYear>>({});
+
+  const minFechaInicio = useMemo(() => getMinVacationStartDate(), []);
 
   const diasSegunFechas = useMemo(
     () =>
@@ -639,7 +643,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                 Datos de la solicitud
               </h2>
               <p className="text-sm text-slate-500 mt-0.5">
-                Complete el periodo solicitado y envíe para su revisión.
+                Complete el periodo solicitado (mín. {VACATION_MIN_NOTICE_DAYS} días de anticipación) y envíe para su revisión.
               </p>
             </div>
             <div className="p-6 space-y-5 max-w-xl">
@@ -669,6 +673,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                   <input
                     type="date"
                     value={fechaInicio}
+                    min={minFechaInicio}
                     onChange={(e) => setFechaInicio(e.target.value)}
                     className="vac-input"
                   />
@@ -677,11 +682,15 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                   <input
                     type="date"
                     value={fechaFin}
+                    min={fechaInicio || minFechaInicio}
                     onChange={(e) => setFechaFin(e.target.value)}
                     className="vac-input"
                   />
                 </Field>
               </div>
+              <p className="text-xs text-slate-500 -mt-2">
+                Anticipación mínima: {VACATION_MIN_NOTICE_DAYS} días (inicio desde {minFechaInicio}).
+              </p>
               {diasSegunFechas != null && Number(diasVacaciones) >= 1 && (
                 <p
                   className={`text-sm -mt-2 font-medium ${

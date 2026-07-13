@@ -544,14 +544,14 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         )}
         {tapeSize === "12mm" && (
             <div ref={labelRef} style={{ width: '400px', height: '120px', backgroundColor: 'white', display: 'flex', fontFamily: 'Arial, sans-serif', border: '1px solid black', padding: 0, overflow: 'hidden' }}>
-                <div style={{ width: '95px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}>
+                <div style={{ width: '95px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '4px 2px 4px 4px' }}>
                     <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                     <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '2px 0', letterSpacing: '2px', fontSize: '9px', fontWeight: '900' }}>
                         CALIBRADO
                     </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', padding: '2px 4px 2px 4px', fontSize: '10px', fontWeight: 'bold', lineHeight: 1.15 }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', padding: '2px 4px 2px 4px', fontSize: '10px', fontWeight: '600', lineHeight: 1.15 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
                             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
                             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>Cert: {data.certificado}</span>

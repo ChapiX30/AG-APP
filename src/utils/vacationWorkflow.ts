@@ -88,6 +88,32 @@ export function approvalStepForStatus(estado: VacationStatus): VacationWorkflowS
   }
 }
 
+/** Mínimo de días naturales entre hoy y la fecha de inicio al solicitar vacaciones. */
+export const VACATION_MIN_NOTICE_DAYS = 10;
+
+function todayYmdLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function addCalendarDaysYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Primera fecha de inicio permitida (hoy + anticipación). */
+export function getMinVacationStartDate(fromYmd: string = todayYmdLocal()): string {
+  return addCalendarDaysYmd(fromYmd, VACATION_MIN_NOTICE_DAYS);
+}
+
 export function validateSolicitudForm(input: {
   diasVacaciones: number;
   fechaInicio: string;
@@ -99,6 +125,10 @@ export function validateSolicitudForm(input: {
   }
   if (input.fechaFin < input.fechaInicio) {
     return 'La fecha de fin debe ser igual o posterior a la de inicio.';
+  }
+  const minInicio = getMinVacationStartDate();
+  if (input.fechaInicio < minInicio) {
+    return `Debes solicitar vacaciones con al menos ${VACATION_MIN_NOTICE_DAYS} días de anticipación (inicio a partir del ${minInicio}).`;
   }
   if (!Number.isFinite(input.diasVacaciones) || input.diasVacaciones < 1) {
     return 'Indica un número válido de días de vacaciones.';

@@ -1,5 +1,7 @@
 /**
  * Reconciliación Drive en segundo plano (sin tablero abierto).
+ * Programada 1×/día (03:00 America/Mexico_City); el tablero Friday
+ * sigue haciendo un respaldo al abrir / periódicamente.
  *
  * Despliegue (requiere plan Blaze para funciones programadas):
  *   firebase deploy --only functions:scheduledDriveReconcile

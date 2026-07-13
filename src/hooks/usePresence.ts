@@ -4,10 +4,10 @@ import { doc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
 /** How often the current client writes lastActive while the tab is visible. */
-export const PRESENCE_HEARTBEAT_MS = 60_000;
+export const PRESENCE_HEARTBEAT_MS = 120_000;
 
-/** A user is considered in-app if lastActive is within this window. */
-export const PRESENCE_ONLINE_MINUTES = 3;
+/** A user is considered in-app if lastActive is within this window ( > heartbeat). */
+export const PRESENCE_ONLINE_MINUTES = 5;
 
 export function isUserOnline(
   lastActive: Timestamp | Date | null | undefined,

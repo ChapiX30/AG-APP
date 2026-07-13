@@ -27,6 +27,18 @@ const calcularProximoVencimiento = (fechaBase: Date, frecuenciaTexto: string): D
 // ==================================================================
 const AGBOT_AUDITOR_FIELDS = ["fecha", "frecuenciaCalibracion", "id", "certificado"] as const;
 
+const sameAgbotVencimiento = (stored: unknown, next: Date | null): boolean => {
+    if (!stored && !next) return true;
+    if (!stored || !next) return false;
+    const storedMs =
+        typeof (stored as { toDate?: () => Date }).toDate === "function"
+            ? (stored as { toDate: () => Date }).toDate().getTime()
+            : stored instanceof Date
+              ? stored.getTime()
+              : null;
+    return storedMs !== null && storedMs === next.getTime();
+};
+
 export const agbotAuditorCalibraciones = functions.firestore
     .document("hojasDeTrabajo/{docId}")
     .onWrite(async (change: any, context: any) => {
@@ -46,7 +58,7 @@ export const agbotAuditorCalibraciones = functions.firestore
 
         const fechaCalibracion = data.fecha ? parseISO(data.fecha) : null;
         const frecuencia = data.frecuenciaCalibracion || "N/A";
-        let fechaVencimiento = null;
+        let fechaVencimiento: Date | null = null;
         let agbotStatus = "VIGENTE";
 
         if (fechaCalibracion && isValid(fechaCalibracion)) {
@@ -55,11 +67,23 @@ export const agbotAuditorCalibraciones = functions.firestore
             agbotStatus = "ERROR_FECHA";
         }
 
+        const equipoIdNormalizado = (data.id || data.certificado || "S/N").trim().toUpperCase();
+
+        // Evita writes (y re-invocaciones) cuando el resultado ya está correcto.
+        if (
+            data._agbotChecked === true &&
+            data._agbotStatus === agbotStatus &&
+            data._equipoIdNormalizado === equipoIdNormalizado &&
+            sameAgbotVencimiento(data._fechaVencimiento, fechaVencimiento)
+        ) {
+            return null;
+        }
+
         return change.after.ref.update({
             _fechaVencimiento: fechaVencimiento,
             _agbotChecked: true,
             _agbotStatus: agbotStatus,
-            _equipoIdNormalizado: (data.id || data.certificado || "S/N").trim().toUpperCase()
+            _equipoIdNormalizado: equipoIdNormalizado,
         });
     });
 
@@ -461,7 +485,8 @@ export const checkPJLAUpdates = functions.pubsub
 
 export const scheduledDriveReconcile = functions
     .runWith({ timeoutSeconds: 300, memory: "256MB" })
-    .pubsub.schedule("every 6 hours")
+    // Runs once daily at 03:00 America/Mexico_City (cost reduction; Friday still reconciles on open).
+    .pubsub.schedule("0 3 * * *")
     .timeZone("America/Mexico_City")
     .onRun(async () => {
         const { runScheduledDriveReconcile } = require("./scheduledDriveReconcile");
