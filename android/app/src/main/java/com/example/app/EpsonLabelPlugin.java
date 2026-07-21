@@ -101,11 +101,11 @@ public class EpsonLabelPlugin extends Plugin {
     private static final float LABEL_PT_HEADER = 9f;
     private static final float LABEL_PT_MIN = 5f;
     private static final int LABEL_PRINT_DENSITY = 0;
-    /** 12mm: un punto más suave que 24mm, sin quedar tenue. */
-    private static final int LABEL_PRINT_DENSITY_12 = -1;
+    /** 12mm: casi como 24mm; un pelín más suave sin quedar tenue. */
+    private static final int LABEL_PRINT_DENSITY_12 = 0;
     private static final int LABEL_BINARIZE_THRESHOLD = 200;
-    /** Entre fino y sólido: evita empaste y también el aspecto “fantasma”. */
-    private static final int LABEL_BINARIZE_THRESHOLD_12 = 175;
+    /** Un poco más sólido que 175, sin empastar como 200. */
+    private static final int LABEL_BINARIZE_THRESHOLD_12 = 188;
 
     private LWPrint lwprint;
     /** Impresora lista para imprimir (como Label Editor Mobile: se configura una vez por sesión). */
@@ -1160,22 +1160,23 @@ public class EpsonLabelPlugin extends Plugin {
         bodyTop += 0.08f * pxPerMm;
         float bodyH = areaBottom - bodyTop;
         float rowH = bodyH / 3f;
-        float splitX = contentLeft + ((contentRight - contentLeft) * 0.50f);
-        float leftColW = splitX - contentLeft - (0.12f * pxPerMm);
-        float rightColW = contentRight - splitX - (0.12f * pxPerMm);
+        // Columna der más a la derecha → CALIBRÓ / Cert no se pegan a las fechas.
+        float splitX = contentLeft + ((contentRight - contentLeft) * 0.58f);
+        float colGap = 0.35f * pxPerMm;
+        float leftColW = splitX - contentLeft - colGap;
+        float rightColW = contentRight - splitX;
 
         float row0Top = bodyTop;
         float row1Top = bodyTop + rowH;
         float row2Top = bodyTop + (rowH * 2f);
 
-        // REGULAR sin doble trazo (legible); sin italic en el código (evita borroso).
         float y0 = drawBaselineFromTop(paint, row0Top + (rowH * 0.05f), rowSize);
         drawCrispFittedText(canvas, "ID: " + id, contentLeft, y0, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
-        drawCrispFittedText(canvas, "Cert: " + cert, splitX, y0, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
+        drawRightAlignedFittedText(canvas, "Cert: " + cert, contentRight, y0, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR);
 
         float y1 = drawBaselineFromTop(paint, row1Top + (rowH * 0.05f), rowSize);
         drawCrispFittedText(canvas, "F.CAL: " + cal, contentLeft, y1, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
-        drawCrispFittedText(canvas, "CALIBRÓ: " + tec, splitX, y1, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
+        drawRightAlignedFittedText(canvas, "CALIBRÓ: " + tec, contentRight, y1, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR);
 
         float y2 = drawBaselineFromTop(paint, row2Top + (rowH * 0.05f), rowSize);
         drawCrispFittedText(canvas, "F.SUG: " + ven, contentLeft, y2, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);

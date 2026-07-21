@@ -1,0 +1,424 @@
+=== scripts/_cert_summary.json ===
+{
+  "AG-034": {
+    "cert": "MMI-CC-P-0012-2025",
+    "servicio": "MMI-OS-0004-2025",
+    "id": "AG-034",
+    "modelo": "PV350",
+    "serie": "AGPV-001",
+    "rango": "0-350 psi (0-2413 kPa)",
+    "fecha_cal": "2025-01-07",
+    "fecha_emision": "2025-01-09",
+    "error_max_psi": "-0.41",
+    "Umax_k2_psi": "0.040",
+    "unidades_tabla": "psi/kPa",
+    "filas": [
+      {
+        "patron_kPa": "241.45",
+        "patron_psi": "35.02",
+        "ibc_psi": "34.94",
+        "error_psi": "-0.08",
+        "error_pct_AI": "-0.023%",
+        "U_k2_psi": "0.021",
+        "U_pct_AI": "0.0059%"
+      },
+      {
+        "patron_kPa": "482.89",
+        "patron_psi": "70.04",
+        "ibc_psi": "69.88",
+        "error_psi": "-0.16",
+        "error_pct_AI": "-0.046%",
+        "U_k2_psi": "0.020",
+        "U_pct_AI": "0.0058%"
+      },
+      {
+        "patron_kPa": "723.98",
+        "patron_psi": "105.00",
+        "ibc_psi": "104.78",
+        "error_psi": "-0.22",
+        "error_pct_AI": "-0.063%",
+        "U_k2_psi": "0.027",
+        "U_pct_AI": "0.0078%"
+      },
+      {
+        "patron_kPa": "965.26",
+        "patron_psi": "140.00",
+        "ibc_psi": "139.73",
+        "error_psi": "-0.27",
+        "error_pct_AI": "-0.077%",
+        "U_k2_psi": "0.035",
+        "U_pct_AI": "0.0099%"
+      },
+      {
+        "patron_kPa": "1206.49",
+        "patron_psi": "174.99",
+        "ibc_psi": "174.69",
+        "error_psi": "-0.30",
+        "error_pct_AI": "-0.086%",
+        "U_k2_psi": "0.038",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "1447.91",
+        "patron_psi": "210.00",
+        "ibc_psi": "209.64",
+        "error_psi": "-0.36",
+        "error_pct_AI": "-0.103%",
+        "U_k2_psi": "0.038",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "1689.15",
+        "patron_psi": "244.99",
+        "ibc_psi": "244.60",
+        "error_psi": "-0.39",
+        "error_pct_AI": "-0.111%",
+        "U_k2_psi": "0.039",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "1930.79",
+        "patron_psi": "280.04",
+        "ibc_psi": "279.63",
+        "error_psi": "-0.41",
+        "error_pct_AI": "-0.117%",
+        "U_k2_psi": "0.040",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "2171.83",
+        "patron_psi": "315.00",
+        "ibc_psi": "314.59",
+        "error_psi": "-0.41",
+        "error_pct_AI": "-0.117%",
+        "U_k2_psi": "0.032",
+        "U_pct_AI": "0.0093%"
+      },
+      {
+        "patron_kPa": "2413.21",
+        "patron_psi": "350.01",
+        "ibc_psi": "349.63",
+        "error_psi": "-0.38",
+        "error_pct_AI": "-0.109%",
+        "U_k2_psi": "0.035",
+        "U_pct_AI": "0.010%"
+      }
+    ]
+  },
+  "AG-052": {
+    "cert": "1-23207",
+    "id": "AG-052",
+    "marca": "Druck",
+    "modelo": "DPI104",
+    "serie": "5335895",
+    "rango": "0-1000 psi",
+    "fecha_recepcion": "2024-11-25",
+    "fecha_cal": "2024-11-28",
+    "fecha_emision": "2024-11-29",
+    "sesgo_max_psi": "0.323",
+    "Umax_psi": "0.089",
+    "filas": [
+      {
+        "punto": "0",
+        "patron_kPa": "0.00",
+        "patron_psi": "0.000",
+        "indicacion_psi": "0.0",
+        "sesgo_psi": "0.000",
+        "sesgo_pct_ET": "0,0000%",
+        "U_psi": "0.058",
+        "U_pct_ET": "±0,0058%"
+      },
+      {
+        "punto": "1",
+        "patron_kPa": "689.52",
+        "patron_psi": "100.006",
+        "indicacion_psi": "100.1",
+        "sesgo_psi": "0.044",
+        "sesgo_pct_ET": "0,0044%",
+        "U_psi": "0.082",
+        "U_pct_ET": "±0,0082%"
+      },
+      {
+        "punto": "2",
+        "patron_kPa": "1379.00",
+        "patron_psi": "200.007",
+        "indicacion_psi": "200.1",
+        "sesgo_psi": "0.093",
+        "sesgo_pct_ET": "0,0093%",
+        "U_psi": "0.058",
+        "U_pct_ET": "±0,0058%"
+      },
+      {
+        "punto": "3",
+        "patron_kPa": "2068.48",
+        "patron_psi": "300.008",
+        "indicacion_psi": "300.1",
+        "sesgo_psi": "0.092",
+        "sesgo_pct_ET": "0,0092%",
+        "U_psi": "0.059",
+        "U_pct_ET": "±0,0059%"
+      },
+      {
+        "punto": "4",
+        "patron_kPa": "2757.96",
+        "patron_psi": "400.009",
+        "indicacion_psi": "400.2",
+        "sesgo_psi": "0.191",
+        "sesgo_pct_ET": "0,0191%",
+        "U_psi": "0.059",
+        "U_pct_ET": "±0,0059%"
+      },
+      {
+        "punto": "5",
+        "patron_kPa": "3447.39",
+        "patron_psi": "500.001",
+        "indicacion_psi": "500.2",
+        "sesgo_psi": "0.199",
+        "sesgo_pct_ET": "0,0199%",
+        "U_psi": "0.060",
+        "U_pct_ET": "±0,0060%"
+      },
+      {
+        "punto": "6",
+        "patron_kPa": "4136.87",
+        "patron_psi": "600.002",
+        "indicacion_psi": "600.2",
+        "sesgo_psi": "0.198",
+        "sesgo_pct_ET": "0,0198%",
+        "U_psi": "0.061",
+        "U_pct_ET": "±0,0061%"
+      },
+      {
+        "punto": "7",
+        "patron_kPa": "4826.38",
+        "patron_psi": "700.007",
+        "indicacion_psi": "700.3",
+        "sesgo_psi": "0.293",
+        "sesgo_pct_ET": "0,0293%",
+        "U_psi": "0.063",
+        "U_pct_ET": "±0,0063%"
+      },
+      {
+        "punto": "8",
+        "patron_kPa": "5515.85",
+        "patron_psi": "800.007",
+        "indicacion_psi": "800.3",
+        "sesgo_psi": "0.293",
+        "sesgo_pct_ET": "0,0293%",
+        "U_psi": "0.064",
+        "U_pct_ET": "±0,0064%"
+      },
+      {
+        "punto": "9",
+        "patron_kPa": "6205.30",
+        "patron_psi": "900.003",
+        "indicacion_psi": "900.3",
+        "sesgo_psi": "0.297",
+        "sesgo_pct_ET": "0,0297%",
+        "U_psi": "0.072",
+        "U_pct_ET": "±0,0072%"
+      },
+      {
+        "punto": "10",
+        "patron_kPa": "6894.77",
+        "patron_psi": "1000.002",
+        "indicacion_psi": "1000.3",
+        "sesgo_psi": "0.323",
+        "sesgo_pct_ET": "0,0323%",
+        "U_psi": "0.089",
+        "U_pct_ET": "±0,0089%"
+      }
+    ]
+  },
+  "AG-008": {
+    "cert": "1-24842",
+    "id": "AG-008",
+    "marca": "OMEGA",
+    "modelo": "DPG-4000-10K",
+    "serie": "9941257",
+    "rango": "0-10000 psi",
+    "fecha_recepcion": "2025-01-29",
+    "fecha_cal": "2025-02-04",
+    "fecha_emision": "2025-02-06",
+    "sesgo_max_psi": "2.04",
+    "Umax_psi": "0.98",
+    "nota": "PDF has #DIV/0!/#VALOR! in some columns; table is 0 + 1000..10000 psi (1000 psi steps). Escala 1 low-range summary on p1 shows Excel errors.",
+    "filas": []
+  }
+}
+Sheet names: Portada, Resultados, Calculos, Patrones, CMC, Historial, BD_Clientes
+
+=== 1. Patrones sheet rows 1-40, cols A-I ===
+R1| A1:'Patrón' | B1: | C1: | D1: | E1: | F1: | G1: | H1: | I1:
+R2| A2: | B2: | C2: | D2: | E2: | F2: | G2: | H2: | I2:
+R3| A3: | B3: | C3: | D3: | E3: | F3: | G3: | H3: | I3:
+R4| A4:'Instrumento:' | B4:'Manometro Omega' | C4:'ID:' | D4:'AG-008' | E4:'Resultados en psi' | F4: | G4: | H4: | I4:
+R5| A5:'Marca:' | B5:'OMEGA' | C5:'No. Certif:' | D5:'1-24842' | E5:100 | F5:'Nominal' | G5:0.058 | H5:0.375 | I5:'EMP±'
+R6| A6:'Modelo:' | B6:'DPG-4000-10K' | C6:'Fecha Cal:' | D6:datetime.datetime(2026, 5, 7, 0, 0) | E6:200 | F6:100 | G6:0.058 | H6:0.375 | I6:0.375
+R7| A7:'No. De Serie:' | B7:9941257 | C7:'Vigencia:' | D7:datetime.datetime(2027, 3, 10, 0, 0) | E7:300 | F7:200 | G7:0.059 | H7:0.375 | I7:0.375
+R8| A8:'Intérvalo alcance: ' | B8:'10000 psi' | C8: | D8: | E8:400 | F8:300 | G8:0.059 | H8:0.375 | I8:0.375
+R9| A9: | B9: | C9: | D9: | E9:500 | F9:400 | G9:0.06 | H9:0.375 | I9:0.375
+R10| A10: | B10: | C10: | D10: | E10:600 | F10:500 | G10:0.09 | H10:0.375 | I10:0.375
+R11| A11: | B11: | C11: | D11: | E11:700 | F11:600 | G11:0.063 | H11:0.375 | I11:0.375
+R12| A12: | B12: | C12: | D12: | E12:800 | F12:700 | G12:0.065 | H12:0.375 | I12:5
+R13| A13: | B13: | C13: | D13: | E13:900 | F13:800 | G13:0.073 | H13:0.375 | I13:0.375
+R14| A14: | B14: | C14: | D14: | E14:1000 | F14:900 | G14:0.081 | H14:0.375 | I14:0.375
+R15| A15: | B15: | C15: | D15: | E15:=$D$4 & "-" & F16 | F15:1000 | G15:0.6 | H15:0.081 | I15:0.375
+R16| A16: | B16: | C16: | D16: | E16:=$D$4 & "-" & F17 | F16:1000 | G16:1 | H16:0.87 | I16:5
+R17| A17:'Patrón' | B17: | C17: | D17: | E17:=$D$4 & "-" & F18 | F17:2000 | G17:0 | H17:0.87 | I17:5
+R18| A18: | B18: | C18: | D18: | E18:=$D$4 & "-" & F19 | F18:3000 | G18:0 | H18:0.82 | I18:5
+R19| A19: | B19: | C19: | D19: | E19:=$D$4 & "-" & F20 | F19:4000 | G19:0 | H19:0.83 | I19:5
+R20| A20:'Instrumento:' | B20:'Manómetro Druck' | C20:'ID:' | D20:'AG-052' | E20:=$D$4 & "-" & F21 | F20:5000 | G20:2 | H20:0.61 | I20:5
+R21| A21:'Marca:' | B21:'Druck' | C21:'No. Certif:' | D21:'1-23207' | E21:=$D$4 & "-" & F22 | F21:6000 | G21:2 | H21:0.9 | I21:5
+R22| A22:'Modelo:' | B22:'DPI104' | C22:'Fecha Cal:' | D22:datetime.datetime(2026, 5, 11, 0, 0) | E22:=$D$4 & "-" & F23 | F22:7000 | G22:2 | H22:0.86 | I22:5
+R23| A23:'No. De Serie:' | B23:5335895 | C23:'Vigencia:' | D23:datetime.datetime(2027, 5, 4, 0, 0) | E23:=$D$4 & "-" & F24 | F23:8000 | G23:1 | H23:0.92 | I23:5
+R24| A24:'Intérvalo alcance: ' | B24:'750 psi' | C24: | D24: | E24:=$D$4 & "-" & F25 | F24:9000 | G24:1 | H24:0.89 | I24:5
+R25| A25: | B25: | C25: | D25: | E25:=$D$4 & "-" & F26 | F25:10000 | G25:3 | H25:0.69 | I25:5
+R26| A26:'Instrumento:' | B26:'Transductor de presión PV 350' | C26:'ID:' | D26:'AG-034' | E26:=$D$4 & "-" & F27 | F26: | G26: | H26: | I26:
+R27| A27:'Marca:' | B27:'Fluke' | C27:'No. Certif:' | D27:'MMI-CC-P-0012-2025' | E27:=$D$4 & "-" & F28 | F27:50 | G27: | H27: | I27:
+R28| A28:'Modelo:' | B28:'PV 350' | C28:'Fecha Cal:' | D28:datetime.datetime(2025, 1, 7, 0, 0) | E28:=$D$4 & "-" & F29 | F28:100 | G28: | H28: | I28:
+R29| A29:'No. De Serie:' | B29:'AGPV-001' | C29:'Vigencia:' | D29:datetime.datetime(2026, 1, 7, 0, 0) | E29:=$D$4 & "-" & F30 | F29:150 | G29: | H29: | I29:
+R30| A30:'Intervalo alcance:' | B30:'0 a 350 psi' | C30: | D30: | E30:=$D$4 & "-" & F31 | F30:200 | G30: | H30: | I30:
+R31| A31: | B31: | C31: | D31: | E31:=$D$4 & "-" & F32 | F31:250 | G31: | H31: | I31:
+R32| A32: | B32: | C32: | D32: | E32: | F32:300 | G32: | H32: | I32:
+R33| A33: | B33: | C33: | D33: | E33: | F33:350 | G33: | H33: | I33:
+R34| A34: | B34: | C34: | D34: | E34: | F34: | G34: | H34: | I34:
+R35| A35: | B35: | C35: | D35: | E35: | F35: | G35: | H35: | I35:
+R36| A36: | B36: | C36: | D36: | E36: | F36: | G36: | H36: | I36:
+R37| A37: | B37: | C37: | D37: | E37:'En kPa (equiv.)' | F37: | G37: | H37: | I37:
+R38| A38: | B38: | C38: | D38: | E38:'-77.9 a 2416.5 kPa' | F38: | G38: | H38: | I38:
+R39| A39: | B39: | C39: | D39: | E39:'0 a 2414 kPa' | F39: | G39: | H39: | I39:
+R40| A40: | B40: | C40: | D40: | E40:'0 a 5171.07 kPa' | F40: | G40: | H40: | I40:'|'
+
+=== 2. All formulas containing Patrones! ===
+Portada!B46: =IFERROR(INDEX(Patrones!$B$62:$B$80,MATCH(D46,Patrones!$A$62:$A$80,0)),"")
+Portada!E46: =IFERROR(INDEX(Patrones!$F$62:$F$80,MATCH(D46,Patrones!$A$62:$A$80,0)),"")
+Portada!F46: =IFERROR(INDEX(Patrones!$C$62:$C$80,MATCH(D46,Patrones!$A$62:$A$80,0)),"")
+Portada!G46: =IFERROR(INDEX(Patrones!$D$62:$D$80,MATCH(D46,Patrones!$A$62:$A$80,0)),"")
+Portada!H46: =IFERROR(INDEX(Patrones!$E$62:$E$80,MATCH(D46,Patrones!$A$62:$A$80,0)),"")
+Portada!I46: =IFERROR(VALUE(INDEX(Patrones!$H$62:$H$80,MATCH(D46,Patrones!$A$62:$A$80,0))),IFERROR(DATEVALUE(INDEX(Patrones!$H$62:$H$80,MATCH(D46,Patrones!$A$62:$A$80,0))),""))
+Portada!B47: =IF(Calculos!$F$10>Patrones!$F$16,Calculos!$M$5,"")
+Portada!D47: =IF(Calculos!$F$10>Patrones!$F$16,Calculos!$N$5,"")
+Portada!E47: =IF(Calculos!$F$10>Patrones!$F$16,Calculos!$O$5,"")
+Portada!F47: =IF(Calculos!$F$10>Patrones!$F$16,Calculos!$P$5,"")
+Portada!G47: =IF(Calculos!$F$10>Patrones!$F$16,Calculos!$Q$5,"")
+Portada!H47: =IF(Calculos!$F$10>Patrones!$F$16,Calculos!$R$5,"")
+Portada!E48: =IFERROR(IF(INDEX(Patrones!$J$62:$J$80,MATCH(D46,Patrones!$A$62:$A$80,0))="Vencido","PATRON VENCIDO",IF(INDEX(Patrones!$J$62:$J$80,MATCH(D46,Patrones!$A$62:$A$80,0))="Por Vencer","PATRON POR VENCER",IF(LEFT(INDEX(Patrones!$J$62:$J$80,MATCH(D46,Patrones!$A$62:$A$80,0)),13)="No disponible","PATRON NO DISPONIBLE",IF(INDEX(Patrones!$J$62:$J$80,MATCH(D46,Patrones!$A$62:$A$80,0))="Vigente","Patron Vigente",IF(AND(ISNUMBER(I46),I46<TODAY()),"PATRON VENCIDO",IF(AND(ISNUMBER(I46),I46>=TODAY()),"Patron Vigente","Revisar vigencia")))))), "Sin datos de patron en app")
+Calculos!M4: =Patrones!B20
+Calculos!N4: =Patrones!D20
+Calculos!O4: =Patrones!D21
+Calculos!P4: =Patrones!B21
+Calculos!Q4: =Patrones!B22
+Calculos!R4: =Patrones!B23
+Calculos!S4: =Patrones!D23
+Calculos!M5: =Patrones!B4
+Calculos!N5: =Patrones!D4
+Calculos!O5: =Patrones!D5
+Calculos!P5: =Patrones!B5
+Calculos!Q5: =Patrones!B6
+Calculos!R5: =Patrones!B7
+Calculos!S5: =Patrones!D7
+Calculos!V28: =IF(O28<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y28: =IF(O28<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V29: =IF(O29<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O29,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y29: =IF(O29<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O29,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V30: =IF(O30<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O30,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y30: =IF(O30<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O30,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V31: =IF(O31<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O31,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y31: =IF(O31<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O31,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V32: =IF(O32<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O32,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y32: =IF(O32<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O32,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V33: =IF(O33<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O33,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y33: =IF(O33<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O33,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V34: =IF(O34<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O34,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y34: =IF(O34<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O34,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V35: =IF(O35<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O35,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y35: =IF(O35<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O35,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V36: =IF(O36<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O36,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y36: =IF(O36<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O36,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V37: =IF(O37<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O37,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y37: =IF(O37<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O37,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V38: =IF(O38<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O38,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y38: =IF(O38<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O38,Patrones!$F$6:$I$26,2,TRUE))
+
+Total Patrones! references: 49
+
+=== 3. Calculos - key cells (Nominal/Patron/Incertidumbre/EMP) ===
+Calculos!M1: Patrones
+Calculos!A4: =VLOOKUP(B5,#REF!,2,TRUE)
+Calculos!I4: =IFERROR(IF(INDEX(Historial!$M:$M,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0))="",IF(OR(K4="Sitio",K4="sitio"),"Servicio en Sitio",""),IFERROR(VALUE(INDEX(Historial!$M:$M,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0))),INDEX(Historial!$M:$M,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)))),IF(OR(K4="Sitio",K4="sitio"),"Servicio en Sitio",""))
+Calculos!K4: =IFERROR(INDEX(Historial!$K:$K,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")
+Calculos!M4: =Patrones!B20
+Calculos!N4: =Patrones!D20
+Calculos!O4: =Patrones!D21
+Calculos!P4: =Patrones!B21
+Calculos!Q4: =Patrones!B22
+Calculos!R4: =Patrones!B23
+Calculos!S4: =Patrones!D23
+Calculos!B5: =IFERROR(INDEX(Historial!$C:$C,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")
+Calculos!E5: =IFERROR(VLOOKUP(B5,BD_Clientes!A:H,4,FALSE),"")
+Calculos!I5: =IFERROR(VALUE(INDEX(Historial!$I:$I,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0))),"")
+Calculos!M5: =Patrones!B4
+Calculos!N5: =Patrones!D4
+Calculos!O5: =Patrones!D5
+Calculos!P5: =Patrones!B5
+Calculos!Q5: =Patrones!B6
+Calculos!R5: =Patrones!B7
+Calculos!S5: =Patrones!D7
+Calculos!B6: =IFERROR(VLOOKUP(B5,BD_Clientes!A:H,2,FALSE),"")
+Calculos!E6: =IFERROR(VLOOKUP(B5,BD_Clientes!A:H,5,FALSE),"")
+Calculos!I6: =IFERROR(EDATE(I5,IF(INDEX(Historial!$L:$L,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0))="6 meses",6,12)),"")
+Calculos!B7: =IFERROR(VLOOKUP(B5,BD_Clientes!A:H,3,FALSE),"")
+Calculos!I8: =IF(OR(I5="",I6="",I7=""), "⚪ ESPERANDO DATOS", IF(I7<I5, "❌ ERROR: ANTES DE CALIBRACIÓN", IF(I7>I6, "❌ ERROR: EQUIPO VENCIDO", IF(NETWORKDAYS(I5, I7)>6, "❌ FUERA DE TIEMPO (PASADO POR " & NETWORKDAYS(I5, I7)-6 & " DÍAS)", "✅ TIEMPO CORRECTO (QUEDAN " & 6-NETWORKDAYS(I5, I7) & " DÍAS)"))))
+Calculos!M8: =IFERROR(INDEX(Historial!$J:$J,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")
+Calculos!B9: =IFERROR(INDEX(Historial!$D:$D,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"No encontrado")
+Calculos!F9: =IFERROR(INDEX(Historial!$H:$H,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")
+Calculos!B10: =IFERROR(INDEX(Historial!$E:$E,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"No encontrado")
+Calculos!B11: =IFERROR(INDEX(Historial!$F:$F,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")
+Calculos!B12: =IFERROR(INDEX(Historial!$G:$G,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")
+Calculos!E13: Temperatura I  °C:
+Calculos!H13: Temperatura F  °C:
+Calculos!A15: EMP de acuerdo a:
+Calculos!N24: Cálculos de incertidumbre
+Calculos!Q25: EMP
+Calculos!R25: errVsEMP
+Calculos!S25: err+UE vs EMP
+Calculos!V28: =IF(O28<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y28: =IF(O28<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V29: =IF(O29<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O29,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y29: =IF(O29<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O29,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V30: =IF(O30<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O30,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y30: =IF(O30<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O30,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V31: =IF(O31<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O31,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y31: =IF(O31<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O31,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V32: =IF(O32<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O32,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y32: =IF(O32<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O32,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V33: =IF(O33<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O33,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y33: =IF(O33<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O33,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V34: =IF(O34<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O34,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y34: =IF(O34<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O34,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V35: =IF(O35<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O35,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y35: =IF(O35<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O35,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V36: =IF(O36<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O36,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y36: =IF(O36<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O36,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V37: =IF(O37<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O37,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y37: =IF(O37<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O37,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V38: =IF(O38<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O38,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y38: =IF(O38<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O38,Patrones!$F$6:$I$26,2,TRUE))
+
+=== 4. VLOOKUP/INDEX/MATCH on EMP (all sheets) ===
+
+=== Patrones row 1 headers (A through I and beyond to M) ===
+A1: 'Patrón'
+B1: None
+C1: None
+D1: None
+E1: None
+F1: None
+G1: None
+H1: None
+I1: None
+J1: None
+K1: None
+L1: None
+M1: None

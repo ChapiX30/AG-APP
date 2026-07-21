@@ -134,6 +134,10 @@ const normalizePatron = (raw: Partial<RegistroPatron> & Record<string, unknown>)
   };
 };
 
+/** Firestore rechaza campos con valor `undefined`; solo escribe claves definidas. */
+const toFirestorePayload = (data: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+
 /** Catálogo local + Firestore; el remoto gana en campos en conflicto. */
 const mergePatronesInventario = (
   firebaseItems: RegistroPatron[],
@@ -317,16 +321,15 @@ const usePatronesLogic = (actorName: string) => {
     }
 
     const docId = patronFirestoreDocId(noControl);
-    const fechaVenc = datos.fechaVencimiento || datos.fecha || '';
-    const nuevo: RegistroPatron = normalizePatron({
+    const fechaVenc = (datos.fechaVencimiento || datos.fecha || '').trim();
+    const nuevo = normalizePatron({
       noControl,
       descripcion: (datos.descripcion || '').trim(),
       marca: (datos.marca || '').trim(),
       modelo: (datos.modelo || '').trim(),
       serie: (datos.serie || '').trim(),
-      frecuenciaMeses: datos.frecuenciaMeses ?? 12,
-      fecha: fechaVenc || undefined,
-      fechaVencimiento: fechaVenc || undefined,
+      frecuenciaMeses: Number(datos.frecuenciaMeses) > 0 ? Number(datos.frecuenciaMeses) : 12,
+      ...(fechaVenc ? { fecha: fechaVenc, fechaVencimiento: fechaVenc } : {}),
       estadoProceso: 'operativo',
       ubicacionActual: 'Laboratorio',
       ubicacion: 'Laboratorio',
@@ -342,14 +345,25 @@ const usePatronesLogic = (actorName: string) => {
       id: docId,
     });
 
+    // No persistir `id` como campo; el ID del documento ya es docId.
+    const { id: _omitId, ...datosSinId } = nuevo;
+    const payload = toFirestorePayload(datosSinId as Record<string, unknown>);
+
     try {
-      await setDoc(doc(db, COLLECTION_NAME, docId), nuevo, { merge: true });
+      await setDoc(doc(db, COLLECTION_NAME, docId), payload, { merge: true });
       await fetchData();
       toast.success(`Patrón ${noControl} agregado correctamente.`);
       return true;
     } catch (e) {
       console.error('Error al agregar patrón:', e);
-      toast.error('No se pudo guardar el patrón. Verifique permisos y conexión.');
+      const code = e instanceof FirebaseError ? e.code : '';
+      if (code === 'permission-denied') {
+        toast.error('No tiene permiso para agregar patrones. Se requiere rol de calidad, técnico, metrólogo, gerente o admin.');
+      } else if (code === 'unavailable' || code === 'deadline-exceeded') {
+        toast.error('Sin conexión con el servidor. Intente de nuevo.');
+      } else {
+        toast.error('No se pudo guardar el patrón. Revise los datos e intente de nuevo.');
+      }
       return false;
     }
   };
@@ -442,6 +456,7 @@ const usePatronesLogic = (actorName: string) => {
       costo: 0,
     };
 
+    const noCert = formData.certificado?.trim() || '';
     const payload: Record<string, unknown> = {
       noControl: remoto.noControl || patron.noControl,
       descripcion: remoto.descripcion || patron.descripcion,
@@ -457,6 +472,8 @@ const usePatronesLogic = (actorName: string) => {
       historial: [nuevoHistorial, ...(remoto.historial || [])],
       costoAcumuladoMantenimiento: remoto.costoAcumuladoMantenimiento ?? 0,
     };
+    // Número de certificado en raíz (patrones de una sola parte / Excel sync)
+    if (noCert) payload.noCertificado = noCert;
     if (partes) payload.partesCalibracion = partes;
 
     try {

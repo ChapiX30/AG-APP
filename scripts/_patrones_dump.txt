@@ -1,0 +1,55 @@
+R1: A1='Patrón'
+R4: A4='Instrumento:' | B4='Manometro Omega' | C4='ID:' | D4='AG-008' | E4='Resultados en psi' | K4='Status app:'
+R5: A5='Marca:' | B5='OMEGA' | C5='No. Certif:' | D5='1-24842' | E5='AG-008 Omega 1-24842' | F5='Nominal' | G5='Sesgo' | H5='Incert. U(k=2)' | I5='EMP±'
+R6: A6='Modelo:' | B6='DPG-4000-10K' | C6='Fecha Cal:' | D6=datetime.datetime(2025, 2, 4, 0, 0) | E6='=$D$4&"-"&TEXT(F6,"0")' | F6=0 | G6=0 | H6=0.58 | I6=0.58
+R7: A7='No. De Serie:' | B7=9941257 | C7='Vigencia:' | D7=datetime.datetime(2027, 3, 10, 0, 0) | E7='=$D$4&"-"&TEXT(F7,"0")' | F7=1000 | G7=0.24 | H7=0.86 | I7=1.1
+R8: A8='Intérvalo alcance: ' | B8='10000 psi' | E8='=$D$4&"-"&TEXT(F8,"0")' | F8=2000 | G8=-0.41 | H8=0.88 | I8=1.29
+R9: E9='=$D$4&"-"&TEXT(F9,"0")' | F9=3000 | G9=0.48 | H9=0.85 | I9=1.33
+R10: E10='=$D$4&"-"&TEXT(F10,"0")' | F10=4000 | G10=-0.1 | H10=0.67 | I10=0.77
+R11: E11='=$D$4&"-"&TEXT(F11,"0")' | F11=5000 | G11=1.35 | H11=0.92 | I11=2.27
+R12: E12='=$D$4&"-"&TEXT(F12,"0")' | F12=6000 | G12=1.77 | H12=0.95 | I12=2.72
+R13: E13='=$D$4&"-"&TEXT(F13,"0")' | F13=7000 | G13=1.77 | H13=0.98 | I13=2.75
+R14: E14='=$D$4&"-"&TEXT(F14,"0")' | F14=8000 | G14=0.49 | H14=0.98 | I14=1.47
+R15: E15='=$D$4&"-"&TEXT(F15,"0")' | F15=9000 | G15=0.95 | H15=0.84 | I15=1.79
+R16: E16='=$D$4&"-"&TEXT(F16,"0")' | F16=10000 | G16=2.04 | H16=0.9 | I16=2.94
+R17: A17='Patrón'
+R20: A20='Instrumento:' | B20='Manómetro Druck' | C20='ID:' | D20='AG-052' | K20='Status app:'
+R21: A21='Marca:' | B21='Druck' | C21='No. Certif:' | D21='1-23207'
+R22: A22='Modelo:' | B22='DPI104' | C22='Fecha Cal:' | D22=datetime.datetime(2024, 11, 28, 0, 0)
+R23: A23='No. De Serie:' | B23=5335895 | C23='Vigencia:' | D23=datetime.datetime(2027, 5, 4, 0, 0)
+R24: A24='Intérvalo alcance: ' | B24='1000 psi'
+R26: A26='Instrumento:' | B26='Transductor de presión PV 350' | C26='ID:' | D26='AG-034' | K26='Status app:'
+R27: A27='Marca:' | B27='Fluke' | C27='No. Certif:' | D27='MMI-CC-P-0012-2025'
+R28: A28='Modelo:' | B28='PV 350' | C28='Fecha Cal:' | D28=datetime.datetime(2025, 1, 7, 0, 0)
+R29: A29='No. De Serie:' | B29='AGPV-001' | C29='Vigencia:' | D29=datetime.datetime(2026, 1, 7, 0, 0)
+R30: A30='Intervalo alcance:' | B30='0 a 350 psi'
+R31: E31='AG-034 Fluke PV350 MMI-CC-P-0012-2025' | F31='Nominal' | G31='Sesgo' | H31='Incert. U(k=2)' | I31='EMP±'
+R32: E32='=$D$26&"-"&TEXT(F32,"0")' | F32=35 | G32=-0.08 | H32=0.021 | I32=0.101
+R33: E33='=$D$26&"-"&TEXT(F33,"0")' | F33=70 | G33=-0.16 | H33=0.02 | I33=0.18
+R34: E34='=$D$26&"-"&TEXT(F34,"0")' | F34=105 | G34=-0.22 | H34=0.027 | I34=0.247
+R35: E35='=$D$26&"-"&TEXT(F35,"0")' | F35=140 | G35=-0.27 | H35=0.035 | I35=0.305
+R36: E36='=$D$26&"-"&TEXT(F36,"0")' | F36=175 | G36=-0.3 | H36=0.038 | I36=0.338
+R37: E37='=$D$26&"-"&TEXT(F37,"0")' | F37=210 | G37=-0.36 | H37=0.038 | I37=0.398
+R38: E38='=$D$26&"-"&TEXT(F38,"0")' | F38=245 | G38=-0.39 | H38=0.039 | I38=0.429
+R39: E39='=$D$26&"-"&TEXT(F39,"0")' | F39=280 | G39=-0.41 | H39=0.04 | I39=0.45
+R40: E40='=$D$26&"-"&TEXT(F40,"0")' | F40=315 | G40=-0.41 | H40=0.032 | I40=0.442
+R41: E41='=$D$26&"-"&TEXT(F41,"0")' | F41=350 | G41=-0.38 | H41=0.035 | I41=0.415
+R43: E43='AG-052 Druck 1-23207' | F43='Nominal' | G43='Sesgo' | H43='Incert. U(k=2)' | I43='EMP±'
+R44: E44='=$D$20&"-"&TEXT(F44,"0")' | F44=0 | G44=0 | H44=0.058 | I44=0.058
+R45: A45='Conversiones' | E45='=$D$20&"-"&TEXT(F45,"0")' | F45=100 | G45=0.044 | H45=0.082 | I45=0.126
+R46: E46='=$D$20&"-"&TEXT(F46,"0")' | F46=200 | G46=0.093 | H46=0.058 | I46=0.151
+R47: E47='=$D$20&"-"&TEXT(F47,"0")' | F47=300 | G47=0.092 | H47=0.059 | I47=0.151
+R48: E48='=$D$20&"-"&TEXT(F48,"0")' | F48=400 | G48=0.191 | H48=0.059 | I48=0.25
+R49: A49='psi' | B49='Pa' | C49='Mpa' | D49='kPa' | E49='=$D$20&"-"&TEXT(F49,"0")' | F49=500 | G49=0.199 | H49=0.06 | I49=0.259
+R50: A50='=B50*0.0001450377' | B50=-100000 | C50='=B50*0.0001' | D50='=B50*0.001' | E50='=$D$20&"-"&TEXT(F50,"0")' | F50=600 | G50=0.198 | H50=0.061 | I50=0.259
+R51: A51='=B51*0.0001450377' | B51=1 | C51='=B51*0.0001' | D51='=B51*0.001' | E51='=$D$20&"-"&TEXT(F51,"0")' | F51=700 | G51=0.293 | H51=0.063 | I51=0.356
+R52: A52='=B52*0.0001450377' | B52=1000000 | E52='=$D$20&"-"&TEXT(F52,"0")' | F52=800 | G52=0.293 | H52=0.064 | I52=0.357
+R53: A53='=B53*0.0001450377' | B53=10000000 | E53='=$D$20&"-"&TEXT(F53,"0")' | F53=900 | G53=0.297 | H53=0.072 | I53=0.369
+R54: A54='=B54*0.0001450377' | B54=10000 | E54='=$D$20&"-"&TEXT(F54,"0")' | F54=1000 | G54=0.323 | H54=0.089 | I54=0.412
+R56: E56='Fuente: PDFs cert. EMP±=|sesgo|+U. Calculos!N12 elige tabla (≤350 AG-034 | ≤750 AG-052 | else AG-00
+R60: A60='Patrones desde la app (patronesCalibracion) — sync automatico'
+R61: A61='noControl' | B61='descripcion' | C61='marca' | D61='modelo' | E61='serie' | F61='noCertificado' | G61='fechaUltimaCalibracion' | H61='fechaVencimiento' | I61='estadoProceso' | J61='statusVigencia'
+R62: A62='AG-034' | B62='Transductor de presión PV 350' | C62='Fluke' | D62='PV 350' | E62='AGPV-001' | F62='MMI-CC-P-0012-2025' | H62='2026-01-07' | I62='operativo' | J62='Vencido'
+R63: A63='AG-052' | B63='Manómetro Druck' | C63='Druck' | D63='DPI104' | E63='5335895' | F63='1-23207' | G63='2026-05-11' | H63='2027-05-04' | I63='operativo' | J63='Vigente'
+R64: A64='AG-008' | B64='Manometro Omega' | C64='OMEGA' | D64='DPG-4000-10K' | E64='9941257' | F64='1-24842' | G64='2026-05-07' | H64='2027-03-10' | I64='operativo' | J64='Vigente'
+R66: A66='Regla Portada: <=350 AG-034 | <=750 AG-052 | >750 AG-008. Vigencia = fecha de la app.'

@@ -17,6 +17,8 @@ export async function requestVacationRhEmailRetry(solicitud: SolicitudVacaciones
   const patch: Record<string, unknown> = {
     correoEnviado: false,
     correoRhProcesando: deleteField(),
+    reintentarCorreoRh: true,
+    pdfIntentos: 0,
     updatedAt: serverTimestamp(),
   };
 

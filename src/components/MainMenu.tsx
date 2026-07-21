@@ -1462,6 +1462,13 @@ export const MainMenu: React.FC = () => {
     [localUser],
   );
 
+  // Formatos Máster: calidad/admin/gerencia gestionan; metrólogos entran en modo consulta (solo descarga).
+  // El puesto puede venir con o sin acento ("Metrólogo" / "Metrologo").
+  const canOpenFormatos = useMemo(
+    () => isAdmin || isCalidad || isJefe || isSuperAdmin || /metr[oó]l/i.test(localUser?.role || ''),
+    [isAdmin, isCalidad, isJefe, isSuperAdmin, localUser],
+  );
+
   const permittedMenu = useMemo(() => {
     if (!localUser) return [];
     return MENU_ITEMS.filter(item => {
@@ -1786,7 +1793,7 @@ export const MainMenu: React.FC = () => {
                                 item={item}
                                 index={i}
                                 hideCategory={!isSearching}
-                                isDisabled={item.id === 'formatos' && !isAdmin}
+                                isDisabled={item.id === 'formatos' && !canOpenFormatos}
                                 onNavigate={navigateTo}
                                 badgeCount={
                                   item.id === 'calendario' && canSeePatronAlerts
@@ -1821,7 +1828,7 @@ export const MainMenu: React.FC = () => {
                                 key={item.id}
                                 item={item}
                                 index={i}
-                                isDisabled={item.id === 'formatos' && !isAdmin}
+                                isDisabled={item.id === 'formatos' && !canOpenFormatos}
                                 onNavigate={navigateTo}
                                 badgeCount={
                                   item.id === 'calendario' && canSeePatronAlerts

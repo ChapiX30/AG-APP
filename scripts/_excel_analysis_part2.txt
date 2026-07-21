@@ -1,0 +1,73 @@
+=== Patrones E5:I5 and F17 label row ===
+E5=100 | F5='Nominal' | G5=0.058 | H5=0.375 | I5='EMP±'
+E17='=$D$4 & "-" & F18' | F17=2000 | G17=0 | H17=0.87 | I17=5
+E29='=$D$4 & "-" & F30' | F29=150 | G29=None | H29=None | I29=None
+E30='=$D$4 & "-" & F31' | F30=200 | G30=None | H30=None | I30=None
+E31='=$D$4 & "-" & F32' | F31=250 | G31=None | H31=None | I31=None
+E32=None | F32=300 | G32=None | H32=None | I32=None
+E33=None | F33=350 | G33=None | H33=None | I33=None
+E34=None | F34=None | G34=None | H34=None | I34=None
+E35=None | F35=None | G35=None | H35=None | I35=None
+
+=== Patrones rows 29-35 A-I ===
+R29| A29:'No. De Serie:' | B29:'AGPV-001' | C29:'Vigencia:' | D29:datetime.datetime(2026, 1, 7, 0, 0) | E29:=$D$4 & "-" & F30 | F29:150 | G29:None | H29:None | I29:None
+R30| A30:'Intervalo alcance:' | B30:'0 a 350 psi' | C30:None | D30:None | E30:=$D$4 & "-" & F31 | F30:200 | G30:None | H30:None | I30:None
+R31| A31:None | B31:None | C31:None | D31:None | E31:=$D$4 & "-" & F32 | F31:250 | G31:None | H31:None | I31:None
+R32| A32:None | B32:None | C32:None | D32:None | E32:None | F32:300 | G32:None | H32:None | I32:None
+R33| A33:None | B33:None | C33:None | D33:None | E33:None | F33:350 | G33:None | H33:None | I33:None
+R34| A34:None | B34:None | C34:None | D34:None | E34:None | F34:None | G34:None | H34:None | I34:None
+R35| A35:None | B35:None | C35:None | D35:None | E35:None | F35:None | G35:None | H35:None | I35:None
+
+=== Patrones A62:J65 (catalog header area) ===
+A60:'Patrones desde la app (patronesCalibracion) — sync automatico' | B60:None | C60:None | D60:None | E60:None | F60:None | G60:None | H60:None | I60:None | J60:None
+A61:'noControl' | B61:'descripcion' | C61:'marca' | D61:'modelo' | E61:'serie' | F61:'noCertificado' | G61:'fechaUltimaCalibracion' | H61:'fechaVencimiento' | I61:'estadoProceso' | J61:'statusVigencia'
+A62:'AG-034' | B62:'Transductor de presión PV 350' | C62:'Fluke' | D62:'PV 350' | E62:'AGPV-001' | F62:'MMI-CC-P-0012-2025' | G62:None | H62:'2026-01-07' | I62:'operativo' | J62:'Vencido'
+A63:'AG-052' | B63:'Manómetro Druck' | C63:'Druck' | D63:'DPI104' | E63:'5335895' | F63:'1-23207' | G63:'2026-05-11' | H63:'2027-05-04' | I63:'operativo' | J63:'Vigente'
+A64:'AG-008' | B64:'Manometro Omega' | C64:'OMEGA' | D64:'DPG-4000-10K' | E64:'9941257' | F64:'1-24842' | G64:'2026-05-07' | H64:'2027-03-10' | I64:'operativo' | J64:'Vigente'
+A65:None | B65:None | C65:None | D65:None | E65:None | F65:None | G65:None | H65:None | I65:None | J65:None
+
+=== Calculos rows 24-28 cols N-Y ===
+R24: N24:'Cálculos de incertidumbre'
+R25: N25:'Promedio' | O25:'Promedio' | P25:'Error Absoluto de medición' | Q25:'EMP' | R25:'errVsEMP' | S25:'err+UE vs EMP' | T25:'desv' | U25:'u' | V25:'u' | W25:'u' | X25:'u' | Y25:'u'
+R26: N26:'IBC' | O26:'Patrón' | T26:'est' | U26:'rep' | V26:'patK2' | W26:'patK1' | X26:'resoIBC' | Y26:'errPatK2'
+R27: N27:'=K27' | O27:'=N27' | P27:'=N27' | Q27:'=P27' | R27:'x' | S27:'x' | T27:'=Q27' | U27:'=T27' | V27:'=U27' | W27:'=V27' | X27:'=W27' | Y27:'psi'
+R28: N28:'=IF(C28=0,"",AVERAGE(C28:F28))' | O28:'=IF(H28=0,"",AVERAGE(H28:K28))' | P28:'=IF(N28="","",(N28)-O28)' | Q28:'=J9' | R28:'=IF(ABS(P28)>Q28,"RECHAZADO","ACEPTADO")' | S28:'=IF(P28="","",IF(ABS(P28)+(AE28)>Q28,"RECHAZADO","ACEPTADO"))' | T28:'=STDEV(H28:K28)' | U28:'=T28/SQRT(4)' | V28:'=IF(O28<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,3,TRUE))' | W28:'=V28/2' | X28:'=$J$12/SQRT(12)' | Y28:'=IF(O28<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,2,TRUE))'
+
+=== Calculos O28, P28, Q28, R28, S28, T28, U28, V28, W28, X28, Y28 ===
+O28: '=IF(H28=0,"",AVERAGE(H28:K28))'
+P28: '=IF(N28="","",(N28)-O28)'
+Q28: '=J9'
+R28: '=IF(ABS(P28)>Q28,"RECHAZADO","ACEPTADO")'
+S28: '=IF(P28="","",IF(ABS(P28)+(AE28)>Q28,"RECHAZADO","ACEPTADO"))'
+T28: '=STDEV(H28:K28)'
+U28: '=T28/SQRT(4)'
+V28: '=IF(O28<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,3,TRUE))'
+W28: '=V28/2'
+X28: '=$J$12/SQRT(12)'
+Y28: '=IF(O28<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,2,TRUE))'
+
+=== Any formula referencing Patrones col I or VLOOKUP col 4 ===
+Calculos!V28: =IF(O28<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y28: =IF(O28<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O28,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V29: =IF(O29<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O29,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y29: =IF(O29<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O29,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V30: =IF(O30<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O30,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y30: =IF(O30<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O30,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V31: =IF(O31<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O31,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y31: =IF(O31<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O31,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V32: =IF(O32<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O32,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y32: =IF(O32<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O32,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V33: =IF(O33<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O33,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y33: =IF(O33<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O33,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V34: =IF(O34<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O34,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y34: =IF(O34<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O34,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V35: =IF(O35<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O35,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y35: =IF(O35<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O35,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V36: =IF(O36<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O36,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y36: =IF(O36<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O36,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V37: =IF(O37<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O37,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y37: =IF(O37<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O37,Patrones!$F$6:$I$26,2,TRUE))
+Calculos!V38: =IF(O38<Patrones!$F$7,Patrones!$H$6,VLOOKUP(Calculos!O38,Patrones!$F$6:$I$26,3,TRUE))
+Calculos!Y38: =IF(O38<Patrones!$F$7,Patrones!$G$6,VLOOKUP(Calculos!O38,Patrones!$F$6:$I$26,2,TRUE))
+
+=== Resultados Patrones refs ===

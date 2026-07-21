@@ -1,0 +1,27 @@
+=== DUMP Patrones F43:I68 ===
+R43	E=AG-052 Druck 1-23207	F=Nominal	G=Sesgo	H=Incert. U(k=2)	I=EMP±
+R44	E==$D$20&"-"&TEXT(F44,"0")	F=0	G=0	H=0.058	I=0.058
+R45	E==$D$20&"-"&TEXT(F45,"0")	F=100	G=0.044	H=0.082	I=0.126
+R46	E==$D$20&"-"&TEXT(F46,"0")	F=200	G=0.093	H=0.058	I=0.151
+R47	E==$D$20&"-"&TEXT(F47,"0")	F=300	G=0.092	H=0.059	I=0.151
+R48	E==$D$20&"-"&TEXT(F48,"0")	F=400	G=0.191	H=0.059	I=0.25
+R49	E==$D$20&"-"&TEXT(F49,"0")	F=500	G=0.199	H=0.06	I=0.259
+R50	E==$D$20&"-"&TEXT(F50,"0")	F=600	G=0.198	H=0.061	I=0.259
+R51	E==$D$20&"-"&TEXT(F51,"0")	F=700	G=0.293	H=0.063	I=0.356
+R52	E==$D$20&"-"&TEXT(F52,"0")	F=800	G=0.293	H=0.064	I=0.357
+R53	E==$D$20&"-"&TEXT(F53,"0")	F=900	G=0.297	H=0.072	I=0.369
+R54	E==$D$20&"-"&TEXT(F54,"0")	F=1000	G=0.323	H=0.089	I=0.41200000000000003
+R55	E=None	F=None	G=None	H=None	I=None
+R56	E=Fuente: PDFs cert. EMP±=|sesgo|+U. Calculos!N12 elige tabla (≤350 AG-034 | ≤750 AG-052 | else AG-008).	F=None	G=None	H=None	I=None
+R57	E=None	F=None	G=None	H=None	I=None
+R58	E=None	F=None	G=None	H=None	I=None
+R59	E=None	F=None	G=None	H=None	I=None
+R60	E=None	F=None	G=None	H=None	I=None
+R61	E=serie	F=noCertificado	G=fechaUltimaCalibracion	H=fechaVencimiento	I=estadoProceso
+R62	E=AGPV-001	F=MMI-CC-P-0012-2025	G=None	H=2026-01-07	I=operativo
+R63	E=5335895	F=1-23207	G=2026-05-11	H=2027-05-04	I=operativo
+R64	E=9941257	F=1-24842	G=2026-05-07	H=2027-03-10	I=operativo
+R65	E=None	F=None	G=None	H=None	I=None
+R66	E=None	F=None	G=None	H=None	I=None
+R67	E=None	F=None	G=None	H=None	I=None
+R68	E=None	F=None	G=None	H=None	I=None

@@ -552,17 +552,17 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
                         CALIBRADO
                     </div>
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', padding: '2px 4px 2px 4px', fontSize: '10px', fontWeight: '600', lineHeight: 1.15 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>Cert: {data.certificado}</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px' }}>
+                            <span style={{ flex: '1.15 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
+                            <span style={{ flex: '0.85 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>Cert: {data.certificado}</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.CAL: {data.fechaCal}</span>
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>CALIBRÓ: {data.calibro}</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px' }}>
+                            <span style={{ flex: '1.15 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.CAL: {data.fechaCal}</span>
+                            <span style={{ flex: '0.85 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>CALIBRÓ: {data.calibro}</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', alignItems: 'baseline' }}>
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.SUG: {data.fechaSug}</span>
-                            <span style={{ marginLeft: 'auto', fontSize: '8px', fontStyle: 'italic', textAlign: 'right', paddingLeft: '8px' }}>AG-CAL-F14-00</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'baseline' }}>
+                            <span style={{ flex: '1.15 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.SUG: {data.fechaSug}</span>
+                            <span style={{ flex: '0.85 1 0', fontSize: '8px', textAlign: 'right' }}>AG-CAL-F14-00</span>
                         </div>
                     </div>
                 </div>

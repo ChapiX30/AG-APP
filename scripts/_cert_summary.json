@@ -1,0 +1,247 @@
+{
+  "AG-034": {
+    "cert": "MMI-CC-P-0012-2025",
+    "servicio": "MMI-OS-0004-2025",
+    "id": "AG-034",
+    "modelo": "PV350",
+    "serie": "AGPV-001",
+    "rango": "0-350 psi (0-2413 kPa)",
+    "fecha_cal": "2025-01-07",
+    "fecha_emision": "2025-01-09",
+    "error_max_psi": "-0.41",
+    "Umax_k2_psi": "0.040",
+    "unidades_tabla": "psi/kPa",
+    "filas": [
+      {
+        "patron_kPa": "241.45",
+        "patron_psi": "35.02",
+        "ibc_psi": "34.94",
+        "error_psi": "-0.08",
+        "error_pct_AI": "-0.023%",
+        "U_k2_psi": "0.021",
+        "U_pct_AI": "0.0059%"
+      },
+      {
+        "patron_kPa": "482.89",
+        "patron_psi": "70.04",
+        "ibc_psi": "69.88",
+        "error_psi": "-0.16",
+        "error_pct_AI": "-0.046%",
+        "U_k2_psi": "0.020",
+        "U_pct_AI": "0.0058%"
+      },
+      {
+        "patron_kPa": "723.98",
+        "patron_psi": "105.00",
+        "ibc_psi": "104.78",
+        "error_psi": "-0.22",
+        "error_pct_AI": "-0.063%",
+        "U_k2_psi": "0.027",
+        "U_pct_AI": "0.0078%"
+      },
+      {
+        "patron_kPa": "965.26",
+        "patron_psi": "140.00",
+        "ibc_psi": "139.73",
+        "error_psi": "-0.27",
+        "error_pct_AI": "-0.077%",
+        "U_k2_psi": "0.035",
+        "U_pct_AI": "0.0099%"
+      },
+      {
+        "patron_kPa": "1206.49",
+        "patron_psi": "174.99",
+        "ibc_psi": "174.69",
+        "error_psi": "-0.30",
+        "error_pct_AI": "-0.086%",
+        "U_k2_psi": "0.038",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "1447.91",
+        "patron_psi": "210.00",
+        "ibc_psi": "209.64",
+        "error_psi": "-0.36",
+        "error_pct_AI": "-0.103%",
+        "U_k2_psi": "0.038",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "1689.15",
+        "patron_psi": "244.99",
+        "ibc_psi": "244.60",
+        "error_psi": "-0.39",
+        "error_pct_AI": "-0.111%",
+        "U_k2_psi": "0.039",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "1930.79",
+        "patron_psi": "280.04",
+        "ibc_psi": "279.63",
+        "error_psi": "-0.41",
+        "error_pct_AI": "-0.117%",
+        "U_k2_psi": "0.040",
+        "U_pct_AI": "0.011%"
+      },
+      {
+        "patron_kPa": "2171.83",
+        "patron_psi": "315.00",
+        "ibc_psi": "314.59",
+        "error_psi": "-0.41",
+        "error_pct_AI": "-0.117%",
+        "U_k2_psi": "0.032",
+        "U_pct_AI": "0.0093%"
+      },
+      {
+        "patron_kPa": "2413.21",
+        "patron_psi": "350.01",
+        "ibc_psi": "349.63",
+        "error_psi": "-0.38",
+        "error_pct_AI": "-0.109%",
+        "U_k2_psi": "0.035",
+        "U_pct_AI": "0.010%"
+      }
+    ]
+  },
+  "AG-052": {
+    "cert": "1-23207",
+    "id": "AG-052",
+    "marca": "Druck",
+    "modelo": "DPI104",
+    "serie": "5335895",
+    "rango": "0-1000 psi",
+    "fecha_recepcion": "2024-11-25",
+    "fecha_cal": "2024-11-28",
+    "fecha_emision": "2024-11-29",
+    "sesgo_max_psi": "0.323",
+    "Umax_psi": "0.089",
+    "filas": [
+      {
+        "punto": "0",
+        "patron_kPa": "0.00",
+        "patron_psi": "0.000",
+        "indicacion_psi": "0.0",
+        "sesgo_psi": "0.000",
+        "sesgo_pct_ET": "0,0000%",
+        "U_psi": "0.058",
+        "U_pct_ET": "±0,0058%"
+      },
+      {
+        "punto": "1",
+        "patron_kPa": "689.52",
+        "patron_psi": "100.006",
+        "indicacion_psi": "100.1",
+        "sesgo_psi": "0.044",
+        "sesgo_pct_ET": "0,0044%",
+        "U_psi": "0.082",
+        "U_pct_ET": "±0,0082%"
+      },
+      {
+        "punto": "2",
+        "patron_kPa": "1379.00",
+        "patron_psi": "200.007",
+        "indicacion_psi": "200.1",
+        "sesgo_psi": "0.093",
+        "sesgo_pct_ET": "0,0093%",
+        "U_psi": "0.058",
+        "U_pct_ET": "±0,0058%"
+      },
+      {
+        "punto": "3",
+        "patron_kPa": "2068.48",
+        "patron_psi": "300.008",
+        "indicacion_psi": "300.1",
+        "sesgo_psi": "0.092",
+        "sesgo_pct_ET": "0,0092%",
+        "U_psi": "0.059",
+        "U_pct_ET": "±0,0059%"
+      },
+      {
+        "punto": "4",
+        "patron_kPa": "2757.96",
+        "patron_psi": "400.009",
+        "indicacion_psi": "400.2",
+        "sesgo_psi": "0.191",
+        "sesgo_pct_ET": "0,0191%",
+        "U_psi": "0.059",
+        "U_pct_ET": "±0,0059%"
+      },
+      {
+        "punto": "5",
+        "patron_kPa": "3447.39",
+        "patron_psi": "500.001",
+        "indicacion_psi": "500.2",
+        "sesgo_psi": "0.199",
+        "sesgo_pct_ET": "0,0199%",
+        "U_psi": "0.060",
+        "U_pct_ET": "±0,0060%"
+      },
+      {
+        "punto": "6",
+        "patron_kPa": "4136.87",
+        "patron_psi": "600.002",
+        "indicacion_psi": "600.2",
+        "sesgo_psi": "0.198",
+        "sesgo_pct_ET": "0,0198%",
+        "U_psi": "0.061",
+        "U_pct_ET": "±0,0061%"
+      },
+      {
+        "punto": "7",
+        "patron_kPa": "4826.38",
+        "patron_psi": "700.007",
+        "indicacion_psi": "700.3",
+        "sesgo_psi": "0.293",
+        "sesgo_pct_ET": "0,0293%",
+        "U_psi": "0.063",
+        "U_pct_ET": "±0,0063%"
+      },
+      {
+        "punto": "8",
+        "patron_kPa": "5515.85",
+        "patron_psi": "800.007",
+        "indicacion_psi": "800.3",
+        "sesgo_psi": "0.293",
+        "sesgo_pct_ET": "0,0293%",
+        "U_psi": "0.064",
+        "U_pct_ET": "±0,0064%"
+      },
+      {
+        "punto": "9",
+        "patron_kPa": "6205.30",
+        "patron_psi": "900.003",
+        "indicacion_psi": "900.3",
+        "sesgo_psi": "0.297",
+        "sesgo_pct_ET": "0,0297%",
+        "U_psi": "0.072",
+        "U_pct_ET": "±0,0072%"
+      },
+      {
+        "punto": "10",
+        "patron_kPa": "6894.77",
+        "patron_psi": "1000.002",
+        "indicacion_psi": "1000.3",
+        "sesgo_psi": "0.323",
+        "sesgo_pct_ET": "0,0323%",
+        "U_psi": "0.089",
+        "U_pct_ET": "±0,0089%"
+      }
+    ]
+  },
+  "AG-008": {
+    "cert": "1-24842",
+    "id": "AG-008",
+    "marca": "OMEGA",
+    "modelo": "DPG-4000-10K",
+    "serie": "9941257",
+    "rango": "0-10000 psi",
+    "fecha_recepcion": "2025-01-29",
+    "fecha_cal": "2025-02-04",
+    "fecha_emision": "2025-02-06",
+    "sesgo_max_psi": "2.04",
+    "Umax_psi": "0.98",
+    "nota": "PDF has #DIV/0!/#VALOR! in some columns; table is 0 + 1000..10000 psi (1000 psi steps). Escala 1 low-range summary on p1 shows Excel errors.",
+    "filas": []
+  }
+}

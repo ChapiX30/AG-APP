@@ -133,48 +133,336 @@ export const agbotMonitorDiario = functions.pubsub
     });
 
 // ==================================================================
-// 5. PUENTE API PARA EXCEL
+// 5. PUENTE API PARA EXCEL (master auto / Power Query)
 // ==================================================================
+/** Clave que ya usa Formato master auto Presion.xlsm (no cambiar sin actualizar Excel). */
+const EXCEL_API_KEY = "TU_CLAVE_SECRETA_AG_APP_2026";
+
+const normalizeLugarExcel = (raw: unknown): string => {
+    const t = String(raw || "").trim().toLowerCase();
+    if (t === "laboratorio" || t === "lab") return "Laboratorio";
+    if (t === "sitio" || t.includes("sitio") || t.includes("campo")) return "Sitio";
+    if (raw === "Laboratorio" || raw === "Sitio") return String(raw);
+    return String(raw || "").trim() || "Sitio";
+};
+
+/** El master solo distingue 6 vs 12 meses en EDATE. */
+const normalizeFrecuenciaExcel = (raw: unknown): string => {
+    const t = String(raw || "").toLowerCase();
+    if (t.includes("6 mes") || t.includes("semestr")) return "6 meses";
+    if (t.includes("3 mes") || t.includes("trimest")) return "3 meses";
+    if (t.includes("2 año") || t.includes("24 mes") || t.includes("bianual")) return "24 meses";
+    return "12 meses";
+};
+
+type ExcelHistorialRow = {
+    Name: string;
+    certificado: string;
+    cliente: string;
+    equipo: string;
+    marca: string;
+    modelo: string;
+    serie: string;
+    id: string;
+    fecha: string;
+    tecnico: string;
+    lugarCalibracion: string;
+    frecuenciaCalibracion: string;
+    /** Fecha de recepción (hoja de trabajo; suele llenarse en Laboratorio). */
+    fechaRecepcion: string;
+    /** Datos de contacto del catálogo `clientes` (join por nombre). */
+    domicilio: string;
+    contacto: string;
+    correo: string;
+    telefono: string;
+};
+
+const mapHojaToExcelRow = (d: {[key: string]: any}): ExcelHistorialRow => ({
+    Name: "historial",
+    certificado: String(d.certificado || d.folio || "-").trim() || "-",
+    cliente: String(d.clienteNombre || d.cliente || "Sin Cliente").trim(),
+    equipo: String(d.equipo || d.equipoDescripcion || "Equipo").trim(),
+    marca: String(d.marca || d.equipoMarca || "").trim(),
+    modelo: String(d.modelo || d.equipoModelo || "").trim(),
+    // WorkSheetScreen guarda numeroSerie (no "serie")
+    serie: String(d.numeroSerie || d.serie || d.equipoSerie || "").trim(),
+    id: String(d.id || d.idInterno || "").trim(),
+    fecha: String(d.fecha || d.fechaServicio || "").trim(),
+    tecnico: String(d.nombre || d.tecnico || d.tecnicoResponsable || "").trim(),
+    lugarCalibracion: normalizeLugarExcel(d.lugarCalibracion),
+    frecuenciaCalibracion: normalizeFrecuenciaExcel(d.frecuenciaCalibracion),
+    fechaRecepcion: String(d.fechaRecepcion || d.fechaEntrada || "").trim(),
+    domicilio: "",
+    contacto: "",
+    correo: "",
+    telefono: "",
+});
+
+/** Normaliza razón social para cruzar hoja de trabajo ↔ catálogo clientes. */
+const normalizeClienteNombreExcel = (raw: unknown): string => {
+    const base = String(raw || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/[^A-Z0-9]+/g, " ")
+        .replace(/\b(S A DE C V|SA DE CV|S DE RL DE CV|S DE R L DE C V|SAPI DE CV|SA|CV)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    return base;
+};
+
+type ExcelClienteRow = {
+    id: string;
+    Nombre: string;
+    Domicilio: string;
+    Contacto: string;
+    Correo: string;
+    Telefono: string;
+    nombre: string;
+    direccion: string;
+    contacto: string;
+    email: string;
+    telefono: string;
+};
+
+const enrichHistorialConClientes = (
+    historial: ExcelHistorialRow[],
+    clientes: ExcelClienteRow[],
+): ExcelHistorialRow[] => {
+    const byExact = new Map<string, ExcelClienteRow>();
+    const byNorm = new Map<string, ExcelClienteRow>();
+    for (const c of clientes) {
+        const nombre = String(c.Nombre || "").trim();
+        if (!nombre) continue;
+        const exact = nombre.toUpperCase();
+        if (!byExact.has(exact)) byExact.set(exact, c);
+        const norm = normalizeClienteNombreExcel(nombre);
+        if (norm && !byNorm.has(norm)) byNorm.set(norm, c);
+    }
+
+    const resolve = (clienteNombre: string): ExcelClienteRow | undefined => {
+        const key = String(clienteNombre || "").trim().toUpperCase();
+        if (!key) return undefined;
+        if (byExact.has(key)) return byExact.get(key);
+        const norm = normalizeClienteNombreExcel(clienteNombre);
+        if (norm && byNorm.has(norm)) return byNorm.get(norm);
+        if (norm) {
+            for (const [cand, row] of byNorm) {
+                if (cand.startsWith(norm) || norm.startsWith(cand)) return row;
+            }
+        }
+        return undefined;
+    };
+
+    return historial.map((row) => {
+        const hit = resolve(row.cliente);
+        if (!hit) return row;
+        return {
+            ...row,
+            domicilio: String(hit.Domicilio || "").trim(),
+            contacto: String(hit.Contacto || "").trim(),
+            correo: String(hit.Correo || "").trim(),
+            telefono: String(hit.Telefono || "").trim(),
+        };
+    });
+};
+
+/** Vigencia de patrón alineada a ProgramaCalibracion (fecha / fechaVencimiento / partes). */
+const resolvePatronVencimiento = (d: {[key: string]: any}): string => {
+    const partes = Array.isArray(d.partesCalibracion) ? d.partesCalibracion : [];
+    if (partes.length > 1) {
+        const fechas = partes
+            .map((p: any) => String(p?.fechaVencimiento || "").trim())
+            .filter(Boolean)
+            .sort();
+        if (fechas.length) return fechas[0];
+    }
+    if (partes.length === 1 && partes[0]?.fechaVencimiento) {
+        return String(partes[0].fechaVencimiento).trim();
+    }
+    return String(d.fecha || d.fechaVencimiento || "").trim();
+};
+
+const resolvePatronUltimaCal = (d: {[key: string]: any}): string => {
+    const partes = Array.isArray(d.partesCalibracion) ? d.partesCalibracion : [];
+    if (partes[0]?.fechaUltimaCalibracion) return String(partes[0].fechaUltimaCalibracion).trim();
+    return String(d.fechaUltimaCalibracion || "").trim();
+};
+
+const resolvePatronNoCert = (d: {[key: string]: any}): string => {
+    const partes = Array.isArray(d.partesCalibracion) ? d.partesCalibracion : [];
+    for (const parte of partes) {
+        const n = String(parte?.noCertificado || "").trim();
+        if (n) return n;
+    }
+    const root = String(d.noCertificado || d.certificacion || d.numeroCertificado || "").trim();
+    if (root) return root;
+    // Recepción de cert a menudo deja el número solo en historial: "Lab: … | Cert: 1-24842"
+    const hist = Array.isArray(d.historial) ? d.historial : [];
+    for (const h of hist) {
+        const desc = String(h?.descripcion || h?.detalle || "");
+        const m = /Cert\s*:\s*([A-Z0-9][A-Z0-9\-\/\.]{2,48})/i.exec(desc);
+        if (m?.[1] && m[1] !== "—") return m[1].trim();
+    }
+    return "";
+};
+
+const statusVigenciaPatron = (fechaVence: string, estadoProceso: string): string => {
+    const estado = String(estadoProceso || "").toLowerCase();
+    // Solo estados que realmente impiden usar el patrón en certificado.
+    // en_servicio / en_prestamo / en_uso: siguen vigentes por fecha (no marcar "No disponible").
+    const bloqueo = new Set([
+        "en_calibracion",
+        "en_mantenimiento",
+        "con_falla",
+        "baja",
+        "fuera_servicio",
+        "cuarentena",
+    ]);
+    if (bloqueo.has(estado)) {
+        return `No disponible (${estadoProceso})`;
+    }
+    if (!fechaVence || fechaVence === "Por Comprar") return "Sin fecha";
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(fechaVence);
+    if (!m) return "Sin fecha";
+    const vence = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    vence.setHours(0, 0, 0, 0);
+    const days = Math.round((vence.getTime() - hoy.getTime()) / 86400000);
+    if (days < 0) return "Vencido";
+    if (days <= 30) return "Por Vencer";
+    return "Vigente";
+};
+
+type ExcelPatronRow = {
+    noControl: string;
+    descripcion: string;
+    marca: string;
+    modelo: string;
+    serie: string;
+    noCertificado: string;
+    fechaUltimaCalibracion: string;
+    fechaVencimiento: string;
+    estadoProceso: string;
+    statusVigencia: string;
+    laboratorio: string;
+};
+
+const mapPatronToExcelRow = (docId: string, d: {[key: string]: any}): ExcelPatronRow => {
+    const fechaVencimiento = resolvePatronVencimiento(d);
+    const estadoProceso = String(d.estadoProceso || "").trim();
+    return {
+        noControl: String(d.noControl || docId || "").trim().toUpperCase(),
+        descripcion: String(d.descripcion || d.nombre || "").trim(),
+        marca: String(d.marca || "").trim(),
+        modelo: String(d.modelo || "").trim(),
+        serie: String(d.serie || "").trim(),
+        noCertificado: resolvePatronNoCert(d),
+        fechaUltimaCalibracion: resolvePatronUltimaCal(d),
+        fechaVencimiento,
+        estadoProceso,
+        statusVigencia: statusVigenciaPatron(fechaVencimiento, estadoProceso),
+        laboratorio: String(d.laboratorioCalibracion || d.ubicacion || d.ubicacionActual || "").trim(),
+    };
+};
+
 export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
-    const secretKey = req.query.key;
-    if (secretKey !== "TU_CLAVE_SECRETA_AG_APP_2026") {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    res.set("Cache-Control", "no-store");
+
+    if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
+    }
+
+    const secretKey = String(req.query.key || "");
+    if (secretKey !== EXCEL_API_KEY) {
         res.status(403).send("Acceso denegado.");
         return;
     }
 
     try {
-        const clientesSnapshot = await db.collection("clientes").get();
-        const clientes = clientesSnapshot.docs.map(doc => ({
-            id: doc.id,
-            nombre: doc.data().nombre || "",
-            direccion: doc.data().direccion || "",
-            contacto: doc.data().contacto || "",
-            email: doc.data().email || "",
-            telefono: doc.data().telefono || "",
-        }));
+        const prefijo = String(req.query.prefijo || "")
+            .trim()
+            .toUpperCase();
+        const formato = String(req.query.formato || "json").toLowerCase();
 
-        const historialSnapshot = await db.collection("hojasDeTrabajo").get();
-        const historial = historialSnapshot.docs.map(doc => {
-            const d = doc.data();
+        const [clientesSnapshot, historialSnapshot, patronesSnapshot] = await Promise.all([
+            db.collection("clientes").get(),
+            db.collection("hojasDeTrabajo").get(),
+            db.collection("patronesCalibracion").get(),
+        ]);
+
+        const clientes = clientesSnapshot.docs.map((docSnap) => {
+            const d = docSnap.data();
+            const nombre = String(d.nombre || "").trim();
+            const domicilio = String(d.direccion || d.domicilio || "").trim();
+            const contacto = String(d.contacto || "").trim();
+            const correo = String(d.email || d.correo || "").trim();
+            const telefono = String(d.telefono || "").trim();
             return {
-                certificado: d.certificado || "-",
-                cliente: d.clienteNombre || d.cliente || "Sin Cliente",
-                equipo: d.equipo || "Equipo",
-                marca: d.marca || d.equipoMarca || "",
-                modelo: d.modelo || d.equipoModelo || "",
-                serie: d.serie || d.equipoSerie || "",
-                id: d.id || "",
-                fecha: d.fecha || "",
-                tecnico: d.nombre || "",
-                lugarCalibracion: d.lugarCalibracion || "S/M",
-                frecuenciaCalibracion: d.frecuenciaCalibracion || "12 meses",
+                id: docSnap.id,
+                // Columnas alineadas a BD_Clientes del master
+                Nombre: nombre,
+                Domicilio: domicilio,
+                Contacto: contacto,
+                Correo: correo,
+                Telefono: telefono,
+                // aliases legacy
+                nombre,
+                direccion: domicilio,
+                contacto,
+                email: correo,
+                telefono,
             };
         });
 
-        res.json({ clientes, historial });
+        let historial = enrichHistorialConClientes(
+            historialSnapshot.docs.map((docSnap) => mapHojaToExcelRow(docSnap.data())),
+            clientes,
+        );
 
+        if (prefijo) {
+            historial = historial.filter((row) =>
+                String(row.certificado).toUpperCase().startsWith(prefijo)
+            );
+        }
+
+        const patrones = patronesSnapshot.docs.map((docSnap) => mapPatronToExcelRow(docSnap.id, docSnap.data()));
+
+        // Tabla plana lista para Power Query / sync script (mismas columnas que AG_Historial)
+        if (formato === "tabla" || formato === "historial") {
+            res.json(historial);
+            return;
+        }
+
+        if (formato === "clientes") {
+            res.json(clientes);
+            return;
+        }
+
+        if (formato === "patrones") {
+            res.json(patrones);
+            return;
+        }
+
+        res.json({
+            clientes,
+            historial,
+            patrones,
+            meta: {
+                clientesCount: clientes.length,
+                historialCount: historial.length,
+                patronesCount: patrones.length,
+                generatedAt: new Date().toISOString(),
+            },
+        });
     } catch (error) {
-        console.error("Error:", error);
+        console.error("obtenerDatosExcel:", error);
         res.status(500).send("Error interno.");
     }
 });
