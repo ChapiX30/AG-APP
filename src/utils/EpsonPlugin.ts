@@ -12,6 +12,8 @@ export interface EpsonLabelPlugin {
         certificado: string;
         calibro: string;
         tapeSize: '24mm' | '12mm';
+        /** "calibrado" (default) o "rechazado" para Reporte de Diagnóstico */
+        labelType?: 'calibrado' | 'rechazado';
         copies?: number;
         printerAddress?: string;
     }): Promise<{

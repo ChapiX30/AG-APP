@@ -1,0 +1,306 @@
+=== DATA VALIDATIONS Calculos ===
+count=6
+DV[0]: type='list' operator=None allow_blank=True
+  sqref=A11
+  formula1='$K$7:$K$8'
+  formula2=None
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+DV[1]: type='list' operator=None allow_blank=True
+  sqref=F15:G15
+  formula1='$K$4:$K$6'
+  formula2=None
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+DV[2]: type='list' operator=None allow_blank=True
+  sqref=D4
+  formula1='"AGP, AGPRT"'
+  formula2=None
+  showError=True errorTitle='Magnitud erronea' error='No corresponde a la mangitud_x000a_'
+  showInput=True promptTitle=None prompt=None
+DV[3]: type='list' operator=None allow_blank=True
+  sqref=K5
+  formula1='"Completa, Solo mes"'
+  formula2=None
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+DV[4]: type='list' operator=None allow_blank=True
+  sqref=J10
+  formula1='"psi,kPa,bar,mbar,kg-cm2,inHg,inH2O,mmHg,MPa"'
+  formula2=None
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+DV[5]: type='custom' operator=None allow_blank=True
+  sqref=I8
+  formula1='AND(I7>=I5, I7<=I6)'
+  formula2=None
+  showError=True errorTitle='Fecha Invalida' error='La fecha de elaboración no puede ser anterior a la calibración ni posterior al vencimiento del equipo.'
+  showInput=True promptTitle=None prompt=None
+
+=== SHEET PROTECTION Calculos ===
+  sheet=False
+  password=None
+  formatCells=True
+  formatColumns=True
+  formatRows=True
+  insertColumns=True
+  insertRows=True
+  insertHyperlinks=True
+  deleteColumns=True
+  deleteRows=True
+  selectLockedCells=False
+  selectUnlockedCells=False
+  sort=True
+  autoFilter=True
+  pivotTables=True
+  objects=False
+  scenarios=False
+
+=== ALL UNLOCKED cells on Calculos (scan A1:AN100) ===
+count=153
+  D4	'AGP'
+  E4	1201
+  F4	26
+  B5	'=IFERROR(INDEX(Historial!$C:$C,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Hist
+  C5	None
+  B6	'=IFERROR(VLOOKUP(B5,BD_Clientes!A:H,2,FALSE),"")'
+  C6	None
+  B7	'=IFERROR(VLOOKUP(B5,BD_Clientes!A:H,3,FALSE),"")'
+  C7	None
+  E7	'N/A'
+  F7	None
+  I7	'=TODAY()'
+  J7	None
+  J9	2
+  F10	600
+  G10	None
+  A11	'=IF(B5="MEXICO MRO MANAGEMENT S. DE R.L. DE C.V.", "No. De Parte:", "Modelo:")'
+  F11	'Presión'
+  G11	None
+  F12	'N/A'
+  G12	None
+  J12	'=IF(B13=1,J9/2,J9)'
+  B13	1
+  C13	None
+  F13	25.1
+  G13	None
+  J13	'=IFERROR(IF(LOWER(TRIM(J10))="psi",1,IF(LOWER(TRIM(J10))="kpa",6.894757,IF(LOWE
+  C14	'=IF(OR(K4="Laboratorio",K4="laboratorio"),"Instalaciones AG",IF(OR(K4="Sitio",K
+  F14	46
+  G14	None
+  J14	47
+  F15	'NORMA'
+  G15	None
+  B20	'=20%*F10'
+  C20	'=F10*0.2'
+  D20	'=F10*0.2'
+  F20	'=F10*0.2'
+  G20	'=F10*0.2'
+  B21	'=50%*F10'
+  C21	'=F10*0.5'
+  D21	'=F10*0.5'
+  F21	'=F10*0.5'
+  G21	'=F10*0.5'
+  B22	'=F10'
+  C22	'=F10*1'
+  D22	'=F10*1'
+  F22	'=F10*1'
+  G22	'=F10*1'
+  A28	'=IF(ROW(A28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A28)-ROW($A$28))*($F$10/($L$8-1)) 
+  B28	'=IF(ROW(B28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B28)-ROW($A$28))*($F$10/($L$8-1)) 
+  C28	'=IF(ROW(C28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C28)-ROW($A$28))*($F$10/($L$8-1)) 
+  D28	'=IF(ROW(D28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D28)-ROW($A$28))*($F$10/($L$8-1)) 
+  E28	'=IF(ROW(E28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E28)-ROW($A$28))*($F$10/($L$8-1)) 
+  F28	'=IF(ROW(F28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F28)-ROW($A$28))*($F$10/($L$8-1)) 
+  G28	None
+  H28	0.048
+  I28	0.048
+  J28	0.048
+  K28	0.048
+  Q28	'=J9'
+  A29	'=IF(ROW(A29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A29)-ROW($A$28))*($F$10/($L$8-1)) 
+  B29	'=IF(ROW(B29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B29)-ROW($A$28))*($F$10/($L$8-1)) 
+  C29	'=IF(ROW(C29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C29)-ROW($A$28))*($F$10/($L$8-1)) 
+  D29	'=IF(ROW(D29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D29)-ROW($A$28))*($F$10/($L$8-1)) 
+  E29	'=IF(ROW(E29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E29)-ROW($A$28))*($F$10/($L$8-1)) 
+  F29	'=IF(ROW(F29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F29)-ROW($A$28))*($F$10/($L$8-1)) 
+  G29	None
+  H29	0.099
+  I29	0.099
+  J29	0.099
+  K29	0.099
+  Q29	'=Q28'
+  A30	'=IF(ROW(A30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A30)-ROW($A$28))*($F$10/($L$8-1)) 
+  B30	'=IF(ROW(B30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B30)-ROW($A$28))*($F$10/($L$8-1)) 
+  C30	'=IF(ROW(C30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C30)-ROW($A$28))*($F$10/($L$8-1)) 
+  D30	'=IF(ROW(D30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D30)-ROW($A$28))*($F$10/($L$8-1)) 
+  E30	'=IF(ROW(E30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E30)-ROW($A$28))*($F$10/($L$8-1)) 
+  F30	'=IF(ROW(F30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F30)-ROW($A$28))*($F$10/($L$8-1)) 
+  G30	None
+  H30	0.149
+  I30	0.149
+  J30	0.149
+  K30	0.149
+  Q30	'=Q29'
+  A31	'=IF(ROW(A31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A31)-ROW($A$28))*($F$10/($L$8-1)) 
+  B31	'=IF(ROW(B31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B31)-ROW($A$28))*($F$10/($L$8-1)) 
+  C31	'=IF(ROW(C31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C31)-ROW($A$28))*($F$10/($L$8-1)) 
+  D31	'=IF(ROW(D31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D31)-ROW($A$28))*($F$10/($L$8-1)) 
+  E31	'=IF(ROW(E31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E31)-ROW($A$28))*($F$10/($L$8-1)) 
+  F31	'=IF(ROW(F31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F31)-ROW($A$28))*($F$10/($L$8-1)) 
+  G31	None
+  H31	None
+  I31	None
+  J31	None
+  K31	None
+  Q31	'=Q30'
+  A32	'=IF(ROW(A32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A32)-ROW($A$28))*($F$10/($L$8-1)) 
+  B32	'=IF(ROW(B32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B32)-ROW($A$28))*($F$10/($L$8-1)) 
+  C32	'=IF(ROW(C32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C32)-ROW($A$28))*($F$10/($L$8-1)) 
+  D32	'=IF(ROW(D32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D32)-ROW($A$28))*($F$10/($L$8-1)) 
+  E32	'=IF(ROW(E32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E32)-ROW($A$28))*($F$10/($L$8-1)) 
+  F32	'=IF(ROW(F32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F32)-ROW($A$28))*($F$10/($L$8-1)) 
+  G32	None
+  H32	None
+  I32	None
+  J32	None
+  K32	None
+  Q32	'=Q31'
+  A33	'=IF(ROW(A33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A33)-ROW($A$28))*($F$10/($L$8-1)) 
+  B33	'=IF(ROW(B33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B33)-ROW($A$28))*($F$10/($L$8-1)) 
+  C33	'=IF(ROW(C33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C33)-ROW($A$28))*($F$10/($L$8-1)) 
+  D33	'=IF(ROW(D33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D33)-ROW($A$28))*($F$10/($L$8-1)) 
+  E33	'=IF(ROW(E33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E33)-ROW($A$28))*($F$10/($L$8-1)) 
+  F33	'=IF(ROW(F33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F33)-ROW($A$28))*($F$10/($L$8-1)) 
+  G33	None
+  H33	None
+  I33	None
+  J33	None
+  K33	None
+  Q33	'=Q32'
+  A34	'=IF(ROW(A34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A34)-ROW($A$28))*($F$10/($L$8-1)) 
+  B34	'=IF(ROW(B34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B34)-ROW($A$28))*($F$10/($L$8-1)) 
+  C34	'=IF(ROW(C34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C34)-ROW($A$28))*($F$10/($L$8-1)) 
+  D34	'=IF(ROW(D34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D34)-ROW($A$28))*($F$10/($L$8-1)) 
+  E34	'=IF(ROW(E34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E34)-ROW($A$28))*($F$10/($L$8-1)) 
+  F34	'=IF(ROW(F34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F34)-ROW($A$28))*($F$10/($L$8-1)) 
+  G34	None
+  H34	None
+  I34	None
+  J34	None
+  K34	None
+  Q34	'=Q33'
+  A35	'=IF(ROW(A35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A35)-ROW($A$28))*($F$10/($L$8-1)) 
+  B35	'=IF(ROW(B35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B35)-ROW($A$28))*($F$10/($L$8-1)) 
+  C35	'=IF(ROW(C35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C35)-ROW($A$28))*($F$10/($L$8-1)) 
+  D35	'=IF(ROW(D35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D35)-ROW($A$28))*($F$10/($L$8-1)) 
+  E35	'=IF(ROW(E35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E35)-ROW($A$28))*($F$10/($L$8-1)) 
+  F35	'=IF(ROW(F35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F35)-ROW($A$28))*($F$10/($L$8-1)) 
+  G35	None
+  H35	None
+  I35	None
+  J35	None
+  K35	None
+  Q35	'=Q34'
+  A36	'=IF(ROW(A36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A36)-ROW($A$28))*($F$10/($L$8-1)) 
+  B36	'=IF(ROW(B36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B36)-ROW($A$28))*($F$10/($L$8-1)) 
+  Q36	'=Q35'
+  A37	'=IF(ROW(A37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A37)-ROW($A$28))*($F$10/($L$8-1)) 
+  B37	'=IF(ROW(B37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B37)-ROW($A$28))*($F$10/($L$8-1)) 
+  Q37	'=Q36'
+  A38	'=IF(ROW(A38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A38)-ROW($A$28))*($F$10/($L$8-1)) 
+  B38	'=IF(ROW(B38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B38)-ROW($A$28))*($F$10/($L$8-1)) 
+  Q38	'=Q37'
+
+=== Historial row1 headers A-M ===
+  A1='Name'
+  B1='certificado'
+  C1='cliente'
+  D1='equipo'
+  E1='marca'
+  F1='modelo'
+  G1='serie'
+  H1='id'
+  I1='fecha'
+  J1='tecnico'
+  K1='lugarCalibracion'
+  L1='frecuenciaCalibracion'
+  M1='fechaRecepcion'
+
+=== Historial col K unique values (sample first 500 nonempty) ===
+nonempty_count=2889 unique=2
+   2499  'Sitio'
+    390  'Laboratorio'
+
+=== Sample Historial rows matching certificate key D4-E4-F4 ===
+  row1700: ['historial', 'AGP-1201-26', 'CELESTICA DE MONTERREY (ESTANDARD)', 'Manometro', 'NKS', 'Sm', 'Sn', 'EP-39990', '2026-07-15', 'Abraham Ginez', 'Sitio', '12 meses', '2026-07-15']
+found_prefix_AGP-1201=1
+
+=== KEY CELL FULL FORMULAS ===
+A4: locked=True hidden=False
+  value='=VLOOKUP(B5,#REF!,2,TRUE)'
+I4: locked=True hidden=False
+  value='=IFERROR(IF(INDEX(Historial!$M:$M,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0))="",IF(OR(K4="Sitio",K4="sitio"),"Servicio en Sitio",""),IFERROR(VALUE(INDEX(Historial!$M:$M,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0))),INDEX(Historial!$M:$M,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)))),IF(OR(K4="Sitio",K4="sitio"),"Servicio en Sitio",""))'
+K4: locked=True hidden=True
+  value='=IFERROR(INDEX(Historial!$K:$K,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+B5: locked=False hidden=False
+  value='=IFERROR(INDEX(Historial!$C:$C,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+B9: locked=True hidden=False
+  value='=IFERROR(INDEX(Historial!$D:$D,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"No encontrado")'
+B10: locked=True hidden=False
+  value='=IFERROR(INDEX(Historial!$E:$E,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"No encontrado")'
+B11: locked=True hidden=False
+  value='=IFERROR(INDEX(Historial!$F:$F,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+B12: locked=True hidden=False
+  value='=IFERROR(INDEX(Historial!$G:$G,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+J9: locked=False hidden=False
+  value=2
+F10: locked=False hidden=False
+  value=600
+J10: locked=True hidden=False
+  value='psi'
+C14: locked=False hidden=False
+  value='=IF(OR(K4="Laboratorio",K4="laboratorio"),"Instalaciones AG",IF(OR(K4="Sitio",K4="sitio"),"Instalaciones de Cliente",""))'
+F15: locked=False hidden=False
+  value='NORMA'
+Q28: locked=False hidden=False
+  value='=J9'
+J13: locked=False hidden=False
+  value='=IFERROR(IF(LOWER(TRIM(J10))="psi",1,IF(LOWER(TRIM(J10))="kpa",6.894757,IF(LOWER(TRIM(J10))="mpa",0.00689476,IF(LOWER(TRIM(J10))="bar",0.0689476,IF(LOWER(TRIM(J10))="mbar",68.94757,IF(LOWER(TRIM(J10))="kg-cm2",0.070307,IF(LOWER(TRIM(J10))="inhg",2.036021,IF(LOWER(TRIM(J10))="inh2o",27.6799,IF(LOWER(TRIM(J10))="mmhg",51.7149,1))))))))),1)'
+J12: locked=False hidden=False
+  value='=IF(B13=1,J9/2,J9)'
+J14: locked=False hidden=False
+  value=47
+
+=== EMP column Q28:Q40 formulas ===
+Q28: locked=False '=J9'
+Q29: locked=False '=Q28'
+Q30: locked=False '=Q29'
+Q31: locked=False '=Q30'
+Q32: locked=False '=Q31'
+Q33: locked=False '=Q32'
+Q34: locked=False '=Q33'
+Q35: locked=False '=Q34'
+Q36: locked=False '=Q35'
+Q37: locked=False '=Q36'
+Q38: locked=False '=Q37'
+Q39: locked=True None
+Q40: locked=True None
+
+=== Data validations on ALL sheets ===
+[Calculos] count=6
+  DV[0] sqref=A11 type='list' f1='$K$7:$K$8' f2=None
+  DV[1] sqref=F15:G15 type='list' f1='$K$4:$K$6' f2=None
+  DV[2] sqref=D4 type='list' f1='"AGP, AGPRT"' f2=None
+  DV[3] sqref=K5 type='list' f1='"Completa, Solo mes"' f2=None
+  DV[4] sqref=J10 type='list' f1='"psi,kPa,bar,mbar,kg-cm2,inHg,inH2O,mmHg,MPa"' f2=None
+  DV[5] sqref=I8 type='custom' f1='AND(I7>=I5, I7<=I6)' f2=None
+
+=== Protection sheet= flag all sheets ===
+  Portada: sheet=False password=None
+  Resultados: sheet=False password=None
+  Calculos: sheet=False password=None
+  Patrones: sheet=False password=None
+  CMC: sheet=False password=None
+  Historial: sheet=False password=None
+  BD_Clientes: sheet=False password=None

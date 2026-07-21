@@ -1,0 +1,19 @@
+---
+description: Recordatorio pendiente — carpeta de confianza Excel para Formatos Master (.xlsm)
+alwaysApply: true
+---
+
+# Pendiente: carpeta de confianza Excel (Formatos Master)
+
+Cuando el usuario trabaje en Formatos Master, macros Excel, descargas `.xlsm`, o diga algo como "recuérdame el paso 2" / "macros bloqueadas", **recuérdale este pendiente** hasta que diga que ya lo hizo:
+
+## Paso 2 pendiente (PCs del laboratorio)
+
+Microsoft bloquea macros de archivos descargados de Firebase (Mark of the Web). Solución recomendada:
+
+1. Crear carpeta fija, p. ej. `C:\FormatosAG`
+2. En Excel: **Archivo → Opciones → Centro de confianza → Configuración del Centro de confianza → Ubicaciones de confianza → Agregar nueva ubicación**
+3. Agregar `C:\FormatosAG`
+4. Instructivo al equipo: descargar el master desde la app y **guardarlo en esa carpeta** antes de abrirlo
+
+No está hecho todavía. Cuando el usuario confirme que ya configuró la carpeta de confianza en los PCs, se puede quitar o archivar esta regla.

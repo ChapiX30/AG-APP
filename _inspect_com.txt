@@ -1,0 +1,283 @@
+=== SHAPES/BUTTONS on Calculos ===
+ProtectContents=False ProtectDrawingObjects=False ProtectScenarios=False
+ProtectionMode=False
+ShapeCount=10
+  [1] name='btn_GuardarCertificadoExcel' type=1 form=None L=420.0 T=8.0 W=130.0 H=28.0
+      OnAction='GuardarCertificadoExcel' text='Guardar certificado'
+      TopLeft=$C$1 BottomRight=$D$3
+  [2] name='btn_CambiarFormatoFecha' type=1 form=None L=558.0 T=8.0 W=130.0 H=28.0
+      OnAction='CambiarFormatoFecha' text='Formato fecha'
+      TopLeft=$D$1 BottomRight=$D$3
+  [3] name='btn_ConfigurarListaUnidades' type=1 form=None L=696.0 T=8.0 W=130.0 H=28.0
+      OnAction='ConfigurarListaUnidades' text='Lista unidades'
+      TopLeft=$D$1 BottomRight=$E$3
+  [4] name='btn_RecalcularCertificado' type=1 form=None L=834.0 T=8.0 W=130.0 H=28.0
+      OnAction='RecalcularCertificado' text='Recalcular'
+      TopLeft=$E$1 BottomRight=$F$3
+  [5] name='btn_IrAPortada' type=1 form=None L=972.0 T=8.0 W=110.0 H=28.0
+      OnAction='IrAPortada' text='Ir a Portada'
+      TopLeft=$F$1 BottomRight=$G$3
+  [6] name='Comment 5' type=4 form=None L=57.0 T=0.0 W=109.8 H=60.0
+      OnAction='' text='CAMBIAR A NO. DE PLAN SEGÚN CLIENTE'
+      TopLeft=$A$1 BottomRight=$B$4
+  [7] name='Comment 4' type=4 form=None L=57.0 T=0.0 W=109.8 H=60.0
+      OnAction='' text='======\nID#AAABMieQ-Pk\nJECG    (2024-04-26 22:47:19)\nAPLICA:\n Analogos = Norma.\n(No se modifica EMP)\n\nDigitales = Fabricante.\n(Se modifica EMP)'
+      TopLeft=$A$1 BottomRight=$B$4
+  [8] name='Comment 3' type=4 form=None L=57.0 T=0.0 W=109.8 H=60.0
+      OnAction='' text='======\nID#AAABIXUoWPU\nJECG    (2024-04-26 22:47:19)\nAnalogo: Instertar"1"\nDigital: Insertar"2"'
+      TopLeft=$A$1 BottomRight=$B$4
+  [9] name='Comment 2' type=4 form=None L=57.0 T=0.0 W=109.8 H=60.0
+      OnAction='' text='======\nID#AAABMieQ-Pg\nJECG    (2024-04-26 22:47:19)\nNORMA\nFABRICANTE\nCLIENTE'
+      TopLeft=$A$1 BottomRight=$B$4
+  [10] name='Comment 1' type=4 form=None L=57.0 T=0.0 W=109.8 H=60.0
+      OnAction='' text='======\nID#AAABMieQ-PY\nEQUIPOS Y SERV. AG    (2024-04-26 22:47:19)\nCampo:\n Analogo o Digital'
+      TopLeft=$A$1 BottomRight=$B$4
+Buttons.Count=0
+
+=== VBA PROJECT MODULES ===
+Protection=0
+--- MODULE ThisWorkbook type=100 lines=0 ---
+--- MODULE Hoja1 type=100 lines=0 ---
+--- MODULE Hoja2 type=100 lines=0 ---
+--- MODULE Hoja3 type=100 lines=132 ---
+
+Private Sub Worksheet_Change(ByVal Target As Range)
+    On Error GoTo ErrorHandler
+
+    ' --- Cambio de certificado: restaurar formulas (evita romper formato) ---
+    If Not Intersect(Target, Range("D4:F4")) Is Nothing Then
+        Application.EnableEvents = False
+        Call RestablecerFormulasDesdeHistorial
+        Application.EnableEvents = True
+        Exit Sub
+    End If
+
+    ' --- Cambio de unidad ---
+    If Intersect(Target, Range("J10")) Is Nothing Then Exit Sub
+
+    Application.EnableEvents = False
+
+    Dim unidad As String, prev As String
+    Dim fNew As Double, fOld As Double, ratio As Double
+    Dim r As Long, c As Long, v As Variant
+
+    unidad = LCase(Trim(CStr(Range("J10").Value)))
+    prev = LCase(Trim(CStr(Range("J14").Value)))
+    If prev = "" Then prev = "psi"
+
+    fNew = FactorUnidad(unidad)
+    fOld = FactorUnidad(prev)
+    If fOld = 0 Then fOld = 1
+    ratio = fNew / fOld
+
+    If ratio <> 1 Then
+        If IsNumeric(Range("F10").Value) Then
+            Range("F10").Value = CDbl(Range("F10").Value) * ratio
+        End If
+        If IsNumeric(Range("J9").Value) Then
+            Range("J9").Value = CDbl(Range("J9").Value) * ratio
+        End If
+        For r = 28 To 38
+            For c = 3 To 6
+                If Not Cells(r, c).HasFormula Then
+                    v = Cells(r, c).Value
+                    If IsNumeric(v) Then
+                        If CDbl(v) <> 0 Then Cells(r, c).Value = CDbl(v) * ratio
+                    End If
+                End If
+            Next c
+            For c = 8 To 11
+                If Not Cells(r, c).HasFormula Then
+                    v = Cells(r, c).Value
+                    If IsNumeric(v) Then
+                        If CDbl(v) <> 0 Then Cells(r, c).Value = CDbl(v) * ratio
+                    End If
+                End If
+            Next c
+        Next r
+        If Not Range("N13").HasFormula Then
+            If IsNumeric(Range("N13").Value) Then
+                Range("N13").Value = CDbl(Range("N13").Value) * ratio
+            End If
+        End If
+    End If
+
+    Range("J14").Value = unidad
+
+    On Error Resume Next
+    Sheets("Patrones").Range("E4").Value = "Resultados en " & Range("J10").Value & " (EMP en psi; U/sesgo/lecturas convertidos)"
+    Sheets("CMC").Range("I1").Value = Range("J10").Value
+    On Error GoTo ErrorHandler
+
+Salir:
+    Application.EnableEvents = True
+    Exit Sub
+
+ErrorHandler:
+    Application.EnableEvents = True
+End Sub
+
+Private Sub RestablecerFormulasDesdeHistorial()
+    ' Siempre reescribe formulas al cambiar certificado.
+    ' Asi Marca/Modelo/etc. vuelven automaticos aunque un tecnico las haya escrito a mano.
+    Dim k As String
+    k = "($D$4&""-""&TEXT($E$4,""0000"")&""-""&$F$4)"
+
+    Range("B5").Formula = "=IFERROR(INDEX(Historial!$C:$C,MATCH(" & k & ",Historial!$B:$B,0)),"""")"
+    Range("B6").Formula = "=IFERROR(VLOOKUP(B5,BD_Clientes!A:H,2,FALSE),"""")"
+    Range("B7").Formula = "=IFERROR(VLOOKUP(B5,BD_Clientes!A:H,3,FALSE),"""")"
+    Range("E5").Formula = "=IFERROR(VLOOKUP(B5,BD_Clientes!A:H,4,FALSE),"""")"
+    Range("E6").Formula = "=IFERROR(VLOOKUP(B5,BD_Clientes!A:H,5,FALSE),"""")"
+
+    Range("B9").Formula = "=IFERROR(INDEX(Historial!$D:$D,MATCH(" & k & ",Historial!$B:$B,0)),""No encontrado"")"
+    Range("F9").Formula = "=IFERROR(INDEX(Historial!$H:$H,MATCH(" & k & ",Historial!$B:$B,0)),"""")"
+    Range("B10").Formula = "=IFERROR(INDEX(Historial!$E:$E,MATCH(" & k & ",Historial!$B:$B,0)),""No encontrado"")"
+    Range("B11").Formula = "=IFERROR(INDEX(Historial!$F:$F,MATCH(" & k & ",Historial!$B:$B,0)),"""")"
+    Range("B12").Formula = "=IFERROR(INDEX(Historial!$G:$G,MATCH(" & k & ",Historial!$B:$B,0)),"""")"
+
+    Range("K4").Formula = "=IFERROR(INDEX(Historial!$K:$K,MATCH(" & k & ",Historial!$B:$B,0)),"""")"
+    Range("I4").Formula = "=IFERROR(IF(INDEX(Historial!$M:$M,MATCH(" & k & ",Historial!$B:$B,0))="""",IF(OR(K4=""Sitio"",K4=""sitio""),""Servicio en Sitio"",""""),IFERROR(VALUE(INDEX(Historial!$M:$M,MATCH(" & k & ",Historial!$B:$B,0))),INDEX(Historial!$M:$M,MATCH(" & k & ",Historial!$B:$B,0)))),IF(OR(K4=""Sitio"",K4=""sitio""),""Servicio en Sitio"",""""))"
+    Range("I5").Formula = "=IFERROR(VALUE(INDEX(Historial!$I:$I,MATCH(" & k & ",Historial!$B:$B,0))),"""")"
+    Range("I6").Formula = "=IFERROR(EDATE(I5,IF(INDEX(Historial!$L:$L,MATCH(" & k & ",Historial!$B:$B,0))=""6 meses"",6,12)),"""")"
+    Range("M8").Formula = "=IFERROR(INDEX(Historial!$J:$J,MATCH(" & k & ",Historial!$B:$B,0)),"""")"
+
+    ' Portada: espejo del instrumento (por si alguien borro formulas alla)
+    On Error Resume Next
+    With Sheets("Portada")
+        .Range("D20").Formula = "=Calculos!B9"
+        .Range("I20").Formula = "=Calculos!F9"
+        .Range("D22").Formula = "=Calculos!B10"
+        .Range("D24").Formula = "=Calculos!B11"
+        .Range("D26").Formula = "=Calculos!B12"
+        .Range("C20").Formula = "=Calculos!A9"
+        .Range("C22").Formula = "=Calculos!A10"
+        .Range("C24").Formula = "=Calculos!A11"
+        .Range("C26").Formula = "=Calculos!A12"
+    End With
+    On Error GoTo 0
+End Sub
+
+Private Function FactorUnidad(ByVal u As String) As Double
+    Select Case LCase(Trim(u))
+        Case "psi": FactorUnidad = 1
+        Case "kpa": FactorUnidad = 6.894757
+        Case "mpa": FactorUnidad = 0.00689476
+        Case "bar": FactorUnidad = 0.0689476
+        Case "mbar": FactorUnidad = 68.94757
+        Case "kg-cm2": FactorUnidad = 0.070307
+        Case "inhg": FactorUnidad = 2.036021
+        Case "inh2o": FactorUnidad = 27.6799
+        Case "mmhg": FactorUnidad = 51.7149
+        Case Else: FactorUnidad = 1
+    End Select
+End Function
+--- MODULE Hoja4 type=100 lines=0 ---
+--- MODULE Hoja5 type=100 lines=0 ---
+--- MODULE Hoja6 type=100 lines=0 ---
+--- MODULE Hoja8 type=100 lines=0 ---
+--- MODULE AG_Macros type=1 lines=106 ---
+
+Option Explicit
+
+Public Sub GuardarCertificadoExcel()
+    Dim ruta As Variant
+    Dim nombreArchivo As String
+    Dim certificado As String
+    Dim instrumento As String
+    Dim idEquipo As String
+    Dim parte1 As String, parte2 As String, parte3 As String
+    Dim avisoPatron As String
+
+    On Error GoTo ErrorHandler
+
+    If Sheets("Calculos").Range("D4").Value = "" Or Sheets("Calculos").Range("E4").Value = "" Or Sheets("Calculos").Range("F4").Value = "" Then
+        MsgBox "El numero de certificado esta incompleto (D4-E4-F4).", vbCritical, "Validacion"
+        Exit Sub
+    End If
+
+    If Sheets("Calculos").Range("B9").Value = "" Or Sheets("Calculos").Range("B9").Value = "No encontrado" Or Sheets("Calculos").Range("F9").Value = "" Then
+        MsgBox "Falta instrumento o ID. Revisa el certificado o la hoja Historial.", vbCritical, "Validacion"
+        Exit Sub
+    End If
+
+    On Error Resume Next
+    avisoPatron = CStr(Sheets("Portada").Range("E48").Value)
+    On Error GoTo ErrorHandler
+    If InStr(1, UCase(avisoPatron), "VENCIDO") > 0 Then
+        If MsgBox("El patron aparece VENCIDO." & vbCrLf & "Deseas guardar de todos modos?", vbExclamation + vbYesNo, "Calidad") = vbNo Then Exit Sub
+    End If
+
+    If IsDate(Sheets("Calculos").Range("I5").Value) Then
+        If Sheets("Calculos").Range("I5").Value > Date Then
+            MsgBox "La fecha de calibracion es mayor a hoy. Revisa I5.", vbExclamation, "Fecha"
+        End If
+    End If
+
+    parte1 = CStr(Sheets("Calculos").Range("D4").Value)
+    parte2 = Format(Sheets("Calculos").Range("E4").Value, "0000")
+    parte3 = CStr(Sheets("Calculos").Range("F4").Value)
+    certificado = parte1 & "-" & parte2 & "-" & parte3
+    instrumento = CStr(Sheets("Calculos").Range("B9").Value)
+    idEquipo = CStr(Sheets("Calculos").Range("F9").Value)
+
+    nombreArchivo = certificado & " - " & instrumento & " - " & idEquipo
+    nombreArchivo = Replace(nombreArchivo, "/", "-")
+    nombreArchivo = Replace(nombreArchivo, "\", "-")
+    nombreArchivo = Replace(nombreArchivo, ":", "")
+    nombreArchivo = Replace(nombreArchivo, "*", "")
+    nombreArchivo = Replace(nombreArchivo, "?", "")
+    nombreArchivo = Replace(nombreArchivo, """", "")
+    nombreArchivo = Replace(nombreArchivo, "<", "")
+    nombreArchivo = Replace(nombreArchivo, ">", "")
+    nombreArchivo = Replace(nombreArchivo, "|", "")
+
+    ruta = Application.GetSaveAsFilename(InitialFileName:=nombreArchivo, FileFilter:="Libro de Excel (*.xlsm), *.xlsm", Title:="Guardar certificado")
+    If ruta = False Then
+        MsgBox "Guardado cancelado.", vbInformation, "Certificado"
+        Exit Sub
+    End If
+
+    Application.DisplayAlerts = False
+    ThisWorkbook.SaveCopyAs CStr(ruta)
+    Application.DisplayAlerts = True
+    MsgBox "Certificado guardado:" & vbCrLf & ruta, vbInformation, "Listo"
+    Exit Sub
+
+ErrorHandler:
+    Application.DisplayAlerts = True
+    MsgBox "No se pudo guardar: " & Err.Description, vbCritical, "Error"
+End Sub
+
+Public Sub CambiarFormatoFecha()
+    On Error Resume Next
+    With Sheets("Calculos").Range("K5")
+        If .Value = "Completa" Then .Value = "Solo Mes" Else .Value = "Completa"
+        MsgBox "Formato de fecha: " & .Value, vbInformation, "Fecha"
+    End With
+End Sub
+
+Public Sub ConfigurarListaUnidades()
+    On Error Resume Next
+    With Sheets("Calculos").Range("J10").Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:="psi,kPa,bar,mbar,kg-cm2,inHg,inH2O,mmHg,MPa"
+        .IgnoreBlank = True
+        .InCellDropdown = True
+    End With
+    MsgBox "Lista de unidades lista en J10.", vbInformation, "Unidades"
+End Sub
+
+Public Sub RecalcularCertificado()
+    On Error Resume Next
+    Application.ScreenUpdating = False
+    Application.CalculateFull
+    Sheets("Calculos").Calculate
+    Sheets("Portada").Calculate
+    Application.ScreenUpdating = True
+    MsgBox "Calculos actualizados.", vbInformation, "Actualizado"
+End Sub
+
+Public Sub IrAPortada()
+    On Error Resume Next
+    Sheets("Portada").Activate
+End Sub

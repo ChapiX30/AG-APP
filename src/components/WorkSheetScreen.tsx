@@ -63,6 +63,8 @@ interface LabelData {
   fechaSug: string;
   calibro: string;
   certificado: string;
+  /** Etiqueta RECHAZADO (Reporte de Diagnóstico). */
+  labelType?: "calibrado" | "rechazado";
 }
 
 type EpsonPrinterDevice = {
@@ -294,6 +296,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         certificado: data.certificado.trim(),
         calibro: data.calibro,
         tapeSize,
+        labelType: data.labelType === "rechazado" ? "rechazado" : "calibrado",
         copies,
         printerAddress: selectedPrinterAddress || undefined,
       });
@@ -341,7 +344,9 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
           className="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 transition-all disabled:opacity-50"
         >
             {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
-            <span className="font-bold text-sm">Etiqueta {tapeSize}</span>
+            <span className="font-bold text-sm">
+              Etiqueta {tapeSize}{data.labelType === "rechazado" ? " · Rechazado" : ""}
+            </span>
         </button>
         <button onClick={() => setShowOptions(!showOptions)} className="px-2 bg-slate-800 border-l border-slate-700 hover:bg-slate-700 transition-colors">
             <Settings2 className="w-4 h-4" />
@@ -525,7 +530,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         {tapeSize === "24mm" && (
             <div ref={labelRef} style={{ width: '400px', height: '240px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif', border: '2px solid black', padding: '0', overflow: 'hidden' }}>
                 <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '6px 0', letterSpacing: '6px', fontSize: '14px', fontWeight: '900' }}>
-                    C A L I B R A D O
+                    {data.labelType === "rechazado" ? "R E C H A Z A D O" : "C A L I B R A D O"}
                 </div>
                 <div style={{ flex: 1, display: 'flex', padding: '6px 8px 2px 8px' }}>
                     <div style={{ width: '95px', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '6px' }}>
@@ -533,10 +538,20 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
                     </div>
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '3px' }}>
                         <div style={{ fontSize: '22px', fontWeight: '900', color: 'black', lineHeight: '1' }}>ID: {data.id}</div>
-                        <div style={{ fontSize: '13px', fontStyle: 'italic', color: 'black' }}>F.CAL: {data.fechaCal}</div>
-                        <div style={{ fontSize: '13px', fontStyle: 'italic', color: 'black' }}>F.SUG: {data.fechaSug}</div>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'black' }}>CALIBRÓ: {data.calibro}</div>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'black' }}>CERT: {data.certificado}</div>
+                        {data.labelType === "rechazado" ? (
+                          <>
+                            <div style={{ fontSize: '13px', fontStyle: 'italic', color: 'black' }}>F.REV.: {data.fechaCal}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'black' }}>VERIFICO: {data.calibro}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'black' }}>CERT: {data.certificado}</div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: '13px', fontStyle: 'italic', color: 'black' }}>F.CAL: {data.fechaCal}</div>
+                            <div style={{ fontSize: '13px', fontStyle: 'italic', color: 'black' }}>F.SUG: {data.fechaSug}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'black' }}>CALIBRÓ: {data.calibro}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'black' }}>CERT: {data.certificado}</div>
+                          </>
+                        )}
                     </div>
                 </div>
                 <div style={{ padding: '0 8px 4px 8px', fontSize: '11px', fontStyle: 'italic', color: '#444' }}>AG-CAL-F14-00</div>
@@ -544,26 +559,42 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         )}
         {tapeSize === "12mm" && (
             <div ref={labelRef} style={{ width: '400px', height: '120px', backgroundColor: 'white', display: 'flex', fontFamily: 'Arial, sans-serif', border: '1px solid black', padding: 0, overflow: 'hidden' }}>
-                <div style={{ width: '95px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '4px 2px 4px 4px' }}>
-                    <img src={logo} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                <div style={{ width: '64px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '6px 2px 6px 4px' }}>
+                    <img src={logo} alt="Logo" style={{ maxHeight: '82%', maxWidth: '100%', objectFit: 'contain' }} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                    <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '2px 0', letterSpacing: '2px', fontSize: '9px', fontWeight: '900' }}>
-                        CALIBRADO
+                    <div style={{ backgroundColor: 'black', color: 'white', textAlign: 'center', padding: '3px 0', letterSpacing: '2px', fontSize: '11px', fontWeight: '900' }}>
+                        {data.labelType === "rechazado" ? "RECHAZADO" : "CALIBRADO"}
                     </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', padding: '2px 4px 2px 4px', fontSize: '10px', fontWeight: '600', lineHeight: 1.15 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px' }}>
-                            <span style={{ flex: '1.15 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
-                            <span style={{ flex: '0.85 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>Cert: {data.certificado}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px' }}>
-                            <span style={{ flex: '1.15 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.CAL: {data.fechaCal}</span>
-                            <span style={{ flex: '0.85 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>CALIBRÓ: {data.calibro}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'baseline' }}>
-                            <span style={{ flex: '1.15 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.SUG: {data.fechaSug}</span>
-                            <span style={{ flex: '0.85 1 0', fontSize: '8px', textAlign: 'right' }}>AG-CAL-F14-00</span>
-                        </div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', padding: '2px 4px 2px 4px', fontSize: '12px', fontWeight: '600', lineHeight: 1.15 }}>
+                        {data.labelType === "rechazado" ? (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                <span style={{ flex: '1.05 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
+                                <span style={{ flex: '0.95 1 0', fontSize: '10px', fontWeight: '800', textAlign: 'right' }}>AG-CAL-F14-00</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                <span style={{ flex: '1.05 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.REV.: {data.fechaCal}</span>
+                                <span style={{ flex: '0.95 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right', fontWeight: '800' }}>VERIFICO: {data.calibro}</span>
+                            </div>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>CERT: {data.certificado}</div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                <span style={{ flex: '1.05 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>ID: {data.id}</span>
+                                <span style={{ flex: '0.95 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right', fontWeight: '800' }}>Cert: {data.certificado}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                <span style={{ flex: '1.05 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.CAL: {data.fechaCal}</span>
+                                <span style={{ flex: '0.95 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right', fontWeight: '800' }}>CALIBRÓ: {data.calibro}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' }}>
+                                <span style={{ flex: '1.05 1 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>F.SUG: {data.fechaSug}</span>
+                                <span style={{ flex: '0.95 1 0', fontSize: '10px', fontWeight: '800', textAlign: 'right' }}>AG-CAL-F14-00</span>
+                            </div>
+                          </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -598,6 +629,7 @@ async function generateAndPrintLabel(
       certificado: data.certificado.trim(),
       calibro: data.calibro,
       tapeSize,
+      labelType: data.labelType === "rechazado" ? "rechazado" : "calibrado",
       copies,
     });
     return;
@@ -1580,8 +1612,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       fechaCal: state.fecha ? formatLabelDate(fCalObj, dateMode) : "---",
       fechaSug: isValid(fSugObj) ? formatLabelDate(fSugObj, dateMode) : "---",
       calibro: formatTechnicianInitials(state.nombre),
+      labelType: state.magnitud === "Reporte de Diagnostico" ? "rechazado" : "calibrado",
     };
-  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre, state.cliente, listaClientes]);
+  }, [state.fecha, state.frecuenciaCalibracion, state.id, state.certificado, state.nombre, state.cliente, state.magnitud, listaClientes]);
 
   const handleSave = useCallback(async () => {
     syncElectricalToGlobalState();

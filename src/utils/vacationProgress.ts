@@ -13,12 +13,19 @@ export interface VacationProgressStep {
   fecha?: string;
 }
 
-/** Días naturales inclusivos (inicio y fin cuentan). */
+/** Días inclusivos (inicio y fin cuentan) excluyendo domingos; se trabaja lunes a sábado. */
 export function countVacationDaysInclusive(fechaInicio: string, fechaFin: string): number | null {
   const inicio = parseISO(fechaInicio);
   const fin = parseISO(fechaFin);
   if (!isValid(inicio) || !isValid(fin) || fin < inicio) return null;
-  return differenceInCalendarDays(fin, inicio) + 1;
+  const totalDias = differenceInCalendarDays(fin, inicio) + 1;
+  let dias = 0;
+  const cursor = new Date(inicio);
+  for (let i = 0; i < totalDias; i++) {
+    if (cursor.getDay() !== 0) dias++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dias;
 }
 
 const STEP_LABELS: Record<VacationWorkflowStep, string> = {

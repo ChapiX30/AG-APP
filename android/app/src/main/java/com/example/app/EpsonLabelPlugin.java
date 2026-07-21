@@ -82,15 +82,17 @@ public class EpsonLabelPlugin extends Plugin {
     /** La PX400 no imprime hasta el borde: reserva extra arriba/abajo. */
     private static final float LABEL_SAFE_TOP_MM = 2.4f;
     private static final float LABEL_SAFE_BOTTOM_MM = 2.4f;
-    /** Cinta 12mm — logo tamaño normal pegado a la izquierda + datos. */
+    /** Cinta 12mm — logo compacto pegado a la izquierda + datos grandes. */
     private static final float LABEL_SAFE_TOP_MM_12 = 0.8f;
     private static final float LABEL_SAFE_BOTTOM_MM_12 = 0.8f;
     private static final float LABEL_MARGIN_SIDE_MM_12 = 0.5f;
-    /** Mismo tamaño de logo que antes; solo alineado al borde izquierdo. */
-    private static final float LABEL_LOGO_COL_MM_12 = 9.5f;
-    private static final float LABEL_HEADER_H_MM_12 = 2.0f;
-    private static final float LABEL_PT_HEADER_12 = 5f;
-    private static final float LABEL_PT_ROW_12 = 5.8f;
+    /** Logo reducido para dar más ancho a los datos (legibilidad en 12mm). */
+    private static final float LABEL_LOGO_COL_MM_12 = 6.5f;
+    private static final float LABEL_HEADER_H_MM_12 = 2.5f;
+    private static final float LABEL_PT_HEADER_12 = 6.5f;
+    private static final float LABEL_PT_ROW_12 = 7f;
+    /** Cert un poco más grande que el resto de filas. */
+    private static final float LABEL_PT_CERT_12 = 8f;
     private static final float LABEL_PT_FORM_12 = 4.8f;
     private static final float LABEL_PT_MIN_12 = 4.5f;
     private static final String LABEL_FORM_CODE = "AG-CAL-F14-00";
@@ -104,8 +106,8 @@ public class EpsonLabelPlugin extends Plugin {
     /** 12mm: casi como 24mm; un pelín más suave sin quedar tenue. */
     private static final int LABEL_PRINT_DENSITY_12 = 0;
     private static final int LABEL_BINARIZE_THRESHOLD = 200;
-    /** Un poco más sólido que 175, sin empastar como 200. */
-    private static final int LABEL_BINARIZE_THRESHOLD_12 = 188;
+    /** Igual que 24mm: con letra más grande ya no empasta y evita salida tenue. */
+    private static final int LABEL_BINARIZE_THRESHOLD_12 = 200;
 
     private LWPrint lwprint;
     /** Impresora lista para imprimir (como Label Editor Mobile: se configura una vez por sesión). */
@@ -338,6 +340,7 @@ public class EpsonLabelPlugin extends Plugin {
         final String cert = call.getString("certificado", "N/A");
         final String tec = formatTechnicianCode(call.getString("calibro", "AG"));
         final String tapeReq = call.getString("tapeSize", "24mm");
+        final boolean rechazado = "rechazado".equalsIgnoreCase(call.getString("labelType", "calibrado"));
         final int copies = Math.max(1, Math.min(call.getInt("copies", 1), 9));
 
         final Map<String, String> activePrinterInfo;
@@ -428,7 +431,7 @@ public class EpsonLabelPlugin extends Plugin {
 
             int height = lwprint.getPrintableSizeFromTape(tapeWidth);
             int res = lwprint.getResolution();
-            Bitmap bmp = createLabel(id, fCal, fSug, cert, tec, height, res, tapeReq);
+            Bitmap bmp = createLabel(id, fCal, fSug, cert, tec, height, res, tapeReq, rechazado);
             boolean smallTape = "12mm".equals(tapeReq);
             Bitmap printBmp = binarizeLabelForThermal(bmp,
                     smallTape ? LABEL_BINARIZE_THRESHOLD_12 : LABEL_BINARIZE_THRESHOLD);
@@ -916,7 +919,7 @@ public class EpsonLabelPlugin extends Plugin {
         return size;
     }
 
-    /** Texto alineado al borde derecho (p. ej. AG-CAL-F14-00 en 12 mm). */
+    /** Texto alineado al borde derecho (p. ej. Cert / CALIBRÓ / AG-CAL-F14-00 en 12 mm). */
     private float drawRightAlignedFittedText(
             Canvas canvas,
             String text,
@@ -925,7 +928,8 @@ public class EpsonLabelPlugin extends Plugin {
             float maxWidth,
             float startSize,
             float minSize,
-            LabelFontStyle style
+            LabelFontStyle style,
+            boolean reinforce
     ) {
         Paint crisp = new Paint();
         crisp.setColor(Color.BLACK);
@@ -938,6 +942,7 @@ public class EpsonLabelPlugin extends Plugin {
         crisp.setHinting(Paint.HINTING_ON);
         crisp.setTextAlign(Paint.Align.RIGHT);
         crisp.setTypeface(pickLabelFont(style));
+        crisp.setFakeBoldText(reinforce);
 
         float size = snapThermalTextSize(startSize);
         float minPx = snapThermalTextSize(minSize);
@@ -947,8 +952,27 @@ public class EpsonLabelPlugin extends Plugin {
             crisp.setTextSize(size);
         }
 
-        canvas.drawText(text, Math.round(right), Math.round(y), crisp);
+        float rx = Math.round(right);
+        float ry = Math.round(y);
+        canvas.drawText(text, rx, ry, crisp);
+        if (reinforce) {
+            canvas.drawText(text, rx - 1f, ry, crisp);
+        }
         return size;
+    }
+
+    private float drawRightAlignedFittedText(
+            Canvas canvas,
+            String text,
+            float right,
+            float y,
+            float maxWidth,
+            float startSize,
+            float minSize,
+            LabelFontStyle style
+    ) {
+        return drawRightAlignedFittedText(
+                canvas, text, right, y, maxWidth, startSize, minSize, style, false);
     }
 
     private void drawStretchedHeaderText(
@@ -982,7 +1006,7 @@ public class EpsonLabelPlugin extends Plugin {
         }
     }
 
-    /** Encabezado invertido a todo el ancho: franja negra con CALIBRADO en blanco. */
+    /** Encabezado invertido a todo el ancho: franja negra con texto en blanco. */
     private float drawThermalHeader(
             Canvas canvas,
             int widthPx,
@@ -990,7 +1014,8 @@ public class EpsonLabelPlugin extends Plugin {
             float pxPerMm,
             int res,
             Paint paint,
-            boolean smallTape
+            boolean smallTape,
+            String headerLabel
     ) {
         float side = LABEL_MARGIN_SIDE_MM * pxPerMm;
         float headerH = (smallTape ? LABEL_HEADER_H_MM_12 : 3.8f) * pxPerMm;
@@ -1011,7 +1036,7 @@ public class EpsonLabelPlugin extends Plugin {
 
         float maxHeaderTextW = widthPx - (side * 2f);
         float minHeaderSize = smallTape ? LABEL_PT_MIN_12 : 5f;
-        while (headerTextSize > minHeaderSize && headerText.measureText("CALIBRADO") > maxHeaderTextW) {
+        while (headerTextSize > minHeaderSize && headerText.measureText(headerLabel) > maxHeaderTextW) {
             headerTextSize *= 0.95f;
             headerText.setTextSize(headerTextSize);
         }
@@ -1019,7 +1044,7 @@ public class EpsonLabelPlugin extends Plugin {
         Paint.FontMetrics headerFm = headerText.getFontMetrics();
         float textMidY = top + (headerH / 2f);
         float baseline = textMidY - ((headerFm.ascent + headerFm.descent) / 2f);
-        drawStretchedHeaderText(canvas, "CALIBRADO", side, widthPx - side, baseline, headerText);
+        drawStretchedHeaderText(canvas, headerLabel, side, widthPx - side, baseline, headerText);
 
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.BLACK);
@@ -1066,15 +1091,16 @@ public class EpsonLabelPlugin extends Plugin {
             String tec,
             int tapeHeightPx,
             int res,
-            String tapeReq
+            String tapeReq,
+            boolean rechazado
     ) {
         if ("12mm".equals(tapeReq)) {
-            return createLabel12mm(id, cal, ven, cert, tec, res);
+            return createLabel12mm(id, cal, ven, cert, tec, res, rechazado);
         }
-        return createLabel24mm(id, cal, ven, cert, tec, res);
+        return createLabel24mm(id, cal, ven, cert, tec, res, rechazado);
     }
 
-    /** Franja CALIBRADO solo sobre el panel derecho (como plantilla Epson 40×12). */
+    /** Franja de encabezado solo sobre el panel derecho (como plantilla Epson 40×12). */
     private float drawContentHeaderBand(
             Canvas canvas,
             float left,
@@ -1082,7 +1108,8 @@ public class EpsonLabelPlugin extends Plugin {
             float top,
             float pxPerMm,
             int res,
-            Paint paint
+            Paint paint,
+            String headerLabel
     ) {
         float headerH = LABEL_HEADER_H_MM_12 * pxPerMm;
         paint.setStyle(Paint.Style.FILL);
@@ -1098,20 +1125,28 @@ public class EpsonLabelPlugin extends Plugin {
         headerText.setTextSize(headerTextSize);
         float pad = 0.35f * pxPerMm;
         float maxW = (right - left) - (pad * 2f);
-        while (headerTextSize > LABEL_PT_MIN_12 && headerText.measureText("CALIBRADO") > maxW) {
+        while (headerTextSize > LABEL_PT_MIN_12 && headerText.measureText(headerLabel) > maxW) {
             headerTextSize *= 0.95f;
             headerText.setTextSize(headerTextSize);
         }
         Paint.FontMetrics fm = headerText.getFontMetrics();
         float baseline = top + (headerH / 2f) - ((fm.ascent + fm.descent) / 2f);
-        drawStretchedHeaderText(canvas, "CALIBRADO", left + pad, right - pad, baseline, headerText);
+        drawStretchedHeaderText(canvas, headerLabel, left + pad, right - pad, baseline, headerText);
 
         paint.setColor(Color.BLACK);
         return top + headerH;
     }
 
-    /** Etiqueta 40×12 mm: logo pegado a la izquierda + datos en 2 columnas (letra fina). */
-    private Bitmap createLabel12mm(String id, String cal, String ven, String cert, String tec, int res) {
+    /** Etiqueta 40×12 mm: logo compacto + datos grandes en 2 columnas. */
+    private Bitmap createLabel12mm(
+            String id,
+            String cal,
+            String ven,
+            String cert,
+            String tec,
+            int res,
+            boolean rechazado
+    ) {
         float pxPerMm = res / 25.4f;
         float safeTop = LABEL_SAFE_TOP_MM_12 * pxPerMm;
         float safeBottom = LABEL_SAFE_BOTTOM_MM_12 * pxPerMm;
@@ -1120,6 +1155,7 @@ public class EpsonLabelPlugin extends Plugin {
         float rowSize = ptToPx(LABEL_PT_ROW_12, res);
         float formSize = ptToPx(LABEL_PT_FORM_12, res);
         float minTextSize = ptToPx(LABEL_PT_MIN_12, res);
+        String headerLabel = rechazado ? "RECHAZADO" : "CALIBRADO";
 
         int widthPx = Math.round(LABEL_LENGTH_MM_12 * pxPerMm);
         int heightPx = Math.round(TAPE_WIDTH_MM_12 * pxPerMm);
@@ -1136,7 +1172,7 @@ public class EpsonLabelPlugin extends Plugin {
         float areaBottom = heightPx - safeBottom;
         float side = LABEL_MARGIN_SIDE_MM_12 * pxPerMm;
         float logoColW = LABEL_LOGO_COL_MM_12 * pxPerMm;
-        float gap = 0.55f * pxPerMm;
+        float gap = 0.45f * pxPerMm;
         float contentLeft = side + logoColW + gap;
         float contentRight = widthPx - side;
 
@@ -1144,8 +1180,8 @@ public class EpsonLabelPlugin extends Plugin {
         if (logo != null) {
             Bitmap logoPrint = prepareLogoForThermal(logo);
             float areaH = areaBottom - areaTop;
-            // Tamaño normal del logo; solo pegado al borde izquierdo (sin reducir).
-            float scale = Math.min(logoColW / logoPrint.getWidth(), areaH / logoPrint.getHeight());
+            // Logo más chico para liberar espacio a los datos.
+            float scale = Math.min(logoColW / logoPrint.getWidth(), (areaH * 0.82f) / logoPrint.getHeight());
             float scaledW = logoPrint.getWidth() * scale;
             float scaledH = logoPrint.getHeight() * scale;
             float left = side;
@@ -1156,13 +1192,14 @@ public class EpsonLabelPlugin extends Plugin {
             }
         }
 
-        float bodyTop = drawContentHeaderBand(canvas, contentLeft, contentRight, areaTop, pxPerMm, res, paint);
+        float bodyTop = drawContentHeaderBand(
+                canvas, contentLeft, contentRight, areaTop, pxPerMm, res, paint, headerLabel);
         bodyTop += 0.08f * pxPerMm;
         float bodyH = areaBottom - bodyTop;
         float rowH = bodyH / 3f;
-        // Columna der más a la derecha → CALIBRÓ / Cert no se pegan a las fechas.
-        float splitX = contentLeft + ((contentRight - contentLeft) * 0.58f);
-        float colGap = 0.35f * pxPerMm;
+        // Más ancho a la derecha: Cert / CALIBRÓ / código no se achican ni salen tenues.
+        float splitX = contentLeft + ((contentRight - contentLeft) * 0.52f);
+        float colGap = 0.3f * pxPerMm;
         float leftColW = splitX - contentLeft - colGap;
         float rightColW = contentRight - splitX;
 
@@ -1170,31 +1207,56 @@ public class EpsonLabelPlugin extends Plugin {
         float row1Top = bodyTop + rowH;
         float row2Top = bodyTop + (rowH * 2f);
 
+        String leftMid = rechazado ? ("F.REV.: " + cal) : ("F.CAL: " + cal);
+        String rightMid = rechazado ? ("VERIFICO: " + tec) : ("CALIBRÓ: " + tec);
+        String leftBot = rechazado ? ("CERT: " + cert) : ("F.SUG: " + ven);
+        String rightTop = rechazado ? "" : ("Cert: " + cert);
+
+        // Misma densidad que la etiqueta de 24mm: negrita normal, sin refuerzo doble.
+        float certSize = ptToPx(LABEL_PT_CERT_12, res);
+
         float y0 = drawBaselineFromTop(paint, row0Top + (rowH * 0.05f), rowSize);
-        drawCrispFittedText(canvas, "ID: " + id, contentLeft, y0, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
-        drawRightAlignedFittedText(canvas, "Cert: " + cert, contentRight, y0, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR);
+        drawCrispFittedText(canvas, "ID: " + id, contentLeft, y0, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+        if (!rechazado) {
+            drawRightAlignedFittedText(canvas, rightTop, contentRight, y0, rightColW, certSize, minTextSize, LabelFontStyle.BOLD, false);
+        } else {
+            drawRightAlignedFittedText(canvas, LABEL_FORM_CODE, contentRight, y0, rightColW, formSize, minTextSize, LabelFontStyle.BOLD, false);
+        }
 
         float y1 = drawBaselineFromTop(paint, row1Top + (rowH * 0.05f), rowSize);
-        drawCrispFittedText(canvas, "F.CAL: " + cal, contentLeft, y1, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
-        drawRightAlignedFittedText(canvas, "CALIBRÓ: " + tec, contentRight, y1, rightColW, rowSize, minTextSize, LabelFontStyle.REGULAR);
+        drawCrispFittedText(canvas, leftMid, contentLeft, y1, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+        drawRightAlignedFittedText(canvas, rightMid, contentRight, y1, rightColW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
 
         float y2 = drawBaselineFromTop(paint, row2Top + (rowH * 0.05f), rowSize);
-        drawCrispFittedText(canvas, "F.SUG: " + ven, contentLeft, y2, leftColW, rowSize, minTextSize, LabelFontStyle.REGULAR, false);
-        drawRightAlignedFittedText(
-                canvas,
-                LABEL_FORM_CODE,
-                contentRight,
-                y2,
-                rightColW,
-                formSize,
-                minTextSize,
-                LabelFontStyle.REGULAR
-        );
+        if (rechazado) {
+            drawCrispFittedText(canvas, leftBot, contentLeft, y2, contentRight - contentLeft, certSize, minTextSize, LabelFontStyle.BOLD, false);
+        } else {
+            drawCrispFittedText(canvas, leftBot, contentLeft, y2, leftColW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+            drawRightAlignedFittedText(
+                    canvas,
+                    LABEL_FORM_CODE,
+                    contentRight,
+                    y2,
+                    rightColW,
+                    formSize,
+                    minTextSize,
+                    LabelFontStyle.BOLD,
+                    false
+            );
+        }
 
         return bmp;
     }
 
-    private Bitmap createLabel24mm(String id, String cal, String ven, String cert, String tec, int res) {
+    private Bitmap createLabel24mm(
+            String id,
+            String cal,
+            String ven,
+            String cert,
+            String tec,
+            int res,
+            boolean rechazado
+    ) {
         float pxPerMm = res / 25.4f;
         float safeTop = LABEL_SAFE_TOP_MM * pxPerMm;
         float safeBottom = LABEL_SAFE_BOTTOM_MM * pxPerMm;
@@ -1204,6 +1266,7 @@ public class EpsonLabelPlugin extends Plugin {
         float rowSize = ptToPx(LABEL_PT_BODY, res);
         float footerSize = ptToPx(LABEL_PT_FOOTER, res);
         float minTextSize = ptToPx(LABEL_PT_MIN, res);
+        String headerLabel = rechazado ? "RECHAZADO" : "CALIBRADO";
 
         int widthPx = Math.round(LABEL_LENGTH_MM_24 * pxPerMm);
         int heightPx = Math.round(TAPE_WIDTH_MM_24 * pxPerMm);
@@ -1220,7 +1283,7 @@ public class EpsonLabelPlugin extends Plugin {
         float areaBottom = heightPx - safeBottom;
         float footerReserve = 2.4f * pxPerMm;
 
-        float bodyTop = drawThermalHeader(canvas, widthPx, areaTop, pxPerMm, res, paint, false);
+        float bodyTop = drawThermalHeader(canvas, widthPx, areaTop, pxPerMm, res, paint, false, headerLabel);
         float bodyBottom = areaBottom - footerReserve;
         drawFooterCode(canvas, bodyBottom, areaBottom, pxPerMm, footerSize, false);
         float bodyH = bodyBottom - bodyTop;
@@ -1248,7 +1311,7 @@ public class EpsonLabelPlugin extends Plugin {
             contentW = widthPx - contentX - (LABEL_MARGIN_SIDE_MM * pxPerMm);
         }
 
-        int lines = 5;
+        int lines = rechazado ? 4 : 5;
         float blockH = idSize + (rowSize * (lines - 1));
         float firstTop = bodyTop + Math.max(0f, (bodyH - blockH) / 2f);
 
@@ -1256,16 +1319,30 @@ public class EpsonLabelPlugin extends Plugin {
         drawCrispFittedText(canvas, "ID: " + id, contentX, y, contentW, idSize, minTextSize, LabelFontStyle.BOLD, false);
 
         y = drawBaselineFromTop(paint, firstTop + idSize, rowSize);
-        drawCrispFittedText(canvas, "F.CAL: " + cal, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+        drawCrispFittedText(
+                canvas,
+                rechazado ? ("F.REV.: " + cal) : ("F.CAL: " + cal),
+                contentX,
+                y,
+                contentW,
+                rowSize,
+                minTextSize,
+                LabelFontStyle.BOLD,
+                false
+        );
 
         y = drawBaselineFromTop(paint, firstTop + idSize + rowSize, rowSize);
-        drawCrispFittedText(canvas, "F.SUG: " + ven, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
-
-        y = drawBaselineFromTop(paint, firstTop + idSize + (rowSize * 2f), rowSize);
-        drawCrispFittedText(canvas, "CALIBRÓ: " + tec, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
-
-        y = drawBaselineFromTop(paint, firstTop + idSize + (rowSize * 3f), rowSize);
-        drawCrispFittedText(canvas, "CERT: " + cert, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+        if (rechazado) {
+            drawCrispFittedText(canvas, "VERIFICO: " + tec, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+            y = drawBaselineFromTop(paint, firstTop + idSize + (rowSize * 2f), rowSize);
+            drawCrispFittedText(canvas, "CERT: " + cert, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+        } else {
+            drawCrispFittedText(canvas, "F.SUG: " + ven, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+            y = drawBaselineFromTop(paint, firstTop + idSize + (rowSize * 2f), rowSize);
+            drawCrispFittedText(canvas, "CALIBRÓ: " + tec, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+            y = drawBaselineFromTop(paint, firstTop + idSize + (rowSize * 3f), rowSize);
+            drawCrispFittedText(canvas, "CERT: " + cert, contentX, y, contentW, rowSize, minTextSize, LabelFontStyle.BOLD, false);
+        }
 
         return bmp;
     }

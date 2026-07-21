@@ -8,7 +8,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import {
-  ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject,
+  ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject, getBlob,
 } from 'firebase/storage';
 import {
   Folder, FileText, UploadCloud, Trash2, Download,
@@ -88,6 +88,23 @@ const getFileIcon = (nombre: string) => {
   if (/\.(xlsx|xlsm|xls|xlsb)$/.test(n)) return { Icon: FileSpreadsheet, color: 'text-emerald-400', bg: 'bg-emerald-500/10' };
   if (/\.pdf$/.test(n)) return { Icon: FileType, color: 'text-rose-400', bg: 'bg-rose-500/10' };
   return { Icon: FileText, color: 'text-blue-400', bg: 'bg-blue-500/10' };
+};
+
+const getFileExtension = (nombre: string): string => {
+  const match = nombre.match(/(\.[a-z0-9]+)$/i);
+  return match?.[1].toLowerCase() || '';
+};
+
+const buildDownloadName = (
+  categoria: string,
+  version: string,
+  originalName: string,
+  year: number,
+): string => {
+  const categoryName = CATEGORIAS.find(c => c.id === categoria)?.nombre || categoria;
+  const safeCategory = categoryName.replace(/[<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim();
+  const safeVersion = (version || '1.0').replace(/^v/i, '').replace(/[<>:"/\\|?*]/g, '');
+  return `Formato ${safeCategory} ${year} v${safeVersion}${getFileExtension(originalName)}`;
 };
 
 /** Sugiere la siguiente versión: "1.0" -> "1.1", "2" -> "3". */
@@ -235,6 +252,7 @@ export const FormatosScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [historialOpenId, setHistorialOpenId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // Subida / edición
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -471,6 +489,38 @@ export const FormatosScreen: React.FC = () => {
       console.error(error);
       setUploadProgress(null);
       await showAlert({ title: 'Error', message: 'Ocurrió un error al guardar el formato.', variant: 'danger' });
+    }
+  };
+
+  const handleDownload = async (
+    refPath: string,
+    nombreOriginal: string,
+    categoria: string,
+    version: string,
+    year: number,
+    downloadId: string,
+  ) => {
+    if (downloadingId) return;
+    setDownloadingId(downloadId);
+    try {
+      const blob = await getBlob(storageRef(storage, refPath));
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = buildDownloadName(categoria, version, nombreOriginal, year);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error(error);
+      await showAlert({
+        title: 'Error de descarga',
+        message: 'No se pudo descargar el formato. Verifica tu conexión e inténtalo nuevamente.',
+        variant: 'danger',
+      });
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -727,9 +777,24 @@ export const FormatosScreen: React.FC = () => {
                                               {h.fecha ? format(new Date(h.fecha), 'dd MMM yy', { locale: es }) : ''} · {h.subidoPor}
                                             </span>
                                             {esCalidad && h.url && (
-                                              <a href={h.url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-400 shrink-0" title="Descargar versión anterior">
-                                                <Download size={12} />
-                                              </a>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleDownload(
+                                                  h.refPath,
+                                                  h.nombre,
+                                                  formato.categoria,
+                                                  h.version,
+                                                  h.fecha ? new Date(h.fecha).getFullYear() : new Date().getFullYear(),
+                                                  `${formato.id}-history-${i}`,
+                                                )}
+                                                disabled={downloadingId !== null}
+                                                className="text-slate-500 hover:text-blue-400 disabled:opacity-50 shrink-0"
+                                                title="Descargar versión anterior"
+                                              >
+                                                {downloadingId === `${formato.id}-history-${i}`
+                                                  ? <Loader2 size={12} className="animate-spin" />
+                                                  : <Download size={12} />}
+                                              </button>
                                             )}
                                           </div>
                                         ))}
@@ -744,14 +809,23 @@ export const FormatosScreen: React.FC = () => {
                           {/* Acciones */}
                           <div className="flex items-center gap-2 pt-2 mt-auto">
                             {canDownload ? (
-                              <a
-                                href={formato.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={() => void handleDownload(
+                                  formato.refPath,
+                                  formato.nombre,
+                                  formato.categoria,
+                                  formato.version,
+                                  formato.fechaSubida?.toDate().getFullYear() || new Date().getFullYear(),
+                                  formato.id,
+                                )}
+                                disabled={downloadingId !== null}
                                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-700 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-900/20"
                               >
-                                <Download size={14} /> Descargar
-                              </a>
+                                {downloadingId === formato.id
+                                  ? <><Loader2 size={14} className="animate-spin" /> Descargando…</>
+                                  : <><Download size={14} /> Descargar</>}
+                              </button>
                             ) : (
                               <button disabled className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold bg-slate-800/50 text-slate-500 border border-slate-800 cursor-not-allowed" title="Documento en revisión: descarga bloqueada">
                                 <Lock size={14} /> En revisión

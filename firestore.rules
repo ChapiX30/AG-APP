@@ -59,6 +59,25 @@ service cloud.firestore {
       allow update, delete: if canManageAppNovedades();
     }
 
+    // Formatos Master — metadatos del repositorio controlado
+    // Lectura: calidad + metrólogos/técnicos (descarga). Escritura: solo calidad/admin/gerencia.
+    function canReadFormatosMaster() {
+      return isSignedIn() && userExists() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico).*'
+      );
+    }
+
+    function canWriteFormatosMaster() {
+      return isSignedIn() && userExists() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager).*'
+      );
+    }
+
+    match /formatos_master/{formatoId} {
+      allow read: if canReadFormatosMaster();
+      allow create, update, delete: if canWriteFormatosMaster();
+    }
+
     // Resto de colecciones: autenticación requerida (alinear con despliegue previo)
     match /{document=**} {
       allow read, write: if isSignedIn();

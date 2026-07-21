@@ -697,7 +697,9 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                     diasNoCoinciden ? 'text-red-600' : 'text-emerald-700'
                   }`}
                 >
-                  {diasNoCoinciden ? 'Las fechas no coinciden con los días indicados.' : 'Fechas y días coinciden.'}
+                  {diasNoCoinciden
+                    ? `Las fechas no coinciden con los días indicados (el periodo tiene ${diasSegunFechas} día(s) laborables; los domingos no cuentan).`
+                    : 'Fechas y días coinciden (los domingos no cuentan).'}
                 </p>
               )}
               <Field label="Observaciones (opcional)">

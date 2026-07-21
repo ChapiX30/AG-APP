@@ -134,7 +134,7 @@ export function validateSolicitudForm(input: {
     return 'Indica un número válido de días de vacaciones.';
   }
   if (input.diasSegunFechas != null && input.diasVacaciones !== input.diasSegunFechas) {
-    return `Los días solicitados (${input.diasVacaciones}) no coinciden con el periodo seleccionado (${input.diasSegunFechas} día(s), contando inicio y fin).`;
+    return `Los días solicitados (${input.diasVacaciones}) no coinciden con el periodo seleccionado (${input.diasSegunFechas} día(s), contando inicio y fin, sin domingos).`;
   }
   return null;
 }

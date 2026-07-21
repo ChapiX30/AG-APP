@@ -96,8 +96,31 @@ service firebase.storage {
       allow read, write: if isSignedIn();
     }
 
+    // Formatos Master (.xlsx/.xlsm/.pdf/.docx) — lectura para equipo técnico; escritura solo calidad
+    function canReadFormatosMaster() {
+      return isSignedIn() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico).*'
+      );
+    }
+
+    function canWriteFormatosMaster() {
+      return isSignedIn() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager).*'
+      );
+    }
+
+    function isAllowedFormatoMasterUpload() {
+      return request.resource != null
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches(
+          'application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet|application/vnd\\.ms-excel\\.sheet\\.macroEnabled\\.12|application/vnd\\.ms-excel|application/vnd\\.ms-excel\\.sheet\\.binary\\.macroEnabled\\.12|application/pdf|application/msword|application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document|application/octet-stream'
+        );
+    }
+
     match /formatos_master/{allPaths=**} {
-      allow read, write: if isSignedIn();
+      allow read: if canReadFormatosMaster();
+      allow create, update: if canWriteFormatosMaster() && isAllowedFormatoMasterUpload();
+      allow delete: if canWriteFormatosMaster();
     }
 
     // Solicitudes de vacaciones (PDF AG-ADM-F12) — lectura app; escritura vía Functions Admin

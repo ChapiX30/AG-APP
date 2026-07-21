@@ -1,0 +1,543 @@
+=== Calculos A-S rows 9-40 ===
+A9	'Instrumento:'
+B9	'=IFERROR(INDEX(Historial!$D:$D,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"No encontrado")'
+E9	'ID:'
+F9	'=IFERROR(INDEX(Historial!$H:$H,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+H9	'División minima:'
+J9	2
+M9	'Calibró'
+O9	'Aprobó'
+A10	'Marca:'
+B10	'=IFERROR(INDEX(Historial!$E:$E,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"No encontrado")'
+E10	'Alcance de Medición:'
+F10	600
+H10	'Unidad:'
+J10	'psi'
+K10	'-8 Valores para clases de exactitud .2; .25; .4; .5; .6'
+A11	'=IF(B5="MEXICO MRO MANAGEMENT S. DE R.L. DE C.V.", "No. De Parte:", "Modelo:")'
+B11	'=IFERROR(INDEX(Historial!$F:$F,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+E11	'Magnitud:'
+F11	'Presión'
+H11	'Clase de Exactitud:'
+J11	'=$J$9/$F$10*100'
+K11	'-5 Valores para clases de exactitud 1; 1.6; 2; 2.5'
+A12	'No de Serie:'
+B12	'=IFERROR(INDEX(Historial!$G:$G,MATCH(($D$4&"-"&TEXT($E$4,"0000")&"-"&$F$4),Historial!$B:$B,0)),"")'
+E12	'Ubicación'
+F12	'N/A'
+H12	'Resolución:'
+J12	'=IF(B13=1,J9/2,J9)'
+K12	'-3 Valores para clases de exactitud 4 y 5'
+M12	'Patron ID'
+N12	'=IF(OR(F10="",NOT(ISNUMBER(F10))),"",IF(OR(AND(ISNUMBER(N13),N13<0),AND(ISNUMBER(F10),F10<0)),"AG-034",IF(ABS(F10)/$J$13<=350,"AG-034",IF(ABS(F10)/$J$13<=750,"AG-052","AG-008"))))'
+A13	'TIPO:'
+B13	1
+E13	'Temperatura I  °C:'
+F13	25.1
+H13	'Factor (psi→unid)'
+J13	'=IFERROR(IF(LOWER(TRIM(J10))="psi",1,IF(LOWER(TRIM(J10))="kpa",6.894757,IF(LOWER(TRIM(J10))="mpa",0.00689476,IF(LOWER(TRIM(J10))="bar",0.0689476,IF(LOWER(TRIM(J10))="mbar",68.94757,IF(LOWER(TRIM(J10))="kg-cm2",0.070307,IF(LOWER(TRIM(J10))="inhg",2.036021,IF(LOWER(TRIM(J10))="inh2o",27.6799,IF(LOWER
+K13	'=IF(J13=1,"psi base",J10)'
+A14	'Lugar donde se calibró:'
+C14	'=IF(OR(K4="Laboratorio",K4="laboratorio"),"Instalaciones AG",IF(OR(K4="Sitio",K4="sitio"),"Instalaciones de Cliente",""))'
+D14	'Humedad Relativa I %:'
+F14	46
+H14	'Unidad previa (VBA)'
+J14	47
+A15	'EMP de acuerdo a:'
+F15	'NORMA'
+H15	'Cambia J10 → VBA convierte F10 y J9. U/sesgo (V/Y) = tabla PSI × J13. Lecturas en la misma unidad.'
+A16	'Inspección Inicial'
+A18	'Lecturas del Instrumento'
+F18	'Lecturas del Patrón'
+H18	'Reglas de decision'
+A19	'Carga Aprox.'
+B19	'V. Deseado'
+C19	'X1Ascendente(+)'
+D19	'X1Descendente(-)'
+F19	'X1 A (+)'
+G19	'X1 D (-)'
+H19	'Promedio del IBC'
+I19	'Promedio del Patrón'
+J19	'Error Absoluto'
+K19	'Dictamen'
+A20	0.2
+B20	'=20%*F10'
+C20	'=F10*0.2'
+D20	'=F10*0.2'
+F20	'=F10*0.2'
+G20	'=F10*0.2'
+H20	'=AVERAGE(C20:D20)'
+I20	'=AVERAGE(F20:G20)'
+J20	'=H20-I20'
+K20	'=IF(ABS(J20)>Q30,"RECHAZADO","ACEPTADO")'
+A21	0.5
+B21	'=50%*F10'
+C21	'=F10*0.5'
+D21	'=F10*0.5'
+F21	'=F10*0.5'
+G21	'=F10*0.5'
+H21	'=AVERAGE(C21:D21)'
+I21	'=AVERAGE(F21:G21)'
+J21	'=H21-I21'
+K21	'=IF(ABS(J21)>Q31,"RECHAZADO","ACEPTADO")'
+A22	1
+B22	'=F10'
+C22	'=F10*1'
+D22	'=F10*1'
+F22	'=F10*1'
+G22	'=F10*1'
+H22	'=AVERAGE(C22:D22)'
+I22	'=AVERAGE(F22:G22)'
+J22	'=H22-I22'
+K22	'=IF(ABS(J22)>Q32,"RECHAZADO","ACEPTADO")'
+A24	'Lecturas del Instrumento'
+H24	'Lecturas del Patrón'
+N24	'Cálculos de incertidumbre'
+N25	'Promedio'
+O25	'Promedio'
+P25	'Error Absoluto de medición'
+Q25	'EMP'
+R25	'errVsEMP'
+S25	'err+UE vs EMP'
+A26	'V. Deseado '
+B26	'V. Generado'
+C26	'X1Ascendente(+)'
+D26	'X1Descendente(-)'
+E26	'X2Ascendente(+)'
+F26	'X2Descendente(-)'
+H26	'X1 Ascendente (+)'
+I26	'X1 Descendente (-)'
+J26	'X2 Ascendente (+)'
+K26	'X2 Descendente (-)'
+N26	'IBC'
+O26	'Patrón'
+A27	'=J10'
+B27	'=A27'
+C27	'=B27'
+D27	'=C27'
+E27	'=D27'
+F27	'=E27'
+H27	'=F27'
+I27	'=H27'
+J27	'=I27'
+K27	'=J27'
+N27	'=K27'
+O27	'=N27'
+P27	'=N27'
+Q27	'=P27'
+R27	'x'
+S27	'x'
+A28	'=IF(ROW(A28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A28)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B28	'=IF(ROW(B28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B28)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C28	'=IF(ROW(C28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C28)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D28	'=IF(ROW(D28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D28)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E28	'=IF(ROW(E28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E28)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F28	'=IF(ROW(F28)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F28)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+H28	0.048
+I28	0.048
+J28	0.048
+K28	0.048
+N28	'=IF(C28=0,"",AVERAGE(C28:F28))'
+O28	'=IF(H28=0,"",AVERAGE(H28:K28))'
+P28	'=IF(N28="","",(N28)-O28)'
+Q28	'=J9'
+R28	'=IF(ABS(P28)>Q28,"RECHAZADO","ACEPTADO")'
+S28	'=IF(P28="","",IF(ABS(P28)+(AE28)>Q28,"RECHAZADO","ACEPTADO"))'
+A29	'=IF(ROW(A29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A29)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B29	'=IF(ROW(B29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B29)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C29	'=IF(ROW(C29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C29)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D29	'=IF(ROW(D29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D29)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E29	'=IF(ROW(E29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E29)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F29	'=IF(ROW(F29)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F29)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+H29	0.099
+I29	0.099
+J29	0.099
+K29	0.099
+L29	'<'
+N29	'=IF(C29=0,"",AVERAGE(C29:F29))'
+O29	'=IF(H29=0,"",AVERAGE(H29:K29))'
+P29	'=IF(N29="","",(N29)-O29)'
+Q29	'=Q28'
+R29	'=IF(ABS(P29)>Q29,"RECHAZADO","ACEPTADO")'
+S29	'=IF(P29="","",IF(ABS(P29)+(AE29)>Q29,"RECHAZADO","ACEPTADO"))'
+A30	'=IF(ROW(A30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A30)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B30	'=IF(ROW(B30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B30)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C30	'=IF(ROW(C30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C30)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D30	'=IF(ROW(D30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D30)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E30	'=IF(ROW(E30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E30)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F30	'=IF(ROW(F30)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F30)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+H30	0.149
+I30	0.149
+J30	0.149
+K30	0.149
+N30	'=IF(C30=0,"",AVERAGE(C30:F30))'
+O30	'=IF(H30=0,"",AVERAGE(H30:K30))'
+P30	'=IF(N30="","",(N30)-O30)'
+Q30	'=Q29'
+R30	'=IF(ABS(P30)>Q30,"RECHAZADO","ACEPTADO")'
+S30	'=IF(P30="","",IF(ABS(P30)+(AE30)>Q30,"RECHAZADO","ACEPTADO"))'
+A31	'=IF(ROW(A31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A31)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B31	'=IF(ROW(B31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B31)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C31	'=IF(ROW(C31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C31)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D31	'=IF(ROW(D31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D31)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E31	'=IF(ROW(E31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E31)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F31	'=IF(ROW(F31)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F31)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N31	'=IF(C31=0,"",AVERAGE(C31:F31))'
+O31	'=IF(H31=0,"",AVERAGE(H31:K31))'
+P31	'=IF(N31="","",(N31)-O31)'
+Q31	'=Q30'
+R31	'=IF(ABS(P31)>Q31,"RECHAZADO","ACEPTADO")'
+S31	'=IF(P31="","",IF(ABS(P31)+(AE31)>Q31,"RECHAZADO","ACEPTADO"))'
+A32	'=IF(ROW(A32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A32)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B32	'=IF(ROW(B32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B32)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C32	'=IF(ROW(C32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C32)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D32	'=IF(ROW(D32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D32)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E32	'=IF(ROW(E32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E32)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F32	'=IF(ROW(F32)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F32)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N32	'=IF(C32=0,"",AVERAGE(C32:F32))'
+O32	'=IF(H32=0,"",AVERAGE(H32:K32))'
+P32	'=IF(N32="","",(N32)-O32)'
+Q32	'=Q31'
+R32	'=IF(ABS(P32)>Q32,"RECHAZADO","ACEPTADO")'
+S32	'=IF(P32="","",IF(ABS(P32)+(AE32)>Q32,"RECHAZADO","ACEPTADO"))'
+A33	'=IF(ROW(A33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A33)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B33	'=IF(ROW(B33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B33)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C33	'=IF(ROW(C33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C33)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D33	'=IF(ROW(D33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D33)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E33	'=IF(ROW(E33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E33)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F33	'=IF(ROW(F33)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F33)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N33	'=IF(C33=0,"",AVERAGE(C33:F33))'
+O33	'=IF(H33=0,"",AVERAGE(H33:K33))'
+P33	'=IF(N33="","",(N33)-O33)'
+Q33	'=Q32'
+R33	'=IF(ABS(P33)>Q33,"RECHAZADO","ACEPTADO")'
+S33	'=IF(P33="","",IF(ABS(P33)+(AE33)>Q33,"RECHAZADO","ACEPTADO"))'
+A34	'=IF(ROW(A34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A34)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B34	'=IF(ROW(B34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B34)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C34	'=IF(ROW(C34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C34)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D34	'=IF(ROW(D34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D34)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E34	'=IF(ROW(E34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E34)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F34	'=IF(ROW(F34)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F34)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N34	'=IF(C34=0,"",AVERAGE(C34:F34))'
+O34	'=IF(H34=0,"",AVERAGE(H34:K34))'
+P34	'=IF(N34="","",(N34)-O34)'
+Q34	'=Q33'
+R34	'=IF(ABS(P34)>Q34,"RECHAZADO","ACEPTADO")'
+S34	'=IF(P34="","",IF(ABS(P34)+(AE34)>Q34,"RECHAZADO","ACEPTADO"))'
+A35	'=IF(ROW(A35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A35)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B35	'=IF(ROW(B35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B35)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C35	'=IF(ROW(C35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C35)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D35	'=IF(ROW(D35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D35)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E35	'=IF(ROW(E35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E35)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F35	'=IF(ROW(F35)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F35)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N35	'=IF(C35=0,"",AVERAGE(C35:F35))'
+O35	'=IF(H35=0,"",AVERAGE(H35:K35))'
+P35	'=IF(N35="","",(N35)-O35)'
+Q35	'=Q34'
+R35	'=IF(ABS(P35)>Q35,"RECHAZADO","ACEPTADO")'
+S35	'=IF(P35="","",IF(ABS(P35)+(AE35)>Q35,"RECHAZADO","ACEPTADO"))'
+A36	'=IF(ROW(A36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A36)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B36	'=IF(ROW(B36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B36)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C36	'=IF(ROW(C36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C36)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D36	'=IF(ROW(D36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D36)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E36	'=IF(ROW(E36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E36)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F36	'=IF(ROW(F36)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F36)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N36	'=IF(C36=0,"",AVERAGE(C36:F36))'
+O36	'=IF(H36=0,"",AVERAGE(H36:K36))'
+P36	'=IF(N36="","",(N36)-O36)'
+Q36	'=Q35'
+R36	'=IF(ABS(P36)>Q36,"RECHAZADO","ACEPTADO")'
+S36	'=IF(P36="","",IF(ABS(P36)+(AE36)>Q36,"RECHAZADO","ACEPTADO"))'
+A37	'=IF(ROW(A37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A37)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B37	'=IF(ROW(B37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B37)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C37	'=IF(ROW(C37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C37)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D37	'=IF(ROW(D37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D37)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E37	'=IF(ROW(E37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E37)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F37	'=IF(ROW(F37)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F37)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N37	'=IF(C37=0,"",AVERAGE(C37:F37))'
+O37	'=IF(H37=0,"",AVERAGE(H37:K37))'
+P37	'=IF(N37="","",(N37)-O37)'
+Q37	'=Q36'
+R37	'=IF(ABS(P37)>Q37,"RECHAZADO","ACEPTADO")'
+S37	'=IF(P37="","",IF(ABS(P37)+(AE37)>Q37,"RECHAZADO","ACEPTADO"))'
+A38	'=IF(ROW(A38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(A38)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+B38	'=IF(ROW(B38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(B38)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+C38	'=IF(ROW(C38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(C38)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+D38	'=IF(ROW(D38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(D38)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+E38	'=IF(ROW(E38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(E38)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+F38	'=IF(ROW(F38)-ROW($A$28)+1<=$L$8, ROUND( (ROW(F38)-ROW($A$28))*($F$10/($L$8-1)) / $J$9, 0) * $J$9, "")'
+N38	'=IF(C38=0,"",AVERAGE(C38:F38))'
+O38	'=IF(H38=0,"",AVERAGE(H38:K38))'
+P38	'=IF(N38="","",(N38)-O38)'
+Q38	'=Q37'
+R38	'=IF(ABS(P38)>Q38,"RECHAZADO","ACEPTADO")'
+S38	'=IF(P38="","",IF(ABS(P38)+(AE38)>Q38,"RECHAZADO","ACEPTADO"))'
+\n=== Q25-Q40 and nearby ===
+O25	'Promedio'
+P25	'Error Absoluto de medición'
+Q25	'EMP'
+R25	'errVsEMP'
+S25	'err+UE vs EMP'
+T25	'desv'
+U25	'u'
+V25	'u'
+W25	'u'
+X25	'u'
+O26	'Patrón'
+T26	'est'
+U26	'rep'
+V26	'patK2'
+W26	'patK1'
+X26	'resoIBC'
+O27	'=N27'
+P27	'=N27'
+Q27	'=P27'
+R27	'x'
+S27	'x'
+T27	'=Q27'
+U27	'=T27'
+V27	'=U27'
+W27	'=V27'
+X27	'=W27'
+O28	'=IF(H28=0,"",AVERAGE(H28:K28))'
+P28	'=IF(N28="","",(N28)-O28)'
+Q28	'=J9'
+R28	'=IF(ABS(P28)>Q28,"RECHAZADO","ACEPTADO")'
+S28	'=IF(P28="","",IF(ABS(P28)+(AE28)>Q28,"RECHAZADO","ACEPTADO"))'
+T28	'=STDEV(H28:K28)'
+U28	'=T28/SQRT(4)'
+V28	'=IF(OR(O28="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O28/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O28/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O28/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W28	'=V28/2'
+X28	'=$J$12/SQRT(12)'
+O29	'=IF(H29=0,"",AVERAGE(H29:K29))'
+P29	'=IF(N29="","",(N29)-O29)'
+Q29	'=Q28'
+R29	'=IF(ABS(P29)>Q29,"RECHAZADO","ACEPTADO")'
+S29	'=IF(P29="","",IF(ABS(P29)+(AE29)>Q29,"RECHAZADO","ACEPTADO"))'
+T29	'=STDEV(H29:K29)'
+U29	'=T29/SQRT(4)'
+V29	'=IF(OR(O29="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O29/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O29/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O29/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W29	'=V29/2'
+X29	'=$J$12/SQRT(12)'
+O30	'=IF(H30=0,"",AVERAGE(H30:K30))'
+P30	'=IF(N30="","",(N30)-O30)'
+Q30	'=Q29'
+R30	'=IF(ABS(P30)>Q30,"RECHAZADO","ACEPTADO")'
+S30	'=IF(P30="","",IF(ABS(P30)+(AE30)>Q30,"RECHAZADO","ACEPTADO"))'
+T30	'=STDEV(H30:K30)'
+U30	'=T30/SQRT(4)'
+V30	'=IF(OR(O30="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O30/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O30/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O30/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W30	'=V30/2'
+X30	'=$J$12/SQRT(12)'
+O31	'=IF(H31=0,"",AVERAGE(H31:K31))'
+P31	'=IF(N31="","",(N31)-O31)'
+Q31	'=Q30'
+R31	'=IF(ABS(P31)>Q31,"RECHAZADO","ACEPTADO")'
+S31	'=IF(P31="","",IF(ABS(P31)+(AE31)>Q31,"RECHAZADO","ACEPTADO"))'
+T31	'=STDEV(H31:K31)'
+U31	'=T31/SQRT(4)'
+V31	'=IF(OR(O31="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O31/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O31/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O31/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W31	'=V31/2'
+X31	'=$J$12/SQRT(12)'
+O32	'=IF(H32=0,"",AVERAGE(H32:K32))'
+P32	'=IF(N32="","",(N32)-O32)'
+Q32	'=Q31'
+R32	'=IF(ABS(P32)>Q32,"RECHAZADO","ACEPTADO")'
+S32	'=IF(P32="","",IF(ABS(P32)+(AE32)>Q32,"RECHAZADO","ACEPTADO"))'
+T32	'=STDEV(H32:K32)'
+U32	'=T32/SQRT(4)'
+V32	'=IF(OR(O32="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O32/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O32/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O32/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W32	'=V32/2'
+X32	'=$J$12/SQRT(12)'
+O33	'=IF(H33=0,"",AVERAGE(H33:K33))'
+P33	'=IF(N33="","",(N33)-O33)'
+Q33	'=Q32'
+R33	'=IF(ABS(P33)>Q33,"RECHAZADO","ACEPTADO")'
+S33	'=IF(P33="","",IF(ABS(P33)+(AE33)>Q33,"RECHAZADO","ACEPTADO"))'
+T33	'=STDEV(H33:K33)'
+U33	'=T33/SQRT(4)'
+V33	'=IF(OR(O33="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O33/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O33/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O33/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W33	'=V33/2'
+X33	'=$J$12/SQRT(12)'
+O34	'=IF(H34=0,"",AVERAGE(H34:K34))'
+P34	'=IF(N34="","",(N34)-O34)'
+Q34	'=Q33'
+R34	'=IF(ABS(P34)>Q34,"RECHAZADO","ACEPTADO")'
+S34	'=IF(P34="","",IF(ABS(P34)+(AE34)>Q34,"RECHAZADO","ACEPTADO"))'
+T34	'=STDEV(H34:K34)'
+U34	'=T34/SQRT(4)'
+V34	'=IF(OR(O34="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O34/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O34/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O34/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W34	'=V34/2'
+X34	'=$J$12/SQRT(12)'
+O35	'=IF(H35=0,"",AVERAGE(H35:K35))'
+P35	'=IF(N35="","",(N35)-O35)'
+Q35	'=Q34'
+R35	'=IF(ABS(P35)>Q35,"RECHAZADO","ACEPTADO")'
+S35	'=IF(P35="","",IF(ABS(P35)+(AE35)>Q35,"RECHAZADO","ACEPTADO"))'
+T35	'=STDEV(H35:K35)'
+U35	'=T35/SQRT(4)'
+V35	'=IF(OR(O35="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O35/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O35/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O35/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W35	'=V35/2'
+X35	'=$J$12/SQRT(12)'
+O36	'=IF(H36=0,"",AVERAGE(H36:K36))'
+P36	'=IF(N36="","",(N36)-O36)'
+Q36	'=Q35'
+R36	'=IF(ABS(P36)>Q36,"RECHAZADO","ACEPTADO")'
+S36	'=IF(P36="","",IF(ABS(P36)+(AE36)>Q36,"RECHAZADO","ACEPTADO"))'
+T36	'=STDEV(H36:K36)'
+U36	'=T36/SQRT(4)'
+V36	'=IF(OR(O36="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O36/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O36/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O36/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W36	'=V36/2'
+X36	'=$J$12/SQRT(12)'
+O37	'=IF(H37=0,"",AVERAGE(H37:K37))'
+P37	'=IF(N37="","",(N37)-O37)'
+Q37	'=Q36'
+R37	'=IF(ABS(P37)>Q37,"RECHAZADO","ACEPTADO")'
+S37	'=IF(P37="","",IF(ABS(P37)+(AE37)>Q37,"RECHAZADO","ACEPTADO"))'
+T37	'=STDEV(H37:K37)'
+U37	'=T37/SQRT(4)'
+V37	'=IF(OR(O37="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O37/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O37/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O37/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W37	'=V37/2'
+X37	'=$J$12/SQRT(12)'
+O38	'=IF(H38=0,"",AVERAGE(H38:K38))'
+P38	'=IF(N38="","",(N38)-O38)'
+Q38	'=Q37'
+R38	'=IF(ABS(P38)>Q38,"RECHAZADO","ACEPTADO")'
+S38	'=IF(P38="","",IF(ABS(P38)+(AE38)>Q38,"RECHAZADO","ACEPTADO"))'
+T38	'=STDEV(H38:K38)'
+U38	'=T38/SQRT(4)'
+V38	'=IF(OR(O38="",$J$13=0),"",IF($N$12="AG-034",IFERROR(VLOOKUP(O38/$J$13,Patrones!$F$32:$I$41,3,TRUE)*$J$13,""),IF($N$12="AG-052",IFERROR(VLOOKUP(O38/$J$13,Patrones!$F$44:$I$54,3,TRUE)*$J$13,""),IFERROR(VLOOKUP(O38/$J$13,Patrones!$F$6:$I$16,3,TRUE)*$J$13,""))))'
+W38	'=V38/2'
+X38	'=$J$12/SQRT(12)'
+\n=== DATA VALIDATIONS ===
+--- DV 0 ---
+  type=list operator=None allow_blank=True
+  formula1='$K$7:$K$8'
+  formula2=None
+  sqref=A11
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+  showDropDown=False
+--- DV 1 ---
+  type=list operator=None allow_blank=True
+  formula1='$K$4:$K$6'
+  formula2=None
+  sqref=F15:G15
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+  showDropDown=False
+--- DV 2 ---
+  type=list operator=None allow_blank=True
+  formula1='"AGP, AGPRT"'
+  formula2=None
+  sqref=D4
+  showError=True errorTitle='Magnitud erronea' error='No corresponde a la mangitud_x000a_'
+  showInput=True promptTitle=None prompt=None
+  showDropDown=False
+--- DV 3 ---
+  type=list operator=None allow_blank=True
+  formula1='"Completa, Solo mes"'
+  formula2=None
+  sqref=K5
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+  showDropDown=False
+--- DV 4 ---
+  type=list operator=None allow_blank=True
+  formula1='"psi,kPa,bar,mbar,kg-cm2,inHg,inH2O,mmHg,MPa"'
+  formula2=None
+  sqref=J10
+  showError=True errorTitle=None error=None
+  showInput=True promptTitle=None prompt=None
+  showDropDown=False
+--- DV 5 ---
+  type=custom operator=None allow_blank=True
+  formula1='AND(I7>=I5, I7<=I6)'
+  formula2=None
+  sqref=I8
+  showError=True errorTitle='Fecha Invalida' error='La fecha de elaboración no puede ser anterior a la calibración ni posterior al vencimiento del equipo.'
+  showInput=True promptTitle=None prompt=None
+  showDropDown=False
+\n=== ALL MERGED ===
+F11:G11
+I6:J6
+B7:C7
+F10:G10
+A15:E15
+H10:I10
+E5:F5
+S3:T3
+H9:I9
+B12:C12
+H18:K18
+R25:R26
+F12:G12
+B11:C11
+F15:G15
+I7:J7
+F18:G18
+A24:F25
+B13:C13
+H11:I11
+AM15:AM16
+M9:N10
+E6:F6
+A1:J3
+O9:P10
+N24:AE24
+B10:C10
+I5:J5
+A14:B14
+I8:J8
+B9:C9
+H24:K25
+F13:G13
+H13:I13
+M8:N8
+F9:G9
+O8:P8
+B6:C6
+A18:D18
+I4:J4
+H12:I12
+E7:F7
+B5:C5
+S5:T5
+Q25:Q26
+H15:I15
+S25:S26
+D14:E14
+A16:K17
+M1:T2
+F14:G14
+H14:I14
+S4:T4
+P25:P26
+\n=== PROTECTION Calculos ===
+  algorithmName=None
+  autoFilter=True
+  deleteColumns=True
+  deleteRows=True
+  enabled=False
+  formatCells=True
+  formatColumns=True
+  formatRows=True
+  hashValue=None
+  idx_base=0
+  insertColumns=True
+  insertHyperlinks=True
+  insertRows=True
+  namespace=None
+  objects=False
+  password=None
+  pivotTables=True
+  saltValue=None
+  scenarios=False
+  selectLockedCells=False
+  selectUnlockedCells=False
+  sheet=False
+  sort=True
+  spinCount=None
+  tagname='sheetProtection'
+\n=== WB SECURITY ===
+None
