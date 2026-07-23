@@ -268,6 +268,30 @@ const enrichHistorialConClientes = (
     });
 };
 
+const historialToCsv = (rows: ExcelHistorialRow[]): string => {
+    const columns: (keyof ExcelHistorialRow)[] = [
+        "Name",
+        "certificado",
+        "cliente",
+        "equipo",
+        "marca",
+        "modelo",
+        "serie",
+        "id",
+        "fecha",
+        "tecnico",
+        "lugarCalibracion",
+        "frecuenciaCalibracion",
+        "fechaRecepcion",
+    ];
+    const escapeCsv = (value: unknown): string =>
+        `"${String(value ?? "").replace(/"/g, '""')}"`;
+    return [
+        columns.map(escapeCsv).join(","),
+        ...rows.map((row) => columns.map((column) => escapeCsv(row[column])).join(",")),
+    ].join("\r\n");
+};
+
 /** Vigencia de patrón alineada a ProgramaCalibracion (fecha / fechaVencimiento / partes). */
 const resolvePatronVencimiento = (d: {[key: string]: any}): string => {
     const partes = Array.isArray(d.partesCalibracion) ? d.partesCalibracion : [];
@@ -435,6 +459,13 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
         const patrones = patronesSnapshot.docs.map((docSnap) => mapPatronToExcelRow(docSnap.id, docSnap.data()));
 
         // Tabla plana lista para Power Query / sync script (mismas columnas que AG_Historial)
+        if (formato === "csv") {
+            res.set("Content-Type", "text/csv; charset=utf-8");
+            res.set("Content-Disposition", 'inline; filename="historial-presion.csv"');
+            res.status(200).send(`\uFEFF${historialToCsv(historial)}`);
+            return;
+        }
+
         if (formato === "tabla" || formato === "historial") {
             res.json(historial);
             return;

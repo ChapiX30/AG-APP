@@ -19,6 +19,13 @@ export interface VacationHistorialEntry {
   comment?: string;
 }
 
+export interface VacationExcepcionAnticipacion {
+  motivo: string;
+  autorizadaPorUid: string;
+  autorizadaPorNombre: string;
+  autorizadaEn: string;
+}
+
 export interface SolicitudVacacionesDoc {
   id?: string;
   solicitanteUid: string;
@@ -33,6 +40,10 @@ export interface SolicitudVacacionesDoc {
   comentarioSolicitante?: string;
   fechaSolicitud: string;
   estado: VacationStatus;
+  /** Solo Jorge puede crear solicitudes con menos de 10 días de anticipación. */
+  excepcionAnticipacion?: boolean;
+  excepcionMotivo?: string;
+  excepcionAutorizadaPor?: VacationExcepcionAnticipacion;
   rechazoMotivo?: string;
   rechazadoPorNombre?: string;
   rechazadoPorPaso?: VacationWorkflowStep;
@@ -119,6 +130,8 @@ export function validateSolicitudForm(input: {
   fechaInicio: string;
   fechaFin: string;
   diasSegunFechas?: number | null;
+  /** Omite la regla de 10 días (solo solicitudes urgentes creadas por Jorge). */
+  omitirAnticipacion?: boolean;
 }): string | null {
   if (!input.fechaInicio || !input.fechaFin) {
     return 'Indica fecha de inicio y fin de vacaciones.';
@@ -126,9 +139,11 @@ export function validateSolicitudForm(input: {
   if (input.fechaFin < input.fechaInicio) {
     return 'La fecha de fin debe ser igual o posterior a la de inicio.';
   }
-  const minInicio = getMinVacationStartDate();
-  if (input.fechaInicio < minInicio) {
-    return `Debes solicitar vacaciones con al menos ${VACATION_MIN_NOTICE_DAYS} días de anticipación (inicio a partir del ${minInicio}).`;
+  if (!input.omitirAnticipacion) {
+    const minInicio = getMinVacationStartDate();
+    if (input.fechaInicio < minInicio) {
+      return `Debes solicitar vacaciones con al menos ${VACATION_MIN_NOTICE_DAYS} días de anticipación (inicio a partir del ${minInicio}).`;
+    }
   }
   if (!Number.isFinite(input.diasVacaciones) || input.diasVacaciones < 1) {
     return 'Indica un número válido de días de vacaciones.';
@@ -137,4 +152,10 @@ export function validateSolicitudForm(input: {
     return `Los días solicitados (${input.diasVacaciones}) no coinciden con el periodo seleccionado (${input.diasSegunFechas} día(s), contando inicio y fin, sin domingos).`;
   }
   return null;
+}
+
+export function hasExcepcionAnticipacion(
+  doc: Pick<SolicitudVacacionesDoc, 'excepcionAnticipacion'>,
+): boolean {
+  return doc.excepcionAnticipacion === true;
 }

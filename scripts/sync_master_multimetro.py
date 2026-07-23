@@ -28,7 +28,6 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 try:
     import openpyxl
-    from openpyxl.styles import Font
     from openpyxl.worksheet.table import Table, TableStyleInfo
 except ImportError:
     print("Falta openpyxl. Instala con: pip install openpyxl")
@@ -38,7 +37,7 @@ API_URL = (
     "https://us-central1-agg1-b7f40.cloudfunctions.net/obtenerDatosExcel"
     "?key=TU_CLAVE_SECRETA_AG_APP_2026"
 )
-DEFAULT_MASTER = Path(r"C:\Users\AG\Desktop\FORMATOS AG\Formato Multimetro.xlsx")
+DEFAULT_MASTER = Path(r"C:\Users\AG\Desktop\FORMATOS AG\Formato Multimetro.xlsm")
 HIST_SHEET_NAME = "obtenerDatosExcel"
 
 HIST_HEADERS = [
@@ -413,9 +412,6 @@ def wire_calculos(calc) -> None:
     calc["H4"].value = "Fecha de Recepción:"
     calc["I4"].value = F_RECEPCION
     calc["K4"].value = F_LUGAR
-    calc["L4"].value = "<- Lugar (Sitio/Lab)"
-    calc["L4"].font = Font(italic=True, size=8, color="888888")
-
     calc["I5"].value = F_FECHA_CAL
     calc["I6"].value = F_SUGERIDA
     calc["I7"].value = "=TODAY()"

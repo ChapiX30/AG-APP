@@ -34,7 +34,7 @@ function formatFechaLarga(isoDate: string): string {
     try {
         return format(parseISO(isoDate), "d 'de' MMMM 'de' yyyy", { locale: es });
     } catch {
-        return isoDate || "—";
+        return isoDate || "-";
     }
 }
 
@@ -42,8 +42,22 @@ function formatFechaCorta(isoDate: string): string {
     try {
         return format(parseISO(isoDate), "dd/MM/yyyy", { locale: es });
     } catch {
-        return isoDate || "—";
+        return isoDate || "-";
     }
+}
+
+/**
+ * Helvetica (WinAnsi) no admite varios Unicode (p. ej. ✓, —).
+ * Si llega uno, drawText lanza y falla todo el PDF + correo RH.
+ */
+function winAnsiSafe(text: string): string {
+    return String(text ?? "")
+        .replace(/[✓✔☑√]/g, "OK")
+        .replace(/[—–−]/g, "-")
+        .replace(/[“”«»]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/…/g, "...")
+        .replace(/[^\x00-\xFF]/g, "?");
 }
 
 function inferFlowType(data: FirebaseFirestore.DocumentData): "operativo" | "calidad" {
@@ -169,9 +183,9 @@ function drawDataGrid(
     const tableW = width - MARGIN * 2;
     const rowH = 22;
     const rows: [string, string][] = [
-        ["Nombre del colaborador", String(data.solicitanteNombre || "—")],
-        ["Puesto", String(data.solicitantePuesto || "—")],
-        ["Días solicitados", String(data.diasVacaciones ?? "—")],
+        ["Nombre del colaborador", winAnsiSafe(String(data.solicitanteNombre || "-"))],
+        ["Puesto", winAnsiSafe(String(data.solicitantePuesto || "-"))],
+        ["Días solicitados", String(data.diasVacaciones ?? "-")],
         ["Periodo", `${formatFechaCorta(String(data.fechaInicio || ""))} al ${formatFechaCorta(String(data.fechaFin || ""))}`],
         ["Fecha de solicitud", formatFechaCorta(String(data.fechaSolicitud || ""))],
     ];
@@ -297,6 +311,30 @@ function drawBodyText(
         }
     }
 
+    if (data.excepcionAnticipacion === true) {
+        const motivoExc = String(data.excepcionMotivo || "").trim();
+        const por =
+            data.excepcionAutorizadaPor &&
+            typeof data.excepcionAutorizadaPor === "object"
+                ? String(
+                      (data.excepcionAutorizadaPor as { autorizadaPorNombre?: string })
+                          .autorizadaPorNombre || "",
+                  ).trim()
+                : "";
+        const excTxt = [
+            "Excepción de anticipación (solicitud urgente)",
+            por ? `autorizada por ${por}` : "",
+            motivoExc ? `Motivo: ${motivoExc}` : "",
+        ]
+            .filter(Boolean)
+            .join(". ");
+        contentH += 8;
+        for (const wl of wrapText(excTxt, 76)) {
+            lines.push({ text: wl, bold: false });
+            contentH += 13;
+        }
+    }
+
     const boxH = contentH + 6;
     const boxY = yStart - boxH;
 
@@ -312,7 +350,7 @@ function drawBodyText(
 
     let y = yStart - pad - 10;
     for (const ln of lines) {
-        page.drawText(ln.text, {
+        page.drawText(winAnsiSafe(ln.text), {
             x: boxX + pad,
             y,
             size: ln.bold ? 10 : 9.5,
@@ -348,14 +386,14 @@ function drawSignatureBlock(
         thickness: 1,
         color: AG_BLUE,
     });
-    page.drawText(String(data.solicitanteNombre || "—"), {
+    page.drawText(winAnsiSafe(String(data.solicitanteNombre || "-")), {
         x: MARGIN,
         y: y - 12,
         size: 11,
         font: fontBold,
         color: TEXT,
     });
-    page.drawText(String(data.solicitantePuesto || "Solicitante"), {
+    page.drawText(winAnsiSafe(String(data.solicitantePuesto || "Solicitante")), {
         x: MARGIN,
         y: y - 26,
         size: 9,
@@ -478,21 +516,21 @@ function drawAuthTable(
                 color: ROW_ALT,
             });
         }
-        page.drawText(rows[i].label, {
+        page.drawText(winAnsiSafe(rows[i].label), {
             x: tableX + 8,
             y: rowY + 10,
             size: 8.5,
             font: fontBold,
             color: TEXT,
         });
-        page.drawText(rec?.nombre || "Pendiente", {
+        page.drawText(winAnsiSafe(rec?.nombre || "Pendiente"), {
             x: tableX + col1 + 8,
             y: rowY + 10,
             size: 9,
             font: ok ? fontBold : font,
             color: ok ? TEXT : TEXT_MUTED,
         });
-        page.drawText(rec?.fecha ? formatFechaCorta(rec.fecha) : "—", {
+        page.drawText(rec?.fecha ? formatFechaCorta(rec.fecha) : "-", {
             x: tableX + col1 + col2 + 8,
             y: rowY + 10,
             size: 9,
@@ -500,10 +538,11 @@ function drawAuthTable(
             color: TEXT_MUTED,
         });
         if (ok) {
-            page.drawText("✓", {
-                x: tableX + col1 + col2 - 14,
+            // Helvetica/WinAnsi no soporta "✓" (rompe el PDF y el correo a RH).
+            page.drawText("OK", {
+                x: tableX + col1 + col2 - 18,
                 y: rowY + 10,
-                size: 10,
+                size: 8,
                 font: fontBold,
                 color: rgb(0.12, 0.55, 0.35),
             });

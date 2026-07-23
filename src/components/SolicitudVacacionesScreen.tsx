@@ -41,6 +41,7 @@ import {
 import { db, storage } from '../utils/firebase';
 import {
   canSubmitVacationRequest,
+  canCreateUrgentVacationRequest,
   canUserActOnSolicitud,
   VACATION_RH_EMAILS,
   getVacationFlowType,
@@ -56,10 +57,12 @@ import {
   validateSolicitudForm,
   inferFlowType,
   getMinVacationStartDate,
+  hasExcepcionAnticipacion,
   VACATION_MIN_NOTICE_DAYS,
   type SolicitudVacacionesDoc,
   type VacationHistorialEntry,
 } from '../utils/vacationWorkflow';
+import { isJorgeAmador } from '../utils/calendarPermissions';
 import {
   notifyVacationPendingApproval,
   notifyVacationRejected,
@@ -83,10 +86,26 @@ import {
   type ProgressStepState,
 } from '../utils/vacationProgress';
 
-type TabId = 'nueva' | 'mis' | 'pendientes';
+type TabId = 'nueva' | 'mis' | 'pendientes' | 'urgente';
+
+type ColaboradorVacaciones = {
+  id: string;
+  name: string;
+  email: string;
+  puesto: string;
+  role: string;
+};
 
 const AG_BLUE = AG_BRAND_BLUE;
 const nowISO = () => new Date().toISOString();
+
+function todayYmdLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 export const SolicitudVacacionesScreen: React.FC = () => {
   const { user } = useAuth();
@@ -102,9 +121,12 @@ export const SolicitudVacacionesScreen: React.FC = () => {
 
   const puedeSolicitar = canSubmitVacationRequest(calendarUser);
   const puedeAutorizar = isVacationApprover(calendarUser);
+  const puedeCrearUrgente = canCreateUrgentVacationRequest(calendarUser);
   const tipoFlujoUsuario = getVacationFlowType(calendarUser);
 
-  const [tab, setTab] = useState<TabId>(puedeSolicitar ? 'nueva' : 'pendientes');
+  const [tab, setTab] = useState<TabId>(
+    puedeSolicitar ? 'nueva' : puedeCrearUrgente ? 'urgente' : 'pendientes',
+  );
   const [misSolicitudes, setMisSolicitudes] = useState<SolicitudVacacionesDoc[]>([]);
   const [pendientes, setPendientes] = useState<SolicitudVacacionesDoc[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -115,6 +137,15 @@ export const SolicitudVacacionesScreen: React.FC = () => {
   const [fechaFin, setFechaFin] = useState('');
   const [comentario, setComentario] = useState('');
 
+  const [urgenteColaboradorId, setUrgenteColaboradorId] = useState('');
+  const [urgenteMotivo, setUrgenteMotivo] = useState('');
+  const [urgenteDias, setUrgenteDias] = useState(1);
+  const [urgenteInicio, setUrgenteInicio] = useState('');
+  const [urgenteFin, setUrgenteFin] = useState('');
+  const [urgenteComentario, setUrgenteComentario] = useState('');
+  const [colaboradores, setColaboradores] = useState<ColaboradorVacaciones[]>([]);
+  const [loadingColaboradores, setLoadingColaboradores] = useState(false);
+
   const [rejectTarget, setRejectTarget] = useState<SolicitudVacacionesDoc | null>(null);
   const [rejectMotivo, setRejectMotivo] = useState('');
   const [selectedSolicitudId, setSelectedSolicitudId] = useState<string | null>(null);
@@ -122,6 +153,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
   const [vacacionesSaldo, setVacacionesSaldo] = useState<Record<string, VacacionesSaldoYear>>({});
 
   const minFechaInicio = useMemo(() => getMinVacationStartDate(), []);
+  const hoyYmd = useMemo(() => todayYmdLocal(), []);
 
   const diasSegunFechas = useMemo(
     () =>
@@ -131,10 +163,23 @@ export const SolicitudVacacionesScreen: React.FC = () => {
     [fechaInicio, fechaFin],
   );
 
+  const diasUrgenteSegunFechas = useMemo(
+    () =>
+      urgenteInicio && urgenteFin && urgenteFin >= urgenteInicio
+        ? countVacationDaysInclusive(urgenteInicio, urgenteFin)
+        : null,
+    [urgenteInicio, urgenteFin],
+  );
+
   const diasNoCoinciden =
     diasSegunFechas != null &&
     Number.isFinite(diasVacaciones) &&
     diasVacaciones !== diasSegunFechas;
+
+  const diasUrgenteNoCoinciden =
+    diasUrgenteSegunFechas != null &&
+    Number.isFinite(urgenteDias) &&
+    urgenteDias !== diasUrgenteSegunFechas;
 
   const validarFormulario = () =>
     validateSolicitudForm({
@@ -143,6 +188,11 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       fechaFin,
       diasSegunFechas,
     });
+
+  const colaboradorUrgente = useMemo(
+    () => colaboradores.find((c) => c.id === urgenteColaboradorId) ?? null,
+    [colaboradores, urgenteColaboradorId],
+  );
 
   useEffect(() => {
     if (!user?.id || !puedeSolicitar) return;
@@ -162,6 +212,46 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       setDiasVacaciones(diasSegunFechas);
     }
   }, [diasSegunFechas]);
+
+  useEffect(() => {
+    if (diasUrgenteSegunFechas != null && diasUrgenteSegunFechas >= 1) {
+      setUrgenteDias(diasUrgenteSegunFechas);
+    }
+  }, [diasUrgenteSegunFechas]);
+
+  useEffect(() => {
+    if (!puedeCrearUrgente) {
+      setColaboradores([]);
+      return;
+    }
+    setLoadingColaboradores(true);
+    const unsub = onSnapshot(
+      collection(db, 'usuarios'),
+      (snap) => {
+        const list: ColaboradorVacaciones[] = [];
+        snap.forEach((d) => {
+          const data = d.data();
+          const name = String(data.name || data.nombre || '').trim();
+          const email = String(data.email || data.correo || '').trim();
+          const puesto = String(data.puesto || '').trim();
+          const role = String(data.role || '').trim();
+          if (!name && !email) return;
+          const u = { id: d.id, name: name || email, email, puesto, role };
+          if (isJorgeAmador(u)) return;
+          if (!canSubmitVacationRequest(u)) return;
+          list.push(u);
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+        setColaboradores(list);
+        setLoadingColaboradores(false);
+      },
+      (err) => {
+        console.error(err);
+        setLoadingColaboradores(false);
+      },
+    );
+    return () => unsub();
+  }, [puedeCrearUrgente]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -306,6 +396,116 @@ export const SolicitudVacacionesScreen: React.FC = () => {
     }
   };
 
+  const resetUrgenteForm = () => {
+    setUrgenteColaboradorId('');
+    setUrgenteMotivo('');
+    setUrgenteDias(1);
+    setUrgenteInicio('');
+    setUrgenteFin('');
+    setUrgenteComentario('');
+  };
+
+  const handleEnviarUrgente = async () => {
+    if (!user || !puedeCrearUrgente) {
+      return toast.error('Solo Jorge Amador puede crear solicitudes urgentes.');
+    }
+    if (!colaboradorUrgente) {
+      return toast.error('Selecciona al colaborador.');
+    }
+    const motivo = urgenteMotivo.trim();
+    if (motivo.length < 5) {
+      return toast.error('Escribe el motivo de la urgencia (mínimo 5 caracteres).');
+    }
+    const err = validateSolicitudForm({
+      diasVacaciones: Number(urgenteDias),
+      fechaInicio: urgenteInicio,
+      fechaFin: urgenteFin,
+      diasSegunFechas: diasUrgenteSegunFechas,
+      omitirAnticipacion: true,
+    });
+    if (err) return toast.error(err);
+
+    const tipoFlujo = getVacationFlowType(colaboradorUrgente);
+    const estadoInicial = initialStatusForFlow(tipoFlujo);
+    const pasoNotif = initialNotifyStepForFlow(tipoFlujo);
+    const anio = urgenteFin
+      ? parseISO(urgenteFin).getFullYear()
+      : new Date().getFullYear();
+    const excepcionAutorizadaPor = {
+      motivo,
+      autorizadaPorUid: user.id,
+      autorizadaPorNombre: user.name,
+      autorizadaEn: nowISO(),
+    };
+
+    setBusy(true);
+    try {
+      const refDoc = await addDoc(collection(db, 'solicitudesVacaciones'), {
+        solicitanteUid: colaboradorUrgente.id,
+        solicitanteNombre: colaboradorUrgente.name,
+        solicitanteEmail: colaboradorUrgente.email,
+        solicitantePuesto: colaboradorUrgente.puesto || colaboradorUrgente.role || 'Colaborador',
+        tipoFlujo,
+        diasVacaciones: Number(urgenteDias),
+        fechaInicio: urgenteInicio,
+        fechaFin: urgenteFin,
+        anio,
+        comentarioSolicitante: urgenteComentario.trim() || '',
+        fechaSolicitud: format(new Date(), 'yyyy-MM-dd'),
+        estado: estadoInicial,
+        excepcionAnticipacion: true,
+        excepcionMotivo: motivo,
+        excepcionAutorizadaPor,
+        historial: [
+          {
+            ts: nowISO(),
+            user: user.name,
+            action: 'enviada' as const,
+            comment: `Solicitud urgente creada por ${user.name}. Motivo: ${motivo}`,
+          },
+        ] as VacationHistorialEntry[],
+        aprobaciones: {},
+        correoRh: VACATION_RH_EMAILS[0],
+        correosRh: [...VACATION_RH_EMAILS],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      // Si el primer paso es Jorge (flujo calidad), no hace falta avisarle a sí mismo.
+      if (!(pasoNotif === 'jorge' && isJorgeAmador(calendarUser))) {
+        await notifyVacationPendingApproval({
+          solicitudId: refDoc.id,
+          solicitanteNombre: colaboradorUrgente.name,
+          solicitanteEmail: colaboradorUrgente.email,
+          step: pasoNotif,
+          dias: Number(urgenteDias),
+          fechaInicio: urgenteInicio,
+          fechaFin: urgenteFin,
+        });
+      }
+
+      await notifyVacationSubmitted({
+        solicitanteUid: colaboradorUrgente.id,
+        solicitanteNombre: colaboradorUrgente.name,
+        solicitanteEmail: colaboradorUrgente.email,
+        solicitudId: refDoc.id,
+        dias: Number(urgenteDias),
+        creadaPorUrgenciaNombre: user.name,
+      });
+
+      toast.success(
+        `Solicitud urgente creada para ${colaboradorUrgente.name}. Ya aparece en sus solicitudes.`,
+      );
+      resetUrgenteForm();
+      if (puedeAutorizar) setTab('pendientes');
+    } catch (e) {
+      console.error(e);
+      toast.error('No se pudo crear la solicitud urgente.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const puedeEliminarSolicitud = (s: SolicitudVacacionesDoc) => s.estado !== 'aprobada';
 
   const handleEliminarSolicitud = async (s: SolicitudVacacionesDoc) => {
@@ -350,6 +550,21 @@ export const SolicitudVacacionesScreen: React.FC = () => {
   const handleReenviar = async (s: SolicitudVacacionesDoc) => {
     if (!s.id) return;
     const flujo = inferFlowType(s);
+    const diasSegun = countVacationDaysInclusive(s.fechaInicio, s.fechaFin);
+    const err = validateSolicitudForm({
+      diasVacaciones: s.diasVacaciones,
+      fechaInicio: s.fechaInicio,
+      fechaFin: s.fechaFin,
+      diasSegunFechas: diasSegun,
+      omitirAnticipacion: hasExcepcionAnticipacion(s),
+    });
+    if (err) {
+      return toast.error(
+        hasExcepcionAnticipacion(s)
+          ? err
+          : `${err} Si es una urgencia, pida a Jorge Amador que registre una solicitud urgente.`,
+      );
+    }
     setBusy(true);
     try {
       const estadoInicial = initialStatusForFlow(flujo);
@@ -581,6 +796,13 @@ export const SolicitudVacacionesScreen: React.FC = () => {
       count: misSolicitudes.length,
     });
   }
+  if (puedeCrearUrgente) {
+    tabs.push({
+      id: 'urgente',
+      label: 'Solicitud urgente',
+      icon: <AlertTriangle size={16} />,
+    });
+  }
   if (puedeAutorizar) {
     tabs.push({
       id: 'pendientes',
@@ -735,6 +957,117 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           </section>
         )}
 
+        {tab === 'urgente' && puedeCrearUrgente && (
+          <section className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-amber-100 bg-amber-50/80">
+              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-600" />
+                Solicitud urgente
+              </h2>
+              <p className="text-sm text-slate-600 mt-0.5">
+                Solo usted puede registrar vacaciones sin los {VACATION_MIN_NOTICE_DAYS} días de
+                anticipación. La solicitud queda a nombre del colaborador y entra al flujo normal.
+              </p>
+            </div>
+            <div className="p-6 space-y-5 max-w-xl">
+              <Field label="Colaborador">
+                {loadingColaboradores ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+                    <Loader2 className="animate-spin" size={16} />
+                    Cargando personal…
+                  </div>
+                ) : (
+                  <select
+                    value={urgenteColaboradorId}
+                    onChange={(e) => setUrgenteColaboradorId(e.target.value)}
+                    className="vac-input"
+                  >
+                    <option value="">Seleccione a la persona…</option>
+                    {colaboradores.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                        {c.puesto ? ` · ${c.puesto}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <Field label="Días solicitados">
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={urgenteDias}
+                      onChange={(e) => setUrgenteDias(Number(e.target.value))}
+                      className="vac-input"
+                    />
+                  </Field>
+                </div>
+                <Field label="Fecha de inicio">
+                  <input
+                    type="date"
+                    value={urgenteInicio}
+                    min={hoyYmd}
+                    onChange={(e) => setUrgenteInicio(e.target.value)}
+                    className="vac-input"
+                  />
+                </Field>
+                <Field label="Fecha de fin">
+                  <input
+                    type="date"
+                    value={urgenteFin}
+                    min={urgenteInicio || hoyYmd}
+                    onChange={(e) => setUrgenteFin(e.target.value)}
+                    className="vac-input"
+                  />
+                </Field>
+              </div>
+              {diasUrgenteSegunFechas != null && Number(urgenteDias) >= 1 && (
+                <p
+                  className={`text-sm -mt-2 font-medium ${
+                    diasUrgenteNoCoinciden ? 'text-red-600' : 'text-emerald-700'
+                  }`}
+                >
+                  {diasUrgenteNoCoinciden
+                    ? `Las fechas no coinciden con los días indicados (el periodo tiene ${diasUrgenteSegunFechas} día(s) laborables; los domingos no cuentan).`
+                    : 'Fechas y días coinciden (los domingos no cuentan).'}
+                </p>
+              )}
+              <Field label="Motivo de la urgencia">
+                <textarea
+                  value={urgenteMotivo}
+                  onChange={(e) => setUrgenteMotivo(e.target.value)}
+                  rows={3}
+                  className="vac-input resize-none"
+                  placeholder="Ej. urgencia familiar, cobertura especial, etc."
+                />
+              </Field>
+              <Field label="Observaciones (opcional)">
+                <textarea
+                  value={urgenteComentario}
+                  onChange={(e) => setUrgenteComentario(e.target.value)}
+                  rows={2}
+                  className="vac-input resize-none"
+                  placeholder="Notas adicionales para el expediente…"
+                />
+              </Field>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={busy || diasUrgenteNoCoinciden || !urgenteColaboradorId}
+                  onClick={() => void handleEnviarUrgente()}
+                  className="px-5 py-2.5 rounded-lg text-white text-sm font-semibold flex items-center gap-2 shadow-sm disabled:opacity-50 bg-amber-600 hover:bg-amber-700"
+                >
+                  {busy ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                  Crear y enviar solicitud urgente
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {tab === 'mis' && puedeSolicitar && (
           <section className="space-y-3">
             {loadingList ? (
@@ -782,7 +1115,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                                   Ver PDF AG-ADM-F12
                                 </button>
                               ) : null}
-                              {(!s.correoEnviado || s.pdfError) && puedeAutorizar ? (
+                              {!s.correoEnviado || s.pdfError ? (
                                 <button
                                   type="button"
                                   disabled={busy}
@@ -792,13 +1125,24 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                                   }}
                                   className="px-4 py-2.5 rounded-lg bg-[#2464A3] text-white text-sm font-medium disabled:opacity-50"
                                 >
-                                  Reenviar PDF a RH
+                                  {s.pdfError ? 'Regenerar PDF y enviar a RH' : 'Reenviar PDF a RH'}
                                 </button>
                               ) : null}
                             </div>
                           )}
                           {s.estado === 'aprobada' && s.pdfError && (
-                            <p className="text-xs text-amber-700">{s.pdfError}</p>
+                            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                              No se pudo generar el formato PDF. Use{' '}
+                              <span className="font-semibold">Regenerar PDF y enviar a RH</span> para
+                              recuperarlo y que llegue el correo a Recursos Humanos.
+                              {s.pdfError.includes('WinAnsi') ? (
+                                <span className="block mt-1 text-amber-700/90">
+                                  Causa técnica corregida; al regenerar debería funcionar.
+                                </span>
+                              ) : (
+                                <span className="block mt-1 text-amber-700/80">{s.pdfError}</span>
+                              )}
+                            </p>
                           )}
                           {puedeEliminarSolicitud(s) ? (
                             <button
@@ -1087,6 +1431,39 @@ function StatusBadge({ estado }: { estado: VacationStatus }) {
   );
 }
 
+function UrgenteBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800">
+      <AlertTriangle size={11} />
+      Urgente
+    </span>
+  );
+}
+
+function ExcepcionAnticipacionNotice({
+  solicitud,
+}: {
+  solicitud: SolicitudVacacionesDoc;
+}) {
+  if (!hasExcepcionAnticipacion(solicitud)) return null;
+  const por = solicitud.excepcionAutorizadaPor?.autorizadaPorNombre;
+  return (
+    <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
+      <p className="font-semibold flex items-center gap-1.5">
+        <AlertTriangle size={14} />
+        Excepción de anticipación
+        {por ? <span className="font-normal">· autorizada por {por}</span> : null}
+      </p>
+      {solicitud.excepcionMotivo ? (
+        <p className="mt-1 text-amber-900/80">
+          <span className="font-medium">Motivo: </span>
+          {solicitud.excepcionMotivo}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RechazoBanner({
   solicitud,
   onReenviar,
@@ -1318,7 +1695,10 @@ function SolicitudCard({
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-slate-900 truncate">{solicitud.solicitanteNombre}</p>
+            <p className="font-semibold text-slate-900 truncate flex items-center gap-2">
+              {solicitud.solicitanteNombre}
+              {hasExcepcionAnticipacion(solicitud) ? <UrgenteBadge /> : null}
+            </p>
             <p className="text-sm text-slate-500 truncate">
               {solicitud.diasVacaciones} día(s) · {rangoCorto}
             </p>
@@ -1343,7 +1723,10 @@ function SolicitudCard({
                 </span>
               )}
               <div className="min-w-0">
-                <p className="font-semibold text-slate-900">{solicitud.solicitanteNombre}</p>
+                <p className="font-semibold text-slate-900 flex flex-wrap items-center gap-2">
+                  {solicitud.solicitanteNombre}
+                  {hasExcepcionAnticipacion(solicitud) ? <UrgenteBadge /> : null}
+                </p>
                 {solicitud.solicitantePuesto && (
                   <p className="text-sm text-slate-500">{solicitud.solicitantePuesto}</p>
                 )}
@@ -1360,6 +1743,7 @@ function SolicitudCard({
             <span className="font-semibold">{solicitud.diasVacaciones}</span> día(s) de vacaciones
           </p>
           <p className="text-sm text-slate-500">{formatRango(solicitud.fechaInicio, solicitud.fechaFin)}</p>
+          <ExcepcionAnticipacionNotice solicitud={solicitud} />
           {solicitud.comentarioSolicitante && (
             <p className="text-slate-600 text-sm mt-3 p-3 rounded-lg bg-white border border-slate-100">
               {solicitud.comentarioSolicitante}
@@ -1382,8 +1766,11 @@ function SolicitudCard({
                   {solicitud.solicitanteNombre}
                 </p>
               )}
-              <p className="text-sm text-slate-600">
-                <span className="font-semibold text-slate-800">{solicitud.diasVacaciones}</span> día(s)
+              <p className="text-sm text-slate-600 flex flex-wrap items-center gap-2">
+                <span>
+                  <span className="font-semibold text-slate-800">{solicitud.diasVacaciones}</span> día(s)
+                </span>
+                {hasExcepcionAnticipacion(solicitud) ? <UrgenteBadge /> : null}
               </p>
               <p className="text-sm text-slate-500 mt-0.5">
                 {formatRango(solicitud.fechaInicio, solicitud.fechaFin)}
@@ -1391,7 +1778,8 @@ function SolicitudCard({
             </div>
             <StatusBadge estado={solicitud.estado} />
           </div>
-          {solicitud.comentarioSolicitante && (
+          {!collapsed && <ExcepcionAnticipacionNotice solicitud={solicitud} />}
+          {!collapsed && solicitud.comentarioSolicitante && (
             <p className="text-slate-500 text-sm mt-3 pl-3 border-l-2 border-slate-200">
               {solicitud.comentarioSolicitante}
             </p>

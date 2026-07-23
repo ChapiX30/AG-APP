@@ -29,7 +29,7 @@ API_URL = (
     "https://us-central1-agg1-b7f40.cloudfunctions.net/obtenerDatosExcel"
     "?key=TU_CLAVE_SECRETA_AG_APP_2026"
 )
-DEFAULT_MASTER = Path(r"C:\Users\AG\Desktop\FORMATOS AG\Formato master auto Presion.xlsm")
+DEFAULT_MASTER = Path(r"C:\Users\AG\Desktop\FORMATOS AG\Formato master Presion.xlsm")
 
 HIST_HEADERS = [
     "Name",
@@ -147,6 +147,11 @@ def main() -> int:
     except Exception as e:
         print(f"Aviso tabla AG_Historial: {e}")
         print("  (Las fórmulas VLOOKUP seguirán funcionando si el nombre de tabla ya existe en Excel)")
+
+    # Las fórmulas de Calculos leen la hoja plana "Historial": mantenerla en sync también
+    if "Historial" in wb.sheetnames:
+        write_historial(wb["Historial"], historial)
+        print(f"  hoja Historial actualizada: {len(historial)} filas")
 
     if "BD_Clientes" in wb.sheetnames:
         write_clientes(wb["BD_Clientes"], clientes)

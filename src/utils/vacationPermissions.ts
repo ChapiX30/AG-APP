@@ -71,6 +71,14 @@ export function canSubmitVacationRequest(user: CalendarPermissionUser): boolean 
   );
 }
 
+/**
+ * Solo Jorge Amador puede crear solicitudes urgentes (sin 10 días de anticipación)
+ * a nombre de un colaborador. La opción no es visible para el resto del personal.
+ */
+export function canCreateUrgentVacationRequest(user: CalendarPermissionUser): boolean {
+  return isJorgeAmador(user) && !isEdgarAmador(user);
+}
+
 /** Solo el responsable de ESE paso puede autorizar (sin saltos). */
 export function canApproveVacationStep(
   user: CalendarPermissionUser,

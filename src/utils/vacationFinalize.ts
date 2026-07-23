@@ -3,8 +3,8 @@ import { db } from './firebase';
 import type { SolicitudVacacionesDoc } from './vacationWorkflow';
 
 /**
- * Pide al servidor (Cloud Function onVacacionAprobadaFinal) que reenvíe el PDF por correo.
- * Un solo camino de envío; evita duplicar alertasVacaciones desde el cliente.
+ * Pide al servidor (Cloud Function onVacacionAprobadaFinal) que regenere el PDF
+ * (si falló) y/o reenvíe el correo a RH.
  */
 export async function requestVacationRhEmailRetry(solicitud: SolicitudVacacionesDoc): Promise<void> {
   if (!solicitud.id) {
@@ -14,15 +14,18 @@ export async function requestVacationRhEmailRetry(solicitud: SolicitudVacaciones
     throw new Error('La solicitud debe estar aprobada para reenviar el correo.');
   }
 
+  const debeRegenerarPdf = !solicitud.pdfStoragePath || Boolean(solicitud.pdfError);
+
   const patch: Record<string, unknown> = {
     correoEnviado: false,
     correoRhProcesando: deleteField(),
     reintentarCorreoRh: true,
     pdfIntentos: 0,
+    pdfError: deleteField(),
     updatedAt: serverTimestamp(),
   };
 
-  if (!solicitud.pdfStoragePath) {
+  if (debeRegenerarPdf) {
     patch.pdfGenerado = false;
     patch.pdfStoragePath = deleteField();
     patch.pdfProcesando = deleteField();

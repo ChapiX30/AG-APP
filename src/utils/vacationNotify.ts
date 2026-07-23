@@ -190,17 +190,24 @@ export async function notifyVacationSubmitted(params: {
   solicitanteEmail: string;
   solicitudId: string;
   dias: number;
+  /** Si Jorge creó la solicitud urgente a nombre del colaborador. */
+  creadaPorUrgenciaNombre?: string;
 }): Promise<void> {
   if (!params.solicitanteUid) return;
+
+  const esUrgente = Boolean(params.creadaPorUrgenciaNombre);
+  const body = esUrgente
+    ? `${params.creadaPorUrgenciaNombre} registró una solicitud urgente de ${params.dias} día(s) de vacaciones a su nombre. Está en revisión.`
+    : `Su solicitud de ${params.dias} día(s) de vacaciones fue enviada y está en revisión.`;
 
   await createInAppNotification({
     tipo: 'vacacion_progreso',
     type: 'info',
-    title: 'Solicitud enviada',
-    body: `Su solicitud de ${params.dias} día(s) de vacaciones fue enviada y está en revisión.`,
+    title: esUrgente ? 'Solicitud urgente registrada' : 'Solicitud enviada',
+    body,
     destinatarios: [params.solicitanteUid],
     solicitudId: params.solicitudId,
-    fcmTitle: 'Vacaciones enviadas',
+    fcmTitle: esUrgente ? 'Vacaciones urgentes' : 'Vacaciones enviadas',
     fcmBody: 'En proceso de autorización',
   });
 
@@ -210,8 +217,9 @@ export async function notifyVacationSubmitted(params: {
       solicitudId: params.solicitudId,
       solicitanteNombre: params.solicitanteNombre,
       solicitanteEmail: params.solicitanteEmail,
-      mensaje:
-        'Su solicitud de vacaciones fue registrada y enviada al flujo de autorización. Le notificaremos en cada paso.',
+      mensaje: esUrgente
+        ? `${params.creadaPorUrgenciaNombre} registró una solicitud urgente de vacaciones a su nombre. Está en el flujo de autorización.`
+        : 'Su solicitud de vacaciones fue registrada y enviada al flujo de autorización. Le notificaremos en cada paso.',
     });
   }
 }
