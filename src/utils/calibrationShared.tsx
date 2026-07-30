@@ -203,9 +203,41 @@ export interface LabPendingItem extends HojaTrabajoRow {
   dep: string;
 }
 
+/** Deuda documental de un técnico en un día concreto (hizo N, cerró M). */
+export interface TecnicoDeudaDia {
+  dateKey: string;
+  hechas: number;
+  cerradas: number;
+  debe: number;
+  sitio: number;
+  laboratorio: number;
+}
+
+export interface TecnicoPendiente {
+  name: string;
+  color: string;
+  /** Equipos calibrados en el mes seleccionado (referencia de carga). */
+  totalMes: number;
+  /** Suma de `debe` de todos los días abiertos. */
+  debeTotal: number;
+  debeSitio: number;
+  debeLaboratorio: number;
+  /** Días con deuda, del más antiguo al más reciente. */
+  dias: TecnicoDeudaDia[];
+}
+
 // --- Helpers ---
 export const cleanName = (name?: string) =>
   name && name !== "null" && name !== "undefined" ? name.trim() : "";
+
+/** "Abraham Ginez" → "Abraham G." (legible en TV sin cortar a la mitad). */
+export const formatTecnicoShortName = (raw?: string): string => {
+  const name = cleanName(raw);
+  if (!name) return "S/A";
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1].charAt(0).toUpperCase()}.`;
+};
 
 export const toDateKey = (date: Date) => {
   const y = date.getFullYear();
@@ -500,6 +532,22 @@ export const isLogisticsArrival = (row: HojaTrabajoRow, dateKey: string) => {
   return arrivalKey === dateKey;
 };
 
+/** Días hábiles transcurridos entre dos fechas (sin contar sábados ni domingos). */
+export const businessDaysBetween = (startDate: Date, endDate: Date) => {
+  if (endDate.getTime() <= startDate.getTime()) return 0;
+  const cursor = new Date(startDate);
+  let count = 0;
+  while (cursor.getTime() < endDate.getTime()) {
+    cursor.setDate(cursor.getDate() + 1);
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
+};
+
+/** SLA de laboratorio por defecto cuando la fila no trae `diasPromesa` (mismo valor que el tablero). */
+export const LAB_SLA_DEFAULT_DIAS = 5;
+
 export const addBusinessDays = (startDate: Date, daysToAdd: number) => {
   let currentDate = new Date(startDate);
   let added = 0;
@@ -591,15 +639,16 @@ export const computeCompanyLabBacklog = (
   return sortCompanyArrivalGroups(Array.from(map.values()));
 };
 
-/** Backlog por área y empresa (año actual por defecto). */
+/** Backlog por área y empresa (año actual por defecto). `deduped` evita repetir el dedupe. */
 export const computeCompanyLabBacklogByArea = (
   hojas: HojaTrabajoRow[],
-  options?: { year?: number }
+  options?: { year?: number; deduped?: boolean }
 ): AreaCompanyArrivals[] => {
   const year = options?.year ?? new Date().getFullYear();
   const areaMaps = new Map<LabAreaKey, Map<string, CompanyArrivalGroup>>();
 
-  dedupeHojasByEquipmentKey(hojas).forEach((row) => {
+  const rows = options?.deduped ? hojas : dedupeHojasByEquipmentKey(hojas);
+  rows.forEach((row) => {
     if (!isInLabBacklog(row)) return;
     if (!isRowInYear(row, year)) return;
     const area = normalizeDepartment(row.departamento);
@@ -640,6 +689,25 @@ const computeSlaDisplay = (row: HojaTrabajoRow) => {
 
   const startKey = getSlaStartDateKey(row);
   const diasPromesa = Number(row.diasPromesa);
+
+  // Sin `diasPromesa` (hojas guardadas fuera del tablero) se muestra la antigüedad real en lab.
+  if (startKey && !(diasPromesa > 0)) {
+    const start = new Date(startKey + "T00:00:00");
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const elapsed = businessDaysBetween(start, now);
+    return {
+      diffDays: LAB_SLA_DEFAULT_DIAS - elapsed,
+      daysLabel: `En lab ${elapsed}d`,
+      statusColor:
+        elapsed > LAB_SLA_DEFAULT_DIAS
+          ? "text-red-400 font-bold"
+          : elapsed >= LAB_SLA_DEFAULT_DIAS - 1
+            ? "text-orange-400 font-bold"
+            : "text-gray-300",
+    };
+  }
+
   if (startKey && diasPromesa > 0) {
     const start = new Date(startKey + "T00:00:00");
     const deadline = addBusinessDays(start, diasPromesa);
@@ -666,7 +734,7 @@ const computeSlaDisplay = (row: HojaTrabajoRow) => {
 
 export const computeLabPending = (
   hojas: HojaTrabajoRow[],
-  options?: { year?: number }
+  options?: { year?: number; deduped?: boolean }
 ) => {
   const year = options?.year ?? new Date().getFullYear();
   const contadores: Record<string, number> = {
@@ -676,7 +744,8 @@ export const computeLabPending = (
     "Sin Asignar": 0,
   };
 
-  const equiposPendientes = dedupeHojasByEquipmentKey(hojas).filter(
+  const rows = options?.deduped ? hojas : dedupeHojasByEquipmentKey(hojas);
+  const equiposPendientes = rows.filter(
     (r) => isLabPendingCalibration(r) && isRowInYear(r, year)
   );
 
@@ -713,6 +782,128 @@ export const computeLabPending = (
     totalPendientes: equiposPendientes.length,
     year,
   };
+};
+
+/** Llegadas por día de un mes en una sola pasada (equivale a computeCompanyArrivals por día). */
+export const computeArrivalsCountByMonth = (
+  hojasDeduped: HojaTrabajoRow[],
+  year: number,
+  month: number
+): Record<string, number> => {
+  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  const counts: Record<string, number> = {};
+
+  hojasDeduped.forEach((row) => {
+    if (!isLabReceptionEquipment(row)) return;
+    if (isEquipmentRejected(row) || isEquipmentDelivered(row)) return;
+    const key = getArrivalDateKey(row);
+    if (!key || !key.startsWith(prefix)) return;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  return counts;
+};
+
+/** Equipo ya cerrado en Drive por el técnico (Si = PDF subido, Realizado = marcado en tablero). */
+export const isCerradoEnDrive = (row: HojaTrabajoRow): boolean => {
+  const drive = getEffectiveCargadoDrive(row).toLowerCase();
+  return drive === "si" || drive === "realizado";
+};
+
+const resolveTecnicoColor = (name: string, user?: UsuarioRow, index = 0): string => {
+  const preset = METROLOGOS_ORDER_COLOR.find((m) => cleanName(m.name) === cleanName(name));
+  if (preset) return preset.color;
+  if (user?.color) return user.color;
+  return FALLBACK_CHART_COLORS[index % FALLBACK_CHART_COLORS.length];
+};
+
+/**
+ * Deuda documental por técnico: equipos con fecha de calibración cuyo cierre en Drive
+ * sigue pendiente. Al marcarse Si/Realizado el día desaparece del listado.
+ */
+export const computeTecnicosPendientes = (
+  hojasDeduped: HojaTrabajoRow[],
+  usuarios: UsuarioRow[],
+  options?: { year?: number; month?: number; desdeDateKey?: string }
+): TecnicoPendiente[] => {
+  const metrologos = new Map<string, UsuarioRow>();
+  usuarios.forEach((u) => {
+    if (!isMetrologyRole(u)) return;
+    const key = cleanName(u.name || u.nombre);
+    if (key) metrologos.set(key, u);
+  });
+
+  const monthPrefix =
+    options?.year && options?.month
+      ? `${options.year}-${String(options.month).padStart(2, "0")}`
+      : null;
+  const desde = options?.desdeDateKey || "";
+
+  const acc = new Map<
+    string,
+    { totalMes: number; dias: Map<string, TecnicoDeudaDia> }
+  >();
+
+  hojasDeduped.forEach((row) => {
+    const workDate = getCalibrationWorkDate(row);
+    if (!workDate) return;
+
+    const key = cleanName(row.nombre || row.assignedTo);
+    if (!key || !metrologos.has(key)) return;
+
+    const dateKey = toDateKey(workDate);
+    let entry = acc.get(key);
+    if (!entry) {
+      entry = { totalMes: 0, dias: new Map() };
+      acc.set(key, entry);
+    }
+
+    if (monthPrefix && dateKey.startsWith(monthPrefix)) entry.totalMes += 1;
+    if (desde && dateKey < desde) return;
+
+    let dia = entry.dias.get(dateKey);
+    if (!dia) {
+      dia = { dateKey, hechas: 0, cerradas: 0, debe: 0, sitio: 0, laboratorio: 0 };
+      entry.dias.set(dateKey, dia);
+    }
+
+    dia.hechas += 1;
+    if (isCerradoEnDrive(row)) {
+      dia.cerradas += 1;
+      return;
+    }
+
+    dia.debe += 1;
+    if ((row.lugarCalibracion || "").toLowerCase().includes("sitio")) dia.sitio += 1;
+    else dia.laboratorio += 1;
+  });
+
+  const result: TecnicoPendiente[] = [];
+  let index = 0;
+
+  acc.forEach((entry, key) => {
+    const dias = Array.from(entry.dias.values())
+      .filter((d) => d.debe > 0)
+      .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    if (dias.length === 0) return;
+
+    const user = metrologos.get(key);
+    result.push({
+      name: user?.name || user?.nombre || key,
+      color: resolveTecnicoColor(key, user, index++),
+      totalMes: entry.totalMes,
+      debeTotal: dias.reduce((s, d) => s + d.debe, 0),
+      debeSitio: dias.reduce((s, d) => s + d.sitio, 0),
+      debeLaboratorio: dias.reduce((s, d) => s + d.laboratorio, 0),
+      dias,
+    });
+  });
+
+  return result.sort(
+    (a, b) =>
+      b.debeTotal - a.debeTotal ||
+      (a.dias[0]?.dateKey || "").localeCompare(b.dias[0]?.dateKey || "")
+  );
 };
 
 export const computeActivityDateKeys = (

@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../utils/firebase";
 import {
   cleanName,
   computeActivityDateKeys,
-  computeCompanyArrivals,
+  computeArrivalsCountByMonth,
   computeCompanyLabBacklogByArea,
   computeLabPending,
+  computeTecnicosPendientes,
   HojaTrabajoRow,
   isMetrologyRole,
   METROLOGOS_ORDER_COLOR,
   ServicioRow,
   normalizeServicioDateKey,
+  TecnicoPendiente,
   toDateKey,
   UsuarioRow,
   FALLBACK_CHART_COLORS,
@@ -30,27 +32,61 @@ export type MetrologoMonthStat = {
   carrying: number;
 };
 
+/** Días hacia atrás que el TV considera "deuda accionable" del técnico. */
+export const DEUDA_TECNICO_DIAS = 45;
+
+/**
+ * Ventana de datos del dashboard: año actual y anterior.
+ * Cubre equipos recibidos en diciembre y calibrados en enero sin leer el histórico completo.
+ */
+const getWindowStartDateKey = (): string => `${new Date().getFullYear() - 1}-01-01`;
+
+const subtractDays = (days: number): string => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - days);
+  return toDateKey(d);
+};
+
 export function useCalibrationDashboardData(selectedDate: Date) {
   const [usuarios, setUsuarios] = useState<UsuarioRow[]>([]);
   const [hojasDeTrabajo, setHojasDeTrabajo] = useState<HojaTrabajoRow[]>([]);
   const [servicios, setServicios] = useState<ServicioRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
+
+  // La pantalla vive encendida: sin esto "Hoy" se queda en el día anterior tras la medianoche.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const key = toDateKey(new Date());
+      setTodayKey((prev) => (prev === key ? prev : key));
+    }, 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
+    const windowStart = getWindowStartDateKey();
+
     const unsubUsuarios = onSnapshot(collection(db, "usuarios"), (snapshot) => {
       setUsuarios(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UsuarioRow)));
     });
 
-    const unsubHojas = onSnapshot(collection(db, "hojasDeTrabajo"), (snapshot) => {
-      setHojasDeTrabajo(
-        snapshot.docs.map((d) => ({ id: d.id, docId: d.id, ...d.data() } as HojaTrabajoRow))
-      );
-      setLoading(false);
-    });
+    const unsubHojas = onSnapshot(
+      query(collection(db, "hojasDeTrabajo"), where("fechaEntrada", ">=", windowStart)),
+      (snapshot) => {
+        setHojasDeTrabajo(
+          snapshot.docs.map((d) => ({ id: d.id, docId: d.id, ...d.data() } as HojaTrabajoRow))
+        );
+        setLoading(false);
+      }
+    );
 
-    const unsubServicios = onSnapshot(collection(db, "servicios"), (snapshot) => {
-      setServicios(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ServicioRow)));
-    });
+    const unsubServicios = onSnapshot(
+      query(collection(db, "servicios"), where("fecha", ">=", windowStart)),
+      (snapshot) => {
+        setServicios(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ServicioRow)));
+      }
+    );
 
     return () => {
       unsubUsuarios();
@@ -60,7 +96,6 @@ export function useCalibrationDashboardData(selectedDate: Date) {
   }, []);
 
   const selectedDateKey = toDateKey(selectedDate);
-  const todayKey = toDateKey(new Date());
 
   const {
     companyArrivalsByArea,
@@ -73,6 +108,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     metrologosMonth,
     magnitudesMonth,
     arrivalsForMonth,
+    tecnicosPendientes,
   } = useMemo(() => {
     const year = selectedDate.getFullYear();
     const month = selectedDate.getMonth() + 1;
@@ -81,6 +117,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     const hojasDeduped = dedupeHojasByEquipmentKey(hojasDeTrabajo);
     const companyArrivalsByArea = computeCompanyLabBacklogByArea(hojasDeduped, {
       year: currentYear,
+      deduped: true,
     });
 
     const dashboardServicios = servicios.filter(isVisibleServicioForDashboard);
@@ -98,7 +135,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
         return (a.horaInicio || "").localeCompare(b.horaInicio || "");
       });
 
-    const labPending = computeLabPending(hojasDeduped, { year: currentYear });
+    const labPending = computeLabPending(hojasDeduped, { year: currentYear, deduped: true });
     const activityDateKeys = computeActivityDateKeys(hojasDeduped, servicios);
 
     const totalArrivedToday = companyArrivalsByArea.reduce((acc, s) => acc + s.totalArrived, 0);
@@ -123,7 +160,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     );
 
     const carryingByName: Record<string, number> = {};
-    dedupeHojasByEquipmentKey(hojasDeTrabajo).forEach((h) => {
+    hojasDeduped.forEach((h) => {
       if (!isInLabBacklog(h) || !isRowInYear(h, currentYear)) return;
       const name = cleanName(h.nombre || h.assignedTo);
       if (!name || !validMetrologosNames.has(name)) return;
@@ -164,16 +201,13 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       }))
       .sort((a, b) => b.total - a.total);
 
-    const arrivalsForMonth: Record<string, number> = {};
-    for (let d = 1; d <= 31; d++) {
-      const probe = new Date(year, month - 1, d);
-      if (probe.getMonth() !== month - 1) continue;
-      const key = toDateKey(probe);
-      arrivalsForMonth[key] = computeCompanyArrivals(hojasDeduped, key).reduce(
-        (acc, g) => acc + g.arrived,
-        0
-      );
-    }
+    const arrivalsForMonth = computeArrivalsCountByMonth(hojasDeduped, year, month);
+
+    const tecnicosPendientes: TecnicoPendiente[] = computeTecnicosPendientes(
+      hojasDeduped,
+      usuarios,
+      { year, month, desdeDateKey: subtractDays(DEUDA_TECNICO_DIAS) }
+    );
 
     return {
       companyArrivalsByArea,
@@ -186,8 +220,9 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       metrologosMonth: metrologosMonthFiltered,
       magnitudesMonth,
       arrivalsForMonth,
+      tecnicosPendientes,
     };
-  }, [hojasDeTrabajo, servicios, usuarios, selectedDate, selectedDateKey, todayKey]);
+  }, [hojasDeTrabajo, servicios, usuarios, selectedDate, todayKey]);
 
   return {
     loading,
@@ -206,5 +241,6 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     metrologosMonth,
     magnitudesMonth,
     arrivalsForMonth,
+    tecnicosPendientes,
   };
 }

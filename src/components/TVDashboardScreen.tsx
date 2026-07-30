@@ -1,24 +1,52 @@
 import React, { useState, useEffect } from "react";
 import { ArrowLeft, MonitorPlay, Clock } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
-import { useCalibrationDashboardData } from "../hooks/useCalibrationDashboardData";
+import {
+  useCalibrationDashboardData,
+  DEUDA_TECNICO_DIAS,
+} from "../hooks/useCalibrationDashboardData";
 import {
   DashboardCalendar,
   CompanyArrivalsPanel,
   ServicesDashboardPanel,
   LabStatusBar,
   LabPendingTable,
-  MetrologosMonthChart,
+  TecnicosPendientesPanel,
 } from "./calibration/TVDashboardPanels";
 
+/** Aislado del resto del dashboard: el tick de 1 s no debe re-renderizar los paneles. */
+const HeaderClock: React.FC = () => {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="text-right">
+      <p className="text-2xl lg:text-3xl font-mono font-black tabular-nums">
+        {now.toLocaleTimeString("es-MX", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })}
+      </p>
+      <p className="text-xs text-gray-400 capitalize flex items-center justify-end gap-1">
+        <Clock className="w-3 h-3" />
+        {now.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}
+      </p>
+    </div>
+  );
+};
+
 const TVDashboardScreen: React.FC = () => {
-  const { navigateTo, goBack } = useNavigation();
+  const { goBack } = useNavigation();
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   });
-  const [now, setNow] = useState(new Date());
 
   const {
     loading,
@@ -30,15 +58,10 @@ const TVDashboardScreen: React.FC = () => {
     activityDateKeys,
     totalArrivedToday,
     totalPendingToday,
-    metrologosMonth,
+    tecnicosPendientes,
     arrivalsForMonth,
     usuarios,
   } = useCalibrationDashboardData(selectedDate);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   if (loading) {
     return (
@@ -87,15 +110,7 @@ const TVDashboardScreen: React.FC = () => {
           total={labPending.totalPendientes}
         />
 
-        <div className="text-right">
-          <p className="text-2xl lg:text-3xl font-mono font-black tabular-nums">
-            {now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-          </p>
-          <p className="text-xs text-gray-400 capitalize flex items-center justify-end gap-1">
-            <Clock className="w-3 h-3" />
-            {now.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}
-          </p>
-        </div>
+        <HeaderClock />
       </header>
 
       <main className="relative flex-1 min-h-0 overflow-hidden p-3 lg:p-4 grid grid-cols-12 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:gap-4">
@@ -154,8 +169,8 @@ const TVDashboardScreen: React.FC = () => {
             year={labPending.year}
           />
         </section>
-        <section className="col-span-12 lg:col-span-5 min-h-[180px] max-h-[220px] row-span-1 h-full flex flex-col">
-          <MetrologosMonthChart data={metrologosMonth} />
+        <section className="col-span-12 lg:col-span-5 min-h-[180px] max-h-[280px] row-span-1 h-full flex flex-col">
+          <TecnicosPendientesPanel data={tecnicosPendientes} dias={DEUDA_TECNICO_DIAS} />
         </section>
       </main>
 

@@ -267,6 +267,113 @@ def clean_indicador(excel) -> None:
         excel.EnableEvents = True
 
 
+def clean_micrometro(excel) -> None:
+    path = FOLDER / "Formato Micrometro Exteriores.xlsm"
+    print(f"\n== {path.name} ==")
+    wb, already = open_workbook(excel, path)
+    try:
+        calc = wb.Worksheets("Calculos")
+        try_unprotect(calc)
+        excel.EnableEvents = False
+
+        set_value(calc, "D4", "AGD")
+        clear_cell(calc, "E4")
+        set_value(calc, "F4", 26)
+        set_value(calc, "J11", "mm")
+        clear_cell(calc, "G11")
+        set_value(calc, "F11", 0)
+        clear_cell(calc, "J10")
+        clear_cell(calc, "J13")
+        clear_numeric(calc, "C18:E20")
+        clear_numeric(calc, "C25:E35")
+
+        excel.Calculate()
+        try_protect(calc)
+        finish_wb(wb, already)
+        print("  OK limpio (AGD / mm / sin número / año 26 / sin alcance / sin lecturas)")
+    finally:
+        excel.EnableEvents = True
+
+
+def clean_vernier(excel) -> None:
+    path = FOLDER / "Formato Vernier.xlsm"
+    print(f"\n== {path.name} ==")
+    wb, already = open_workbook(excel, path)
+    try:
+        calc = wb.Worksheets("Calculos")
+        try_unprotect(calc)
+        excel.EnableEvents = False
+
+        set_value(calc, "D4", "AGD")
+        clear_cell(calc, "E4")
+        set_value(calc, "F4", 26)
+        set_value(calc, "J12", "mm")
+        clear_cell(calc, "F12")
+        clear_cell(calc, "J11")
+        clear_numeric(calc, "C21:D23")
+        clear_numeric(calc, "D35:F45")
+        clear_numeric(calc, "D51:F61")
+
+        excel.Calculate()
+        try_protect(calc)
+        finish_wb(wb, already)
+        print("  OK limpio (AGD / mm / sin número / año 26 / sin alcance / sin lecturas)")
+    finally:
+        excel.EnableEvents = True
+
+
+def clean_regla_flex(excel) -> None:
+    path = FOLDER / "Formato Regla Flex.xlsm"
+    print(f"\n== {path.name} ==")
+    wb, already = open_workbook(excel, path)
+    try:
+        calc = wb.Worksheets("Calculos")
+        try_unprotect(calc)
+        excel.EnableEvents = False
+
+        set_value(calc, "D4", "AGD")
+        clear_cell(calc, "E4")
+        set_value(calc, "F4", 26)
+        set_value(calc, "J11", "mm")
+        clear_cell(calc, "F10")
+        clear_cell(calc, "J9")
+        clear_numeric(calc, "C18:E28")
+
+        excel.Calculate()
+        try_protect(calc)
+        finish_wb(wb, already)
+        print("  OK limpio (AGD / mm / sin número / año 26 / sin alcance / sin lecturas)")
+    finally:
+        excel.EnableEvents = True
+
+
+def clean_pin_gage(excel) -> None:
+    path = FOLDER / "Formato Pin Gage.xlsm"
+    print(f"\n== {path.name} ==")
+    wb, already = open_workbook(excel, path)
+    try:
+        calc = wb.Worksheets("Calculos")
+        try_unprotect(calc)
+        excel.EnableEvents = False
+
+        set_value(calc, "D4", "AGD")
+        clear_cell(calc, "E4")
+        set_value(calc, "F4", 26)
+        set_value(calc, "J10", "mm")
+        clear_cell(calc, "F10")
+        clear_cell(calc, "J9")
+        clear_cell(calc, "J11")
+        clear_cell(calc, "A18")
+        clear_numeric(calc, "C18:G277")
+
+        excel.Calculate()
+        try_protect(calc)
+        finish_wb(wb, already)
+        print("  OK limpio (AGD / mm / sin número / año 26 / sin alcance / sin lecturas)")
+    finally:
+        excel.EnableEvents = True
+
+
 def main() -> int:
     missing = [
         n for n in (
@@ -275,6 +382,10 @@ def main() -> int:
             "Formato Torque.xlsm",
             "Formato Básculas y Balanzas.xlsm",
             "Formato Indicador.xlsm",
+            "Formato Micrometro Exteriores.xlsm",
+            "Formato Vernier.xlsm",
+            "Formato Regla Flex.xlsm",
+            "Formato Pin Gage.xlsm",
         )
         if not (FOLDER / n).exists()
     ]
@@ -292,6 +403,10 @@ def main() -> int:
         clean_torque(excel)
         clean_masa(excel)
         clean_indicador(excel)
+        clean_micrometro(excel)
+        clean_vernier(excel)
+        clean_regla_flex(excel)
+        clean_pin_gage(excel)
         print("\nLISTO: los masters quedaron en blanco (listos para un certificado nuevo).")
         return 0
     except Exception as exc:
@@ -303,7 +418,6 @@ def main() -> int:
         if quit_excel:
             excel.Quit()
         pythoncom.CoUninitialize()
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

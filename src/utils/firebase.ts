@@ -1,7 +1,12 @@
 ﻿// src/utils/firebase.ts
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+    getFirestore,
+    initializeFirestore,
+    persistentLocalCache,
+    persistentMultipleTabManager,
+} from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 // --- FCM (Web Push) ---
@@ -20,7 +25,23 @@ const app = initializeApp(firebaseConfig);
 
 // Exports existentes
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+/**
+ * Caché persistente (IndexedDB): al recargar no se vuelve a pagar la lectura
+ * de las colecciones ya sincronizadas. Si el entorno no la soporta se usa memoria.
+ */
+const createDb = () => {
+    try {
+        return initializeFirestore(app, {
+            localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        });
+    } catch (e) {
+        console.warn("Firestore sin caché persistente, se usa memoria:", e);
+        return getFirestore(app);
+    }
+};
+
+export const db = createDb();
 export const storage = getStorage(app);
 
 /**

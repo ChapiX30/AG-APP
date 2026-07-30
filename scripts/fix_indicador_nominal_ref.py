@@ -51,7 +51,8 @@ Private Sub LimpiarLecturas(ws As Worksheet)
     For r = 40 To 50
         ws.Range("C" & r & ":E" & r).ClearContents
     Next r
-    ws.Range("C18:E20").ClearContents
+    ' Solo lecturas de inspección inicial; no borrar Promedio/Err/Dictamen (E:G)
+    ws.Range("C18:D20").ClearContents
 End Sub
 
 Sub GuardarCertificadoExcel()

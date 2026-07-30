@@ -269,6 +269,7 @@ const enrichHistorialConClientes = (
 };
 
 const historialToCsv = (rows: ExcelHistorialRow[]): string => {
+    // 17 columnas = hoja obtenerDatosExcel de los masters (incluye join de cliente)
     const columns: (keyof ExcelHistorialRow)[] = [
         "Name",
         "certificado",
@@ -283,6 +284,10 @@ const historialToCsv = (rows: ExcelHistorialRow[]): string => {
         "lugarCalibracion",
         "frecuenciaCalibracion",
         "fechaRecepcion",
+        "domicilio",
+        "contacto",
+        "correo",
+        "telefono",
     ];
     const escapeCsv = (value: unknown): string =>
         `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -413,6 +418,7 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
         const prefijo = String(req.query.prefijo || "")
             .trim()
             .toUpperCase();
+        const anio = String(req.query.anio || "").trim();
         const formato = String(req.query.formato || "json").toLowerCase();
 
         const [clientesSnapshot, historialSnapshot, patronesSnapshot] = await Promise.all([
@@ -453,6 +459,14 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
         if (prefijo) {
             historial = historial.filter((row) =>
                 String(row.certificado).toUpperCase().startsWith(prefijo)
+            );
+        }
+
+        // anio=26 → solo certificados ...-26 (abre/sync mucho más rápido)
+        if (anio) {
+            const suffix = `-${anio}`;
+            historial = historial.filter((row) =>
+                String(row.certificado).toUpperCase().endsWith(suffix.toUpperCase())
             );
         }
 

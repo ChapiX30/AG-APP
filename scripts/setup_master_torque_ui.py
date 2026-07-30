@@ -108,8 +108,11 @@ Sub CambiarFormatoFecha()
         fmt = "aaaa-mmm-dd"
         msg = "Formato de fecha: fecha completa."
     End If
-    ws.Range("P2:P5").NumberFormatLocal = fmt
-    ws.Range("Q2:Q5").NumberFormatLocal = "aaaa-mmm"
+    ' Solo Calibración (P3) y sugerida (P4). Recepción/Elaboración no cambian.
+    ws.Range("P3:P4").NumberFormatLocal = fmt
+    ws.Range("Q3:Q4").NumberFormatLocal = "aaaa-mmm"
+    ws.Range("P2").NumberFormatLocal = "aaaa-mmm-dd"
+    ws.Range("P5").NumberFormatLocal = "aaaa-mmm-dd"
     ws.Protect Password:=AG_PASSWORD, DrawingObjects:=False, Contents:=True, Scenarios:=True
     Application.Calculate
     On Error GoTo 0

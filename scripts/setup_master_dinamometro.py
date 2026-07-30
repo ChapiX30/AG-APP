@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Une Formato indicador mm.xlsx + Formato indicador in.xlsx en un solo master:
+Convierte Formato Dinamometro Unificado.xlsx en master sincronizado (.xlsm):
 
-- Base: mm (ya trae intervalo corto + largo y fórmulas IF($J$10="mm",…)).
-- Selector mm/in en J10 (botón), como Báscula/Balanza.
-- Power Query al abrir: historial AGD + clientes + patrones dimensionales.
-- Certificado partido D4=AGD / E4=número / F4=año enlazado al historial.
-- Macros: Guardar, mm/in, Actualizar, Ir a Portada.
+- Power Query (refresca al abrir): obtenerDatosExcel (historial AGF/AGFT + cliente),
+  BD_Clientes, BD_Patrones (pesas + celda de carga AG-040). Hojas muy ocultas.
+- CALCULOS enlazado al historial: D4=AGF / E4=número / F4=año llena cliente,
+  instrumento, fechas y técnico automáticamente.
+- Macros + botones en CALCULOS: Guardar, Actualizar, Ir a Portada.
+- Certificados/vigencias de patrones enlazados a BD_Patrones.
 
-No reescribe CMC ni la hoja Patrones de bloques (solo enlaza cert/vigencia).
+No toca incertidumbres, lecturas, CMC ni el selector de unidad kg/lb/N.
 """
 from __future__ import annotations
 
@@ -18,7 +19,6 @@ import sys
 import time
 import zipfile
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -26,10 +26,8 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 import pythoncom
 import win32com.client
 
-FOLDER = Path(r"C:\Users\AG\Desktop\FORMATOS AG")
-SOURCE_MM = FOLDER / "Formato indicador mm.xlsx"
-SOURCE_IN = FOLDER / "Formato indicador in.xlsx"
-TARGET = FOLDER / "Formato Indicador.xlsm"
+SOURCE = Path(r"C:\Users\AG\Desktop\FORMATOS AG\Formato Dinamometro Unificado.xlsx")
+TARGET = Path(r"C:\Users\AG\Desktop\FORMATOS AG\Formato Dinamometro Unificado.xlsm")
 PASSWORD = "AG-Calidad-2026"
 MSO_ROUNDED = 5
 XL_XLSM = 52
@@ -55,8 +53,10 @@ PATRON_COLUMNS = [
     "laboratorio",
 ]
 
-# Patrones de bloques usados en la hoja Patrones del formato
-DIM_IDS = ["AG-001", "AG-002", "AG-041", "AG-059"]
+# Pesas + celda de carga usadas en dinamómetro / fuerza
+FUERZA_IDS = [
+    "AG-017", "AG-018", "AG-019", "AG-020", "AG-022", "AG-023", "AG-040",
+]
 
 
 def m_list(values: list[str]) -> str:
@@ -69,9 +69,11 @@ M_HISTORIAL = f'''let
     HistorialLista = Fuente[historial],
     ClientesLista = Fuente[clientes],
     HistorialBase = Table.FromRecords(HistorialLista, {m_list(HIST_COLUMNS)}, MissingField.UseNull),
-    HistorialAGD = Table.SelectRows(
+    HistorialAGF = Table.SelectRows(
         HistorialBase,
-        each Text.StartsWith(Text.Upper(Text.From([certificado])), "AGD-")
+        each
+            Text.StartsWith(Text.Upper(Text.From([certificado])), "AGF-")
+            or Text.StartsWith(Text.Upper(Text.From([certificado])), "AGFT-")
     ),
     ClientesBase = Table.FromRecords(ClientesLista, {m_list(CLIENT_COLUMNS)}, MissingField.UseNull),
     NormalizarNombre = (valor as any) as text =>
@@ -88,7 +90,7 @@ M_HISTORIAL = f'''let
         in
             Compacto,
     HistorialClave = Table.AddColumn(
-        HistorialAGD, "_clienteKey", each NormalizarNombre([cliente]), type text
+        HistorialAGF, "_clienteKey", each NormalizarNombre([cliente]), type text
     ),
     ClientesClave = Table.AddColumn(
         ClientesBase, "_clienteKey", each NormalizarNombre([Nombre]), type text
@@ -154,17 +156,19 @@ M_PATRONES = f'''let
     Url = "{API_BASE}&formato=patrones",
     Fuente = Json.Document(Web.Contents(Url)),
     Tabla = Table.FromRecords(Fuente, {m_list(PATRON_COLUMNS)}, MissingField.UseNull),
-    SoloDim = Table.SelectRows(
+    SoloFuerza = Table.SelectRows(
         Tabla,
         each let
             d = Text.Upper(if [descripcion] = null then "" else Text.From([descripcion])),
             id = Text.Upper(Text.Trim(if [noControl] = null then "" else Text.From([noControl])))
         in
-            Text.Contains(d, "BLOQUE") or Text.Contains(d, "DIMENSION")
-            or List.Contains({m_list(DIM_IDS)}, id)
+            Text.Contains(d, "MASA") or Text.Contains(d, "PESA")
+            or Text.Contains(d, "CELDA") or Text.Contains(d, "CARGA")
+            or Text.Contains(d, "FUERZA") or Text.Contains(d, "DINAM")
+            or List.Contains({m_list(FUERZA_IDS)}, id)
     ),
     Fechas = Table.TransformColumns(
-        SoloDim,
+        SoloFuerza,
         {{
             {{"fechaUltimaCalibracion", each try Date.FromText(Text.Start(Text.From(_), 10)) otherwise null, type date}},
             {{"fechaVencimiento", each try Date.FromText(Text.Start(Text.From(_), 10)) otherwise null, type date}}
@@ -208,12 +212,14 @@ CALC_FORMULAS = {
     "B11": idx("F"),
     "B12": idx("G"),
     "F9": idx("H"),
-    "AB4": idx("K"),
+    "S4": idx("K"),
     "C14": (
-        '=IF(OR($AB$4="Laboratorio",$AB$4="laboratorio"),"Instalaciones AG",'
-        'IF(OR($AB$4="Sitio",$AB$4="sitio"),"Instalaciones de Cliente",""))'
+        '=IF(OR($S$4="Laboratorio",$S$4="laboratorio"),"Instalaciones AG",'
+        'IF(OR($S$4="Sitio",$S$4="sitio"),"Instalaciones de Cliente",'
+        'IF($I$4="Servicio en Sitio",$B$5,"Lab. Mecánica")))'
     ),
-    "M12": idx("J"),
+    # Calibró (K17) = técnico del certificado. Aprobó (L17) se deja manual.
+    "K17": idx("J"),
 }
 
 F_CERT_PORTADA = (
@@ -222,9 +228,14 @@ F_CERT_PORTADA = (
 
 # (hoja, celda ID, cert, vigencia)
 PATRON_BLOCKS = [
-    ("Patrones", "D4", "D5", "D7"),    # AG-002
-    ("Patrones", "D16", "D17", "D19"),  # AG-001
-    ("Patrones", "D51", "D52", "D54"),  # AG-059
+    ("PATRONES", "D1", "D2", "D4"),      # AG-020 parte 1
+    ("PATRONES", "D6", "D7", "D9"),      # AG-020 parte 2
+    ("PATRONES", "D13", "D14", "D16"),   # AG-017
+    ("PATRONES", "D18", "D19", "D21"),   # AG-018
+    ("PATRONES", "D23", "D24", "D26"),   # AG-019
+    ("PATRONES", "D28", "D29", "D31"),   # AG-022
+    ("PATRONES", "D33", "D34", "D36"),   # AG-023
+    ("PATRONES", "D191", "D192", "D194"),  # AG-040 celda
 ]
 
 
@@ -251,20 +262,8 @@ def wire_patron_blocks(wb) -> int:
         if cur_vig is not None and hasattr(cur_vig, "year"):
             fallback = f"DATE({cur_vig.year},{cur_vig.month},{cur_vig.day})"
         else:
-            # vigencia a menudo es fórmula (=D6+365); conservar como fallback texto vacío
+            # Si ya era fórmula (=D3+365), conservar como texto de respaldo vacío
             fallback = '""'
-            try:
-                if ws.Range(vig_cell).HasFormula:
-                    # deja la fórmula local si la app no trae vigencia
-                    fallback_formula = ws.Range(vig_cell).Formula
-                    vig_idx = patron_lookup(id_cell, "H")
-                    ws.Range(vig_cell).Formula = (
-                        f'=IF(IFERROR({vig_idx},"")="",{fallback_formula[1:]},{vig_idx})'
-                    )
-                    wired += 1
-                    continue
-            except Exception:
-                pass
         vig_idx = patron_lookup(id_cell, "H")
         ws.Range(vig_cell).Formula = (
             f'=IF(IFERROR({vig_idx},"")="",{fallback},{vig_idx})'
@@ -277,39 +276,14 @@ VBA_CODE = r'''
 Option Explicit
 
 Private Const AG_PASSWORD As String = "AG-Calidad-2026"
-Private Const MM_PER_IN As Double = 25.4
 
-Private Function CertificadoDim() As String
+Private Function CertificadoFuerza() As String
     With ThisWorkbook.Worksheets("CALCULOS")
-        CertificadoDim = Trim(CStr(.Range("D4").Value)) & "-" & _
-                         Format(.Range("E4").Value, "0000") & "-" & _
-                         Format(.Range("F4").Value, "00")
+        CertificadoFuerza = Trim(CStr(.Range("D4").Value)) & "-" & _
+                            Format(.Range("E4").Value, "0000") & "-" & _
+                            Format(.Range("F4").Value, "00")
     End With
 End Function
-
-Private Sub RestaurarNominalesDesdeRef(ws As Worksheet)
-    Dim r As Long
-    For r = 26 To 35
-        ws.Range("B" & r).Formula = "=A" & r
-    Next r
-    For r = 41 To 50
-        ws.Range("B" & r).Formula = "=A" & r
-    Next r
-    ws.Range("B25").Value = 0
-    ws.Range("B40").Value = 0
-End Sub
-
-Private Sub LimpiarLecturas(ws As Worksheet)
-    Dim r As Long
-    For r = 26 To 35
-        ws.Range("C" & r & ":E" & r).ClearContents
-    Next r
-    For r = 40 To 50
-        ws.Range("C" & r & ":E" & r).ClearContents
-    Next r
-    ' Solo lecturas de inspección inicial; no borrar Promedio/Err/Dictamen (E:G)
-    ws.Range("C18:D20").ClearContents
-End Sub
 
 Sub GuardarCertificadoExcel()
     Dim ws As Worksheet
@@ -325,8 +299,8 @@ Sub GuardarCertificadoExcel()
     If Trim(CStr(ws.Range("D4").Value)) = "" Or _
        Trim(CStr(ws.Range("E4").Value)) = "" Or _
        Trim(CStr(ws.Range("F4").Value)) = "" Then
-        MsgBox "El número de certificado está incompleto (D4-E4-F4).", _
-               vbCritical, "Validación"
+        MsgBox "El número de certificado está incompleto (D4-E4-F4)." & vbCrLf & _
+               "Ejemplo: AGF | 52 | 26", vbCritical, "Validación"
         Exit Sub
     End If
 
@@ -339,14 +313,14 @@ Sub GuardarCertificadoExcel()
     End If
 
     On Error Resume Next
-    avisoPatron = CStr(ThisWorkbook.Worksheets("PORTADA").Range("E49").Value)
+    avisoPatron = CStr(ThisWorkbook.Worksheets("PORTADA").Range("E47").Value)
     On Error GoTo ErrorHandler
     If InStr(1, UCase(avisoPatron), "VENCIDO") > 0 Then
         If MsgBox("Un patrón aparece VENCIDO." & vbCrLf & "¿Deseas guardar de todos modos?", _
                   vbExclamation + vbYesNo, "Calidad") = vbNo Then Exit Sub
     End If
 
-    nombreArchivo = CertificadoDim() & " - " & instrumento & " - " & idEquipo
+    nombreArchivo = CertificadoFuerza() & " - " & instrumento & " - " & idEquipo
     nombreArchivo = Replace(nombreArchivo, "/", "-")
     nombreArchivo = Replace(nombreArchivo, "\", "-")
     nombreArchivo = Replace(nombreArchivo, ":", "")
@@ -360,7 +334,7 @@ Sub GuardarCertificadoExcel()
     ruta = Application.GetSaveAsFilename( _
         InitialFileName:=nombreArchivo, _
         FileFilter:="Libro de Excel con macros (*.xlsm), *.xlsm", _
-        Title:="Guardar certificado de indicador")
+        Title:="Guardar certificado de dinamómetro")
 
     If ruta = False Then Exit Sub
 
@@ -375,55 +349,6 @@ ErrorHandler:
     MsgBox "No se pudo guardar: " & Err.Description, vbCritical, "Error"
 End Sub
 
-Sub CambiarUnidadIndicador()
-    Dim ws As Worksheet
-    Dim unidad As String
-    Dim alcance As Variant
-    Dim divMin As Variant
-    Dim emp As Variant
-
-    Set ws = ThisWorkbook.Worksheets("CALCULOS")
-    On Error Resume Next
-    ws.Unprotect Password:=AG_PASSWORD
-    On Error GoTo 0
-
-    unidad = LCase(Trim(CStr(ws.Range("J10").Value)))
-    alcance = ws.Range("F10").Value
-    divMin = ws.Range("J9").Value
-    emp = ws.Range("J12").Value
-
-    If unidad = "mm" Then
-        ws.Range("J10").Value = "in"
-        If IsNumeric(alcance) Then ws.Range("F10").Value = CDbl(alcance) / MM_PER_IN
-        If IsNumeric(divMin) Then ws.Range("J9").Value = CDbl(divMin) / MM_PER_IN
-        If IsNumeric(emp) Then ws.Range("J12").Value = CDbl(emp) / MM_PER_IN
-        RestaurarNominalesDesdeRef ws
-        LimpiarLecturas ws
-        MsgBox "Modo pulgadas (in)." & vbCrLf & _
-               "Alcance/división/EMP convertidos ÷25.4." & vbCrLf & _
-               "REF y Nominal se recalcularon; captura de nuevo las lecturas." & vbCrLf & _
-               "Si el bloque real difiere del REF, edita la columna Nominal (B).", _
-               vbInformation, "Unidad"
-    Else
-        ws.Range("J10").Value = "mm"
-        If IsNumeric(alcance) Then ws.Range("F10").Value = CDbl(alcance) * MM_PER_IN
-        If IsNumeric(divMin) Then ws.Range("J9").Value = CDbl(divMin) * MM_PER_IN
-        If IsNumeric(emp) Then ws.Range("J12").Value = CDbl(emp) * MM_PER_IN
-        RestaurarNominalesDesdeRef ws
-        LimpiarLecturas ws
-        MsgBox "Modo milímetros (mm)." & vbCrLf & _
-               "Alcance/división/EMP convertidos ×25.4." & vbCrLf & _
-               "REF y Nominal se recalcularon; captura de nuevo las lecturas." & vbCrLf & _
-               "Si el bloque real difiere del REF, edita la columna Nominal (B).", _
-               vbInformation, "Unidad"
-    End If
-
-    On Error Resume Next
-    ws.Protect Password:=AG_PASSWORD, DrawingObjects:=False, Contents:=True, Scenarios:=True
-    Application.Calculate
-    On Error GoTo 0
-End Sub
-
 Sub RecalcularCertificado()
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
@@ -433,7 +358,7 @@ Sub RecalcularCertificado()
     ThisWorkbook.Worksheets("PORTADA").Calculate
     ThisWorkbook.Worksheets("RESULTADOS").Calculate
     Application.ScreenUpdating = True
-    MsgBox "Datos y cálculos actualizados para " & CertificadoDim(), _
+    MsgBox "Datos y cálculos actualizados para " & CertificadoFuerza(), _
            vbInformation, "Actualizado"
     Exit Sub
 
@@ -557,138 +482,66 @@ def load_query_to_sheet(wb, query_name: str, ws, table_name: str) -> None:
             pass
 
 
-def try_unprotect(ws) -> None:
-    for pwd in (PASSWORD, "AG", "calidad", "1234", ""):
-        try:
-            if pwd:
-                ws.Unprotect(Password=pwd)
-            else:
-                ws.Unprotect()
-            return
-        except Exception:
-            continue
+def strip_sheet_protection(xlsx: Path) -> None:
+    tmp = xlsx.with_suffix(".unprot.xlsx")
+    with zipfile.ZipFile(xlsx, "r") as zin, zipfile.ZipFile(
+        tmp, "w", compression=zipfile.ZIP_DEFLATED
+    ) as zout:
+        for info in zin.infolist():
+            data = zin.read(info.filename)
+            if info.filename.startswith("xl/worksheets/sheet") and info.filename.endswith(".xml"):
+                txt = data.decode("utf-8")
+                txt = re.sub(r"<sheetProtection[^>]*/>", "", txt)
+                txt = re.sub(
+                    r"<sheetProtection[^>]*>.*?</sheetProtection>", "", txt, flags=re.S
+                )
+                data = txt.encode("utf-8")
+            zout.writestr(info, data)
+    tmp.replace(xlsx)
 
 
-def try_unmerge(ws, addr: str) -> None:
+def update_guia(wb) -> None:
     try:
-        rng = ws.Range(addr)
-        if rng.MergeCells:
-            rng.MergeArea.UnMerge()
+        ws = wb.Worksheets("GUIA")
     except Exception:
-        pass
-
-
-def unlock_cell(ws, addr: str) -> None:
-    """Marca celda editable; ignora si la hoja sigue protegida o la celda es merge."""
-    try:
-        rng = ws.Range(addr)
-        if rng.MergeCells:
-            rng = rng.MergeArea.Cells(1, 1)
-        rng.Locked = False
-        rng.Interior.Color = rgb(255, 242, 204)
-    except Exception:
-        try:
-            ws.Range(addr).Interior.Color = rgb(255, 242, 204)
-        except Exception:
-            pass
-
-def apply_dual_unit_formulas(calc) -> None:
-    """Completa el soporte mm/in que ya venía a medias en el formato mm."""
-    calc.Range("A24").Formula = "=$J$10"
-    calc.Range("J10").Value = "mm"
-
-    # Nominal sigue a REF (% del alcance) en ambos intervalos
-    for row in range(26, 36):
-        calc.Range(f"B{row}").Formula = f"=A{row}"
-    for row in range(41, 51):
-        calc.Range(f"B{row}").Formula = f"=A{row}"
-    calc.Range("B25").Value = 0
-    calc.Range("B40").Value = 0
-
-    # Inspección inicial: 20% / 50% / 100% del intervalo largo (unidad activa)
-    calc.Range("B18").Formula = "=B42"
-    calc.Range("B19").Formula = "=B45"
-    calc.Range("B20").Formula = "=B50"
-    for r in (18, 19, 20):
-        calc.Range(f"E{r}").Formula = f'=IF(COUNT(C{r}:D{r})=0,"",AVERAGE(C{r}:D{r}))'
-        calc.Range(f"F{r}").Formula = f'=IF(E{r}="","",B{r}-E{r})'
-    calc.Range("G18").Formula = (
-        '=IF(E18="","",'
-        'IF(ABS(F18)+IFERROR(V42,0)>IFERROR(H42,$J$12),"RECHAZADO","ACEPTADO"))'
-    )
-    calc.Range("G19").Formula = (
-        '=IF(E19="","",'
-        'IF(ABS(F19)+IFERROR(V45,0)>IFERROR(H45,$J$12),"RECHAZADO","ACEPTADO"))'
-    )
-    calc.Range("G20").Formula = (
-        '=IF(E20="","",'
-        'IF(ABS(F20)+IFERROR(V50,0)>IFERROR(H50,$J$12),"RECHAZADO","ACEPTADO"))'
-    )
-
-    # VLOOKUP corto: convierte a mm para buscar en columnas E:H y regresa a la unidad activa
-    for row in range(26, 36):
-        calc.Range(f"M{row}").Formula = (
-            f'=IF($J$10="mm",'
-            f'IFERROR(VLOOKUP(B{row},Patrones!$E$6:$H$130,2,TRUE),0),'
-            f'IFERROR(VLOOKUP(B{row}*25.4,Patrones!$E$6:$H$130,2,TRUE)/25.4,0))'
-        )
-        calc.Range(f"O{row}").Formula = (
-            f'=IF($J$10="mm",'
-            f'IFERROR(VLOOKUP(B{row},Patrones!$E$6:$H$133,4,TRUE),0),'
-            f'IFERROR(VLOOKUP(B{row}*25.4,Patrones!$E$6:$H$133,4,TRUE)/25.4,0))'
-        )
-
-    # Tabla auxiliar X:AA (combinaciones de bloques) según unidad
-    # Filas 5-14 ya apuntan a Patrones E/F/G/H; envolver con IF de unidad.
-    for row in range(5, 15):
-        for col, letter in ((24, "E"), (25, "F"), (26, "G"), (27, "H")):
-            cell = calc.Cells(row, col)
-            current = cell.Formula if cell.HasFormula else None
-            if not current:
-                continue
-            body = current[1:] if current.startswith("=") else current
-            # Evitar doble-envolver
-            if '$J$10="mm"' in body or "$J$10=\"mm\"" in body:
-                continue
-            cell.Formula = f'=IF($J$10="mm",{body},({body})/25.4)'
-
-
-def strip_sheet_protection(src: Path, dst: Path) -> int:
-    """Quita sheetProtection del xlsx sin reescribir dibujos (conserva logos WMF)."""
-    removed = 0
-    pattern = re.compile(rb"<sheetProtection\b[^>]*/>|<sheetProtection\b[\s\S]*?</sheetProtection>", re.I)
-    with zipfile.ZipFile(src, "r") as zin:
-        buf = BytesIO()
-        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-            for info in zin.infolist():
-                data = zin.read(info.filename)
-                if info.filename.startswith("xl/worksheets/") and info.filename.endswith(".xml"):
-                    new_data, n = pattern.subn(b"", data)
-                    if n:
-                        removed += n
-                        data = new_data
-                zout.writestr(info, data)
-        dst.write_bytes(buf.getvalue())
-    return removed
+        return
+    # Append sync section at end
+    last = ws.Cells(ws.Rows.Count, 1).End(-4162).Row  # xlUp
+    start = last + 2
+    lines = [
+        "SINCRONIZACION CON LA APP (certificados y patrones)",
+        "- Al abrir el archivo, Power Query refresca historial AGF/AGFT, clientes y patrones.",
+        "- En CALCULOS captura: D4=AGF (o AGFT)  E4=numero  F4=año  -> ej. AGF | 52 | 26",
+        "- Con eso se llenan solo: cliente, domicilio, contacto, instrumento, fechas y tecnico.",
+        "- Boton Actualizar: fuerza el refresco si la red fallo al abrir.",
+        "- Boton Guardar: exporta copia del certificado con nombre automatico.",
+        "- Respaldo offline: carpeta 'Actualizar masters' -> Actualizar master Dinamometro.bat",
+        "- Los certificados/vigencias de patrones se toman de BD_Patrones (app).",
+        "- Unidad de trabajo (J10), lecturas e incertidumbres NO las toca la sincronizacion.",
+    ]
+    for i, line in enumerate(lines):
+        ws.Range(f"A{start + i}").Value = line
+        if i == 0:
+            ws.Range(f"A{start + i}").Font.Bold = True
 
 
 def main() -> int:
-    if not SOURCE_MM.exists():
-        print(f"No existe la base mm: {SOURCE_MM}")
+    source = TARGET if TARGET.exists() else SOURCE
+    if not source.exists():
+        print(f"No existe {SOURCE} ni {TARGET}")
         return 1
 
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    work = FOLDER / f"_tmp_indicador_{stamp}.xlsx"
-    backup_mm = FOLDER / f"Formato indicador mm_backup_setup_{stamp}.xlsx"
-    shutil.copy2(SOURCE_MM, backup_mm)
-    if SOURCE_IN.exists():
-        backup_in = FOLDER / f"Formato indicador in_backup_setup_{stamp}.xlsx"
-        shutil.copy2(SOURCE_IN, backup_in)
-        print(f"Respaldo in: {backup_in.name}")
-    print(f"Respaldo mm: {backup_mm.name}")
+    backup = source.with_name(
+        f"{source.stem}_backup_setup_{datetime.now():%Y%m%d_%H%M%S}{source.suffix}"
+    )
+    shutil.copy2(source, backup)
+    print(f"Respaldo: {backup.name}")
 
-    n_prot = strip_sheet_protection(SOURCE_MM, work)
-    print(f"Trabajo: {work.name} (base mm, protección quitada en {n_prot} hojas)")
+    # Si es xlsx, quitar proteccion XML por si acaso
+    work = Path(str(backup).replace(backup.suffix, f"_work{backup.suffix}"))
+    shutil.copy2(source, work)
+    if work.suffix.lower() == ".xlsx":
+        strip_sheet_protection(work)
 
     pythoncom.CoInitialize()
     excel = win32com.client.DispatchEx("Excel.Application")
@@ -710,24 +563,19 @@ def main() -> int:
 
         calc = wb.Worksheets("CALCULOS")
         portada = wb.Worksheets("PORTADA")
-        patrones = wb.Worksheets("Patrones")
-        try_unprotect(calc)
-        try_unprotect(portada)
-        try_unprotect(patrones)
-        try:
-            try_unprotect(wb.Worksheets("RESULTADOS"))
-        except Exception:
-            pass
-        try:
-            try_unprotect(wb.Worksheets("CMC"))
-        except Exception:
-            pass
+        for sheet_name in ("CALCULOS", "PORTADA", "PATRONES", "RESULTADOS", "GUIA", "CMC"):
+            try:
+                wb.Worksheets(sheet_name).Unprotect(Password=PASSWORD)
+            except Exception:
+                try:
+                    wb.Worksheets(sheet_name).Unprotect()
+                except Exception:
+                    pass
 
-        # ---- Power Query ----
         query_defs = (
-            ("AG_API_Historial_Dim", M_HISTORIAL, HIST_SHEET, "AG_Historial"),
-            ("AG_API_Clientes_Dim", M_CLIENTES, CLIENTES_SHEET, "AG_Clientes"),
-            ("AG_API_Patrones_Dim", M_PATRONES, PATRONES_SHEET, "AG_Patrones"),
+            ("AG_API_Historial_Fuerza", M_HISTORIAL, HIST_SHEET, "AG_Historial"),
+            ("AG_API_Clientes_Fuerza", M_CLIENTES, CLIENTES_SHEET, "AG_Clientes"),
+            ("AG_API_Patrones_Fuerza", M_PATRONES, PATRONES_SHEET, "AG_Patrones"),
         )
         print("Creando consultas Power Query…")
         for query_name, _, _, _ in query_defs:
@@ -739,23 +587,31 @@ def main() -> int:
             ws = ensure_sheet(wb, sheet_name)
             load_query_to_sheet(wb, query_name, ws, table_name)
 
-        # ---- Certificado partido D4/E4/F4 ----
-        print("Cableando certificado y CALCULOS al historial…")
-        try_unmerge(calc, "A4")
-        try_unmerge(calc, "E4")
-        try_unmerge(calc, "D4")
-        try_unmerge(calc, "F4")
-        # Etiqueta a la izquierda; D4/E4/F4 editables
-        calc.Range("A4").Value = "****No de certificado:"
+        print("Cableando CALCULOS al historial…")
+        for ref in ("C4", "E4", "A4"):
+            try:
+                if calc.Range(ref).MergeCells:
+                    calc.Range(ref).MergeArea.UnMerge()
+            except Exception:
+                pass
+
+        calc.Range("A4").Value = "No. de Certificado:"
+        calc.Range("C4").Value = ""
+        calc.Range("D4").Value = "AGF"
+        calc.Range("E4").Value = 1
+        calc.Range("F4").Value = 26
+        for ref in ("D4", "E4", "F4"):
+            calc.Range(ref).Locked = False
+            calc.Range(ref).Interior.Color = rgb(255, 242, 204)
         try:
-            calc.Range("A4:C4").Merge()
+            calc.Range("D4").Validation.Delete()
         except Exception:
             pass
-        calc.Range("D4").Value = "AGD"
-        calc.Range("E4").Value = 302
-        calc.Range("F4").Value = 24
-        for ref in ("D4", "E4", "F4", "J10"):
-            unlock_cell(calc, ref)
+        calc.Range("D4").Validation.Add(
+            Type=3, AlertStyle=1, Operator=1, Formula1="AGF,AGFT"
+        )
+        calc.Range("D4").Validation.IgnoreBlank = True
+        calc.Range("D4").Validation.InCellDropdown = True
 
         for addr, formula in CALC_FORMULAS.items():
             rng = calc.Range(addr)
@@ -767,21 +623,31 @@ def main() -> int:
             else:
                 rng.Formula = formula
 
-        calc.Range("AB4").Font.Size = 8
-        calc.Range("AB4").Font.Color = rgb(150, 150, 150)
+        # Aprobó permanece manual (Calidad); no lo pisa el historial
+        calc.Range("L17").Value = "Viridiana Moreno"
+        calc.Range("L17").Locked = False
+        try:
+            calc.Range("K17").Validation.Delete()
+        except Exception:
+            pass
+        calc.Range("K17").Locked = True
+
+        calc.Range("S4").Font.Size = 8
+        calc.Range("S4").Font.Color = rgb(150, 150, 150)
+
+        try:
+            calc.Range("B5").Validation.Delete()
+        except Exception:
+            pass
 
         portada.Range("J9").Formula = F_CERT_PORTADA
-
-        print("Aplicando fórmulas duales mm/in…")
-        apply_dual_unit_formulas(calc)
 
         n_wired = wire_patron_blocks(wb)
         print(f"Bloques de patrones enlazados a BD_Patrones: {n_wired}")
 
-        # ---- VBA + botones ----
         print("Instalando macros y botones…")
         try:
-            set_module(wb.VBProject, "ModuloAG_IndicadorUI", VBA_CODE)
+            set_module(wb.VBProject, "ModuloAG_FuerzaUI", VBA_CODE)
         except Exception as exc:
             raise RuntimeError(
                 "Excel bloqueó el acceso al proyecto VBA. Activa: Archivo > Opciones > "
@@ -799,17 +665,18 @@ def main() -> int:
 
         buttons = (
             ("Guardar", "GuardarCertificadoExcel", 92, rgb(37, 99, 235)),
-            ("mm / in", "CambiarUnidadIndicador", 88, rgb(124, 58, 237)),
             ("Actualizar", "RecalcularCertificado", 88, rgb(217, 119, 6)),
             ("Ir a Portada", "IrAPortada", 88, rgb(71, 85, 105)),
         )
-        left = float(calc.Range("U1").Left) + 6
+        left = float(calc.Range("R1").Left) + 6
         top = 4.0
         gap = 5.0
         for caption, macro, width, color in buttons:
             add_button(calc, left, top, width, caption, macro, color)
             left += width + gap
-        print("  Botones: Guardar, mm/in, Actualizar, Ir a Portada")
+        print("  Botones: Guardar, Actualizar, Ir a Portada")
+
+        update_guia(wb)
 
         for sheet_name in (HIST_SHEET, CLIENTES_SHEET, PATRONES_SHEET):
             wb.Worksheets(sheet_name).Visible = XL_VERY_HIDDEN
@@ -826,10 +693,16 @@ def main() -> int:
 
         calc.Protect(Password=PASSWORD, DrawingObjects=False, Contents=True, Scenarios=True)
         portada.Protect(Password=PASSWORD, DrawingObjects=False, Contents=True, Scenarios=True)
-        patrones.Protect(Password=PASSWORD, DrawingObjects=False, Contents=True, Scenarios=True)
+        wb.Worksheets("PATRONES").Protect(
+            Password=PASSWORD, DrawingObjects=False, Contents=True, Scenarios=True
+        )
+        try:
+            wb.Worksheets("RESULTADOS").Protect(
+                Password=PASSWORD, DrawingObjects=False, Contents=True, Scenarios=True
+            )
+        except Exception:
+            pass
 
-        if TARGET.exists():
-            TARGET.unlink()
         wb.SaveAs(str(TARGET.resolve()), FileFormat=XL_XLSM)
         print(f"Guardado: {TARGET.name}")
 
@@ -840,36 +713,35 @@ def main() -> int:
             for i in range(1, calc.Shapes.Count + 1)
             if str(calc.Shapes(i).Name).startswith("btn_")
         }
-        if len(found) != 4:
-            raise RuntimeError(f"Se esperaban 4 botones y hay {len(found)}.")
+        if len(found) != 3:
+            raise RuntimeError(f"Se esperaban 3 botones y hay {len(found)}.")
 
         muestra = [
-            ("Certificado", portada.Range("J9").Value),
-            ("Cliente", calc.Range("B5").Value),
-            ("Instrumento", calc.Range("B9").Value),
-            ("No. Control", calc.Range("F9").Value),
-            ("Unidad", calc.Range("J10").Value),
-            ("Técnico", calc.Range("M12").Value),
+            ("Certificado", "PORTADA J9", portada.Range("J9").Value),
+            ("Cliente", "CALCULOS B5", calc.Range("B5").Value),
+            ("Instrumento", "CALCULOS B9", calc.Range("B9").Value),
+            ("No. Control", "CALCULOS F9", calc.Range("F9").Value),
+            ("Calibró", "CALCULOS K17", calc.Range("K17").Value),
+            ("Aprobó", "CALCULOS L17", calc.Range("L17").Value),
+            ("Queries", "count", wb.Queries.Count),
         ]
-        for etiqueta, valor in muestra:
-            print(f"  {etiqueta}: {valor}")
+        for etiqueta, origen, valor in muestra:
+            print(f"  {etiqueta} ({origen}): {valor}")
 
         wb.Close(SaveChanges=True)
         wb = None
 
-        # Retirar xlsx sueltos (quedaron respaldos con timestamp)
-        for src in (SOURCE_MM, SOURCE_IN):
-            if src.exists():
-                src.unlink()
-                print(f"Retirado: {src.name}")
-
-        print("LISTO: Formato Indicador.xlsm (mm + in unificados).")
+        # Retirar xlsx unificado si el xlsm quedó bien (dejar respaldo)
+        if SOURCE.exists() and TARGET.exists():
+            SOURCE.unlink()
+            print(f"Retirado el .xlsx: {SOURCE.name} (respaldo: {backup.name})")
+        print("LISTO.")
         return 0
     except Exception as exc:
         print(f"ERROR: {exc}")
         import traceback
         traceback.print_exc()
-        print(f"Respaldos intactos en {FOLDER}")
+        print(f"Respaldo intacto: {backup}")
         return 1
     finally:
         if wb is not None:
@@ -877,12 +749,9 @@ def main() -> int:
                 wb.Close(SaveChanges=False)
             except Exception:
                 pass
-        try:
-            excel.Quit()
-        except Exception:
-            pass
+        excel.Quit()
         pythoncom.CoUninitialize()
-        if work.exists():
+        if work.exists() and work != TARGET:
             try:
                 work.unlink()
             except Exception:

@@ -12,6 +12,7 @@ import {
   Briefcase,
   Activity,
   UserCircle,
+  UploadCloud,
 } from "lucide-react";
 import {
   BarChart,
@@ -36,6 +37,8 @@ import {
   UsuarioRow,
   resolveServicioAssignees,
   isMetrologyRole,
+  formatTecnicoShortName,
+  TecnicoPendiente,
 } from "../../utils/calibrationShared.tsx";
 
 type CalendarValue = Date | [Date | null, Date | null] | null;
@@ -300,7 +303,7 @@ const CompanyCard: React.FC<{ g: CompanyArrivalGroup }> = ({ g }) => {
       )}
       <div className="flex items-center gap-3 text-center">
         <div className="flex-1 rounded-lg bg-slate-800 px-2 py-1.5 border border-white/5">
-          <p className="text-[10px] text-gray-500 uppercase">Llegaron</p>
+          <p className="text-[10px] text-gray-500 uppercase">En lab</p>
           <p className="text-xl font-black text-white">{g.arrived}</p>
         </div>
         <div className="flex-1 rounded-lg bg-amber-950/50 px-2 py-1.5 border border-amber-500/20">
@@ -432,10 +435,10 @@ export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
       <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0 bg-slate-900/60">
         <div>
           <h3 className="text-base lg:text-lg font-bold text-orange-400 flex items-center gap-2">
-            <Truck className="w-5 h-5" /> Llegadas por Empresa
+            <Truck className="w-5 h-5" /> Equipos en Laboratorio por Empresa
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            Solo {year} · activos en laboratorio por área
+            Solo {year} · activos por área, agrupados por fecha de llegada
           </p>
         </div>
         <div className="flex gap-2">
@@ -785,7 +788,7 @@ export const LabStatusBar: React.FC<LabStatusBarProps> = ({ pendientes, total })
           className="flex items-center gap-1.5 bg-slate-900 border border-white/5 px-2.5 py-1 rounded-xl"
         >
           <div className={clsx("w-2 h-2 rounded-full", count > 0 ? "bg-orange-500 animate-pulse" : "bg-emerald-500")} />
-          <span className="text-[10px] font-semibold text-gray-400">{dep.substring(0, 3)}</span>
+          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{dep}</span>
           <span className={clsx("text-sm font-black", count > 0 ? "text-orange-400" : "text-emerald-400")}>
             {count}
           </span>
@@ -818,10 +821,10 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
         </span>
       </div>
       <div className="flex text-[9px] text-gray-500 uppercase font-bold px-3 py-1.5 border-b border-white/5 shrink-0">
-        <div className="w-[28%]">Cliente</div>
-        <div className="w-[32%]">Equipo</div>
+        <div className="w-[26%]">Cliente</div>
+        <div className="w-[28%]">Equipo</div>
         <div className="w-[22%] text-center">Estado</div>
-        <div className="w-[18%] text-right">Téc.</div>
+        <div className="w-[24%] text-right">Técnico</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar">
         {sectionsWithItems.length === 0 ? (
@@ -842,21 +845,138 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
                   key={eq.docId || eq.id || `${section.area}-${idx}`}
                   className="flex items-center px-3 py-2 border-b border-white/5 text-xs hover:bg-white/5"
                 >
-                  <div className="w-[28%] pr-1 truncate text-blue-300 font-semibold">{eq.cliente || "—"}</div>
-                  <div className="w-[32%] pr-1 truncate text-gray-200">{eq.equipo || "—"}</div>
+                  <div className="w-[26%] pr-1 truncate text-blue-300 font-semibold">{eq.cliente || "—"}</div>
+                  <div className="w-[28%] pr-1 truncate text-gray-200">{eq.equipo || "—"}</div>
                   <div className="w-[22%] flex justify-center">
                     <span className={clsx("px-1.5 py-0.5 rounded text-[10px] border border-white/10", eq.statusColor)}>
                       {eq.daysLabel}
                     </span>
                   </div>
-                  <div className="w-[18%] flex justify-end items-center gap-1 truncate text-gray-400">
+                  <div
+                    className="w-[24%] flex justify-end items-center gap-1 text-gray-300"
+                    title={eq.nombre || eq.assignedTo || "Sin asignar"}
+                  >
                     <UserCircle className="w-3 h-3 shrink-0" />
-                    {(eq.nombre || eq.assignedTo || "S/A").substring(0, 6)}
+                    <span className="truncate">
+                      {formatTecnicoShortName(eq.nombre || eq.assignedTo)}
+                    </span>
                   </div>
                 </div>
               ))}
             </div>
           ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+interface TecnicosPendientesPanelProps {
+  data: TecnicoPendiente[];
+  dias: number;
+}
+
+const formatChipDate = (dateKey: string) => {
+  const [, m, d] = dateKey.split("-");
+  return `${d}/${m}`;
+};
+
+const MAX_CHIPS = 4;
+
+const TecnicoPendienteRow: React.FC<{ tecnico: TecnicoPendiente }> = ({ tecnico }) => {
+  const visibles = tecnico.dias.slice(0, MAX_CHIPS);
+  const ocultos = tecnico.dias.length - visibles.length;
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5 last:border-b-0">
+      <span
+        className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-slate-900"
+        style={{ backgroundColor: tecnico.color }}
+      />
+
+      <div className="w-[26%] min-w-0">
+        <p className="text-sm font-bold text-white truncate" title={tecnico.name}>
+          {formatTecnicoShortName(tecnico.name)}
+        </p>
+        <p className="text-[10px] text-slate-500">{tecnico.totalMes} en el mes</p>
+      </div>
+
+      <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+        {visibles.map((dia) => (
+          <span
+            key={dia.dateKey}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[11px]"
+            title={`${dia.dateKey}: calibró ${dia.hechas}, cargó ${dia.cerradas}`}
+          >
+            <span className="font-bold text-amber-200 tabular-nums">
+              {formatChipDate(dia.dateKey)}
+            </span>
+            <span className="text-slate-400 tabular-nums">
+              {dia.cerradas}/{dia.hechas}
+            </span>
+            <span className="font-black text-red-300 tabular-nums">+{dia.debe}</span>
+          </span>
+        ))}
+        {ocultos > 0 && (
+          <span className="text-[10px] text-slate-500 font-semibold">+{ocultos} días más</span>
+        )}
+      </div>
+
+      <div className="shrink-0 text-right">
+        <p className="text-2xl font-black text-red-400 leading-none tabular-nums">
+          {tecnico.debeTotal}
+        </p>
+        <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mt-0.5">
+          {tecnico.debeSitio > 0 && `Sitio ${tecnico.debeSitio}`}
+          {tecnico.debeSitio > 0 && tecnico.debeLaboratorio > 0 && " · "}
+          {tecnico.debeLaboratorio > 0 && `Lab ${tecnico.debeLaboratorio}`}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+/** Equipos calibrados que el técnico aún no cierra en Drive. Al cargarlos, la fila desaparece. */
+export const TecnicosPendientesPanel: React.FC<TecnicosPendientesPanelProps> = ({ data, dias }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollPaused, setScrollPaused] = useState(false);
+  useTvKioskAutoScroll(scrollRef, data.length > 0, scrollPaused, { force: true, pxPerSec: 14 });
+
+  const totalDebe = useMemo(() => data.reduce((s, t) => s + t.debeTotal, 0), [data]);
+
+  return (
+    <div
+      className={`h-full min-h-0 rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 flex flex-col overflow-hidden`}
+    >
+      <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between shrink-0">
+        <div>
+          <h3 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+            <UploadCloud className="w-4 h-4 text-red-400" /> Pendientes por Técnico
+          </h3>
+          <p className="text-[10px] text-gray-500 mt-0.5">
+            Calibrado sin cargar en Drive · últimos {dias} días
+          </p>
+        </div>
+        {totalDebe > 0 && (
+          <span className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 text-xs font-black border border-red-500/30 tabular-nums">
+            {totalDebe} por cargar
+          </span>
+        )}
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex-1 min-h-0 overflow-y-auto hide-scrollbar tv-kiosk-scroll"
+        onMouseEnter={() => setScrollPaused(true)}
+        onMouseLeave={() => setScrollPaused(false)}
+      >
+        {data.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-500 py-6">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500/80" />
+            <p className="text-sm font-medium">Todos al corriente</p>
+          </div>
+        ) : (
+          data.map((tecnico) => <TecnicoPendienteRow key={tecnico.name} tecnico={tecnico} />)
         )}
       </div>
     </div>
