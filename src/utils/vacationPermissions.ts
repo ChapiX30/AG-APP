@@ -9,7 +9,18 @@ import {
 
 export type VacationWorkflowStep = 'calidad' | 'edgar' | 'jorge';
 
-export type VacationFlowType = 'operativo' | 'calidad';
+/**
+ * Flujos de autorización:
+ * - operativo:      Calidad → Edgar → Jorge  (metrólogos / técnicos)
+ * - calidad_jorge:  Calidad → Jorge          (Edgar Amador, Nora Amador)
+ * - edgar_jorge:    Edgar → Jorge            (Viridiana / personal Calidad)
+ * - calidad:        Jorge solo               (legacy; solicitudes antiguas)
+ */
+export type VacationFlowType =
+  | 'operativo'
+  | 'calidad_jorge'
+  | 'edgar_jorge'
+  | 'calidad';
 
 export type VacationStatus =
   | 'borrador'
@@ -28,7 +39,6 @@ export const VACATION_STATUS_LABELS: Record<VacationStatus, string> = {
   aprobada: 'Aprobada',
   rechazada: 'Rechazada',
 };
-
 export function isViridianaMoreno(user: CalendarPermissionUser): boolean {
   const name = getCalendarUserName(user);
   const email = getCalendarUserEmail(user);
@@ -36,32 +46,70 @@ export function isViridianaMoreno(user: CalendarPermissionUser): boolean {
   return (
     name === 'viridiana moreno' ||
     (name.includes('viridiana') && name.includes('moreno')) ||
+    (name.includes('viridiana') && !name.includes('amador')) ||
     email.includes('viridiana')
   );
 }
 
-/** Personal de área Calidad (no gerente/jefe ni Edgar). */
+export function isNoraAmador(user: CalendarPermissionUser): boolean {
+  const name = getCalendarUserName(user);
+  const email = getCalendarUserEmail(user);
+  if (!name && !email) return false;
+  return (
+    name === 'nora amador' ||
+    (name.includes('nora') && name.includes('amador')) ||
+    (email.includes('nora') && email.includes('amador'))
+  );
+}
+
+/** Personal de área Calidad (no gerente/jefe ni Edgar/Nora). */
 export function isCalidadApprover(user: CalendarPermissionUser): boolean {
-  if (isEdgarAmador(user) || isJorgeAmador(user)) return false;
+  if (isEdgarAmador(user) || isJorgeAmador(user) || isNoraAmador(user)) return false;
   const role = getCalendarUserRole(user);
-  if (!role) return false;
-  return isViridianaMoreno(user) || role.includes('calidad');
+  if (!role && !isViridianaMoreno(user)) return false;
+  return isViridianaMoreno(user) || Boolean(role && role.includes('calidad'));
 }
 
 export function isCalidadSolicitante(user: CalendarPermissionUser): boolean {
+  if (isEdgarAmador(user) || isJorgeAmador(user) || isNoraAmador(user)) return false;
+  if (isViridianaMoreno(user)) return true;
   const role = getCalendarUserRole(user);
   if (!role) return false;
-  return role.includes('calidad') && !isEdgarAmador(user) && !isJorgeAmador(user);
+  return role.includes('calidad');
+}
+
+/** Pasos de autorización según el tipo de flujo. */
+export function getStepsForFlow(tipoFlujo: VacationFlowType): VacationWorkflowStep[] {
+  switch (tipoFlujo) {
+    case 'calidad_jorge':
+      return ['calidad', 'jorge'];
+    case 'edgar_jorge':
+      return ['edgar', 'jorge'];
+    case 'calidad':
+      return ['jorge'];
+    case 'operativo':
+    default:
+      return ['calidad', 'edgar', 'jorge'];
+  }
 }
 
 export function getVacationFlowType(user: CalendarPermissionUser): VacationFlowType {
-  return isCalidadSolicitante(user) ? 'calidad' : 'operativo';
+  if (isEdgarAmador(user) && !isJorgeAmador(user)) return 'calidad_jorge';
+  if (isNoraAmador(user)) return 'calidad_jorge';
+  if (isCalidadSolicitante(user)) return 'edgar_jorge';
+  return 'operativo';
 }
 
 export function canSubmitVacationRequest(user: CalendarPermissionUser): boolean {
+  if (!user) return false;
+  if (isJorgeAmador(user) && !isEdgarAmador(user)) return false;
+  if (isEdgarAmador(user)) return true;
+  if (isNoraAmador(user)) return true;
+  if (isViridianaMoreno(user)) return true;
+
   const role = getCalendarUserRole(user);
   if (!role) return false;
-  if (role.includes('calidad') && !isEdgarAmador(user) && !isJorgeAmador(user)) return true;
+  if (role.includes('calidad')) return true;
   if (role.includes('admin') || role.includes('gerente')) return false;
   return (
     role.includes('metrologo') ||
@@ -114,22 +162,10 @@ export function isEstadoCoherenteConFlujo(
   estado: VacationStatus,
   tipoFlujo: VacationFlowType,
 ): boolean {
-  if (tipoFlujo === 'calidad') {
-    return (
-      estado === 'borrador' ||
-      estado === 'pendiente_jorge' ||
-      estado === 'aprobada' ||
-      estado === 'rechazada'
-    );
-  }
-  return (
-    estado === 'borrador' ||
-    estado === 'pendiente_calidad' ||
-    estado === 'pendiente_edgar' ||
-    estado === 'pendiente_jorge' ||
-    estado === 'aprobada' ||
-    estado === 'rechazada'
-  );
+  if (estado === 'borrador' || estado === 'aprobada' || estado === 'rechazada') return true;
+  const step = getActiveApprovalStep(estado);
+  if (!step) return false;
+  return getStepsForFlow(tipoFlujo).includes(step);
 }
 
 export function canUserActOnSolicitud(
@@ -141,10 +177,7 @@ export function canUserActOnSolicitud(
 
   const step = getActiveApprovalStep(estado);
   if (!step) return false;
-
-  if (tipoFlujo === 'calidad') {
-    return step === 'jorge' && canApproveVacationStep(user, 'jorge');
-  }
+  if (!getStepsForFlow(tipoFlujo).includes(step)) return false;
 
   return canApproveVacationStep(user, step);
 }
@@ -158,11 +191,15 @@ export function isVacationApprover(user: CalendarPermissionUser): boolean {
 }
 
 export function initialStatusForFlow(tipoFlujo: VacationFlowType): VacationStatus {
-  return tipoFlujo === 'calidad' ? 'pendiente_jorge' : 'pendiente_calidad';
+  const steps = getStepsForFlow(tipoFlujo);
+  const first = steps[0];
+  if (first === 'calidad') return 'pendiente_calidad';
+  if (first === 'edgar') return 'pendiente_edgar';
+  return 'pendiente_jorge';
 }
 
 export function initialNotifyStepForFlow(tipoFlujo: VacationFlowType): VacationWorkflowStep {
-  return tipoFlujo === 'calidad' ? 'jorge' : 'calidad';
+  return getStepsForFlow(tipoFlujo)[0] || 'jorge';
 }
 
 /** Correos RH / administración — PDF final y copia en avisos. */

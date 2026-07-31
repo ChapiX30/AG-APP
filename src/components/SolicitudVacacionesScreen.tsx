@@ -295,8 +295,10 @@ export const SolicitudVacacionesScreen: React.FC = () => {
         const tb = (b.updatedAt as { toMillis?: () => number })?.toMillis?.() ?? 0;
         return tb - ta;
       });
-        const filtradas = all.filter((s) =>
-          canUserActOnSolicitud(calendarUser, s.estado, inferFlowType(s)),
+        const filtradas = all.filter(
+          (s) =>
+            s.solicitanteUid !== user?.id &&
+            canUserActOnSolicitud(calendarUser, s.estado, inferFlowType(s)),
         );
         filtradas.sort((a, b) => {
           const fa = a.fechaSolicitud || '';
@@ -309,7 +311,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
         setPendientes(filtradas);
     });
     return () => unsub();
-  }, [puedeAutorizar, calendarUser]);
+  }, [puedeAutorizar, calendarUser, user?.id]);
 
   const buildBasePayload = () => {
     const anio = fechaFin ? parseISO(fechaFin).getFullYear() : new Date().getFullYear();
@@ -373,6 +375,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
         solicitudId: refDoc.id,
         solicitanteNombre: user!.name,
         solicitanteEmail: user!.email,
+        solicitanteUid: user!.id,
         step: pasoNotif,
         dias: Number(diasVacaciones),
         fechaInicio,
@@ -477,6 +480,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           solicitudId: refDoc.id,
           solicitanteNombre: colaboradorUrgente.name,
           solicitanteEmail: colaboradorUrgente.email,
+          solicitanteUid: colaboradorUrgente.id,
           step: pasoNotif,
           dias: Number(urgenteDias),
           fechaInicio: urgenteInicio,
@@ -584,6 +588,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
         solicitudId: s.id,
         solicitanteNombre: s.solicitanteNombre,
         solicitanteEmail: s.solicitanteEmail,
+        solicitanteUid: s.solicitanteUid,
         step: initialNotifyStepForFlow(flujo),
         dias: s.diasVacaciones,
         fechaInicio: s.fechaInicio,
@@ -607,22 +612,13 @@ export const SolicitudVacacionesScreen: React.FC = () => {
 
   const handleAprobar = async (s: SolicitudVacacionesDoc) => {
     if (!s.id || !user) return;
+    if (s.solicitanteUid === user.id) {
+      return toast.error('No puedes autorizar tu propia solicitud.');
+    }
     const flujo = inferFlowType(s);
     const paso = approvalStepForStatus(s.estado);
     if (!paso || !canUserActOnSolicitud(calendarUser, s.estado, flujo)) {
       return toast.error('No tienes permiso para autorizar en este paso del trámite.');
-    }
-
-    const pasoEsperado =
-      flujo === 'calidad'
-        ? 'jorge'
-        : s.estado === 'pendiente_calidad'
-          ? 'calidad'
-          : s.estado === 'pendiente_edgar'
-            ? 'edgar'
-            : 'jorge';
-    if (paso !== pasoEsperado) {
-      return toast.error('Esta solicitud no está en el paso que le corresponde autorizar.');
     }
 
     setBusy(true);
@@ -684,6 +680,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
             solicitudId: s.id,
             solicitanteNombre: s.solicitanteNombre,
             solicitanteEmail: s.solicitanteEmail,
+            solicitanteUid: s.solicitanteUid,
             step: nextStep,
             dias: s.diasVacaciones,
             fechaInicio: s.fechaInicio,
@@ -864,9 +861,6 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                 <CalendarDays size={18} style={{ color: AG_BLUE }} />
                 Datos de la solicitud
               </h2>
-              <p className="text-sm text-slate-500 mt-0.5">
-                Complete el periodo solicitado (mín. {VACATION_MIN_NOTICE_DAYS} días de anticipación) y envíe para su revisión.
-              </p>
             </div>
             <div className="p-6 space-y-5 max-w-xl">
               <VacationDiasCard saldo={miSaldoVacaciones} year={getVacationYear()} />
@@ -910,9 +904,6 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                   />
                 </Field>
               </div>
-              <p className="text-xs text-slate-500 -mt-2">
-                Anticipación mínima: {VACATION_MIN_NOTICE_DAYS} días (inicio desde {minFechaInicio}).
-              </p>
               {diasSegunFechas != null && Number(diasVacaciones) >= 1 && (
                 <p
                   className={`text-sm -mt-2 font-medium ${
@@ -921,7 +912,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                 >
                   {diasNoCoinciden
                     ? `Las fechas no coinciden con los días indicados (el periodo tiene ${diasSegunFechas} día(s) laborables; los domingos no cuentan).`
-                    : 'Fechas y días coinciden (los domingos no cuentan).'}
+                    : 'Fechas y días coinciden (lunes a sábado; los domingos no cuentan).'}
                 </p>
               )}
               <Field label="Observaciones (opcional)">
@@ -1032,7 +1023,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
                 >
                   {diasUrgenteNoCoinciden
                     ? `Las fechas no coinciden con los días indicados (el periodo tiene ${diasUrgenteSegunFechas} día(s) laborables; los domingos no cuentan).`
-                    : 'Fechas y días coinciden (los domingos no cuentan).'}
+                    : 'Fechas y días coinciden (lunes a sábado; los domingos no cuentan).'}
                 </p>
               )}
               <Field label="Motivo de la urgencia">

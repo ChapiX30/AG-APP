@@ -46,6 +46,12 @@ export default defineConfig({
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,
                 skipWaiting: false,
+                // Evita que caches viejos / precache peleen con el SW de FCM.
+                navigateFallbackDenylist: [/^\/api/, /^\/__/],
+            },
+            // En build de Capacitor el SW PWA aporta más problemas que beneficios.
+            devOptions: {
+                enabled: false,
             },
         })
     ]

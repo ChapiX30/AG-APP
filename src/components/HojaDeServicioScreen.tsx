@@ -156,6 +156,8 @@ function truncateText(text: string, maxLength: number): string {
 
 function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalibrado[]>): GrupoEquiposUnificado[] {
     const equiposUnificadosPorTecnico: Record<string, EquipoUnificado[]> = {};
+    /** Un mismo ID no debe listarse dos veces en toda la hoja (docs duplicados en Firestore). */
+    const idsVistos = new Set<string>();
 
     Object.entries(equiposCalibrados).forEach(([tecnico, equipos]) => {
         if (!equiposUnificadosPorTecnico[tecnico]) {
@@ -166,13 +168,15 @@ function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalib
             if (equipo.id) {
                 equipo.id.split(',').forEach((idSingle: string) => {
                     const trimmedId = idSingle.trim();
-                    if (trimmedId) {
-                        equiposUnificadosPorTecnico[tecnico].push({ 
-                            id: trimmedId, 
-                            docId: equipo.docId, 
-                            estado: equipo.estado 
-                        });
-                    }
+                    if (!trimmedId) return;
+                    const key = trimmedId.toUpperCase();
+                    if (idsVistos.has(key)) return;
+                    idsVistos.add(key);
+                    equiposUnificadosPorTecnico[tecnico].push({
+                        id: trimmedId,
+                        docId: equipo.docId,
+                        estado: equipo.estado,
+                    });
                 });
             }
         });
@@ -906,11 +910,21 @@ export default function HojaDeServicioScreen() {
       const equiposPorTecnico: Record<string, EquipoCalibrado[]> = {};
       let earliestSitioMs: number | null = null;
 
+      /** Mejor candidato por ID de equipo (evita listar el mismo EP dos veces). */
+      type Candidato = {
+        id: string;
+        docId: string;
+        estado: 'CALIBRADO' | 'RECHAZADO';
+        tecnico: string;
+        score: number;
+        ts: number;
+      };
+      const mejorPorId = new Map<string, Candidato>();
+
       qs.forEach(docSnap => {
         const data = docSnap.data();
         if (data.lugarCalibracion && data.lugarCalibracion.toLowerCase().includes("sitio")) {
           const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
-          if (!equiposPorTecnico[tecnico]) equiposPorTecnico[tecnico] = [];
 
           const ts = new Date(data.createdAt || data.timestamp || 0).getTime();
           if (ts > 0 && (earliestSitioMs === null || ts < earliestSitioMs)) {
@@ -924,10 +938,37 @@ export default function HojaDeServicioScreen() {
           const isAGRD = classificationString.includes('AGRD-');
           const estado: 'CALIBRADO' | 'RECHAZADO' = isAGRD ? 'RECHAZADO' : 'CALIBRADO';
 
-          if (idBase) {
-             equiposPorTecnico[tecnico].push({ id: idBase, docId: docSnap.id, estado: estado });
+          if (!idBase) return;
+
+          const score =
+            (String(data.pdfURL || "").includes("firebasestorage") ? 4 : 0) +
+            (String(data.status || "").toLowerCase() === "completed" ? 2 : 0) +
+            (String(data.status_certificado || "").toLowerCase().includes("generado") ||
+            String(data.status_certificado || "").toLowerCase().includes("firmado")
+              ? 1
+              : 0);
+
+          const prev = mejorPorId.get(idBase);
+          if (!prev || score > prev.score || (score === prev.score && ts >= prev.ts)) {
+            mejorPorId.set(idBase, {
+              id: idBase,
+              docId: docSnap.id,
+              estado,
+              tecnico: String(tecnico),
+              score,
+              ts: Number.isFinite(ts) ? ts : 0,
+            });
           }
         }
+      });
+
+      mejorPorId.forEach((eq) => {
+        if (!equiposPorTecnico[eq.tecnico]) equiposPorTecnico[eq.tecnico] = [];
+        equiposPorTecnico[eq.tecnico].push({
+          id: eq.id,
+          docId: eq.docId,
+          estado: eq.estado,
+        });
       });
 
       if (earliestSitioMs !== null && campos.empresa && campos.fecha) {

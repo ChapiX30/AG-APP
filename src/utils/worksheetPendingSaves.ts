@@ -16,6 +16,21 @@ export interface PersistedBackgroundSaveJob {
   magnitudConsecutivo?: string;
 }
 
+/** Jobs que ya están siendo guardados en este momento (no recuperar/duplicar). */
+const inFlightPendingIds = new Set<string>();
+
+export function markPendingSaveInFlight(id: string): void {
+  if (id) inFlightPendingIds.add(id);
+}
+
+export function clearPendingSaveInFlight(id: string): void {
+  inFlightPendingIds.delete(id);
+}
+
+export function isPendingSaveInFlight(id: string): boolean {
+  return inFlightPendingIds.has(id);
+}
+
 export function getPendingSaves(): PersistedBackgroundSaveJob[] {
   try {
     return JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || "[]");
@@ -39,6 +54,7 @@ export function addPendingSave(job: PersistedBackgroundSaveJob): void {
 }
 
 export function removePendingSave(id: string): void {
+  clearPendingSaveInFlight(id);
   savePendingList(getPendingSaves().filter((j) => j.id !== id));
 }
 

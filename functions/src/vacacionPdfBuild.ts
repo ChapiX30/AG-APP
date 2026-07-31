@@ -60,12 +60,50 @@ function winAnsiSafe(text: string): string {
         .replace(/[^\x00-\xFF]/g, "?");
 }
 
-function inferFlowType(data: FirebaseFirestore.DocumentData): "operativo" | "calidad" {
-    if (data.tipoFlujo === "calidad" || data.tipoFlujo === "operativo") {
-        return data.tipoFlujo;
+type VacationFlowTypePdf =
+    | "operativo"
+    | "calidad_jorge"
+    | "edgar_jorge"
+    | "calidad";
+
+function inferFlowType(data: FirebaseFirestore.DocumentData): VacationFlowTypePdf {
+    const raw = String(data.tipoFlujo || "");
+    if (
+        raw === "calidad" ||
+        raw === "operativo" ||
+        raw === "calidad_jorge" ||
+        raw === "edgar_jorge"
+    ) {
+        return raw;
     }
+    const name = String(data.solicitanteNombre || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    if (
+        (name.includes("edgar") && name.includes("amador")) ||
+        (name.includes("nora") && name.includes("amador"))
+    ) {
+        return "calidad_jorge";
+    }
+    if (name.includes("viridiana")) return "edgar_jorge";
     const p = String(data.solicitantePuesto || "").toLowerCase();
-    return p.includes("calidad") ? "calidad" : "operativo";
+    return p.includes("calidad") ? "edgar_jorge" : "operativo";
+}
+
+function stepsForFlow(flujo: VacationFlowTypePdf): Array<"calidad" | "edgar" | "jorge"> {
+    switch (flujo) {
+        case "calidad_jorge":
+            return ["calidad", "jorge"];
+        case "edgar_jorge":
+            return ["edgar", "jorge"];
+        case "calidad":
+            return ["jorge"];
+        case "operativo":
+        default:
+            return ["calidad", "edgar", "jorge"];
+    }
 }
 
 function wrapText(text: string, maxChars: number): string[] {
@@ -431,14 +469,15 @@ function drawAuthTable(
         { nombre?: string; fecha?: string }
     >;
     const flujo = inferFlowType(data);
-    const rows =
-        flujo === "calidad"
-            ? [{ label: "Jefe inmediato", key: "jorge" }]
-            : [
-                  { label: "Calidad", key: "calidad" },
-                  { label: "Autorización intermedia", key: "edgar" },
-                  { label: "Jefe inmediato", key: "jorge" },
-              ];
+    const stepLabels: Record<string, string> = {
+        calidad: "Calidad",
+        edgar: "Autorización intermedia",
+        jorge: "Jefe inmediato",
+    };
+    const rows = stepsForFlow(flujo).map((key) => ({
+        label: stepLabels[key],
+        key,
+    }));
 
     const tableH = headerH + rows.length * rowH;
     const tableY = y - tableH;

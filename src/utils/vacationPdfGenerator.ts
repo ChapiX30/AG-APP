@@ -2,6 +2,7 @@ import { PDFDocument, rgb, StandardFonts, type PDFPage, type PDFFont } from 'pdf
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import labLogo from '../assets/lab_logo.png';
+import { getStepsForFlow } from './vacationPermissions';
 import { inferFlowType, type SolicitudVacacionesDoc } from './vacationWorkflow';
 
 const PAGE_W = 612;
@@ -263,14 +264,13 @@ function drawAuthTable(
   const rowH = 26;
   const headerH = 22;
 
-  const esFlujoCalidad = inferFlowType(solicitud) === 'calidad';
-  const rows = esFlujoCalidad
-    ? [{ label: 'Jefe inmediato', key: 'jorge' as const }]
-    : [
-        { label: 'Calidad', key: 'calidad' as const },
-        { label: 'Autorización intermedia', key: 'edgar' as const },
-        { label: 'Jefe inmediato', key: 'jorge' as const },
-      ];
+  const steps = getStepsForFlow(inferFlowType(solicitud));
+  const stepLabels: Record<string, string> = {
+    calidad: 'Calidad',
+    edgar: 'Autorización intermedia',
+    jorge: 'Jefe inmediato',
+  };
+  const rows = steps.map((key) => ({ label: stepLabels[key] || key, key }));
 
   const tableH = headerH + rows.length * rowH + 4;
   const tableY = y - tableH;

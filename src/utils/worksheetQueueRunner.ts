@@ -5,6 +5,7 @@
 import {
   getPendingSaves,
   removePendingSave,
+  isPendingSaveInFlight,
   type PersistedBackgroundSaveJob,
 } from "./worksheetPendingSaves";
 import { getOfflineQueueCount } from "./worksheetOfflineQueue";
@@ -72,6 +73,7 @@ export async function runAllWorksheetQueues(
 
   const pending = getPendingSaves();
   for (const p of pending) {
+    if (isPendingSaveInFlight(p.id)) continue;
     try {
       await persistWorksheetJob(toBackgroundJob(p));
       removePendingSave(p.id);

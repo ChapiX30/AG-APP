@@ -7,6 +7,7 @@ import { getOfflineQueue, findOfflineQueueBySearch } from "./worksheetOfflineQue
 import {
   getPendingSaves,
   removePendingSave,
+  isPendingSaveInFlight,
   type PersistedBackgroundSaveJob,
 } from "./worksheetPendingSaves";
 import { loadWorksheetDraft } from "./worksheetDraftAutosave";
@@ -46,6 +47,8 @@ export async function recoverAllLocalWorksheets(): Promise<RecoverAllSummary> {
   let recovered = 0;
 
   for (const p of [...getPendingSaves()]) {
+    // No tocar jobs que aún se están guardando (evita duplicar el mismo ID).
+    if (isPendingSaveInFlight(p.id)) continue;
     const cert = String(p.state?.certificado || "");
     if (!cert || findOfflineQueueBySearch(cert)) continue;
     try {

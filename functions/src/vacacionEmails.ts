@@ -66,7 +66,16 @@ export function approverHintsForStep(step: VacationMailStep): string[] {
 export function isCalidadApproverUser(data: FirebaseFirestore.DocumentData): boolean {
     const role = normalizeName(String(data.puesto || data.role || ""));
     const name = normalizeName(String(data.name || data.nombre || ""));
-    return role.includes("calidad") || (name.includes("viridiana") && name.includes("moreno"));
+    const email = userEmail(data);
+    if (isEdgarUser(data) || isJorgeUser(data)) return false;
+    if (
+        name === "nora amador" ||
+        (name.includes("nora") && name.includes("amador")) ||
+        (email.includes("nora") && email.includes("amador"))
+    ) {
+        return false;
+    }
+    return role.includes("calidad") || (name.includes("viridiana") && name.includes("moreno")) || name.includes("viridiana");
 }
 
 function isEdgarUser(data: FirebaseFirestore.DocumentData): boolean {

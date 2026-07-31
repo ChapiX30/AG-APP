@@ -64,10 +64,45 @@ export interface SolicitudVacacionesDoc {
   updatedAt?: unknown;
 }
 
+function normalizePersonName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+const KNOWN_FLOW_TYPES: VacationFlowType[] = [
+  'operativo',
+  'calidad_jorge',
+  'edgar_jorge',
+  'calidad',
+];
+
 export function inferFlowType(doc: SolicitudVacacionesDoc): VacationFlowType {
-  if (doc.tipoFlujo) return doc.tipoFlujo;
+  if (doc.tipoFlujo && KNOWN_FLOW_TYPES.includes(doc.tipoFlujo)) {
+    return doc.tipoFlujo;
+  }
+
+  const name = normalizePersonName(doc.solicitanteNombre || '');
+  if (
+    name === 'edgar amador' ||
+    (name.includes('edgar') && name.includes('amador'))
+  ) {
+    return 'calidad_jorge';
+  }
+  if (
+    name === 'nora amador' ||
+    (name.includes('nora') && name.includes('amador'))
+  ) {
+    return 'calidad_jorge';
+  }
+  if (name.includes('viridiana')) {
+    return 'edgar_jorge';
+  }
+
   const p = (doc.solicitantePuesto || '').toLowerCase();
-  return p.includes('calidad') ? 'calidad' : 'operativo';
+  return p.includes('calidad') ? 'edgar_jorge' : 'operativo';
 }
 
 export function nextStatusAfterApproval(

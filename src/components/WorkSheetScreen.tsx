@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useReducer, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigation } from "../hooks/useNavigation";
 import {
   Save, X, Calendar, MapPin, Mail, Building2, Wrench, Tag, Hash,
@@ -9,7 +10,7 @@ import {
 import type { jsPDF } from "jspdf"; 
 import { useAuth } from "../hooks/useAuth";
 import { useAppDialog } from "../hooks/useAppDialog";
-import { db, firebaseConfig } from "../utils/firebase";
+import { db } from "../utils/firebase";
 import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import masterCelestica from "../data/masterCelestica.json";
 import masterTechops from "../data/masterTechops.json";
@@ -38,7 +39,7 @@ import {
 } from "../utils/worksheetDraftAutosave";
 import { getTechnicianFolderName } from "../utils/worksheetPdfGenerator";
 import { unidadesPorMagnitud } from "../utils/worksheetUnits";
-import { addPendingSave, removePendingSave } from "../utils/worksheetPendingSaves";
+import { addPendingSave, removePendingSave, markPendingSaveInFlight, clearPendingSaveInFlight } from "../utils/worksheetPendingSaves";
 import { persistWorksheetJob, persistWorksheetToOfflineQueue } from "../utils/worksheetPersist";
 import { processWorksheetOfflineQueue } from "../utils/worksheetSaveProcessor";
 import { getTotalWorksheetQueueCount } from "../utils/worksheetQueueRunner";
@@ -345,7 +346,7 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
         >
             {isGenerating ? <Loader2 className="animate-spin w-4 h-4"/> : <Printer className="w-4 h-4"/>}
             <span className="font-bold text-sm">
-              Etiqueta {tapeSize}{data.labelType === "rechazado" ? " · Rechazado" : ""}
+              Imprimir{data.labelType === "rechazado" ? " · Rechazado" : ""}
             </span>
         </button>
         <button onClick={() => setShowOptions(!showOptions)} className="px-2 bg-slate-800 border-l border-slate-700 hover:bg-slate-700 transition-colors">
@@ -604,9 +605,6 @@ const LabelPrinterButton: React.FC<{ data: LabelData, logo: string }> = ({ data,
   );
 };
 
-const FIREBASE_PROJECT_ID =
-  (import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined) || firebaseConfig.projectId;
-
 const parseWorksheetDate = (fechaISO?: string): Date => {
   if (!fechaISO) return new Date();
   const parts = fechaISO.split("-");
@@ -739,35 +737,56 @@ const UnitConverterModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   const handleSwap = () => { const temp = fromUnit; setFromUnit(toUnit); setToUnit(temp); };
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200 flex flex-col max-h-[90vh]">
-        <div className="bg-gray-900 text-white p-4 flex justify-between items-center shrink-0">
-          <h3 className="text-lg font-bold flex items-center gap-2"><Calculator className="w-5 h-5 text-blue-400" /> Convertidor</h3>
-          <button onClick={onClose}><X className="w-6 h-6" /></button>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200 flex flex-col max-h-[90vh] [color-scheme:light]"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Convertidor de unidades"
+      >
+        <div className="bg-gray-900 text-white p-3 sm:p-4 flex justify-between items-center shrink-0 gap-3">
+          <h3 className="text-base sm:text-lg font-bold flex items-center gap-2 min-w-0">
+            <Calculator className="w-5 h-5 text-blue-400 shrink-0" />
+            <span className="truncate">Convertidor</span>
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 p-2.5 -mr-1 rounded-xl hover:bg-white/10 active:bg-white/20 active:scale-95 transition-all touch-manipulation"
+            aria-label="Cerrar convertidor"
+          >
+            <X className="w-6 h-6" />
+          </button>
         </div>
-        <div className="p-6 overflow-y-auto">
+        <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain">
           <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {Object.keys(UNIT_CATEGORIES).map((cat) => (
-                <button key={cat} onClick={() => handleCategoryChange(cat)} className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-all text-left truncate ${category === cat ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-900 border-gray-200 hover:border-blue-300'}`}>{cat}</button>
+                <button type="button" key={cat} onClick={() => handleCategoryChange(cat)} className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-all text-left truncate touch-manipulation ${category === cat ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-900 border-gray-200 hover:border-blue-300'}`}>{cat}</button>
               ))}
           </div>
-          <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-6 rounded-xl border border-gray-200">
+          <div className="flex flex-col md:flex-row items-center gap-4 bg-gray-50 p-4 sm:p-6 rounded-xl border border-gray-200">
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">De:</label>
-              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg text-gray-900" placeholder="0" />
-              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
+              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 text-lg font-mono border border-gray-300 rounded-lg bg-white text-gray-900 caret-gray-900 [color-scheme:light]" placeholder="0" />
+              <select value={fromUnit} onChange={(e) => setFromUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900 [color-scheme:light]">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
-            <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0"><button onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full"><ArrowRightLeft className="w-5 h-5" /></button></div>
+            <div className="flex md:flex-col items-center justify-center gap-2 text-gray-400 shrink-0"><button type="button" onClick={handleSwap} className="p-2 hover:bg-gray-200 rounded-full touch-manipulation"><ArrowRightLeft className="w-5 h-5" /></button></div>
             <div className="w-full md:w-1/2 space-y-3">
               <label className="block text-sm font-bold text-gray-700">A:</label>
               <div className="w-full p-3 text-lg font-mono font-bold bg-blue-50 text-blue-900 border border-blue-100 rounded-lg flex items-center min-h-[54px]">{result || "-"}</div>
-              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
+              <select value={toUnit} onChange={(e) => setToUnit(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-900 [color-scheme:light]">{UNIT_CATEGORIES[category]?.map((u) => (<option key={u.value} value={u.value}>{u.label}</option>))}</select>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -819,6 +838,7 @@ const enqueueBackgroundSave = (job: BackgroundSaveJob, onToast: BgSaveToastFn) =
     worksheetId: job.worksheetId,
     magnitudConsecutivo: job.magnitudConsecutivo,
   });
+  markPendingSaveInFlight(job.id);
   bgSaveToast = onToast;
   bgSaveQueue.push(job);
   void drainBackgroundSaveQueue();
@@ -868,6 +888,7 @@ async function drainBackgroundSaveQueue() {
         continue;
       }
       console.error("Error guardado en segundo plano:", e);
+      clearPendingSaveInFlight(job.id);
       localStorage.setItem("backup_worksheet_data", JSON.stringify(job.state));
       saveWorksheetDraft(job.state as unknown as Record<string, unknown>);
       bgSaveToast?.({
@@ -900,6 +921,7 @@ function scheduleOfflineSaveAndGoBack(
     worksheetId: job.worksheetId,
     magnitudConsecutivo: job.magnitudConsecutivo,
   });
+  markPendingSaveInFlight(job.id);
 
   const cert = job.state.certificado || "";
   dispatchWorksheetSaveComplete({
@@ -929,6 +951,7 @@ function scheduleOfflineSaveAndGoBack(
       });
     } catch (e) {
       console.error("Guardado offline en segundo plano:", e);
+      clearPendingSaveInFlight(job.id);
       saveWorksheetDraft(job.state as unknown as Record<string, unknown>);
     }
   })();
@@ -1119,6 +1142,55 @@ function formatLabelDate(d: Date, mode: LabelDateFormat): string {
   return format(d, pattern, { locale: es }).toUpperCase().replace(".", "");
 }
 
+/** Date input con ícono visible (el nativo a veces no se ve). */
+const WorksheetDateInput: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  hasError?: boolean;
+}> = ({ value, onChange, className = "", hasError = false }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const openPicker = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    try {
+      if (typeof el.showPicker === "function") {
+        el.showPicker();
+        return;
+      }
+    } catch {
+      /* algunos navegadores bloquean showPicker fuera de gesto directo */
+    }
+    el.focus();
+    el.click();
+  };
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full pr-12 text-gray-900 font-semibold bg-white shadow-inner focus:ring-2 focus:ring-blue-500 outline-none [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 ${
+          hasError ? "border-red-500 bg-red-50" : ""
+        } ${className}`}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={openPicker}
+        title="Abrir calendario"
+        aria-label="Abrir calendario"
+        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 active:scale-95 transition-all pointer-events-auto"
+      >
+        <Calendar className="w-5 h-5" />
+      </button>
+    </div>
+  );
+};
+
 // Quitamos la inicialización de la fecha aquí
 const initialState: WorksheetState = {
   lugarCalibracion: "", frecuenciaCalibracion: "", fecha: "", fechaRecepcion: "", certificado: "",
@@ -1201,9 +1273,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
   const [showConverter, setShowConverter] = useState(false);
-  
-  const [lastPdfUrl, setLastPdfUrl] = useState<string | null>(null);
-  const [isSearchingPdf, setIsSearchingPdf] = useState(false);
   
   const hiddenLabelRef = useRef<HTMLDivElement>(null);
   const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
@@ -1528,6 +1597,58 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     return (state.magnitud && unidadesPorMagnitud[state.magnitud]) ? unidadesPorMagnitud[state.magnitud] as string[] : [];
   }, [state.magnitud]);
 
+  /** Toma F. Entrada de Friday (logística) → Fecha de Recepción cuando es Laboratorio. */
+  const applyFechaEntradaFromFriday = useCallback(
+    async (overrides?: { id?: string; cliente?: string; lugar?: string }) => {
+      const id = String(overrides?.id ?? state.id ?? "").trim();
+      const cliente = String(overrides?.cliente ?? state.cliente ?? "").trim();
+      const lugar = String(overrides?.lugar ?? state.lugarCalibracion ?? "");
+      if (!id || !cliente || lugar !== "Laboratorio" || !navigator.onLine) return;
+
+      try {
+        const qFriday = query(
+          collection(db, "hojasDeTrabajo"),
+          where("id", "==", id),
+          where("cliente", "==", cliente)
+        );
+        const snaps = await getDocs(qFriday);
+        if (snaps.empty) return;
+
+        let bestDate = "";
+        let bestTime = -1;
+        snaps.forEach((snap) => {
+          const data = snap.data();
+          // Misma heurística que al guardar: fila abierta de Friday (aún sin calibrar/PDF).
+          const isOpen =
+            !data.pdfURL ||
+            data.status_certificado === "Pendiente de Certificado" ||
+            data.status_equipo === "Desconocido" ||
+            data.status_equipo === "Recepción";
+          if (!isOpen) return;
+
+          const fechaRaw = String(data.fechaEntrada || data.fechaRecepcion || "")
+            .trim()
+            .split("T")[0];
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRaw)) return;
+
+          const docTime = new Date(String(data.createdAt || data.fechaEntrada || 0)).getTime();
+          if (docTime > bestTime) {
+            bestTime = docTime;
+            bestDate = fechaRaw;
+          }
+        });
+
+        if (!bestDate) return;
+        if (bestDate === state.fechaRecepcion) return;
+
+        dispatch({ type: "SET_FIELD", field: "fechaRecepcion", payload: bestDate });
+      } catch (err) {
+        console.error("No se pudo leer F. Entrada de Friday:", err);
+      }
+    },
+    [state.id, state.cliente, state.lugarCalibracion, state.fechaRecepcion]
+  );
+
   const handleIdBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
     const newId = String(e.target.value || "").trim();
     let masterFound = false;
@@ -1541,30 +1662,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     }
     if (!masterFound) dispatch({ type: 'AUTOCOMPLETE_FAIL' });
 
-    if (newId.startsWith("EP-")) {
-      setIsSearchingPdf(true);
-      setLastPdfUrl(null);
-      try {
-        const cloudFunctionUrl = `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net/buscarPdfDrive?id=${newId}`;
-        const response = await fetch(cloudFunctionUrl);
-
-        if (response.ok) {
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const data = await response.json();
-            if (data.fileUrl) {
-              setLastPdfUrl(data.fileUrl);
-              setToast({ message: "Certificado anterior (Schedule) localizado en Drive.", type: 'success' });
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error buscando el PDF en Drive:", error);
-      } finally {
-        setIsSearchingPdf(false);
-      }
-    }
-
+    await applyFechaEntradaFromFriday({ id: newId });
   };
 
   const handleToggleElectrica = (unidadBase: string) => {
@@ -1865,7 +1963,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const flowAccent = accentFromMagnitude(state.magnitud || selectedMagnitude);
 
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50/40 relative pb-28">
+    <div className="min-h-full w-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50 relative pb-28 [color-scheme:light]">
       
       {toast && <ToastNotification message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
@@ -1894,7 +1992,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           </>
         }
         onBack={goBack}
-        icon={<Tag className="w-6 h-6" />}
+        iconVariant="brand"
+        icon={<img src={logoAg} alt="AG Lab" className="w-full h-full object-contain" />}
         rightSlot={
           <>
             <LabelPrinterButton data={labelData} logo={logoAg} />
@@ -1930,6 +2029,9 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                       <button key={opt} onClick={() => { 
                           dispatch({ type: 'SET_FIELD', field: 'lugarCalibracion', payload: opt });
                           if(validationErrors.lugarCalibracion) setValidationErrors({...validationErrors, lugarCalibracion: false});
+                          if (opt === "Laboratorio") {
+                            void applyFechaEntradaFromFriday({ lugar: "Laboratorio" });
+                          }
                       }}
                         className={`py-3 px-4 rounded-lg border-2 font-medium transition-all ${state.lugarCalibracion === opt ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>{opt}</button>
                     ))}
@@ -1938,7 +2040,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 {state.lugarCalibracion === "Laboratorio" && (
                   <div className="mt-4 animate-in fade-in slide-in-from-top-2">
                     <label className="block font-semibold text-sm text-gray-700 mb-1">Fecha de Recepción</label>
-                    <input type="date" className={`w-full border rounded-xl px-3 py-2.5 text-sm text-gray-900 font-semibold bg-white ${validationErrors.fechaRecepcion ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} value={state.fechaRecepcion} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: e.target.value })} />
+                    <WorksheetDateInput
+                      value={state.fechaRecepcion}
+                      onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'fechaRecepcion', payload: v })}
+                      hasError={!!validationErrors.fechaRecepcion}
+                      className="border rounded-xl px-3 py-2.5 text-sm border-gray-300"
+                    />
                   </div>
                 )}
                 </FlowSection>
@@ -1954,7 +2061,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   
                   <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Calendar className="w-4 h-4 text-blue-500" /><span>Fecha*</span></label>
-                    <input type="date" value={state.fecha} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: e.target.value })} className={`w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner bg-white ${validationErrors.fecha ? 'border-red-500 bg-red-50' : 'border-indigo-200'}`} />
+                    <WorksheetDateInput
+                      value={state.fecha}
+                      onChange={(v) => dispatch({ type: 'SET_FIELD', field: 'fecha', payload: v })}
+                      hasError={!!validationErrors.fecha}
+                      className="p-4 border rounded-lg border-indigo-200"
+                    />
                     
                     {nextCalibrationStr && (
                       <div className="mt-2 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-800 text-sm flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
@@ -2015,37 +2127,18 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   
                   <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
                     <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><Hash className="w-4 h-4 text-gray-500" /><span>ID*</span></label>
-                    <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          value={state.id} 
-                          onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
-                          onBlur={(e) => { handleIdBlur(e); flushDraftNow(); }}
-                          className={`flex-1 p-4 border rounded-lg transition-all text-gray-900 font-semibold shadow-inner bg-white ${
-                              state.idBlocked 
-                                  ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
-                                  : (validationErrors.id ? "border-red-500 bg-red-50" : "border-indigo-200 focus:ring-blue-500")
-                          }`} 
-                          placeholder="ID" 
-                        />
-                        <button
-                          type="button"
-                          onClick={() => lastPdfUrl && window.open(lastPdfUrl, '_blank')}
-                          disabled={!lastPdfUrl || isSearchingPdf}
-                          className={`px-4 rounded-lg border flex items-center justify-center transition-all shadow-sm ${
-                            lastPdfUrl 
-                              ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 hover:scale-105 active:scale-95" 
-                              : "bg-white border-indigo-200 text-gray-400 cursor-not-allowed"
-                          }`}
-                          title={lastPdfUrl ? "Ver Schedule en Drive" : "No se encontró PDF"}
-                        >
-                          {isSearchingPdf ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                          ) : (
-                            <FileText className="w-5 h-5" />
-                          )}
-                        </button>
-                    </div>
+                    <input 
+                      type="text" 
+                      value={state.id} 
+                      onChange={(e) => { dispatch({ type: 'SET_FIELD', field: 'id', payload: e.target.value }); if(validationErrors.id) setValidationErrors({...validationErrors, id: false}); }} 
+                      onBlur={(e) => { handleIdBlur(e); flushDraftNow(); }}
+                      className={`w-full p-4 border rounded-lg transition-all text-gray-900 font-semibold shadow-inner bg-white ${
+                          state.idBlocked 
+                              ? (state.permitirExcepcion ? "border-orange-400 bg-orange-50 focus:ring-orange-500" : "border-red-500 bg-red-50 text-red-700") 
+                              : (validationErrors.id ? "border-red-500 bg-red-50" : "border-indigo-200 focus:ring-blue-500")
+                      }`} 
+                      placeholder="ID" 
+                    />
                     
                     {state.idBlocked && (
                         <p className={`mt-2 text-sm font-medium animate-pulse ${state.permitirExcepcion ? "text-orange-600" : "text-red-600"}`}>

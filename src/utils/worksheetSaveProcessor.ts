@@ -3,7 +3,7 @@
  */
 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, query, where, getDocs } from "firebase/firestore";
 import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
 import { getTechnicianFolderName } from "./worksheetPdfGenerator";
@@ -77,6 +77,18 @@ async function processOneOfflineItem(
   const fullData = { ...item.data, ...updates };
 
   let docRefId = item.finalDocId;
+  if (!docRefId) {
+    const cert = String(item.data?.certificado || "").trim();
+    if (cert) {
+      try {
+        const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", cert));
+        const existing = await getDocs(qCert);
+        if (!existing.empty) docRefId = existing.docs[0].id;
+      } catch (lookupErr) {
+        console.warn("[SaveProcessor] lookup certificado:", lookupErr);
+      }
+    }
+  }
   if (docRefId) {
     await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
   } else {

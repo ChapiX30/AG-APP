@@ -1,4 +1,4 @@
-Ôªøimport * as functions from "firebase-functions/v1";
+import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -8,14 +8,14 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // ==================================================================
-// 1. L√ìGICA DE FECHAS
+// 1. L”GICA DE FECHAS
 // ==================================================================
 const calcularProximoVencimiento = (fechaBase: Date, frecuenciaTexto: string): Date | null => {
     if (!fechaBase || !isValid(fechaBase)) return null;
     const texto = frecuenciaTexto ? frecuenciaTexto.toLowerCase().trim() : "";
 
-    if (texto.includes("1 a√±o") || texto.includes("anual") || texto.includes("12 meses")) return addYears(fechaBase, 1);
-    if (texto.includes("2 a√±os") || texto.includes("bianual")) return addYears(fechaBase, 2);
+    if (texto.includes("1 aÒo") || texto.includes("anual") || texto.includes("12 meses")) return addYears(fechaBase, 1);
+    if (texto.includes("2 aÒos") || texto.includes("bianual")) return addYears(fechaBase, 2);
     if (texto.includes("6 meses") || texto.includes("semestral")) return addMonths(fechaBase, 6);
     if (texto.includes("3 meses") || texto.includes("trimestral")) return addMonths(fechaBase, 3);
 
@@ -69,7 +69,7 @@ export const agbotAuditorCalibraciones = functions.firestore
 
         const equipoIdNormalizado = (data.id || data.certificado || "S/N").trim().toUpperCase();
 
-        // Evita writes (y re-invocaciones) cuando el resultado ya est√° correcto.
+        // Evita writes (y re-invocaciones) cuando el resultado ya est· correcto.
         if (
             data._agbotChecked === true &&
             data._agbotStatus === agbotStatus &&
@@ -122,7 +122,7 @@ export const agbotMonitorDiario = functions.pubsub
             await sendAgMail({
                 fromName: "AGbot System",
                 to: "calidad@ese-ag.mx",
-                subject: "üîî Reporte Diario de Vencimientos",
+                subject: "?? Reporte Diario de Vencimientos",
                 html: `<h2>Equipos para hoy (${addDays(hoy, 0).toLocaleDateString()}):</h2>${reporteHTML}`,
             });
         } catch (e) {
@@ -151,7 +151,7 @@ const normalizeFrecuenciaExcel = (raw: unknown): string => {
     const t = String(raw || "").toLowerCase();
     if (t.includes("6 mes") || t.includes("semestr")) return "6 meses";
     if (t.includes("3 mes") || t.includes("trimest")) return "3 meses";
-    if (t.includes("2 a√±o") || t.includes("24 mes") || t.includes("bianual")) return "24 meses";
+    if (t.includes("2 aÒo") || t.includes("24 mes") || t.includes("bianual")) return "24 meses";
     return "12 meses";
 };
 
@@ -168,9 +168,9 @@ type ExcelHistorialRow = {
     tecnico: string;
     lugarCalibracion: string;
     frecuenciaCalibracion: string;
-    /** Fecha de recepci√≥n (hoja de trabajo; suele llenarse en Laboratorio). */
+    /** Fecha de recepciÛn (hoja de trabajo; suele llenarse en Laboratorio). */
     fechaRecepcion: string;
-    /** Datos de contacto del cat√°logo `clientes` (join por nombre). */
+    /** Datos de contacto del cat·logo `clientes` (join por nombre). */
     domicilio: string;
     contacto: string;
     correo: string;
@@ -198,7 +198,7 @@ const mapHojaToExcelRow = (d: {[key: string]: any}): ExcelHistorialRow => ({
     telefono: "",
 });
 
-/** Normaliza raz√≥n social para cruzar hoja de trabajo ‚Üî cat√°logo clientes. */
+/** Normaliza razÛn social para cruzar hoja de trabajo ? cat·logo clientes. */
 const normalizeClienteNombreExcel = (raw: unknown): string => {
     const base = String(raw || "")
         .normalize("NFD")
@@ -297,7 +297,7 @@ const historialToCsv = (rows: ExcelHistorialRow[]): string => {
     ].join("\r\n");
 };
 
-/** Vigencia de patr√≥n alineada a ProgramaCalibracion (fecha / fechaVencimiento / partes). */
+/** Vigencia de patrÛn alineada a ProgramaCalibracion (fecha / fechaVencimiento / partes). */
 const resolvePatronVencimiento = (d: {[key: string]: any}): string => {
     const partes = Array.isArray(d.partesCalibracion) ? d.partesCalibracion : [];
     if (partes.length > 1) {
@@ -327,19 +327,19 @@ const resolvePatronNoCert = (d: {[key: string]: any}): string => {
     }
     const root = String(d.noCertificado || d.certificacion || d.numeroCertificado || "").trim();
     if (root) return root;
-    // Recepci√≥n de cert a menudo deja el n√∫mero solo en historial: "Lab: ‚Ä¶ | Cert: 1-24842"
+    // RecepciÛn de cert a menudo deja el n˙mero solo en historial: "Lab: Ö | Cert: 1-24842"
     const hist = Array.isArray(d.historial) ? d.historial : [];
     for (const h of hist) {
         const desc = String(h?.descripcion || h?.detalle || "");
         const m = /Cert\s*:\s*([A-Z0-9][A-Z0-9\-\/\.]{2,48})/i.exec(desc);
-        if (m?.[1] && m[1] !== "‚Äî") return m[1].trim();
+        if (m?.[1] && m[1] !== "ó") return m[1].trim();
     }
     return "";
 };
 
 const statusVigenciaPatron = (fechaVence: string, estadoProceso: string): string => {
     const estado = String(estadoProceso || "").toLowerCase();
-    // Solo estados que realmente impiden usar el patr√≥n en certificado.
+    // Solo estados que realmente impiden usar el patrÛn en certificado.
     // en_servicio / en_prestamo / en_uso: siguen vigentes por fecha (no marcar "No disponible").
     const bloqueo = new Set([
         "en_calibracion",
@@ -462,7 +462,7 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
             );
         }
 
-        // anio=26 ‚Üí solo certificados ...-26 (abre/sync mucho m√°s r√°pido)
+        // anio=26 ? solo certificados ...-26 (abre/sync mucho m·s r·pido)
         if (anio) {
             const suffix = `-${anio}`;
             historial = historial.filter((row) =>
@@ -513,7 +513,7 @@ export const obtenerDatosExcel = functions.https.onRequest(async (req, res) => {
 });
 
 // ==================================================================
-// 6. REGENERADOR AUTOM√ÅTICO DE PDF (DISE√ëO PROFESIONAL AG)
+// 6. REGENERADOR AUTOM¡TICO DE PDF (DISE—O PROFESIONAL AG)
 // ==================================================================
 export const agbotRegenerarPDF = functions.firestore
     .document("hojasDeTrabajo/{docId}")
@@ -590,7 +590,7 @@ export const enviarNotificacionCalidad = functions.firestore
             const tokensArray = [...tokenSet];
             if (tokensArray.length === 0) {
                 console.log(
-                    `Notificaci√≥n ${context.params.notificacionId}: sin tokens FCM para destinatarios.`
+                    `NotificaciÛn ${context.params.notificacionId}: sin tokens FCM para destinatarios.`
                 );
                 return null;
             }
@@ -653,7 +653,7 @@ export const enviarNotificacionCalidad = functions.firestore
 
             const response = await admin.messaging().sendEachForMulticast(payload);
             console.log(
-                `Push ${tipo} ${context.params.notificacionId}. √âxitos: ${response.successCount}, Fallos: ${response.failureCount}`
+                `Push ${tipo} ${context.params.notificacionId}. …xitos: ${response.successCount}, Fallos: ${response.failureCount}`
             );
 
             await change.after.ref.set(
@@ -666,7 +666,7 @@ export const enviarNotificacionCalidad = functions.firestore
 
             return null;
         } catch (error) {
-            console.error('Error cr√≠tico al enviar Push Notification Multicast:', error);
+            console.error('Error crÌtico al enviar Push Notification Multicast:', error);
             return null;
         }
     });
@@ -682,10 +682,10 @@ const buildHtmlAlertaVencimiento = (data: FirebaseFirestore.DocumentData): strin
                 ? format(parseISO(String(eq.fechaVencimiento)), "dd/MM/yyyy", { locale: es })
                 : "N/A";
             return `<tr>
-                <td style="padding:8px;border:1px solid #e2e8f0;">${eq.descripcion || "‚Äî"}</td>
-                <td style="padding:8px;border:1px solid #e2e8f0;font-family:monospace;">${eq.equipoId || "‚Äî"}</td>
+                <td style="padding:8px;border:1px solid #e2e8f0;">${eq.descripcion || "ó"}</td>
+                <td style="padding:8px;border:1px solid #e2e8f0;font-family:monospace;">${eq.equipoId || "ó"}</td>
                 <td style="padding:8px;border:1px solid #e2e8f0;">${vence}</td>
-                <td style="padding:8px;border:1px solid #e2e8f0;text-transform:uppercase;">${eq.status || "‚Äî"}</td>
+                <td style="padding:8px;border:1px solid #e2e8f0;text-transform:uppercase;">${eq.status || "ó"}</td>
             </tr>`;
         })
         .join("");
@@ -693,12 +693,12 @@ const buildHtmlAlertaVencimiento = (data: FirebaseFirestore.DocumentData): strin
     return `
         <div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a;">
             <div style="background:linear-gradient(135deg,#2464A3,#1d5082);color:#fff;padding:20px 24px;border-radius:12px 12px 0 0;">
-                <h2 style="margin:0;font-size:18px;">Alerta de vencimiento ‚Äî AG</h2>
-                <p style="margin:8px 0 0;opacity:0.9;font-size:13px;">Cliente: <strong>${data.cliente || "‚Äî"}</strong></p>
+                <h2 style="margin:0;font-size:18px;">Alerta de vencimiento ó AG</h2>
+                <p style="margin:8px 0 0;opacity:0.9;font-size:13px;">Cliente: <strong>${data.cliente || "ó"}</strong></p>
             </div>
             <div style="padding:20px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
                 <p>Hola <strong>${data.destinatarioNombre || "equipo"}</strong>,</p>
-                <p>${data.mensajeCorto || "Hay equipos que requieren tu atenci√≥n."}</p>
+                <p>${data.mensajeCorto || "Hay equipos que requieren tu atenciÛn."}</p>
                 <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:16px;background:#fff;">
                     <thead>
                         <tr style="background:#e2e8f0;">
@@ -710,7 +710,7 @@ const buildHtmlAlertaVencimiento = (data: FirebaseFirestore.DocumentData): strin
                     </thead>
                     <tbody>${filas}</tbody>
                 </table>
-                <p style="margin-top:20px;font-size:12px;color:#64748b;">Por favor contacta al cliente para programar recolecci√≥n o servicio.</p>
+                <p style="margin-top:20px;font-size:12px;color:#64748b;">Por favor contacta al cliente para programar recolecciÛn o servicio.</p>
             </div>
         </div>`;
 };
@@ -732,7 +732,7 @@ export const procesarAlertaVencimiento = functions.firestore
         }
 
         const subject = String(
-            data.titulo || `Alerta de vencimiento ‚Äî ${data.cliente || "Cliente"}`
+            data.titulo || `Alerta de vencimiento ó ${data.cliente || "Cliente"}`
         );
 
         const { getMailConfig, sendAgMail, formatMailError } = require("./mailTransport");
@@ -750,7 +750,7 @@ export const procesarAlertaVencimiento = functions.firestore
             await sendAgMail({
                 fromName: "AG Sistema de Vencimientos",
                 to: email,
-                subject: `üîî ${subject}`,
+                subject: `?? ${subject}`,
                 html: buildHtmlAlertaVencimiento(data),
             });
 
@@ -825,3 +825,4 @@ export const scheduledDriveReconcile = functions
         const { runScheduledDriveReconcile } = require("./scheduledDriveReconcile");
         return runScheduledDriveReconcile();
     });
+

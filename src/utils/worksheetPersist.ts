@@ -101,6 +101,24 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
     }
   }
 
+  // Si ya existe este certificado (reintento / cola offline), actualizar en lugar de crear otro.
+  if (!finalDocId && firebaseOk && state.certificado?.trim()) {
+    try {
+      const qCert = query(
+        collection(db, "hojasDeTrabajo"),
+        where("certificado", "==", state.certificado.trim())
+      );
+      const certDocs = await getDocs(qCert);
+      if (!certDocs.empty) {
+        const d = certDocs.docs[0];
+        finalDocId = d.id;
+        existingData = d.data();
+      }
+    } catch (e) {
+      if (!isRetriableNetworkError(e)) throw e;
+    }
+  }
+
   const sanitizedState: WorksheetState = {
     ...state,
     magnitud: toWorksheetMagnitud(state.magnitud),

@@ -151,13 +151,24 @@ export async function notifyVacationPendingApproval(params: {
   solicitudId: string;
   solicitanteNombre: string;
   solicitanteEmail?: string;
+  solicitanteUid?: string;
   step: VacationWorkflowStep;
   dias: number;
   fechaInicio?: string;
   fechaFin?: string;
 }): Promise<void> {
-  const destinatarios = await getApproverUidsForStep(params.step);
-  const destinatariosRevision = await getApproverEmailsForStep(params.step);
+  let destinatarios = await getApproverUidsForStep(params.step);
+  let destinatariosRevision = await getApproverEmailsForStep(params.step);
+
+  // No notificar al propio solicitante (p. ej. Edgar / Viridiana no se auto-autorizan).
+  if (params.solicitanteUid) {
+    destinatarios = destinatarios.filter((id) => id !== params.solicitanteUid);
+  }
+  if (params.solicitanteEmail) {
+    const emailNorm = params.solicitanteEmail.trim().toLowerCase();
+    destinatariosRevision = destinatariosRevision.filter((e) => e !== emailNorm);
+  }
+
   const pasoLabel = STEP_LABELS[params.step];
 
   await createInAppNotification({

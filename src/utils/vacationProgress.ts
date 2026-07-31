@@ -1,7 +1,6 @@
 import { differenceInCalendarDays, isValid, parseISO } from 'date-fns';
-import type { VacationWorkflowStep } from './vacationPermissions';
-import { approvalStepForStatus } from './vacationWorkflow';
-import { inferFlowType, type SolicitudVacacionesDoc } from './vacationWorkflow';
+import { getStepsForFlow, type VacationWorkflowStep } from './vacationPermissions';
+import { approvalStepForStatus, inferFlowType, type SolicitudVacacionesDoc } from './vacationWorkflow';
 
 export type ProgressStepState = 'done' | 'current' | 'pending' | 'rejected' | 'skipped';
 
@@ -35,9 +34,7 @@ const STEP_LABELS: Record<VacationWorkflowStep, string> = {
 };
 
 function getStepOrder(solicitud: SolicitudVacacionesDoc): VacationWorkflowStep[] {
-  return inferFlowType(solicitud) === 'calidad'
-    ? ['jorge']
-    : ['calidad', 'edgar', 'jorge'];
+  return getStepsForFlow(inferFlowType(solicitud));
 }
 
 function resolveStepState(
