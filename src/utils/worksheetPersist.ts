@@ -13,6 +13,10 @@ import {
 } from "./worksheetPdfGenerator";
 import { syncServicioInicioFromWorksheetRecord } from "./servicioAutomation";
 import { toWorksheetMagnitud } from "./magnitudWorksheet";
+import {
+  buildElectricalMeasurementTexts,
+  normalizeCanalesPorUnidad,
+} from "./electricalChannels";
 import { canSaveDirectlyToFirebase } from "./firebaseConnectivity";
 import { addToOfflineQueue, isRetriableNetworkError } from "./worksheetOfflineQueue";
 import { tryConfirmarWorksheet } from "./worksheetSaveProcessor";
@@ -28,17 +32,21 @@ function mergeJobState(job: BackgroundSaveJob): WorksheetState {
     merged = { ...merged, excentricidad: str };
   }
   if (merged.magnitud === "Electrica") {
-    let textoPatron = "";
-    let textoInstrumento = "";
-    merged.unidad.forEach((u) => {
-      const vals = job.electricalValues[u] || { patron: "", instrumento: "" };
-      if (vals.patron) textoPatron += `${u}:\n${vals.patron}\n\n`;
-      if (vals.instrumento) textoInstrumento += `${u}:\n${vals.instrumento}\n\n`;
-    });
+    const canalesPorUnidad = normalizeCanalesPorUnidad(
+      merged.unidad,
+      merged.canalesPorUnidad,
+      (merged as WorksheetState & { numCanales?: number }).numCanales
+    );
+    const texts = buildElectricalMeasurementTexts(
+      merged.unidad,
+      canalesPorUnidad,
+      job.electricalValues
+    );
     merged = {
       ...merged,
-      medicionPatron: textoPatron.trim(),
-      medicionInstrumento: textoInstrumento.trim(),
+      canalesPorUnidad,
+      medicionPatron: texts.medicionPatron,
+      medicionInstrumento: texts.medicionInstrumento,
     };
   }
   return merged;

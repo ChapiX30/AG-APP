@@ -17,6 +17,7 @@ export interface WorksheetPdfFormData {
   numeroSerie: string;
   magnitud: string;
   unidad: string[];
+  canalesPorUnidad?: Record<string, number>;
   alcance: string;
   resolucion: string;
   medicionPatron: string;
@@ -38,6 +39,51 @@ const WORKSHEET_ALIASES: Record<string, string> = {
   "Reporte Diagnostico": "Reporte de Diagnostico",
   AcusticaTrazable: "Acustica",
 };
+
+function normalizeNumCanales(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : parseInt(String(raw ?? "1"), 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(8, Math.floor(n));
+}
+
+function normalizeCanalesPorUnidad(
+  units: string[],
+  raw: unknown,
+  legacyNumCanales?: unknown
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  const fromMap =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const legacy = legacyNumCanales !== undefined ? normalizeNumCanales(legacyNumCanales) : 1;
+  for (const unit of units) {
+    out[unit] =
+      fromMap[unit] !== undefined ? normalizeNumCanales(fromMap[unit]) : legacy > 1 ? legacy : 1;
+  }
+  return out;
+}
+
+function formatCanalesPorUnidadPdfLabel(
+  units: string[],
+  canalesPorUnidad: Record<string, number> | undefined
+): string {
+  const parts: string[] = [];
+  for (const unit of units) {
+    const n = normalizeNumCanales(canalesPorUnidad?.[unit] ?? 1);
+    if (n <= 1) continue;
+    const nums = Array.from({ length: n }, (_, i) => String(i + 1)).join(", ");
+    parts.push(`${unit}: ${n} (${nums})`);
+  }
+  return parts.join("; ");
+}
+
+function hasMultiCanal(
+  units: string[],
+  canalesPorUnidad: Record<string, number> | undefined
+): boolean {
+  return units.some((u) => normalizeNumCanales(canalesPorUnidad?.[u] ?? 1) > 1);
+}
 
 function toWorksheetMagnitud(magnitud: string): string {
   const trimmed = (magnitud || "").trim();
@@ -103,6 +149,11 @@ export const firestoreToWorksheetPdfForm = (
     numeroSerie,
     magnitud: toWorksheetMagnitud(String(data.magnitud || "")),
     unidad: normalizeUnidad(data.unidad),
+    canalesPorUnidad: normalizeCanalesPorUnidad(
+      normalizeUnidad(data.unidad),
+      data.canalesPorUnidad,
+      data.numCanales
+    ),
     alcance: String(data.alcance || "").trim(),
     resolucion: String(data.resolucion || "").trim(),
     medicionPatron: String(data.medicionPatron || "").trim(),
@@ -256,6 +307,17 @@ export const generateTemplatePDF = (
       l2: "Unidad:",
       v2: Array.isArray(formData.unidad) ? formData.unidad.join(", ") : formData.unidad,
     },
+    ...(formData.magnitud === "Electrica" &&
+    hasMultiCanal(formData.unidad || [], formData.canalesPorUnidad)
+      ? [
+          {
+            l: "Canales:",
+            v: formatCanalesPorUnidadPdfLabel(formData.unidad || [], formData.canalesPorUnidad),
+            l2: "",
+            v2: "",
+          },
+        ]
+      : []),
     { l: "Alcance:", v: formData.alcance, l2: "Resolución:", v2: formData.resolucion },
     { l: "Frecuencia:", v: formData.frecuenciaCalibracion, l2: "Recepción:", v2: formData.fechaRecepcion || "N/A" },
     {

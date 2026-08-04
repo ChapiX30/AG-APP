@@ -133,7 +133,6 @@ const MENU_ITEMS = [
   { id: 'entrada-salida', title: 'Hoja de Salida', icon: FileOutput, category: 'Logística' },
   { id: 'programa-calibracion', title: 'Patrones', icon: Award, category: 'Técnico' },
   { id: 'control-prestamos', title: 'Préstamos', icon: ArrowRightLeft, category: 'Logística' },
-  { id: 'vencimientos', title: 'Vencimientos', icon: Bell, category: 'Análisis' },
 ];
 
 const SUPER_ADMINS = [
@@ -1216,7 +1215,6 @@ export const MainMenu: React.FC = () => {
     if (!localUser) return [];
     return MENU_ITEMS.filter(item => {
       if (item.id === 'calibration-stats') return isJefe || isSuperAdmin;
-      if (item.id === 'vencimientos') return isJefe || isCalidad || isSuperAdmin;
       if (['programa-calibracion', 'control-prestamos'].includes(item.id)) return isJefe || isCalidad || isSuperAdmin;
       if (item.id === 'control-vacaciones-rh') return isAdministrativo || isSuperAdmin;
       return true;

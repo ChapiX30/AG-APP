@@ -29,6 +29,15 @@ interface ItemEquipo {
 
 type ComparacionEstado = 'vacio' | 'parcial' | 'completa';
 
+/** Solo sale si ya tiene folio de certificado (hoja de trabajo hecha). */
+function tieneCertificado(item: ItemEquipo): boolean {
+  const cert = String(item.certificado || '').trim();
+  if (!cert) return false;
+  if (/^pendiente$/i.test(cert)) return false;
+  if (/^s\/?n$/i.test(cert) || /^n\/?a$/i.test(cert) || cert === '-' || cert === '—') return false;
+  return true;
+}
+
 function evaluarComparacion(
   entrada: ItemEquipo[],
   salidaIds: Set<string>
@@ -159,6 +168,16 @@ export const EntradaSalidaScreen: React.FC = () => {
     [entradaCliente, salidaIds]
   );
 
+  const sinCertificadoCliente = useMemo(
+    () => entradaCliente.filter((item) => !tieneCertificado(item)),
+    [entradaCliente]
+  );
+
+  const aptosParaSalida = useMemo(
+    () => entradaCliente.filter((item) => tieneCertificado(item)),
+    [entradaCliente]
+  );
+
   const comparacion = useMemo(
     () => evaluarComparacion(entradaCliente, salidaIds),
     [entradaCliente, salidaIds]
@@ -174,17 +193,39 @@ export const EntradaSalidaScreen: React.FC = () => {
     setSalidaIds(new Set());
   };
 
-  const toggleSalida = (id: string) => {
+  const toggleSalida = async (item: ItemEquipo) => {
+    if (!tieneCertificado(item)) {
+      await showAlert({
+        title: 'Sin certificado',
+        message: `No se puede dar salida a "${item.descripcion}" (Serie ${item.serie}).\n\nFalta certificado / hoja de trabajo. Genera el consecutivo y completa la hoja antes de enviarlo.`,
+        variant: 'danger',
+      });
+      return;
+    }
     setSalidaIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
       return next;
     });
   };
 
-  const marcarTodosSalida = () => {
-    setSalidaIds(new Set(entradaCliente.map((item) => item.id)));
+  const marcarTodosSalida = async () => {
+    if (aptosParaSalida.length === 0) {
+      await showAlert({
+        title: 'Sin certificado',
+        message: 'Ningún equipo de este cliente tiene certificado. Completa las hojas de trabajo antes de dar salida.',
+        variant: 'danger',
+      });
+      return;
+    }
+    setSalidaIds(new Set(aptosParaSalida.map((item) => item.id)));
+    if (sinCertificadoCliente.length > 0) {
+      await showAlert({
+        title: 'Aviso',
+        message: `Se marcaron ${aptosParaSalida.length} con certificado.\n${sinCertificadoCliente.length} quedaron fuera por no tener certificado/hoja de trabajo.`,
+      });
+    }
   };
 
   const limpiarSalida = () => {
@@ -197,6 +238,22 @@ export const EntradaSalidaScreen: React.FC = () => {
       await showAlert({ title: 'Aviso', message: 'Selecciona al menos un equipo en la columna SALIDA.' });
       return;
     }
+
+    const bloqueados = salidaCliente.filter((item) => !tieneCertificado(item));
+    if (bloqueados.length > 0) {
+      await showAlert({
+        title: 'Salida bloqueada',
+        message: `${bloqueados.length} equipo(s) sin certificado/hoja de trabajo. Quítalos de la salida o completa su certificado antes de continuar.`,
+        variant: 'danger',
+      });
+      setSalidaIds((prev) => {
+        const next = new Set(prev);
+        bloqueados.forEach((item) => next.delete(item.id));
+        return next;
+      });
+      return;
+    }
+
     if (!customFolio.trim()) {
       await showAlert({ title: 'Aviso', message: 'Escribe un folio válido.' });
       return;
@@ -392,20 +449,25 @@ export const EntradaSalidaScreen: React.FC = () => {
 
   const renderTarjetaEquipo = (item: ItemEquipo, lado: 'entrada' | 'salida') => {
     const enSalida = salidaIds.has(item.id);
+    const listo = tieneCertificado(item);
 
     const estilos =
       lado === 'entrada'
-        ? enSalida
-          ? 'border-emerald-300 bg-emerald-50'
-          : 'border-slate-200 bg-slate-50'
-        : enSalida
-          ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-200'
-          : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/40';
+        ? !listo
+          ? 'border-rose-300 bg-rose-50'
+          : enSalida
+            ? 'border-emerald-300 bg-emerald-50'
+            : 'border-slate-200 bg-slate-50'
+        : !listo
+          ? 'border-rose-300 bg-rose-50 opacity-80'
+          : enSalida
+            ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-200'
+            : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/40';
 
     return (
       <div
         key={`${lado}-${item.id}`}
-        onClick={lado === 'salida' ? () => toggleSalida(item.id) : undefined}
+        onClick={lado === 'salida' ? () => { void toggleSalida(item); } : undefined}
         className={`rounded-xl border-2 p-3 transition-all ${
           lado === 'salida' ? 'cursor-pointer active:scale-[0.99]' : ''
         } ${estilos}`}
@@ -413,11 +475,18 @@ export const EntradaSalidaScreen: React.FC = () => {
         <div className="flex items-start justify-between gap-2 mb-2">
           <p className="text-sm font-extrabold text-slate-900 leading-snug">{item.descripcion}</p>
           {lado === 'salida' && (
-            enSalida
-              ? <CheckCircle2 className="w-6 h-6 text-amber-600 shrink-0" />
-              : <div className="w-6 h-6 rounded-full border-2 border-slate-300 shrink-0" aria-hidden />
+            !listo
+              ? <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
+              : enSalida
+                ? <CheckCircle2 className="w-6 h-6 text-amber-600 shrink-0" />
+                : <div className="w-6 h-6 rounded-full border-2 border-slate-300 shrink-0" aria-hidden />
           )}
-          {lado === 'entrada' && enSalida && (
+          {lado === 'entrada' && !listo && (
+            <span className="text-[10px] font-bold uppercase text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full shrink-0">
+              Sin cert
+            </span>
+          )}
+          {lado === 'entrada' && listo && enSalida && (
             <span className="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
               Sale
             </span>
@@ -429,8 +498,12 @@ export const EntradaSalidaScreen: React.FC = () => {
           <CampoEquipo etiqueta="Serie" valor={item.serie} />
           <CampoEquipo etiqueta="ID interno" valor={item.idInterno} />
         </div>
-        {item.certificado && item.certificado !== 'Pendiente' && (
+        {listo ? (
           <p className="mt-2 text-xs font-bold text-emerald-700">Cert: {item.certificado}</p>
+        ) : (
+          <p className="mt-2 text-xs font-bold text-rose-700">
+            Sin certificado — no puede salir
+          </p>
         )}
       </div>
     );
@@ -603,10 +676,10 @@ export const EntradaSalidaScreen: React.FC = () => {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={marcarTodosSalida}
+                    onClick={() => { void marcarTodosSalida(); }}
                     className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700"
                   >
-                    Todos salen
+                    Todos con certificado
                   </button>
                   <button
                     onClick={limpiarSalida}
@@ -630,6 +703,14 @@ export const EntradaSalidaScreen: React.FC = () => {
                   <p className="text-lg font-black text-slate-800">{comparacion.pendientes.length}</p>
                 </div>
               </div>
+              {sinCertificadoCliente.length > 0 && (
+                <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    {sinCertificadoCliente.length} equipo(s) sin certificado: no se pueden seleccionar para salida.
+                  </span>
+                </div>
+              )}
             </div>
 
             {bannerComparacion()}
@@ -657,7 +738,7 @@ export const EntradaSalidaScreen: React.FC = () => {
                   </span>
                 </div>
                 <p className="px-4 py-2 text-xs font-semibold text-amber-900 bg-amber-50 border-b border-amber-100">
-                  Toca los equipos que salen en este folio. Puedes enviar solo algunos (salida parcial).
+                  Solo equipos con certificado pueden salir. Toca para seleccionar (salida parcial permitida).
                 </p>
                 <div className="p-3 space-y-3 max-h-[55vh] overflow-y-auto">
                   {entradaCliente.map((item) => renderTarjetaEquipo(item, 'salida'))}

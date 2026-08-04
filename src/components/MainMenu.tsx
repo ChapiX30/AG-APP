@@ -14,7 +14,7 @@ import {
   PiFileTextDuotone, PiAirplaneTiltDuotone, PiUsersThreeDuotone, PiCalendarDotsDuotone,
   PiDatabaseDuotone, PiFilesDuotone, PiFolderOpenDuotone, PiBuildingsDuotone,
   PiChartLineUpDuotone, PiWrenchDuotone, PiExportDuotone, PiMedalDuotone,
-  PiArrowsLeftRightDuotone, PiBellRingingDuotone, PiShieldCheckeredDuotone,
+  PiArrowsLeftRightDuotone, PiShieldCheckeredDuotone,
   // Iconos de la interfaz (widgets, header, notificaciones) — alias a los nombres usados
   PiBellDuotone as Bell,
   PiSignOutDuotone as LogOut,
@@ -161,7 +161,6 @@ const MENU_ITEMS = [
   { id: 'entrada-salida', title: 'Hoja de Salida', icon: PiExportDuotone, category: 'Logística' },
   { id: 'programa-calibracion', title: 'Patrones', icon: PiMedalDuotone, category: 'Técnico' },
   { id: 'control-prestamos', title: 'Préstamos', icon: PiArrowsLeftRightDuotone, category: 'Logística' },
-  { id: 'vencimientos', title: 'Vencimientos', icon: PiBellRingingDuotone, category: 'Análisis' },
 ];
 
 const SUPER_ADMINS = [
@@ -1603,7 +1602,6 @@ export const MainMenu: React.FC = () => {
     if (!localUser) return [];
     return MENU_ITEMS.filter(item => {
       if (item.id === 'calibration-stats') return isJefe || isSuperAdmin;
-      if (item.id === 'vencimientos') return isJefe || isCalidad || isSuperAdmin;
       if (['programa-calibracion', 'control-prestamos'].includes(item.id)) return isJefe || isCalidad || isSuperAdmin;
       if (item.id === 'control-vacaciones-rh') return isAdministrativo || isSuperAdmin;
       if (item.id === 'gestion-usuarios') {

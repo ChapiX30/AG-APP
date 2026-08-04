@@ -38,7 +38,6 @@ const NormasScreen = lazy(() => import('./NormasScreen'));
 const CalibrationStatsScreen = lazy(() => import('./CalibrationStatsScreen'));
 const InventoryProScreen = lazy(() => import('./InventoryProScreen'));
 const CalendarScreen = lazy(() => import('./CalendarScreen'));
-const VencimientosScreen = lazy(() => import('./VencimientosScreen').then(module => ({ default: module.VencimientosScreen })));
 const EntradaSalidaScreen = lazy(() => import('./EntradaSalidaScreen').then(module => ({ default: module.EntradaSalidaScreen })));
 
 // --- NUEVA PANTALLA MODO TV ---
@@ -191,7 +190,6 @@ const renderScreen = (screen: string, user: any) => {
     case 'normas': return <NormasScreen />;
     case 'check-list': return <InventoryProScreen />;
     case 'friday': return <FridayScreen />;
-    case 'vencimientos': return <VencimientosScreen />;
     case 'entrada-salida': return <EntradaSalidaScreen />;
     case 'formatos': return <FormatosScreen />;
     case 'permisos-trabajo': return <PermisosTrabajoScreen />;

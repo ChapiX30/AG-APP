@@ -21,10 +21,10 @@ Si sale `{}` vacío, **hay que configurar Gmail** (pasos abajo).
 
 ```bash
 firebase functions:config:set gmail.user="eseagmaster@gmail.com" gmail.pass="TU_CONTRASEÑA_DE_APLICACION"
-firebase deploy --only functions:procesarAlertaVencimiento,functions:agbotMonitorDiario
+firebase deploy --only functions:procesarAlertaHojaServicio,functions:agbotMonitorDiario
 ```
 
-3. Vuelve a pulsar **Notificar** en la app. El toast debe cambiar a **Correo enviado**.
+3. Vuelve a probar el envío de correo desde Hoja de Servicio. El toast debe cambiar a **Correo enviado**.
 
 ## Emulador local (opcional)
 

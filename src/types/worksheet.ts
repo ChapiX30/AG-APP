@@ -13,6 +13,8 @@ export interface WorksheetState {
   numeroSerie: string;
   magnitud: string;
   unidad: string[];
+  /** Canales por unidad eléctrica, p. ej. { VDC: 2, VAC: 1 }. */
+  canalesPorUnidad: Record<string, number>;
   alcance: string;
   resolucion: string;
   medicionPatron: string;

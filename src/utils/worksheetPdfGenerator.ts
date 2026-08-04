@@ -5,6 +5,11 @@ import logoAg from "../assets/lab_logo.png";
 import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
 import { toWorksheetMagnitud } from "./magnitudWorksheet";
+import {
+  formatCanalesPorUnidadPdfLabel,
+  hasMultiCanal,
+  normalizeCanalesPorUnidad,
+} from "./electricalChannels";
 
 /** Fields consumed by generateTemplatePDF (shared with WorkSheetScreen). */
 export interface WorksheetPdfFormData {
@@ -22,6 +27,8 @@ export interface WorksheetPdfFormData {
   numeroSerie: string;
   magnitud: string;
   unidad: string[];
+  /** Canales por unidad eléctrica, p. ej. { VDC: 2 }. */
+  canalesPorUnidad?: Record<string, number>;
   alcance: string;
   resolucion: string;
   medicionPatron: string;
@@ -98,6 +105,11 @@ export const firestoreToWorksheetPdfForm = (
     numeroSerie,
     magnitud: toWorksheetMagnitud(String(data.magnitud || "")),
     unidad: normalizeUnidad(data.unidad),
+    canalesPorUnidad: normalizeCanalesPorUnidad(
+      normalizeUnidad(data.unidad),
+      data.canalesPorUnidad,
+      data.numCanales
+    ),
     alcance: String(data.alcance || "").trim(),
     resolucion: String(data.resolucion || "").trim(),
     medicionPatron: String(data.medicionPatron || "").trim(),
@@ -314,6 +326,17 @@ export const generateTemplatePDF = (
       l2: "Unidad:",
       v2: Array.isArray(formData.unidad) ? formData.unidad.join(", ") : formData.unidad,
     },
+    ...(formData.magnitud === "Electrica" &&
+    hasMultiCanal(formData.unidad || [], formData.canalesPorUnidad)
+      ? [
+          {
+            l: "Canales:",
+            v: formatCanalesPorUnidadPdfLabel(formData.unidad || [], formData.canalesPorUnidad),
+            l2: "",
+            v2: "",
+          },
+        ]
+      : []),
     { l: "Alcance:", v: formData.alcance, l2: "Resolución:", v2: formData.resolucion },
     { l: "Frecuencia:", v: formData.frecuenciaCalibracion, l2: "Recepción:", v2: formData.fechaRecepcion || "N/A" },
     {

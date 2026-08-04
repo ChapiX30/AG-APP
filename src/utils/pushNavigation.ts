@@ -5,7 +5,6 @@ export function screenFromPushUrl(url?: string): string | null {
   const allowed = new Set([
     'calendario',
     'drive',
-    'vencimientos',
     'solicitud-vacaciones',
   ]);
   return allowed.has(path) ? path : null;

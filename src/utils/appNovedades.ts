@@ -25,7 +25,6 @@ export const APP_SCREEN_OPTIONS: { id: string; label: string }[] = [
   { id: 'permisos-trabajo', label: 'Permisos TR' },
   { id: 'hoja-servicio', label: 'Hoja de Servicio' },
   { id: 'programa-calibracion', label: 'Patrones' },
-  { id: 'vencimientos', label: 'Vencimientos' },
   { id: 'entrada-salida', label: 'Hoja de Salida' },
 ];
 

@@ -32,7 +32,7 @@ firebase functions:config:set "gmail.user=$email" "gmail.pass=$plain"
 
 Write-Host ""
 Write-Host "Desplegando functions de correo..." -ForegroundColor Green
-firebase deploy --only "functions:procesarAlertaVencimiento,functions:agbotMonitorDiario"
+firebase deploy --only "functions:procesarAlertaHojaServicio,functions:agbotMonitorDiario"
 
 Write-Host ""
-Write-Host "Listo. Prueba Notificar en la app." -ForegroundColor Green
+Write-Host "Listo. Prueba el envío de correo desde Hoja de Servicio." -ForegroundColor Green

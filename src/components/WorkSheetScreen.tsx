@@ -33,6 +33,16 @@ import {
 } from "../utils/epsonPrinterLabels";
 import { extractMagnitudFromConsecutivo, toWorksheetMagnitud, WORKSHEET_MAGNITUDES } from "../utils/magnitudWorksheet";
 import {
+  buildElectricalMeasurementTexts,
+  canalesDeUnidad,
+  listElectricalSections,
+  MAX_CANALES_ELECTRICOS,
+  normalizeCanalesPorUnidad,
+  normalizeNumCanales,
+  parseElectricalValuesFromText,
+  type CanalesPorUnidad,
+} from "../utils/electricalChannels";
+import {
   saveWorksheetDraft,
   loadWorksheetDraft,
   clearWorksheetDraft,
@@ -810,7 +820,7 @@ type ClienteRecord = {
 type MasterRecord = { A: string; B: string; C: string; D: string; E: string; };
 
 type WorksheetAction =
-  | { type: 'SET_FIELD'; field: keyof WorksheetState; payload: string | string[] | number | boolean }
+  | { type: 'SET_FIELD'; field: keyof WorksheetState; payload: string | string[] | number | boolean | Record<string, number> }
   | { type: 'SET_USER_NAME'; payload: string }
   | { type: 'SET_CONSECUTIVE'; consecutive: string; magnitud: string }
   | { type: 'SET_MAGNITUD'; payload: string }
@@ -1200,6 +1210,7 @@ const WorksheetDateInput: React.FC<{
 const initialState: WorksheetState = {
   lugarCalibracion: "", frecuenciaCalibracion: "", fecha: "", fechaRecepcion: "", certificado: "",
   nombre: "", cliente: "", id: "", equipo: "", marca: "", modelo: "", numeroSerie: "", magnitud: "", unidad: [],
+  canalesPorUnidad: {},
   alcance: "", resolucion: "", medicionPatron: "", medicionInstrumento: "", excentricidad: "", linealidad: "",
   repetibilidad: "", notas: "", tempAmbiente: "", humedadRelativa: "", idBlocked: false, idErrorMessage: "",
   permitirExcepcion: false, isMasterData: false, fieldsLocked: false,
@@ -1208,7 +1219,16 @@ const initialState: WorksheetState = {
 
 // Función para inicializar el estado incluyendo la fecha actual si no existe
 const initWorksheet = (initial: WorksheetState): WorksheetState => {
-  return { ...initial, fecha: initial.fecha || getLocalISODate() };
+  const legacy = (initial as WorksheetState & { numCanales?: number }).numCanales;
+  return {
+    ...initial,
+    fecha: initial.fecha || getLocalISODate(),
+    canalesPorUnidad: normalizeCanalesPorUnidad(
+      initial.unidad || [],
+      initial.canalesPorUnidad,
+      legacy
+    ),
+  };
 };
 
 function worksheetReducer(state: WorksheetState, action: WorksheetAction): WorksheetState {
@@ -1222,13 +1242,20 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
         ...state,
         certificado: action.consecutive,
         magnitud,
-        ...(nextMag && nextMag !== state.magnitud ? { unidad: [] } : {}),
+        ...(nextMag && nextMag !== state.magnitud
+          ? { unidad: [], canalesPorUnidad: {} }
+          : {}),
       };
     }
     case 'SET_MAGNITUD': {
       const nextMag = toWorksheetMagnitud(action.payload);
       if (!nextMag || nextMag === state.magnitud) return state;
-      return { ...state, magnitud: nextMag, unidad: [] };
+      return {
+        ...state,
+        magnitud: nextMag,
+        unidad: [],
+        canalesPorUnidad: {},
+      };
     }
     case 'SET_CLIENTE':
       const cel = (action.payload || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("celestica");
@@ -1251,7 +1278,19 @@ function worksheetReducer(state: WorksheetState, action: WorksheetAction): Works
     case 'SET_ID_BLOCKED': return { ...state, idBlocked: true, idErrorMessage: action.message };
     case 'CLEAR_ID_BLOCK': return { ...state, idBlocked: false, idErrorMessage: "" };
     case 'SET_EXCEPCION': return { ...state, permitirExcepcion: action.payload };
-    case 'RESTORE_BACKUP': return { ...action.payload, magnitud: toWorksheetMagnitud(action.payload.magnitud || "") };
+    case 'RESTORE_BACKUP': {
+      const payload = action.payload;
+      const legacy = (payload as WorksheetState & { numCanales?: number }).numCanales;
+      return {
+        ...payload,
+        magnitud: toWorksheetMagnitud(payload.magnitud || ""),
+        canalesPorUnidad: normalizeCanalesPorUnidad(
+          payload.unidad || [],
+          payload.canalesPorUnidad,
+          legacy
+        ),
+      };
+    }
     case 'CHANGE_CONDICION': {
       return { ...state, condicionEquipo: action.condicion };
     }
@@ -1397,57 +1436,90 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
   useEffect(() => {
     if (state.magnitud === "Electrica" && state.unidad.length > 0) {
-        const newValues: Record<string, { patron: string, instrumento: string }> = {};
-        const extractValue = (fullText: string, unit: string) => {
-            if (!fullText) return "";
-            const lines = fullText.split('\n');
-            let inSection = false;
-            let extracted = '';
-            for (const line of lines) {
-              if (line.trim().startsWith(`${unit}:`)) {
-                inSection = true;
-                continue;
-              }
-              if (inSection) {
-                if (line.trim() === '' || /^[a-zA-Z0-9]+:/.test(line.trim())) break;
-                extracted += line + '\n';
-              }
-            }
-            return extracted.trim();
-        };
-        state.unidad.forEach(u => {
-            newValues[u] = {
-                patron: extractValue(state.medicionPatron, u),
-                instrumento: extractValue(state.medicionInstrumento, u)
-            };
-        });
-        setElectricalValues(newValues);
+      const canales = normalizeCanalesPorUnidad(
+        state.unidad,
+        state.canalesPorUnidad
+      );
+      setElectricalValues(
+        parseElectricalValuesFromText(
+          state.unidad,
+          canales,
+          state.medicionPatron,
+          state.medicionInstrumento
+        )
+      );
     }
-  }, [state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]); 
+    // canalesPorUnidad se migra en handleCanalesUnidadChange
+  }, [state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]);
 
   const syncElectricalToGlobalState = useCallback(() => {
     if (state.magnitud !== "Electrica") return;
-    let textoPatron = "";
-    let textoInstrumento = "";
-    state.unidad.forEach(u => {
-        const vals = electricalValues[u] || { patron: "", instrumento: "" };
-        if (vals.patron) textoPatron += `${u}:\n${vals.patron}\n\n`;
-        if (vals.instrumento) textoInstrumento += `${u}:\n${vals.instrumento}\n\n`;
-    });
-    if (state.medicionPatron !== textoPatron.trim()) {
-        dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: textoPatron.trim() });
+    const canales = normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad);
+    const texts = buildElectricalMeasurementTexts(state.unidad, canales, electricalValues);
+    if (state.medicionPatron !== texts.medicionPatron) {
+      dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: texts.medicionPatron });
     }
-    if (state.medicionInstrumento !== textoInstrumento.trim()) {
-        dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: textoInstrumento.trim() });
+    if (state.medicionInstrumento !== texts.medicionInstrumento) {
+      dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: texts.medicionInstrumento });
     }
-  }, [electricalValues, state.magnitud, state.unidad, state.medicionPatron, state.medicionInstrumento]);
+  }, [electricalValues, state.magnitud, state.unidad, state.canalesPorUnidad, state.medicionPatron, state.medicionInstrumento]);
 
-  const handleLocalElectricChange = (unit: string, type: 'patron' | 'instrumento', value: string) => {
+  const handleLocalElectricChange = (key: string, type: 'patron' | 'instrumento', value: string) => {
     setElectricalValues(prev => ({
         ...prev,
-        [unit]: { ...prev[unit], [type]: value }
+        [key]: { ...prev[key], [type]: value }
     }));
   };
+
+  const handleCanalesUnidadChange = (unit: string, raw: number) => {
+    const next = normalizeNumCanales(raw);
+    const prev = canalesDeUnidad(state.canalesPorUnidad, unit);
+    if (next === prev) return;
+
+    const nextMap: CanalesPorUnidad = {
+      ...normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad),
+      [unit]: next,
+    };
+
+    const migrated: Record<string, { patron: string; instrumento: string }> = { ...electricalValues };
+    // Limpiar claves viejas de esta unidad y migrar
+    for (const key of Object.keys(migrated)) {
+      if (key === unit || key.startsWith(`${unit}||`)) delete migrated[key];
+    }
+    for (let i = 0; i < next; i++) {
+      const newKey = next <= 1 ? unit : `${unit}||${i + 1}`;
+      if (prev <= 1) {
+        migrated[newKey] = i === 0
+          ? (electricalValues[unit] || { patron: "", instrumento: "" })
+          : { patron: "", instrumento: "" };
+      } else if (next <= 1) {
+        migrated[unit] = electricalValues[`${unit}||1`] || electricalValues[unit] || { patron: "", instrumento: "" };
+        break;
+      } else {
+        const oldKey = `${unit}||${i + 1}`;
+        // también intentar legacy letter keys
+        const legacyKey = `${unit}||${String.fromCharCode(65 + i)}`;
+        migrated[newKey] = electricalValues[oldKey] || electricalValues[legacyKey] || { patron: "", instrumento: "" };
+      }
+    }
+
+    setElectricalValues(migrated);
+    const texts = buildElectricalMeasurementTexts(state.unidad, nextMap, migrated);
+    dispatch({ type: 'SET_FIELD', field: 'canalesPorUnidad', payload: nextMap });
+    dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: texts.medicionPatron });
+    dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: texts.medicionInstrumento });
+  };
+
+  const electricalSections = useMemo(
+    () =>
+      state.magnitud === "Electrica"
+        ? listElectricalSections(
+            state.unidad,
+            normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad)
+          )
+        : [],
+    [state.magnitud, state.unidad, state.canalesPorUnidad]
+  );
 
   useEffect(() => {
       if(!state.magnitud || (!state.tempAmbiente && !state.humedadRelativa)) {
@@ -1755,9 +1827,17 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       if (tipoElectrica === "AC") unidadFinal = `${unidadBase}AC`;
     }
     const yaExiste = state.unidad.includes(unidadFinal);
-    let nuevasUnidades = [];
-    if (yaExiste) { nuevasUnidades = state.unidad.filter(u => u !== unidadFinal); } else { nuevasUnidades = [...state.unidad, unidadFinal]; }
+    let nuevasUnidades: string[] = [];
+    let nextCanales = { ...normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad) };
+    if (yaExiste) {
+      nuevasUnidades = state.unidad.filter(u => u !== unidadFinal);
+      delete nextCanales[unidadFinal];
+    } else {
+      nuevasUnidades = [...state.unidad, unidadFinal];
+      nextCanales[unidadFinal] = 1;
+    }
     dispatch({ type: 'SET_FIELD', field: 'unidad', payload: nuevasUnidades });
+    dispatch({ type: 'SET_FIELD', field: 'canalesPorUnidad', payload: nextCanales });
     if(validationErrors.unidad && nuevasUnidades.length > 0) { setValidationErrors({...validationErrors, unidad: false}); }
   };
 
@@ -1827,11 +1907,15 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         { campo: "repetibilidad", valor: state.repetibilidad, nombre: "Repetibilidad" }
       );
     } else if (state.magnitud === "Electrica") {
-      state.unidad.forEach((u) => {
-        const vals = electricalValues[u] || { patron: "", instrumento: "" };
+      const sections = listElectricalSections(
+        state.unidad,
+        normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad)
+      );
+      sections.forEach((s) => {
+        const vals = electricalValues[s.key] || { patron: "", instrumento: "" };
         camposAValidar.push(
-          { campo: `patron_${u}`, valor: vals.patron, nombre: `Patrón (${u})` },
-          { campo: `instrumento_${u}`, valor: vals.instrumento, nombre: `Instrumento (${u})` }
+          { campo: `patron_${s.key}`, valor: vals.patron, nombre: `Patrón (${s.label})` },
+          { campo: `instrumento_${s.key}`, valor: vals.instrumento, nombre: `Instrumento (${s.label})` }
         );
       });
     } else {
@@ -1862,11 +1946,14 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         advertenciaNorma = `Para MASA (Linealidad), se recomiendan mínimo 3 puntos. Detectados: ${lineasLinealidad.length}.`;
       }
     } else if (state.magnitud === "Electrica") {
-      for (const u of state.unidad) {
-        const vals = electricalValues[u];
+      for (const s of listElectricalSections(
+        state.unidad,
+        normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad)
+      )) {
+        const vals = electricalValues[s.key];
         const lineas = (vals?.patron || "").split("\n").filter((l) => /\d/.test(l));
         if (lineas.length < 3) {
-          advertenciaNorma = `Para ELÉCTRICA (${u}), se recomiendan mínimo 3 puntos de medición.`;
+          advertenciaNorma = `Para ELÉCTRICA (${s.label}), se recomiendan mínimo 3 puntos de medición.`;
           break;
         }
       }
@@ -2324,8 +2411,45 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                           })}
                         </div>
                         {state.unidad.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                            Seleccionado: <span className="font-medium text-blue-600">{state.unidad.join(", ")}</span>
+                          <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                            <p className="text-xs text-gray-500">
+                              Seleccionado: <span className="font-medium text-blue-600">{state.unidad.join(", ")}</span>
+                            </p>
+                            {state.unidad.map((u) => {
+                              const nCanales = canalesDeUnidad(state.canalesPorUnidad, u);
+                              return (
+                                <div
+                                  key={`canales-${u}`}
+                                  className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                    <span className="text-sm font-bold text-amber-950">{u}</span>
+                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                                      Canales
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {Array.from({ length: MAX_CANALES_ELECTRICOS }, (_, i) => i + 1).map((n) => {
+                                      const active = nCanales === n;
+                                      return (
+                                        <button
+                                          key={`${u}-ch-${n}`}
+                                          type="button"
+                                          onClick={() => handleCanalesUnidadChange(u, n)}
+                                          className={`min-w-[2.25rem] px-2.5 py-1.5 rounded-md text-xs font-bold border transition-all ${
+                                            active
+                                              ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                                              : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
+                                          }`}
+                                        >
+                                          {n}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2589,33 +2713,42 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                   </div>
                 ) : state.magnitud === "Electrica" && state.unidad.length > 0 ? (
                   <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
                         <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                             <Calculator className="w-4 h-4 text-blue-500"/> 
-                            Mediciones por Unidad Eléctrica (Scroll ilimitado)
+                            Mediciones por Unidad Eléctrica
                         </h3>
                     </div>
                 
                     <div className="grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                        <div className="col-span-2 flex items-center">Unidad</div>
+                        <div className="col-span-2 flex items-center">Unidad / Canal</div>
                         <div className="col-span-5 pl-1">Medición Patrón</div>
                         <div className="col-span-5 pl-1">Medición Instrumento</div>
                     </div>
                 
                     <div className="space-y-4">
-                    {state.unidad.map((u) => (
-                        <div key={u} className="grid grid-cols-12 gap-6 items-start">
+                    {electricalSections.map((s) => (
+                        <div key={s.key} className="grid grid-cols-12 gap-6 items-start">
                             <div className="col-span-2 pt-2">
-                                <div className="text-sm font-bold text-blue-800 bg-blue-100 py-3 px-2 rounded-lg flex items-center justify-center text-center break-words shadow-sm border border-blue-200">
-                                    {u}
+                                <div className={`text-sm font-bold py-3 px-2 rounded-lg flex flex-col items-center justify-center text-center break-words shadow-sm border ${
+                                  s.numCanales > 1
+                                    ? "text-amber-900 bg-amber-50 border-amber-200"
+                                    : "text-blue-800 bg-blue-100 border-blue-200"
+                                }`}>
+                                    <span>{s.unit}</span>
+                                    {s.numCanales > 1 && (
+                                      <span className="text-[11px] font-extrabold mt-1 tracking-wide">
+                                        Canal {s.canalIndex + 1}
+                                      </span>
+                                    )}
                                 </div>
                             </div>
                 
                             <div className="col-span-5">
                                 <textarea 
                                   placeholder="Ej: 10.00&#10;10.01&#10;10.02" 
-                                  value={electricalValues[u]?.patron || ""}
-                                  onChange={(e) => handleLocalElectricChange(u, 'patron', e.target.value)}
+                                  value={electricalValues[s.key]?.patron || ""}
+                                  onChange={(e) => handleLocalElectricChange(s.key, 'patron', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
                                   className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono font-semibold leading-relaxed text-gray-900 bg-white" 
@@ -2625,8 +2758,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                             <div className="col-span-5">
                                 <textarea 
                                   placeholder="Ej: 9.99&#10;10.00&#10;10.01"
-                                  value={electricalValues[u]?.instrumento || ""}
-                                  onChange={(e) => handleLocalElectricChange(u, 'instrumento', e.target.value)}
+                                  value={electricalValues[s.key]?.instrumento || ""}
+                                  onChange={(e) => handleLocalElectricChange(s.key, 'instrumento', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
                                   className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono font-semibold leading-relaxed text-gray-900 bg-white" 

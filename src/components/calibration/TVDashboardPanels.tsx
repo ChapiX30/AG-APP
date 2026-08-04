@@ -689,6 +689,20 @@ const ServiceColumn: React.FC<{
   children: React.ReactNode;
   className?: string;
 }> = ({ title, count, accent, emptyMessage, children, className }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const segmentRef = useRef<HTMLDivElement>(null);
+  const [scrollPaused, setScrollPaused] = useState(false);
+  const [scrollMode, setScrollMode] = useState<TvScrollState>("idle");
+  const canAutoScroll = count > 0;
+
+  useTvKioskAutoScroll(scrollRef, canAutoScroll, scrollPaused, {
+    force: true,
+    onStateChange: setScrollMode,
+    pxPerSec: 14,
+    seamless: canAutoScroll,
+    segmentRef,
+  });
+
   const accentStyles =
     accent === "purple"
       ? {
@@ -729,11 +743,29 @@ const ServiceColumn: React.FC<{
           {count}
         </span>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-2 py-2 space-y-2">
+      <div
+        ref={scrollRef}
+        data-tv-scroll="viewport"
+        data-tv-scroll-mode={scrollMode}
+        className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-2 py-2 tv-kiosk-scroll"
+        onMouseEnter={() => setScrollPaused(true)}
+        onMouseLeave={() => setScrollPaused(false)}
+        onFocus={() => setScrollPaused(true)}
+        onBlur={() => setScrollPaused(false)}
+      >
         {count === 0 ? (
           <p className="text-xs text-slate-500 italic text-center py-6">{emptyMessage}</p>
         ) : (
-          children
+          <div data-tv-scroll="track" className="space-y-0">
+            <div ref={segmentRef} data-tv-scroll="segment" className="space-y-2 pb-1">
+              {children}
+            </div>
+            {canAutoScroll && (scrollMode === "scrolling" || scrollMode === "paused") && (
+              <div aria-hidden className="space-y-2 pt-1 pb-1">
+                {children}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

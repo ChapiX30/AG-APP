@@ -3,10 +3,10 @@ import toast from 'react-hot-toast';
 import { db } from './firebase';
 
 /**
- * Escucha alertasVencimiento | alertasHojaServicio hasta enviado/error.
+ * Escucha alertasHojaServicio hasta enviado/error.
  */
 export function watchAlertaCorreo(
-  coleccion: 'alertasVencimiento' | 'alertasHojaServicio',
+  coleccion: 'alertasHojaServicio',
   alertId: string,
   options?: { loadingMessage?: string; successMessage?: string }
 ): () => void {
