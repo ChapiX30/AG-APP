@@ -39,6 +39,7 @@ import {
   isMetrologyRole,
   formatTecnicoShortName,
   TecnicoPendiente,
+  ServicioCertProgress,
 } from "../../utils/calibrationShared.tsx";
 
 type CalendarValue = Date | [Date | null, Date | null] | null;
@@ -502,7 +503,8 @@ const ServicioTvCard: React.FC<{
   usuarios: UsuarioRow[];
   dateBadge?: string;
   showDateBadge?: boolean;
-}> = ({ service, usuarios, dateBadge, showDateBadge }) => {
+  certProgress?: ServicioCertProgress;
+}> = ({ service, usuarios, dateBadge, showDateBadge, certProgress }) => {
   const assignees = useMemo(
     () => resolveServicioAssignees(service.personas, usuarios),
     [service.personas, usuarios]
@@ -528,6 +530,14 @@ const ServicioTvCard: React.FC<{
   const tipoLabel = service.tipo
     ? service.tipo.charAt(0).toUpperCase() + service.tipo.slice(1)
     : null;
+
+  const totalEquipos = certProgress?.total ?? 0;
+  const reviewedEquipos = certProgress?.reviewed ?? 0;
+  const showCertCounter =
+    totalEquipos > 0 ||
+    service.estado === "en_proceso" ||
+    service.estado === "finalizado";
+  const certDone = totalEquipos > 0 && reviewedEquipos >= totalEquipos;
 
   return (
     <article
@@ -577,6 +587,35 @@ const ServicioTvCard: React.FC<{
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
                     {dateBadge}
                   </span>
+                )}
+                {showCertCounter && (
+                  <div
+                    className={clsx(
+                      "text-center px-2.5 py-1 rounded-lg border min-w-[3.25rem]",
+                      certDone
+                        ? "bg-emerald-500/15 border-emerald-400/40"
+                        : service.estado === "finalizado"
+                          ? "bg-amber-500/15 border-amber-400/40"
+                          : "bg-slate-800/90 border-white/10"
+                    )}
+                    title={`${totalEquipos} equipos · ${reviewedEquipos} revisados por calidad`}
+                  >
+                    <p
+                      className={clsx(
+                        "text-base font-black tabular-nums leading-none",
+                        certDone
+                          ? "text-emerald-300"
+                          : service.estado === "finalizado"
+                            ? "text-amber-200"
+                            : "text-white"
+                      )}
+                    >
+                      {totalEquipos}/{reviewedEquipos}
+                    </p>
+                    <p className="text-[8px] uppercase tracking-wider text-slate-500 font-bold mt-0.5">
+                      cert.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -636,17 +675,20 @@ const ServicioTvCard: React.FC<{
 interface ServicesDashboardPanelProps {
   todayServices: ServicioRow[];
   programmedServices: ServicioRow[];
+  finalizedServices: ServicioRow[];
   usuarios: UsuarioRow[];
   todayKey: string;
+  certProgressByService?: Record<string, ServicioCertProgress>;
 }
 
 const ServiceColumn: React.FC<{
   title: string;
   count: number;
-  accent: "purple" | "indigo";
+  accent: "purple" | "indigo" | "emerald";
   emptyMessage: string;
   children: React.ReactNode;
-}> = ({ title, count, accent, emptyMessage, children }) => {
+  className?: string;
+}> = ({ title, count, accent, emptyMessage, children, className }) => {
   const accentStyles =
     accent === "purple"
       ? {
@@ -654,14 +696,25 @@ const ServiceColumn: React.FC<{
           badge: "bg-purple-500/25 text-purple-100 border-purple-400/30",
           dot: "bg-purple-400",
         }
-      : {
-          header: "from-indigo-500/15 to-transparent border-indigo-500/20 text-indigo-200",
-          badge: "bg-indigo-500/25 text-indigo-100 border-indigo-400/30",
-          dot: "bg-indigo-400",
-        };
+      : accent === "emerald"
+        ? {
+            header: "from-emerald-500/15 to-transparent border-emerald-500/20 text-emerald-200",
+            badge: "bg-emerald-500/25 text-emerald-100 border-emerald-400/30",
+            dot: "bg-emerald-400",
+          }
+        : {
+            header: "from-indigo-500/15 to-transparent border-indigo-500/20 text-indigo-200",
+            badge: "bg-indigo-500/25 text-indigo-100 border-indigo-400/30",
+            dot: "bg-indigo-400",
+          };
 
   return (
-    <div className="flex flex-col min-h-0 h-full rounded-xl border border-white/[0.06] bg-slate-900/40 overflow-hidden">
+    <div
+      className={clsx(
+        "flex flex-col min-h-0 rounded-xl border border-white/[0.06] bg-slate-900/40 overflow-hidden",
+        className ?? "h-full"
+      )}
+    >
       <div
         className={clsx(
           "shrink-0 px-3 py-2 border-b bg-gradient-to-r flex items-center justify-between",
@@ -690,10 +743,13 @@ const ServiceColumn: React.FC<{
 export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
   todayServices,
   programmedServices,
+  finalizedServices,
   usuarios,
   todayKey,
+  certProgressByService = {},
 }) => {
-  const hasAny = todayServices.length > 0 || programmedServices.length > 0;
+  const hasAny =
+    todayServices.length > 0 || programmedServices.length > 0 || finalizedServices.length > 0;
 
   const usuariosMetrologia = useMemo(
     () => usuarios.filter((u) => isMetrologyRole(u)),
@@ -711,15 +767,21 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
           </div>
           <div>
             <h3 className="text-base lg:text-lg font-bold text-white tracking-tight">Servicios</h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">Operación de campo · hoy y agenda</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              Operación · finalizados con avance de calidad
+            </p>
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <div className="text-center px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+          <div className="text-center px-2.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
             <p className="text-lg font-black text-purple-200 leading-none">{todayServices.length}</p>
             <p className="text-[9px] uppercase tracking-wider text-purple-400/80 font-bold mt-0.5">Hoy</p>
           </div>
-          <div className="text-center px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+          <div className="text-center px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+            <p className="text-lg font-black text-emerald-200 leading-none">{finalizedServices.length}</p>
+            <p className="text-[9px] uppercase tracking-wider text-emerald-400/80 font-bold mt-0.5">Fin.</p>
+          </div>
+          <div className="text-center px-2.5 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
             <p className="text-lg font-black text-indigo-200 leading-none">{programmedServices.length}</p>
             <p className="text-[9px] uppercase tracking-wider text-indigo-400/80 font-bold mt-0.5">Prog.</p>
           </div>
@@ -729,7 +791,7 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
       {!hasAny ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-500 gap-2">
           <Briefcase className="w-10 h-10 text-slate-600" />
-          <p className="text-sm font-medium">Sin servicios para hoy ni programados</p>
+          <p className="text-sm font-medium">Sin servicios para hoy, finalizados ni programados</p>
         </div>
       ) : (
         <div className="flex-1 min-h-0 grid grid-cols-2 gap-2.5 p-2.5">
@@ -740,29 +802,60 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
             emptyMessage="Ningún servicio para hoy"
           >
             {todayServices.map((s) => (
-              <ServicioTvCard key={s.id} service={s} usuarios={usuariosMetrologia} />
+              <ServicioTvCard
+                key={s.id}
+                service={s}
+                usuarios={usuariosMetrologia}
+                certProgress={certProgressByService[s.id]}
+              />
             ))}
           </ServiceColumn>
 
-          <ServiceColumn
-            title="Programados"
-            count={programmedServices.length}
-            accent="indigo"
-            emptyMessage="Sin fechas futuras"
-          >
-            {programmedServices.map((s) => {
-              const dateKey = normalizeServicioDateKey(s.fecha);
-              return (
-                <ServicioTvCard
-                  key={s.id}
-                  service={s}
-                  usuarios={usuariosMetrologia}
-                  showDateBadge
-                  dateBadge={formatServicioScheduleBadge(dateKey, todayKey)}
-                />
-              );
-            })}
-          </ServiceColumn>
+          <div className="min-h-0 h-full flex flex-col gap-2.5">
+            <ServiceColumn
+              title="Finalizados"
+              count={finalizedServices.length}
+              accent="emerald"
+              emptyMessage="Sin finalizados pendientes de calidad"
+              className="min-h-0 flex-[1.35]"
+            >
+              {finalizedServices.map((s) => {
+                const dateKey = normalizeServicioDateKey(s.fecha);
+                return (
+                  <ServicioTvCard
+                    key={s.id}
+                    service={s}
+                    usuarios={usuariosMetrologia}
+                    showDateBadge
+                    dateBadge={formatDateKeyDisplay(dateKey)}
+                    certProgress={certProgressByService[s.id]}
+                  />
+                );
+              })}
+            </ServiceColumn>
+
+            <ServiceColumn
+              title="Programados"
+              count={programmedServices.length}
+              accent="indigo"
+              emptyMessage="Sin fechas futuras"
+              className="min-h-0 flex-1"
+            >
+              {programmedServices.map((s) => {
+                const dateKey = normalizeServicioDateKey(s.fecha);
+                return (
+                  <ServicioTvCard
+                    key={s.id}
+                    service={s}
+                    usuarios={usuariosMetrologia}
+                    showDateBadge
+                    dateBadge={formatServicioScheduleBadge(dateKey, todayKey)}
+                    certProgress={certProgressByService[s.id]}
+                  />
+                );
+              })}
+            </ServiceColumn>
+          </div>
         </div>
       )}
     </div>

@@ -23,6 +23,10 @@ import {
   isInLabBacklog,
   isRowInYear,
   isVisibleServicioForDashboard,
+  isFinalizadoEstado,
+  normalizeEstadoKey,
+  buildServicioCertProgressMap,
+  ServicioCertProgress,
 } from "../utils/calibrationShared.tsx";
 
 export type MetrologoMonthStat = {
@@ -34,6 +38,13 @@ export type MetrologoMonthStat = {
 
 /** Días hacia atrás que el TV considera "deuda accionable" del técnico. */
 export const DEUDA_TECNICO_DIAS = 45;
+
+const HOY_ESTADO_ORDER: Record<string, number> = {
+  enproceso: 0,
+  programado: 1,
+  finalizado: 2,
+  completado: 2,
+};
 
 /**
  * Ventana de datos del dashboard: año actual y anterior.
@@ -101,6 +112,8 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     companyArrivalsByArea,
     todayServices,
     programmedServices,
+    finalizedServices,
+    servicioCertProgress,
     labPending,
     activityDateKeys,
     totalArrivedToday,
@@ -121,10 +134,16 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     });
 
     const dashboardServicios = servicios.filter(isVisibleServicioForDashboard);
+    const monthPrefix = todayKey.slice(0, 7); // yyyy-MM
 
     const todayServices = dashboardServicios
       .filter((s) => normalizeServicioDateKey(s.fecha) === todayKey)
-      .sort((a, b) => (a.horaInicio || "").localeCompare(b.horaInicio || ""));
+      .sort((a, b) => {
+        const oa = HOY_ESTADO_ORDER[normalizeEstadoKey(a.estado)] ?? 9;
+        const ob = HOY_ESTADO_ORDER[normalizeEstadoKey(b.estado)] ?? 9;
+        if (oa !== ob) return oa - ob;
+        return (a.horaInicio || "").localeCompare(b.horaInicio || "");
+      });
 
     const programmedServices = dashboardServicios
       .filter((s) => normalizeServicioDateKey(s.fecha) > todayKey)
@@ -132,6 +151,35 @@ export function useCalibrationDashboardData(selectedDate: Date) {
         const fa = normalizeServicioDateKey(a.fecha);
         const fb = normalizeServicioDateKey(b.fecha);
         if (fa !== fb) return fa.localeCompare(fb);
+        return (a.horaInicio || "").localeCompare(b.horaInicio || "");
+      });
+
+    const finalizedCandidates = dashboardServicios.filter((s) => {
+      if (!isFinalizadoEstado(s.estado, s.estatus)) return false;
+      const fk = normalizeServicioDateKey(s.fecha);
+      if (!fk || fk > todayKey) return false;
+      // Solo finalizados del mes en curso; los de hoy ya están en "Hoy".
+      if (!fk.startsWith(monthPrefix)) return false;
+      return fk < todayKey;
+    });
+
+    const servicioCertProgress: Record<string, ServicioCertProgress> = buildServicioCertProgressMap(
+      [...todayServices, ...programmedServices, ...finalizedCandidates],
+      hojasDeduped,
+      { deduped: true }
+    );
+
+    // Siguen visibles hasta que Calidad complete el conteo (o si aún no hay hojas).
+    const finalizedServices = finalizedCandidates
+      .filter((s) => {
+        const p = servicioCertProgress[s.id] || { total: 0, reviewed: 0 };
+        if (p.total <= 0) return true;
+        return p.reviewed < p.total;
+      })
+      .sort((a, b) => {
+        const fa = normalizeServicioDateKey(a.fecha);
+        const fb = normalizeServicioDateKey(b.fecha);
+        if (fa !== fb) return fb.localeCompare(fa);
         return (a.horaInicio || "").localeCompare(b.horaInicio || "");
       });
 
@@ -213,6 +261,8 @@ export function useCalibrationDashboardData(selectedDate: Date) {
       companyArrivalsByArea,
       todayServices,
       programmedServices,
+      finalizedServices,
+      servicioCertProgress,
       labPending,
       activityDateKeys,
       totalArrivedToday,
@@ -234,6 +284,8 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     companyArrivalsByArea,
     todayServices,
     programmedServices,
+    finalizedServices,
+    servicioCertProgress,
     labPending,
     activityDateKeys,
     totalArrivedToday,

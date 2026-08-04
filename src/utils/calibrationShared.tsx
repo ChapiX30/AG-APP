@@ -53,6 +53,7 @@ export interface HojaTrabajoRow {
   id: string;
   docId?: string;
   cliente?: string;
+  clienteId?: string;
   equipo?: string;
   folio?: string;
   certificado?: string;
@@ -82,6 +83,7 @@ export interface ServicioRow {
   id: string;
   titulo: string;
   cliente: string;
+  clienteId?: string;
   estado: string;
   estatus?: string;
   prioridad: string;
@@ -91,6 +93,12 @@ export interface ServicioRow {
   horaFin?: string;
   ubicacion?: string;
   personas?: string[];
+}
+
+/** Avance de certificados de un servicio: total hojas del día / revisados por calidad. */
+export interface ServicioCertProgress {
+  total: number;
+  reviewed: number;
 }
 
 /** Tipos que cuentan como servicio operativo (Friday + calibración). Excluye juntas, vueltas, PJLA, PT, patrones. */
@@ -118,6 +126,16 @@ export const isReprogramadoEstado = (estado?: string, estatus?: string): boolean
     if (!raw) continue;
     const key = normalizeEstadoKey(raw);
     if (key === "reprogramacion" || key === "reprogramado") return true;
+  }
+  return false;
+};
+
+/** True si el servicio ya se cerró en campo (finalizado / completado). */
+export const isFinalizadoEstado = (estado?: string, estatus?: string): boolean => {
+  for (const raw of [estado, estatus]) {
+    if (!raw) continue;
+    const key = normalizeEstadoKey(raw);
+    if (key === "finalizado" || key === "completado") return true;
   }
   return false;
 };
@@ -344,6 +362,70 @@ export const isQualityRole = (user: UsuarioRow) => {
 export const normalizeCompany = (cliente?: string) => {
   const c = (cliente || "").trim();
   return c ? c.toUpperCase() : "SIN CLIENTE";
+};
+
+/** Clave suave para emparejar cliente servicio ↔ hoja (acentos / mayúsculas). */
+export const normalizeClienteKey = (nombre?: string): string =>
+  (nombre || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+/** Fecha de trabajo de la hoja para ligar al servicio del día (fecha → fecha_calib). */
+export const getHojaServicioDateKey = (row: HojaTrabajoRow): string => {
+  const raw = (row.fecha || row.fecha_calib || "").trim();
+  return raw.slice(0, 10);
+};
+
+const hojaMatchesServicioCliente = (
+  row: HojaTrabajoRow,
+  service: Pick<ServicioRow, "cliente" | "clienteId">
+): boolean => {
+  const serviceClienteId = (service.clienteId || "").trim();
+  const rowClienteId = (row.clienteId || "").trim();
+  if (serviceClienteId && rowClienteId && serviceClienteId === rowClienteId) return true;
+  const serviceKey = normalizeClienteKey(service.cliente);
+  const rowKey = normalizeClienteKey(row.cliente);
+  return Boolean(serviceKey && rowKey && serviceKey === rowKey);
+};
+
+/**
+ * Cuenta hojas del cliente en la fecha del servicio.
+ * `reviewed` = certificados ya validados por calidad (`Firmado`).
+ * Formato UI: `{total}/{reviewed}` → ej. 20/0.
+ */
+export const computeServicioCertProgress = (
+  service: Pick<ServicioRow, "cliente" | "clienteId" | "fecha">,
+  hojas: HojaTrabajoRow[]
+): ServicioCertProgress => {
+  const fecha = normalizeServicioDateKey(service.fecha);
+  if (!fecha) return { total: 0, reviewed: 0 };
+
+  let total = 0;
+  let reviewed = 0;
+  for (const row of hojas) {
+    if (getHojaServicioDateKey(row) !== fecha) continue;
+    if (!hojaMatchesServicioCliente(row, service)) continue;
+    total += 1;
+    if (getEffectiveCertStatus(row) === "Firmado") reviewed += 1;
+  }
+  return { total, reviewed };
+};
+
+/** Mapa servicioId → progreso de certificados (hojas deduplicadas). */
+export const buildServicioCertProgressMap = (
+  servicios: ServicioRow[],
+  hojas: HojaTrabajoRow[],
+  options?: { deduped?: boolean }
+): Record<string, ServicioCertProgress> => {
+  const rows = options?.deduped ? hojas : dedupeHojasByEquipmentKey(hojas);
+  const map: Record<string, ServicioCertProgress> = {};
+  for (const service of servicios) {
+    map[service.id] = computeServicioCertProgress(service, rows);
+  }
+  return map;
 };
 
 export const getArrivalDateKey = (row: HojaTrabajoRow): string | null => {

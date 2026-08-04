@@ -106,7 +106,8 @@ export async function syncPendingReviewFromWorksheets(
             const tech = getTechnicianFolderFromWorksheet(row);
             const cert = String(row.certificado || row.folio || "").trim();
             const equipmentId = String(row.id || "").trim();
-            if (!cert && !equipmentId) return null;
+            if (!cert || !equipmentId) return null;
+            if (!tech || tech === "Sin Usuario") return null;
 
             const filePath = buildWorksheetPdfStoragePath(tech, cert, equipmentId);
             if (!filePath.startsWith(storageRoot)) return null;

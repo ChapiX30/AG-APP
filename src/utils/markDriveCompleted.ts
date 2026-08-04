@@ -60,12 +60,15 @@ async function ensureFileMetadataStubForWorksheet(
 ): Promise<string[]> {
   const cert = String(row.certificado || row.folio || "").trim();
   const equipmentId = String(row.id || "").trim();
-  if (!cert && !equipmentId) return [];
+  // Sin certificado/ID/técnico real no inventar carpetas (p. ej. logística sin responsable).
+  if (!cert || !equipmentId) return [];
 
   const tech = getTechnicianFolderFromWorksheet(row);
+  if (!tech || tech === "Sin Usuario") return [];
+
   const storagePath = buildWorksheetPdfStoragePath(tech, cert, equipmentId);
   const metaId = storagePath.replace(/\//g, "_");
-  const fileName = `${cert || "SIN-CERT"}_${equipmentId || "SINID"}.pdf`;
+  const fileName = `${cert}_${equipmentId}.pdf`;
   const now = normalizeDriveDate(new Date());
 
   await setDoc(

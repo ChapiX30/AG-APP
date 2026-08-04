@@ -54,6 +54,8 @@ const TVDashboardScreen: React.FC = () => {
     companyArrivalsByArea,
     todayServices,
     programmedServices,
+    finalizedServices,
+    servicioCertProgress,
     labPending,
     activityDateKeys,
     totalArrivedToday,
@@ -142,8 +144,10 @@ const TVDashboardScreen: React.FC = () => {
             <ServicesDashboardPanel
               todayServices={todayServices}
               programmedServices={programmedServices}
+              finalizedServices={finalizedServices}
               usuarios={usuarios}
               todayKey={todayKey}
+              certProgressByService={servicioCertProgress}
             />
           </div>
           {/* Calendario compacto en móvil / tablet */}

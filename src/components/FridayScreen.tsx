@@ -1460,10 +1460,27 @@ const FridayScreen: React.FC = () => {
         const docRef = doc(collection(db, "hojasDeTrabajo"));
         let initialStatus = 'Desconocido'; let initialLocation = '';
         if (groupId === 'sitio') { initialStatus = 'Calibrado'; initialLocation = 'Servicio en Sitio'; } else if (groupId === 'laboratorio') { initialLocation = 'Laboratorio'; }
-        const now = new Date(); const fechaEntradaStr = now.toISOString().split('T')[0]; 
-        const newRowData = { id: "", folio: "", cliente: "", equipo: "", lugarCalibracion: groupId, status_equipo: initialStatus, ubicacion_real: initialLocation, nombre: currentUserName, assignedTo: currentUserName, createdAt: now.toISOString(), fechaEntrada: fechaEntradaStr, fechaRecepcion: fechaEntradaStr, diasPromesa: 5, status_certificado: 'Pendiente de Certificado', cargado_drive: 'No' };
+        const now = new Date(); const fechaEntradaStr = now.toISOString().split('T')[0];
+        // Responsable vacío: logística/calidad crean filas; no deben heredar carpeta Drive bajo su nombre.
+        const newRowData = {
+            id: "",
+            folio: "",
+            cliente: "",
+            equipo: "",
+            lugarCalibracion: groupId,
+            status_equipo: initialStatus,
+            ubicacion_real: initialLocation,
+            nombre: "",
+            assignedTo: "",
+            createdAt: now.toISOString(),
+            fechaEntrada: fechaEntradaStr,
+            fechaRecepcion: fechaEntradaStr,
+            diasPromesa: 5,
+            status_certificado: 'Pendiente de Certificado',
+            cargado_drive: 'No',
+        };
         await setDoc(docRef, newRowData); showToast("Fila agregada correctamente", 'success');
-    }, [currentUserName, canEditBoard]);
+    }, [canEditBoard]);
 
     const handleUpdateRow = useCallback(async (rowId: string, key: string, value: any) => {
         const targetRow = rows.find((r) => r.docId === rowId);

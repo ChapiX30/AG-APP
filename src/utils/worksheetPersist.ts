@@ -6,7 +6,11 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc, query, getDocs, where, doc, updateDoc } from "firebase/firestore";
 import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
-import { generateTemplatePDF, getTechnicianFolderName } from "./worksheetPdfGenerator";
+import {
+  buildWorksheetPdfStoragePath,
+  generateTemplatePDF,
+  getTechnicianFolderName,
+} from "./worksheetPdfGenerator";
 import { syncServicioInicioFromWorksheetRecord } from "./servicioAutomation";
 import { toWorksheetMagnitud } from "./magnitudWorksheet";
 import { canSaveDirectlyToFirebase } from "./firebaseConnectivity";
@@ -60,7 +64,11 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
   const pdfDoc = generateTemplatePDF(state, jsPDF as Parameters<typeof generateTemplatePDF>[1]);
   const blob = pdfDoc.output("blob");
   const technicianName = getTechnicianFolderName(user);
-  const nombreArchivo = `worksheets/${technicianName}/${state.certificado}_${state.id || "SINID"}.pdf`;
+  const nombreArchivo = buildWorksheetPdfStoragePath(
+    technicianName,
+    String(state.certificado || ""),
+    String(state.id || "")
+  );
 
   let finalDocId: string | null = worksheetId || null;
   let existingData: Record<string, unknown> | null = null;
