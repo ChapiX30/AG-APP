@@ -19,35 +19,19 @@ service cloud.firestore {
       return userDocPath().data;
     }
 
-    function isActiveUser() {
-      return isSignedIn() && userExists() && userData().get('activo', true) != false;
-    }
-
     function roleText() {
       let d = userData();
       return (d.get('puesto', '') + ' ' + d.get('role', '')).lower();
     }
 
-    function isUserManager() {
-      return isActiveUser() && (
-        roleText().matches('.*(admin|gerente|manager|calidad|quality|administrativo).*')
-      );
-    }
-
-    // Perfil propio: no puede darse de alta solo ni cambiar activo/puesto/correo.
-    function selfProfileSafeKeys() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['name', 'nombre', 'phone', 'telefono', 'photoUrl', 'photoURL', 'updatedAt']);
-    }
-
     function canReadPatronesCalibracion() {
-      return isActiveUser() && roleText().matches(
+      return isSignedIn() && userExists() && roleText().matches(
         '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico|logistica|ventas).*'
       );
     }
 
     function canWritePatronesCalibracion() {
-      return isActiveUser() && roleText().matches(
+      return isSignedIn() && userExists() && roleText().matches(
         '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico).*'
       );
     }
@@ -56,34 +40,34 @@ service cloud.firestore {
     match /patronesCalibracion/{patronId} {
       allow read: if canReadPatronesCalibracion();
       allow create, update: if canWritePatronesCalibracion();
-      allow delete: if isActiveUser() && roleText().matches('.*(admin|gerente|manager).*');
+      allow delete: if isSignedIn() && roleText().matches('.*(admin|gerente|manager).*');
     }
 
     // Auditoría de acceso a certificados (solo escritura vía Functions Admin SDK)
     match /certificadoAccesos/{entryId} {
-      allow read: if isActiveUser() && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
+      allow read: if isSignedIn() && roleText().matches('.*(calidad|quality|admin|gerente|manager).*');
       allow write: if false;
     }
 
     function canManageAppNovedades() {
-      return isActiveUser() && roleText().matches('.*(calidad|administrativo).*');
+      return isSignedIn() && userExists() && roleText().matches('.*(calidad|administrativo).*');
     }
 
     match /appNovedades/{novedadId} {
-      allow read: if isActiveUser();
+      allow read: if isSignedIn();
       allow create: if canManageAppNovedades();
       allow update, delete: if canManageAppNovedades();
     }
 
     // Formatos Master — metadatos del repositorio controlado
     function canReadFormatosMaster() {
-      return isActiveUser() && roleText().matches(
+      return isSignedIn() && userExists() && roleText().matches(
         '.*(calidad|quality|admin|gerente|manager|metrologo|metr[oó]logo|tecnico|t[eé]cnico).*'
       );
     }
 
     function canWriteFormatosMaster() {
-      return isActiveUser() && roleText().matches(
+      return isSignedIn() && userExists() && roleText().matches(
         '.*(calidad|quality|admin|gerente|manager).*'
       );
     }
@@ -93,19 +77,9 @@ service cloud.firestore {
       allow create, update, delete: if canWriteFormatosMaster();
     }
 
-    // Usuarios: alta Auth solo por Cloud Functions. Activar/desactivar: managers.
-    match /usuarios/{userId} {
-      allow read: if isSignedIn();
-      allow create, delete: if false;
-      allow update: if isActiveUser() && (
-        (request.auth.uid == userId && selfProfileSafeKeys()) ||
-        isUserManager()
-      );
-    }
-
-    // Resto de colecciones: requiere usuario activo autorizado en `usuarios/{uid}`
-    match /{collection}/{document=**} {
-      allow read, write: if collection != 'usuarios' && isActiveUser();
+    // Resto de colecciones: autenticación requerida (como antes)
+    match /{document=**} {
+      allow read, write: if isSignedIn();
     }
   }
 }

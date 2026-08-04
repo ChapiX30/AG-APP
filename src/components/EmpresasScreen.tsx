@@ -727,30 +727,59 @@ const EmpresasScreen = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
   }, [empresas]);
 
+  const parseFirestoreDate = (value: unknown): Date => {
+    if (!value) return new Date();
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    if (typeof value === "object" && value !== null && typeof (value as { toDate?: unknown }).toDate === "function") {
+      try {
+        const d = (value as { toDate: () => Date }).toDate();
+        if (d instanceof Date && !Number.isNaN(d.getTime())) return d;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
-      
-      // 1. Cargar lista de responsables (usuarios) Y FILTRAR POR NOMBRES COMPLETOS
-      const usersSnapshot = await getDocs(collection(db, "usuarios"));
-      const usersList = usersSnapshot.docs
-        .map(doc => doc.data().nombre) // Obtenemos nombres
-        .filter(nombre => nombre && NOMBRES_PERMITIDOS.includes(nombre)); // FILTRO EXACTO: Solo nombres completos permitidos
-        
-      setStaffOptions(usersList);
 
-      // 2. Cargar Empresas
+      // Responsables: no bloquear el directorio si falla esta lista auxiliar
+      try {
+        const usersSnapshot = await getDocs(collection(db, "usuarios"));
+        const usersList = usersSnapshot.docs
+          .map((d) => d.data().nombre || d.data().name)
+          .filter((nombre): nombre is string => !!nombre && NOMBRES_PERMITIDOS.includes(nombre));
+        setStaffOptions(usersList);
+      } catch (staffErr) {
+        console.warn("No se pudo cargar lista de responsables:", staffErr);
+      }
+
       const querySnapshot = await getDocs(collection(db, "clientes"));
-      const empresasData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        fechaCreacion: doc.data().fechaCreacion?.toDate() || new Date()
-      })) as Empresa[];
+      const empresasData = querySnapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          fechaCreacion: parseFirestoreDate(data.fechaCreacion),
+        };
+      }) as Empresa[];
       setEmpresas(empresasData);
-      
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error loading data:", error);
-      toast.error("Error cargando datos.");
+      const code = typeof error === "object" && error && "code" in error
+        ? String((error as { code?: string }).code || "")
+        : "";
+      if (code === "permission-denied") {
+        toast.error("Sin permiso para leer clientes. Cierra sesión y vuelve a entrar.");
+      } else {
+        toast.error("Error cargando datos.");
+      }
     } finally {
       setLoading(false);
     }
