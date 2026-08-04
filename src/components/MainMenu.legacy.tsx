@@ -136,7 +136,11 @@ const MENU_ITEMS = [
   { id: 'vencimientos', title: 'Vencimientos', icon: Bell, category: 'Análisis' },
 ];
 
-const SUPER_ADMINS = ['jesus.sustaita@agsolutions.com', 'admin@agsolutions.com'];
+const SUPER_ADMINS = [
+  'jesus.sustaita@agsolutions.com',
+  'admin@agsolutions.com',
+  'mgaese08@gmail.com',
+];
 const PATRON_BANNER_DISMISS_KEY = 'patronAlertBannerDismissedAt';
 const PATRON_BANNER_HIDE_MS = 3 * 24 * 60 * 60 * 1000;
 

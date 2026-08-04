@@ -53,6 +53,11 @@ import type { WorksheetState, BackgroundSaveJob } from "../types/worksheet";
 import { FlowScreenHeader } from "./worksheet-flow/FlowScreenHeader";
 import { FlowCard, FlowSection } from "./worksheet-flow/FlowCard";
 import { accentFromMagnitude } from "./worksheet-flow/flowTheme";
+import {
+  getHoyFechaLocal,
+  normalizeClienteNombre,
+  pickClienteFromAsignacionHoy,
+} from "../utils/servicioAutomation";
 
 // ====================================================================
 // 1. COMPONENTE DE ETIQUETA (HÍBRIDO: ANDROID APK + WEB)
@@ -1269,6 +1274,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [isSaving, setIsSaving] = useState(false);
   const lastDraftSaveRef = useRef(0);
   const draftRestoredRef = useRef(false);
+  const clientePrefillDoneRef = useRef(false);
+  const clienteRef = useRef(state.cliente);
+  clienteRef.current = state.cliente;
+  const [draftHydrationDone, setDraftHydrationDone] = useState(Boolean(worksheetId));
   const DRAFT_AUTOSAVE_MS = 45000;
   const [listaClientes, setListaClientes] = useState<ClienteRecord[]>([]);
   const [tipoElectrica, setTipoElectrica] = useState<"DC" | "AC" | "Otros">("DC");
@@ -1553,7 +1562,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   }, [selectedMagnitude, currentConsecutive]);
 
   useEffect(() => {
-    if (worksheetId || draftRestoredRef.current) return;
+    if (worksheetId || draftRestoredRef.current) {
+      setDraftHydrationDone(true);
+      return;
+    }
 
     const restoreDrafts = async () => {
       const backup = localStorage.getItem("backup_worksheet_data");
@@ -1572,17 +1584,27 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           localStorage.removeItem("backup_worksheet_data");
         }
         draftRestoredRef.current = true;
+        setDraftHydrationDone(true);
         return;
       }
 
       const draft = loadWorksheetDraft();
-      if (!draft?.state) return;
+      if (!draft?.state) {
+        draftRestoredRef.current = true;
+        setDraftHydrationDone(true);
+        return;
+      }
       const draftCert = String(draft.certificado || "");
       const navCert = currentConsecutive || "";
-      if (navCert && draftCert && draftCert !== navCert) return;
+      if (navCert && draftCert && draftCert !== navCert) {
+        draftRestoredRef.current = true;
+        setDraftHydrationDone(true);
+        return;
+      }
 
       dispatch({ type: "RESTORE_BACKUP", payload: draft.state as WorksheetState });
       draftRestoredRef.current = true;
+      setDraftHydrationDone(true);
       setToast({
         message: "Se restauró automáticamente el borrador local de la hoja.",
         type: "warning",
@@ -1591,6 +1613,66 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
     void restoreDrafts();
   }, [worksheetId, currentConsecutive, confirm]);
+
+  // Prefill cliente desde la asignación de hoy (editable; no pisa borrador/edición).
+  useEffect(() => {
+    if (worksheetId || !draftHydrationDone || !user?.id || clientePrefillDoneRef.current) return;
+    if (clienteRef.current?.trim()) {
+      clientePrefillDoneRef.current = true;
+      return;
+    }
+
+    let cancelled = false;
+
+    const prefillClienteFromAsignacion = async () => {
+      try {
+        const hoy = getHoyFechaLocal();
+        const snap = await getDocs(
+          query(collection(db, "servicios"), where("personas", "array-contains", user.id))
+        );
+        if (cancelled || clientePrefillDoneRef.current || clienteRef.current?.trim()) return;
+
+        const servicios = snap.docs.map((d) => {
+          const data = d.data() as {
+            cliente?: string;
+            fecha?: string;
+            estado?: string;
+            horaInicio?: string;
+          };
+          return {
+            cliente: data.cliente,
+            fecha: data.fecha,
+            estado: data.estado,
+            horaInicio: data.horaInicio,
+          };
+        });
+
+        const nombreAsignado = pickClienteFromAsignacionHoy(servicios, hoy);
+        if (!nombreAsignado) {
+          clientePrefillDoneRef.current = true;
+          return;
+        }
+
+        const matched = listaClientes.find(
+          (c) => normalizeClienteNombre(c.nombre) === normalizeClienteNombre(nombreAsignado)
+        );
+        const finalNombre = matched?.nombre || nombreAsignado;
+
+        if (!clienteRef.current?.trim()) {
+          dispatch({ type: "SET_CLIENTE", payload: finalNombre });
+        }
+        clientePrefillDoneRef.current = true;
+      } catch (e) {
+        console.error("Error al prellenar cliente desde asignación:", e);
+        clientePrefillDoneRef.current = true;
+      }
+    };
+
+    void prefillClienteFromAsignacion();
+    return () => {
+      cancelled = true;
+    };
+  }, [worksheetId, draftHydrationDone, user?.id, listaClientes]);
 
   const unidadesDisponibles = React.useMemo(() => {
     if (state.magnitud === "Electrica") return [...unidadesPorMagnitud.Electrica.DC, ...unidadesPorMagnitud.Electrica.AC, ...unidadesPorMagnitud.Electrica.Otros] as string[];

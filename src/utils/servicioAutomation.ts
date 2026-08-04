@@ -28,6 +28,72 @@ export function normalizeClienteNombre(nombre: string): string {
     .replace(/\s+/g, ' ');
 }
 
+/** True when the client display name refers to any Celestica plant. */
+export function isCelesticaClienteNombre(nombre?: string): boolean {
+  return normalizeClienteNombre(nombre || '').includes('celestica');
+}
+
+export interface AsignacionClienteItem {
+  cliente?: string;
+  fecha?: string;
+  estado?: string;
+  horaInicio?: string;
+}
+
+const ESTADOS_EXCLUIDOS_ASIGNACION = new Set([
+  'finalizado',
+  'cancelado',
+  'reprogramacion',
+  'reprogramado',
+]);
+
+/** yyyy-MM-dd in local time (same as worksheet / servicios). */
+export function getHoyFechaLocal(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isAsignacionActivaDelDia(servicio: AsignacionClienteItem, hoy: string): boolean {
+  const fecha = normalizeServicioFecha(servicio.fecha);
+  if (fecha !== hoy) return false;
+  const st = (servicio.estado || '').toLowerCase();
+  return !ESTADOS_EXCLUIDOS_ASIGNACION.has(st);
+}
+
+/** Technician has an active (non-finished) Celestica service scheduled for today. */
+export function hasCelesticaAsignacionHoy(
+  servicios: AsignacionClienteItem[],
+  hoy: string = getHoyFechaLocal()
+): boolean {
+  return servicios.some(
+    (s) => isAsignacionActivaDelDia(s, hoy) && isCelesticaClienteNombre(s.cliente)
+  );
+}
+
+/**
+ * Picks the client name from today's active assignment.
+ * Prefers en_proceso, then earliest horaInicio. Returns null if none.
+ */
+export function pickClienteFromAsignacionHoy(
+  servicios: AsignacionClienteItem[],
+  hoy: string = getHoyFechaLocal()
+): string | null {
+  const candidatos = servicios
+    .filter((s) => isAsignacionActivaDelDia(s, hoy) && String(s.cliente || '').trim())
+    .sort((a, b) => {
+      const score = (s: AsignacionClienteItem) =>
+        (s.estado || '').toLowerCase() === 'en_proceso' ? 0 : 1;
+      const byEstado = score(a) - score(b);
+      if (byEstado !== 0) return byEstado;
+      return (a.horaInicio || '').localeCompare(b.horaInicio || '');
+    });
+
+  const nombre = String(candidatos[0]?.cliente || '').trim();
+  return nombre || null;
+}
+
 function isServicioActivoParaSync(estado?: string): boolean {
   const key = (estado || '').toLowerCase();
   return !ESTADOS_EXCLUIDOS_SYNC.has(key);

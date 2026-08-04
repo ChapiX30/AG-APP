@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Eye, EyeOff, Lock, Mail, ArrowRight,
   X, CheckCircle, AlertCircle,
-  Shield, Gauge, Radio, ShieldCheck,
+  ShieldCheck, Gauge,
 } from "lucide-react";
 import {
   isQualityRole,
@@ -10,12 +10,11 @@ import {
 } from "../utils/calibrationShared";
 import { isQualityEmailAllowlisted } from "../utils/certificateAccess";
 import {
-  motion, AnimatePresence,
-  useMotionValue, useMotionTemplate,
+  motion, AnimatePresence, MotionConfig,
 } from "framer-motion";
 import { sendPasswordResetEmail, signOut, AuthError } from "firebase/auth";
 import { collection, query, where, getDocs, limit } from "firebase/firestore";
-import { useAuth } from "../hooks/useAuth";
+import { AccessDeniedError, useAuth } from "../hooks/useAuth";
 import { useNavigation } from "../hooks/useNavigation";
 import { auth, db } from "../utils/firebase";
 import labLogo from "../assets/lab_logo.png";
@@ -35,6 +34,10 @@ const isValidEmail = (e: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 const errorMsg = (err: unknown) => {
+  if (err instanceof AccessDeniedError) {
+    return err.message;
+  }
+
   const code = (err as AuthError)?.code ?? "";
   const message = (err as Error)?.message ?? "";
 
@@ -49,7 +52,7 @@ const errorMsg = (err: unknown) => {
     "auth/internal-error": "Error del servidor de autenticación. Intenta en unos minutos.",
     "auth/operation-not-allowed": "El inicio de sesión no está habilitado para esta app.",
     "permission-denied": "No tienes permiso para acceder. Contacta al administrador.",
-    "unavailable": "El servicio no está disponible. Revisa tu conexión.",
+    unavailable: "El servicio no está disponible. Revisa tu conexión.",
   };
 
   if (code && known[code]) return known[code];
@@ -60,7 +63,7 @@ const errorMsg = (err: unknown) => {
   return "Error inesperado. Intenta nuevamente.";
 };
 
-const profileFromFirestore = (d: Record<string, unknown>, fallbackName = "Usuario") => {
+const profileFromUsuario = (d: Record<string, unknown>, fallbackName = "Usuario") => {
   const name = String(d.nombre || d.name || fallbackName);
   return {
     name,
@@ -78,7 +81,7 @@ const fetchUser = async (email: string) => {
         query(collection(db, "usuarios"), where(field, "==", email), limit(1))
       );
       if (!snap.empty) {
-        return profileFromFirestore(snap.docs[0].data() as Record<string, unknown>);
+        return profileFromUsuario(snap.docs[0].data() as Record<string, unknown>);
       }
     }
   } catch {
@@ -168,7 +171,11 @@ const waitForLoginOverlay = async (durationMs: number) => {
   await waitForPaint();
 };
 
-/* ─── animaciones por rol ─── */
+/* ─── tokens de escena ─── */
+const ACC = "#2464A3";
+const ACC_SOFT = "#5a93c9";
+
+/* ─── animaciones por rol (overlay) ─── */
 const GeneralLoginVisual: React.FC = () => (
   <div className="relative flex h-28 w-28 items-center justify-center">
     {[0, 0.5].map((delay) => (
@@ -243,7 +250,7 @@ const LoginTransitionOverlay: React.FC<{
     <AnimatePresence>
       {active && (
         <motion.div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-[#050810]/90 backdrop-blur-md px-4"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-[#050810]/90 backdrop-blur-md px-4 font-login"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -275,10 +282,8 @@ const LoginTransitionOverlay: React.FC<{
             )}
 
             <div className="text-center space-y-1.5">
-              <p className="text-sm font-medium text-slate-100">
-                {copy.title}
-              </p>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
+              <p className="text-sm font-medium text-slate-100">{copy.title}</p>
+              <p className="text-[11px] text-slate-500 leading-relaxed font-instrument">
                 {reducedMotion ? "Un momento…" : copy.sub}
               </p>
             </div>
@@ -289,204 +294,133 @@ const LoginTransitionOverlay: React.FC<{
   );
 };
 
-/* ─── logo animado (marca) ─── */
-const AnimatedBrandLogo: React.FC<{ size?: "lg" | "sm" }> = ({ size = "lg" }) => {
+/* ─── marca AG ─── */
+const BrandMark: React.FC<{ size?: "lg" | "sm" }> = ({ size = "lg" }) => {
   const large = size === "lg";
-  const imgH = large ? "h-28" : "h-14";
-  const box = large ? "h-36 w-36" : "h-20 w-20";
-  const glow = large ? "-m-8 blur-3xl" : "-m-5 blur-2xl";
-  const ring = large ? "inset-[-14px]" : "inset-[-8px]";
-  const pulse = large ? "inset-[-22px]" : "inset-[-12px]";
 
   return (
-    <div className={`relative flex items-center justify-center ${box}`}>
-      {/* halo central */}
-      <motion.div
-        className={`pointer-events-none absolute inset-0 rounded-full bg-[#2464A3]/25 ${glow}`}
-        animate={{ opacity: [0.35, 0.75, 0.35], scale: [0.92, 1.08, 0.92] }}
-        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-      />
-
-      {/* ondas que se expanden */}
-      {[0, 1.1].map((delay) => (
-        <motion.span
-          key={delay}
-          className={`pointer-events-none absolute rounded-full border border-[#5a93c9]/50 ${pulse}`}
-          initial={{ opacity: 0.55, scale: 0.75 }}
-          animate={{ opacity: [0.5, 0], scale: [0.75, 1.45] }}
-          transition={{
-            duration: 2.8,
-            repeat: Infinity,
-            ease: "easeOut",
-            delay,
-          }}
-        />
-      ))}
-
-      {/* anillo giratorio */}
-      <motion.div
-        className={`pointer-events-none absolute rounded-full ${ring}`}
-        style={{
-          background:
-            "conic-gradient(from 0deg, transparent 0%, #5a93c9 18%, #2464A3 42%, transparent 58%, #5a93c9 78%, transparent 100%)",
-          mask: "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px))",
-          WebkitMask:
-            "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px))",
-        }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: large ? 10 : 8, repeat: Infinity, ease: "linear" }}
-      />
-
-      {/* logo + destello (máscara elíptica, sin caja cuadrada) */}
-      <motion.div
-        className="relative z-10 flex items-center justify-center"
-        animate={{
-          y: [0, large ? -10 : -5, 0],
-          scale: [1, 1.04, 1],
-          filter: [
-            "drop-shadow(0 0 18px rgba(36,100,163,0.45))",
-            "drop-shadow(0 0 32px rgba(90,147,201,0.85))",
-            "drop-shadow(0 0 18px rgba(36,100,163,0.45))",
-          ],
-        }}
-        transition={{
-          duration: large ? 4.5 : 3.8,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
-        whileHover={{ scale: 1.06 }}
+    <div className={`relative flex flex-col items-center ${large ? "gap-8" : "gap-4"}`}>
+      <div
+        className={`relative flex items-center justify-center ${
+          large ? "h-[19rem] w-[19rem]" : "h-32 w-32"
+        }`}
       >
-        <img
+        <motion.div
+          className="pointer-events-none absolute inset-[-14%] rounded-full"
+          style={{
+            background: `radial-gradient(circle, rgba(36,100,163,0.45) 0%, transparent 68%)`,
+          }}
+          animate={{ opacity: [0.55, 0.95, 0.55], scale: [0.96, 1.05, 0.96] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        />
+
+        <motion.img
           src={labLogo}
           alt="Equipos y Servicios AG"
-          className={`${imgH} w-auto object-contain drop-shadow-[0_0_28px_rgba(36,100,163,0.65)]`}
-        />
-        <div
-          className={`pointer-events-none absolute ${large ? "h-[88%] w-[95%]" : "h-[88%] w-[95%]"}`}
-          style={{
-            maskImage:
-              "radial-gradient(ellipse 72% 68% at 50% 50%, #000 35%, transparent 70%)",
-            WebkitMaskImage:
-              "radial-gradient(ellipse 72% 68% at 50% 50%, #000 35%, transparent 70%)",
+          className={`relative z-10 ${large ? "h-[15rem]" : "h-28"} w-auto object-contain`}
+          animate={{
+            y: [0, large ? -5 : -2, 0],
+            filter: [
+              "drop-shadow(0 0 22px rgba(36,100,163,0.45))",
+              "drop-shadow(0 0 40px rgba(90,147,201,0.75))",
+              "drop-shadow(0 0 22px rgba(36,100,163,0.45))",
+            ],
           }}
-          aria-hidden
+          transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </div>
+
+      <div className="text-center space-y-2">
+        <h1
+          className={`font-display font-bold tracking-tight text-[#f2f6fb] ${
+            large ? "text-3xl xl:text-4xl" : "text-lg"
+          }`}
         >
-          <motion.div
-            className="absolute inset-y-0 w-full"
-            animate={{ x: ["-100%", "100%"] }}
-            transition={{
-              duration: large ? 3.6 : 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-              repeatDelay: large ? 2.4 : 2,
-            }}
-          >
-            <div
-              className={`absolute top-1/2 -translate-y-1/2 ${large ? "h-[70%] w-10" : "h-[65%] w-6"} blur-[6px]`}
-              style={{
-                left: "50%",
-                transform: "translate(-50%, -50%) rotate(-14deg)",
-                background:
-                  "linear-gradient(90deg, transparent, rgba(147,197,253,0.35) 42%, rgba(255,255,255,0.5) 50%, rgba(147,197,253,0.35) 58%, transparent)",
-                maskImage:
-                  "linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%)",
-                WebkitMaskImage:
-                  "linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%)",
-                mixBlendMode: "overlay",
-              }}
-            />
-          </motion.div>
-        </div>
-      </motion.div>
+          Equipos y Servicios AG
+        </h1>
+        <p className="font-instrument text-[11px] tracking-[0.22em] uppercase text-[#5a93c9]">
+          Gestión metrológica
+        </p>
+      </div>
     </div>
   );
 };
 
-/* ─── fondo blueprint metrológico ─── */
-const BlueprintBg: React.FC<{ subtle?: boolean }> = ({ subtle }) => (
+/* ─── atmósfera de fondo ─── */
+const ChamberAtmosphere: React.FC = () => (
   <>
     <div
-      className={`pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(90,147,201,0.35)_1px,transparent_1px),linear-gradient(to_bottom,rgba(90,147,201,0.35)_1px,transparent_1px)] bg-[size:44px_44px] ${subtle ? "opacity-[0.05]" : "opacity-[0.09]"}`}
-    />
-    <div
-      className={`pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(90deg,transparent,transparent_11px,rgba(36,100,163,0.12)_11px,rgba(36,100,163,0.12)_12px)] ${subtle ? "opacity-30" : "opacity-50"}`}
+      className="pointer-events-none absolute inset-0"
+      style={{
+        background: `
+          radial-gradient(ellipse 80% 60% at 20% 30%, rgba(36,100,163,0.22), transparent 55%),
+          radial-gradient(ellipse 50% 40% at 80% 70%, rgba(36,100,163,0.1), transparent 50%),
+          linear-gradient(165deg, #070b12 0%, #0c1420 48%, #081018 100%)
+        `,
+      }}
     />
     <motion.div
-      className="pointer-events-none absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#5a93c9]/60 to-transparent shadow-[0_0_20px_rgba(90,147,201,0.5)]"
-      animate={{ top: ["-2%", "102%"] }}
-      transition={{ duration: subtle ? 10 : 7, repeat: Infinity, ease: "linear" }}
+      className="pointer-events-none absolute -top-40 -left-32 h-[520px] w-[520px] rounded-full bg-[#2464A3]/20 blur-[110px]"
+      animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.65, 0.35] }}
+      transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+    />
+    <motion.div
+      className="pointer-events-none absolute -bottom-28 right-[8%] h-[380px] w-[380px] rounded-full bg-[#2464A3]/12 blur-[100px]"
+      animate={{ scale: [1, 1.08, 1], opacity: [0.22, 0.45, 0.22] }}
+      transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
+    />
+    <div
+      className="pointer-events-none absolute inset-0 opacity-[0.035]"
+      style={{
+        backgroundImage: `
+          linear-gradient(rgba(90,147,201,0.9) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(90,147,201,0.9) 1px, transparent 1px)
+        `,
+        backgroundSize: "64px 64px",
+        maskImage: "radial-gradient(ellipse 70% 60% at 40% 40%, #000 20%, transparent 75%)",
+        WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 40% 40%, #000 20%, transparent 75%)",
+      }}
     />
   </>
 );
 
-/* ─── bento features ─── */
-const BENTO = [
-  { icon: Radio,  title: "Sistema en línea",  sub: "Operativo",     pulse: true },
-  { icon: Shield, title: "Conexión segura",   sub: "Cifrado SSL" },
-  { icon: Gauge,  title: "Gestión metrológica", sub: "Equipos AG" },
-] as const;
-
-const BentoFeatures: React.FC = () => (
-  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-xl">
-    {BENTO.map(({ icon: Icon, title, sub, pulse }, i) => (
-      <motion.div
-        key={title}
-        className="flex flex-col gap-2 rounded-2xl border border-[#2464A3]/25 bg-slate-900/50 backdrop-blur-md px-4 py-3.5 text-left"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.35 + i * 0.1, duration: 0.45 }}
-      >
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2464A3]/20 border border-[#2464A3]/30">
-            <Icon className="h-4 w-4 text-[#5a93c9]" />
-          </div>
-          {pulse && (
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-        </div>
-        <p className="text-xs font-semibold text-slate-200">{title}</p>
-        <p className="text-[10px] text-slate-500">{sub}</p>
-      </motion.div>
-    ))}
-  </div>
-);
-
-/* ─── input floating label ─── */
-const inputCls =
-  "peer w-full pl-10 pr-10 pt-5 pb-2.5 rounded-xl bg-slate-800/35 border border-slate-700/70 text-sm text-white placeholder-transparent focus:outline-none focus:border-[#2464A3] focus:ring-[3px] focus:ring-[#2464A3]/18 focus:bg-slate-800/60 transition-all disabled:opacity-50";
-const labelCls =
-  "absolute left-10 top-3.5 text-sm text-slate-500 pointer-events-none transition-all duration-200 peer-focus:top-1.5 peer-focus:text-[10px] peer-focus:text-[#5a93c9] peer-[:not(:placeholder-shown)]:top-1.5 peer-[:not(:placeholder-shown)]:text-[10px] peer-[:not(:placeholder-shown)]:text-slate-400";
+/* ─── estilos de input tipo consola ─── */
+const fieldWrap =
+  "group relative rounded-2xl border border-white/[0.07] bg-[#0a1220]/70 transition-all duration-300 focus-within:border-[#2464A3]/55 focus-within:bg-[#0d1830]/85 focus-within:shadow-[0_0_0_3px_rgba(36,100,163,0.12)]";
+const fieldInput =
+  "peer w-full bg-transparent pl-11 pr-11 pt-6 pb-2.5 text-[15px] text-[#e8eef4] placeholder-transparent outline-none disabled:opacity-50 font-login";
+const fieldLabel =
+  "absolute left-11 top-3.5 text-sm text-[#6b7c90] pointer-events-none transition-all duration-200 peer-focus:top-1.5 peer-focus:text-[10px] peer-focus:tracking-[0.14em] peer-focus:uppercase peer-focus:text-[#5a93c9] peer-focus:font-instrument peer-[:not(:placeholder-shown)]:top-1.5 peer-[:not(:placeholder-shown)]:text-[10px] peer-[:not(:placeholder-shown)]:tracking-[0.14em] peer-[:not(:placeholder-shown)]:uppercase peer-[:not(:placeholder-shown)]:font-instrument peer-[:not(:placeholder-shown)]:text-[#8fa3b8]";
 
 /* ─── component ─── */
-export const LoginScreen: React.FC<{
-  onNavigateToRegister: () => void;
-}> = ({ onNavigateToRegister }) => {
+export const LoginScreen: React.FC = () => {
   const { login, completeLogin, authReady } = useAuth();
   const { resetTo } = useNavigation();
 
   const savedLogin = loadSavedLoginCredentials();
 
-  const [email, setEmail]       = useState(savedLogin.email);
+  const [email, setEmail] = useState(savedLogin.email);
   const [password, setPassword] = useState(savedLogin.password);
   const [rememberMe, setRememberMe] = useState(savedLogin.rememberMe);
   const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [attempts, setAttempts] = useState(0);
-  const [user, setUser]         = useState<DetectedUser | null>(null);
+  const [user, setUser] = useState<DetectedUser | null>(null);
   const [loginTransition, setLoginTransition] = useState(false);
-  const [loginVariant, setLoginVariant]     = useState<LoginVariant>("metrology");
+  const [loginVariant, setLoginVariant] = useState<LoginVariant>("metrology");
   const [metrologyScene, setMetrologyScene] = useState<MetrologyScene>("electrical");
-  const [fetching, setFetching]     = useState(false);
-  const [showReset, setShowReset]   = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [showReset, setShowReset] = useState(false);
   const [resetStatus, setResetStatus] = useState<{
-    ok: boolean; msg: string;
+    ok: boolean;
+    msg: string;
   } | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
 
-  const cacheRef = useRef<Record<string, any>>({});
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastRef  = useRef<string | null>(null);
+  const cacheRef = useRef<Record<string, DetectedUser | null>>({});
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRef = useRef<string | null>(null);
   const submittingRef = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
@@ -498,20 +432,19 @@ export const LoginScreen: React.FC<{
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  /* spotlight en panel derecho */
-  const mouseX   = useMotionValue(0);
-  const mouseY   = useMotionValue(0);
-  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${mouseX}px ${mouseY}px, rgba(90,147,201,0.14), transparent 70%)`;
-
   /* debounce user lookup */
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (!email.trim()) { setUser(null); lastRef.current = null; return; }
+    if (!email.trim()) {
+      setUser(null);
+      lastRef.current = null;
+      return;
+    }
     timerRef.current = setTimeout(async () => {
       const key = email.trim().toLowerCase();
       if (!isValidEmail(key) || lastRef.current === key) return;
       if (cacheRef.current[key] !== undefined) {
-        const cached = cacheRef.current[key] as DetectedUser | null;
+        const cached = cacheRef.current[key];
         setUser(
           cached
             ? {
@@ -530,7 +463,9 @@ export const LoginScreen: React.FC<{
       if (found) lastRef.current = key;
       setFetching(false);
     }, 600);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [email]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -616,145 +551,170 @@ export const LoginScreen: React.FC<{
     try {
       await sendPasswordResetEmail(auth, clean);
       setResetStatus({ ok: true, msg: `Enlace enviado a ${clean}` });
-      setTimeout(() => { setShowReset(false); setResetStatus(null); }, 3000);
+      setTimeout(() => {
+        setShowReset(false);
+        setResetStatus(null);
+      }, 3000);
     } catch (err) {
       setResetStatus({ ok: false, msg: errorMsg(err) });
-    } finally { setResetLoading(false); }
+    } finally {
+      setResetLoading(false);
+    }
   };
 
+  const nowLabel = new Date().toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
   return (
-    <div className="relative flex h-full w-full overflow-hidden bg-[#050810] text-slate-50">
+    <MotionConfig reducedMotion="never">
+    <div
+      className="relative flex h-full w-full overflow-hidden font-login text-[#e8eef4]"
+      style={{ background: "#070b12" }}
+    >
+      <ChamberAtmosphere />
 
       {/* ════════════════════════════════
-          PANEL IZQUIERDO — Branding
+          PANEL IZQUIERDO — Marca
       ════════════════════════════════ */}
-      <div className="relative hidden lg:flex w-[52%] flex-col items-center justify-center overflow-hidden px-12 xl:px-16">
-
-        <BlueprintBg />
-
+      <div className="relative hidden lg:flex w-[56%] flex-col justify-between overflow-hidden px-12 xl:px-16 py-10">
         <motion.div
-          className="pointer-events-none absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full bg-[#2464A3]/20 blur-[110px]"
-          animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.6, 0.35] }}
-          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="pointer-events-none absolute -bottom-32 -right-16 h-[420px] w-[420px] rounded-full bg-[#5a93c9]/15 blur-[100px]"
-          animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-        />
-
-        {/* Contenido branding */}
-        <motion.div
-          className="relative z-10 flex flex-col items-center text-center gap-7 max-w-xl w-full"
-          initial={{ opacity: 0, x: -40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="relative z-10 flex items-center justify-between"
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
         >
-          <AnimatedBrandLogo size="lg" />
-
-          {/* Texto */}
-          <div className="space-y-3">
-            <h1 className="text-4xl xl:text-5xl font-bold tracking-tight leading-tight">
-              Plataforma de{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#5a93c9] to-[#2464A3]">
-                Calibración
-              </span>
-            </h1>
-            <p className="text-slate-400 text-base xl:text-lg leading-relaxed max-w-sm mx-auto">
-              Equipos y Servicios AG — sistema de gestión metrológica. Trazabilidad, certificados y programación de equipos críticos.
+          <div className="flex items-center gap-3">
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: "#34d399", boxShadow: "0 0 10px rgba(52,211,153,0.7)" }}
+            />
+            <p className="font-instrument text-[11px] tracking-[0.22em] uppercase text-[#8fa3b8]">
+              Laboratorio · En línea
             </p>
           </div>
+          <p className="font-instrument text-[11px] tracking-[0.18em] text-[#5a6678]">
+            {nowLabel} CST
+          </p>
+        </motion.div>
 
-          <BentoFeatures />
+        <motion.div
+          className="relative z-10 flex flex-1 flex-col items-center justify-center"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <BrandMark size="lg" />
+        </motion.div>
+
+        <motion.div
+          className="relative z-10 flex items-center gap-6 font-instrument text-[10px] tracking-[0.2em] uppercase text-[#5a6678]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.6 }}
+        >
+          <span>SSL · 256</span>
+          <span className="h-px w-8 bg-[#2464A3]/40" />
+          <span>Trazabilidad</span>
+          <span className="h-px w-8 bg-[#2464A3]/40" />
+          <span>Acceso autorizado</span>
         </motion.div>
       </div>
 
-      <div className="hidden lg:block w-px bg-gradient-to-b from-transparent via-[#2464A3]/40 to-transparent flex-shrink-0" />
+      {/* divisor */}
+      <div className="relative hidden lg:flex w-px flex-shrink-0 items-stretch">
+        <div className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-[#2464A3]/35 to-transparent" />
+      </div>
 
       {/* ════════════════════════════════
-          PANEL DERECHO — Formulario
+          PANEL DERECHO — Consola de acceso
       ════════════════════════════════ */}
-      <div
-        className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10 sm:px-12 lg:px-16"
-        onMouseMove={(e) => {
-          const { left, top } = e.currentTarget.getBoundingClientRect();
-          mouseX.set(e.clientX - left);
-          mouseY.set(e.clientY - top);
-        }}
-      >
-        {/* Spotlight */}
-        <motion.div
-          className="pointer-events-none absolute inset-0"
-          style={{ backgroundImage: spotlight }}
-        />
-
-        <BlueprintBg subtle />
-        <motion.div
-          className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 h-72 w-72 rounded-full bg-[#2464A3]/18 blur-[80px] lg:hidden"
-          animate={{ opacity: [0.35, 0.65, 0.35] }}
-          transition={{ duration: 7, repeat: Infinity }}
+      <div className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10 sm:px-10 lg:px-14 xl:px-16">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-80"
+          style={{
+            background:
+              "radial-gradient(ellipse 70% 50% at 70% 40%, rgba(36,100,163,0.12), transparent 60%)",
+          }}
         />
 
         <motion.div
-          className="relative z-10 w-full max-w-md"
-          initial={{ opacity: 0, x: 40 }}
+          className="relative z-10 w-full max-w-[400px]"
+          initial={{ opacity: 0, x: 28 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, ease: "easeOut" }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="flex flex-col items-center gap-3 mb-6 lg:hidden">
-            <AnimatedBrandLogo size="sm" />
-            <p className="text-sm font-semibold text-slate-50 tracking-tight">
-              Equipos y Servicios AG
-            </p>
-            <p className="text-xs text-slate-400">Sistema de gestión metrológica</p>
+          <div className="mb-8 lg:hidden">
+            <BrandMark size="sm" />
           </div>
 
-          <div className="relative rounded-3xl border border-[#2464A3]/30 bg-slate-900/45 backdrop-blur-xl shadow-[0_8px_64px_rgba(36,100,163,0.18)] px-6 py-7 sm:px-8 sm:py-8">
-            <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#5a93c9]/50 to-transparent" />
+          <div className="mb-8">
+            <div className="mb-5 flex items-center gap-3">
+              <span className="font-instrument text-[10px] tracking-[0.28em] uppercase text-[#5a93c9]">
+                Acceso
+              </span>
+              <span className="h-px flex-1 bg-gradient-to-r from-[#2464A3]/50 to-transparent" />
+            </div>
 
-            <div className="mb-6 flex items-start gap-3">
-              <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-4">
+              <div className="min-w-0 flex-1">
                 <AnimatePresence mode="wait">
                   <motion.h2
                     key={user ? user.name : "guest"}
-                    className="text-2xl font-semibold text-slate-50 tracking-tight"
-                    initial={{ opacity: 0, y: 6 }}
+                    className="font-display text-[1.85rem] sm:text-[2.1rem] font-bold tracking-tight text-[#f2f6fb] leading-tight"
+                    initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
+                    exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.22 }}
                   >
-                    Bienvenido de nuevo
-                    {user && (
-                      <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#8bb5d9] to-[#5a93c9]">
-                        {", "}{firstName(user.name)}
-                      </span>
+                    {user ? (
+                      <>
+                        Hola,{" "}
+                        <span className="text-[#5a93c9]">
+                          {firstName(user.name)}
+                        </span>
+                      </>
+                    ) : (
+                      "Bienvenido"
                     )}
                   </motion.h2>
                 </AnimatePresence>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="mt-2 text-sm text-[#8fa3b8] font-light">
                   {user
-                    ? "Ingresa tu contraseña para continuar."
-                    : "Ingresa tus credenciales para continuar."}
+                    ? "Confirma tu contraseña para entrar al sistema."
+                    : "Ingresa con tu correo institucional."}
                 </p>
+                {user?.puesto || user?.role ? (
+                  <p className="mt-2 font-instrument text-[10px] tracking-[0.14em] uppercase text-[#5a93c9]/90">
+                    {[user.puesto, user.role].filter(Boolean).join(" · ")}
+                  </p>
+                ) : null}
               </div>
+
               <AnimatePresence>
                 {user && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.85 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.85 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex-shrink-0"
+                    className="relative flex-shrink-0"
                     title={user.name}
                   >
+                    <span
+                      className="absolute -inset-1 rounded-full opacity-70"
+                      style={{
+                        background: `conic-gradient(from 200deg, ${ACC}, ${ACC_SOFT}, ${ACC})`,
+                      }}
+                    />
                     {user.photoUrl ? (
                       <img
                         src={user.photoUrl}
                         alt=""
-                        className="h-11 w-11 rounded-full object-cover border-2 border-[#2464A3]/60 shadow-[0_0_16px_rgba(36,100,163,0.35)]"
+                        className="relative h-12 w-12 rounded-full object-cover border-2 border-[#070b12]"
                       />
                     ) : (
-                      <div className="h-11 w-11 rounded-full bg-[#2464A3]/80 border-2 border-[#5a93c9]/40 flex items-center justify-center text-sm font-semibold shadow-[0_0_16px_rgba(36,100,163,0.35)]">
+                      <div className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#070b12] bg-[#2464A3] text-sm font-semibold">
                         {user.initial}
                       </div>
                     )}
@@ -762,12 +722,12 @@ export const LoginScreen: React.FC<{
                 )}
               </AnimatePresence>
             </div>
+          </div>
 
-          {/* Formulario */}
+          {/* formulario — sin card glass */}
           <form onSubmit={handleLogin} className="space-y-4">
-
-            <div className="relative group">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 group-focus-within:text-[#5a93c9] transition-colors z-10" />
+            <div className={fieldWrap}>
+              <Mail className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#5a6678] transition-colors group-focus-within:text-[#5a93c9]" />
               <input
                 id="login-email"
                 type="email"
@@ -777,28 +737,28 @@ export const LoginScreen: React.FC<{
                 placeholder=" "
                 autoComplete="email"
                 required
-                className={`${inputCls} pr-9`}
+                className={fieldInput}
               />
-              <label htmlFor="login-email" className={labelCls}>
+              <label htmlFor="login-email" className={fieldLabel}>
                 Correo institucional
               </label>
               {fetching && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border-2 border-[#5a93c9] border-t-transparent animate-spin" />
+                <span className="absolute right-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border-2 border-[#5a93c9] border-t-transparent animate-spin" />
               )}
             </div>
 
             <div>
-              <div className="flex justify-end mb-1.5">
+              <div className="mb-1.5 flex justify-end">
                 <button
                   type="button"
                   onClick={() => setShowReset(true)}
-                  className="text-[11px] text-[#5a93c9] hover:text-[#8bb5d9] transition-colors"
+                  className="font-instrument text-[10px] tracking-[0.08em] text-[#5a93c9] transition-colors hover:text-[#8bb5d9]"
                 >
                   ¿Olvidaste tu contraseña?
                 </button>
               </div>
-              <div className="relative group">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 group-focus-within:text-[#5a93c9] transition-colors z-10" />
+              <div className={fieldWrap}>
+                <Lock className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#5a6678] transition-colors group-focus-within:text-[#5a93c9]" />
                 <input
                   id="login-password"
                   type={showPass ? "text" : "password"}
@@ -808,46 +768,50 @@ export const LoginScreen: React.FC<{
                   placeholder=" "
                   autoComplete="current-password"
                   required
-                  className={inputCls}
+                  className={fieldInput}
                 />
-                <label htmlFor="login-password" className={labelCls}>
+                <label htmlFor="login-password" className={fieldLabel}>
                   Contraseña
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowPass((p) => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors z-10"
+                  className="absolute right-3.5 top-1/2 z-10 -translate-y-1/2 text-[#5a6678] transition-colors hover:text-[#e8eef4]"
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <label className="flex items-center gap-2.5 px-1 cursor-pointer select-none">
+            <label className="flex cursor-pointer select-none items-center gap-2.5 px-1">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
                 disabled={loading}
-                className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-[#2464A3] focus:ring-[#2464A3]/30"
+                className="h-4 w-4 rounded border-[#3a4a5c] bg-[#0a1220] text-[#2464A3] focus:ring-[#2464A3]/30"
               />
-              <span className="text-xs text-slate-400">
-                Recordarme (correo y contraseña en este dispositivo)
+              <span className="text-xs text-[#8fa3b8]">
+                Recordarme en este dispositivo
               </span>
             </label>
 
-            {/* Error */}
             <AnimatePresence>
               {error && (
                 <motion.div
-                  className="flex items-center gap-2 text-[11px] text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2.5"
-                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-[11px] text-red-200"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
                 >
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                   {attempts >= 3 && (
-                    <button type="button" onClick={() => setShowReset(true)}
-                      className="ml-auto underline whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowReset(true)}
+                      className="ml-auto whitespace-nowrap underline"
+                    >
                       Recuperar acceso
                     </button>
                   )}
@@ -855,36 +819,43 @@ export const LoginScreen: React.FC<{
               )}
             </AnimatePresence>
 
-            {/* Botón */}
             <motion.button
               type="submit"
               disabled={!email || !password || loading || !authReady}
-              whileTap={{ scale: 0.98 }}
+              whileTap={{ scale: 0.985 }}
               whileHover={{ scale: 1.01 }}
-              className="group relative w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2464A3] to-[#5a93c9] text-white text-sm font-semibold py-3.5 mt-1 shadow-lg shadow-[#2464A3]/30 overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:from-[#2464A3] disabled:to-[#2464A3]"
+              className="group relative mt-2 flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl py-[15px] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                background: `linear-gradient(105deg, ${ACC} 0%, #1a4f85 55%, #2a6aab 100%)`,
+                boxShadow: `0 12px 40px rgba(36,100,163,0.35), inset 0 1px 0 rgba(255,255,255,0.12)`,
+              }}
             >
-              <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+              {/* borde brass sutil */}
+              <span
+                className="pointer-events-none absolute inset-0 rounded-2xl"
+                style={{
+                  boxShadow: `inset 0 0 0 1px rgba(196,163,90,0.25)`,
+                }}
+              />
+              <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
               {loading ? (
-                <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
+                <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
               ) : !authReady ? (
                 "Preparando..."
               ) : (
                 <>
-                  Iniciar sesión
+                  Entrar al sistema
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </>
               )}
             </motion.button>
 
-            <p className="text-center text-[11px] text-slate-500 pt-1">
-              ¿Primera vez aquí?{" "}
-              <button type="button" onClick={onNavigateToRegister}
-                className="text-[#5a93c9] hover:text-[#8bb5d9] font-medium transition-colors">
-                Crear cuenta
-              </button>
+            <p className="pt-3 text-center text-[11px] leading-relaxed text-[#5a6678]">
+              Acceso solo para personal autorizado.
+              <br />
+              Solicita el alta a tu administrador si aún no tienes cuenta.
             </p>
           </form>
-          </div>
         </motion.div>
       </div>
 
@@ -894,36 +865,54 @@ export const LoginScreen: React.FC<{
       <AnimatePresence>
         {showReset && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={(e) => { if (e.target === e.currentTarget && !resetLoading) setShowReset(false); }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm font-login"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !resetLoading) setShowReset(false);
+            }}
           >
             <motion.div
-              className="relative w-full max-w-sm rounded-3xl bg-slate-900/90 backdrop-blur-xl border border-[#2464A3]/35 px-6 py-6 shadow-[0_24px_80px_rgba(36,100,163,0.25)]"
+              className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-[#2464A3]/30 bg-[#0c1420]/95 px-6 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
               initial={{ scale: 0.94, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.94, opacity: 0 }}
               transition={{ duration: 0.22 }}
             >
-              <button onClick={() => !resetLoading && setShowReset(false)}
-                className="absolute right-4 top-4 text-slate-500 hover:text-white transition-colors">
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 h-px"
+                style={{
+                  background: `linear-gradient(90deg, transparent, ${ACC_SOFT}, transparent)`,
+                }}
+              />
+              <button
+                onClick={() => !resetLoading && setShowReset(false)}
+                className="absolute right-4 top-4 text-[#5a6678] transition-colors hover:text-white"
+              >
                 <X className="h-4 w-4" />
               </button>
 
-              <h3 className="text-sm font-semibold text-slate-50 mb-0.5">Recuperar acceso</h3>
-              <p className="text-[11px] text-slate-400 mb-4">
+              <p className="mb-1 font-instrument text-[10px] tracking-[0.22em] uppercase text-[#5a93c9]">
+                Recuperación
+              </p>
+              <h3 className="mb-1 font-display text-lg font-bold text-[#f2f6fb]">
+                Recuperar acceso
+              </h3>
+              <p className="mb-4 text-[12px] text-[#8fa3b8]">
                 Te enviamos un enlace a tu correo institucional.
               </p>
 
               <form onSubmit={handleReset} className="space-y-3">
-                <div className="relative">
-                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <div className={fieldWrap}>
+                  <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6678]" />
                   <input
-                    type="email" value={email}
+                    type="email"
+                    value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={resetLoading}
                     placeholder="usuario@ese-ag.com"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#2464A3] transition-colors disabled:opacity-50"
+                    className="w-full bg-transparent py-3.5 pl-11 pr-4 text-sm text-white outline-none placeholder:text-[#5a6678] disabled:opacity-50"
                     autoFocus
                   />
                 </div>
@@ -931,26 +920,38 @@ export const LoginScreen: React.FC<{
                 <AnimatePresence>
                   {resetStatus && (
                     <motion.p
-                      className={`flex items-center gap-1.5 text-[11px] rounded-xl px-3 py-2 ${
+                      className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] ${
                         resetStatus.ok
-                          ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-200"
-                          : "bg-red-500/10 border border-red-500/30 text-red-200"
+                          ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : "border border-red-500/30 bg-red-500/10 text-red-200"
                       }`}
-                      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
                     >
-                      {resetStatus.ok
-                        ? <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                        : <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />}
+                      {resetStatus.ok ? (
+                        <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                      )}
                       {resetStatus.msg}
                     </motion.p>
                   )}
                 </AnimatePresence>
 
-                <button type="submit" disabled={resetLoading}
-                  className="w-full rounded-xl bg-gradient-to-r from-[#2464A3] to-[#5a93c9] text-white text-sm font-semibold py-3 hover:opacity-95 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2">
-                  {resetLoading
-                    ? <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
-                    : "Enviar enlace"}
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-white transition-opacity hover:opacity-95 disabled:opacity-50"
+                  style={{
+                    background: `linear-gradient(105deg, ${ACC}, #2a6aab)`,
+                  }}
+                >
+                  {resetLoading ? (
+                    <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  ) : (
+                    "Enviar enlace"
+                  )}
                 </button>
               </form>
             </motion.div>
@@ -965,5 +966,6 @@ export const LoginScreen: React.FC<{
         metrologyScene={metrologyScene}
       />
     </div>
+    </MotionConfig>
   );
 };

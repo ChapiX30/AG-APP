@@ -20,7 +20,11 @@ import { MobileBackHandler } from './MobileBackHandler';
 const ShareView = lazy(() => import('./ShareView').then(module => ({ default: module.ShareView })));
 
 // --- CARGA PEREZOSA DE PANTALLAS EXISTENTES ---
-const RegisterScreen = lazy(() => import('./RegisterScreen').then(module => ({ default: module.RegisterScreen })));
+const GestionUsuariosScreen = lazy(() =>
+  import('./GestionUsuariosScreen').then((module) => ({
+    default: module.GestionUsuariosScreen,
+  })),
+);
 const ProgramaCalibracionScreen = lazy(() => import('./ProgramaCalibracionScreen').then(module => ({ default: module.ProgramaCalibracionScreen })));
 const ControlPrestamosScreen = lazy(() => import('./ControlPrestamosScreen').then(module => ({ default: module.ControlPrestamosScreen })));
 const WorkSheetScreen = lazy(() => import('./WorkSheetScreen'));
@@ -129,31 +133,16 @@ export const MainApp: React.FC = () => {
       <div className="relative h-screen w-full overflow-hidden bg-slate-950">
         <MobileBackHandler />
         <AnimatePresence mode="wait">
-          {currentScreen === 'register' ? (
-            <motion.div
-              key="register"
-              initial={{ opacity: 0, scale: 1.02 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={authScreenTransition}
-              className="absolute inset-0 w-full h-full z-10"
-            >
-              <Suspense fallback={<Loader />}>
-                <RegisterScreen onNavigateToLogin={() => navigateTo('login')} />
-              </Suspense>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="login"
-              initial={{ opacity: 0, scale: 1.02 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={authScreenTransition}
-              className="absolute inset-0 w-full h-full z-10"
-            >
-              <LoginScreen onNavigateToRegister={() => navigateTo('register')} />
-            </motion.div>
-          )}
+          <motion.div
+            key="login"
+            initial={{ opacity: 0, scale: 1.02 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={authScreenTransition}
+            className="absolute inset-0 w-full h-full z-10"
+          >
+            <LoginScreen />
+          </motion.div>
         </AnimatePresence>
         <div className="absolute inset-0 bg-slate-950 z-0" />
       </div>
@@ -208,6 +197,7 @@ const renderScreen = (screen: string, user: any) => {
     case 'permisos-trabajo': return <PermisosTrabajoScreen />;
     case 'solicitud-vacaciones': return <SolicitudVacacionesScreen />;
     case 'control-vacaciones-rh': return <ControlVacacionesRhScreen />;
+    case 'gestion-usuarios': return <GestionUsuariosScreen />;
     case 'directorio-empresas': return <DirectorioEmpresasScreen />;
     case 'equipos-empresa': return <EquiposPorEmpresaScreen />;
     case 'detalle-equipo': return <DetalleEquipoScreen />;

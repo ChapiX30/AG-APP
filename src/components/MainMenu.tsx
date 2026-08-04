@@ -14,10 +14,9 @@ import {
   PiFileTextDuotone, PiAirplaneTiltDuotone, PiUsersThreeDuotone, PiCalendarDotsDuotone,
   PiDatabaseDuotone, PiFilesDuotone, PiFolderOpenDuotone, PiBuildingsDuotone,
   PiChartLineUpDuotone, PiWrenchDuotone, PiExportDuotone, PiMedalDuotone,
-  PiArrowsLeftRightDuotone, PiBellRingingDuotone,
+  PiArrowsLeftRightDuotone, PiBellRingingDuotone, PiShieldCheckeredDuotone,
   // Iconos de la interfaz (widgets, header, notificaciones) — alias a los nombres usados
   PiBellDuotone as Bell,
-  PiMedalDuotone as Award,
   PiSignOutDuotone as LogOut,
   PiUserDuotone as User,
   PiCheckCircleDuotone as CheckCircle2,
@@ -49,7 +48,7 @@ import {
   setNovedadesWidgetHidden,
 } from '../utils/appUpdatesStorage';
 import labLogo from '../assets/lab_logo.png';
-import { db, storage } from '../utils/firebase';
+import { db, storage, auth } from '../utils/firebase';
 import {
   collection, onSnapshot, doc, setDoc, getDoc, query, where, getDocs,
   orderBy, serverTimestamp, limit, Timestamp, addDoc, deleteDoc,
@@ -64,7 +63,7 @@ import {
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { autoStartServiciosIfDue } from '../utils/servicioAutomation';
+import { autoStartServiciosIfDue, getHoyFechaLocal, hasCelesticaAsignacionHoy } from '../utils/servicioAutomation';
 import { getTotalWorksheetQueueCount } from '../utils/worksheetQueueRunner';
 import { isUserOnline } from '../hooks/usePresence';
 import { COLLECTION_PATRONES, countPatronesEnAlerta, isCalidadRole } from '../utils/patronCalibracion';
@@ -104,10 +103,10 @@ interface AppNotification {
 }
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
-const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#2464A3', viewMode: 'grid' };
+const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#2464a3', viewMode: 'grid' };
 
 const PRESET_COLORS = [
-  { hex: '#2464A3', label: 'Azul' },
+  { hex: '#2464a3', label: 'Azul' },
   { hex: '#ec4899', label: 'Rosa' },
   { hex: '#8b5cf6', label: 'Violeta' },
   { hex: '#10b981', label: 'Esmeralda' },
@@ -151,6 +150,7 @@ const MENU_ITEMS = [
   { id: 'permisos-trabajo', title: 'Permisos TR', icon: PiFileTextDuotone, category: 'Operativo' },
   { id: 'solicitud-vacaciones', title: 'Vacaciones', icon: PiAirplaneTiltDuotone, category: 'Operativo' },
   { id: 'control-vacaciones-rh', title: 'Control Vacaciones RH', icon: PiUsersThreeDuotone, category: 'Operativo' },
+  { id: 'gestion-usuarios', title: 'Usuarios', icon: PiShieldCheckeredDuotone, category: 'Gestión' },
   { id: 'calendario', title: 'Calendario', icon: PiCalendarDotsDuotone, category: 'Gestión' },
   { id: 'consecutivos', title: 'Consecutivos', icon: PiDatabaseDuotone, category: 'Técnico' },
   { id: 'formatos', title: 'Formatos Máster', icon: PiFilesDuotone, category: 'Calidad' },
@@ -164,7 +164,11 @@ const MENU_ITEMS = [
   { id: 'vencimientos', title: 'Vencimientos', icon: PiBellRingingDuotone, category: 'Análisis' },
 ];
 
-const SUPER_ADMINS = ['jesus.sustaita@agsolutions.com', 'admin@agsolutions.com'];
+const SUPER_ADMINS = [
+  'jesus.sustaita@agsolutions.com',
+  'admin@agsolutions.com',
+  'mgaese08@gmail.com',
+];
 const PATRON_BANNER_DISMISS_KEY = 'patronAlertBannerDismissedAt';
 const PATRON_BANNER_HIDE_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -181,18 +185,58 @@ const isPatronBannerDismissed = (): boolean => {
 };
 const safeDateParse = (d?: string) => { if (!d) return null; const p = parseISO(d); return isValid(p) ? p : null; };
 
+const normalizeHex = (raw: unknown): string | null => {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim();
+  const withHash = t.startsWith('#') ? t : `#${t}`;
+  if (!/^#[0-9a-fA-F]{6}$/.test(withHash)) return null;
+  return withHash.toLowerCase();
+};
+
 const hexToRgb = (hex: string) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+  const clean = normalizeHex(hex) || DEFAULT_PREFS.accentColor;
+  const r = parseInt(clean.slice(1, 3), 16);
+  const g = parseInt(clean.slice(3, 5), 16);
+  const b = parseInt(clean.slice(5, 7), 16);
   return `${r} ${g} ${b}`;
+};
+
+const PREFS_LS_KEY = (uid: string) => `ag.userPrefs.${uid}`;
+
+const sanitizePrefs = (raw: Partial<UserPrefs> | null | undefined): Partial<UserPrefs> => {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Partial<UserPrefs> = {};
+  if (raw.themeMode === 'dark' || raw.themeMode === 'light') out.themeMode = raw.themeMode;
+  if (raw.viewMode === 'grid' || raw.viewMode === 'list') out.viewMode = raw.viewMode;
+  const accent = normalizeHex(raw.accentColor);
+  if (accent) out.accentColor = accent;
+  return out;
+};
+
+const readLocalPrefs = (uid: string): Partial<UserPrefs> => {
+  try {
+    const raw = localStorage.getItem(PREFS_LS_KEY(uid));
+    if (!raw) return {};
+    return sanitizePrefs(JSON.parse(raw) as Partial<UserPrefs>);
+  } catch {
+    return {};
+  }
+};
+
+const writeLocalPrefs = (uid: string, prefs: UserPrefs) => {
+  try {
+    localStorage.setItem(PREFS_LS_KEY(uid), JSON.stringify(prefs));
+  } catch {
+    /* quota / private mode */
+  }
 };
 
 // ─── APLICAR TEMA AL DOM ──────────────────────────────────────────────────────
 const applyTheme = (prefs: UserPrefs) => {
   const root = document.documentElement;
-  root.style.setProperty('--acc', prefs.accentColor);
-  root.style.setProperty('--acc-rgb', hexToRgb(prefs.accentColor));
+  const accent = normalizeHex(prefs.accentColor) || DEFAULT_PREFS.accentColor;
+  root.style.setProperty('--acc', accent);
+  root.style.setProperty('--acc-rgb', hexToRgb(accent));
   if (prefs.themeMode === 'dark') {
     // Grises neutros reales (sin tinte azul) — inspirado en Ant Design 5 / shadcn neutral
     root.style.setProperty('--bg', '#0a0a0a');
@@ -219,7 +263,7 @@ const applyTheme = (prefs: UserPrefs) => {
 const ThemeStyle = () => (
   <style>{`
     :root {
-      --acc: #2464A3; --acc-rgb: 36 100 163;
+      /* --acc / --acc-rgb los aplica applyTheme (no hardcodear aquí: pisa el color guardado) */
       --bg: #0a0a0a; --surface: #161616; --surface-hi: #242424;
       --border-color: rgba(255,255,255,0.10);
       --text: #f5f5f5; --text-muted: #a3a3a3; --text-faint: #525252;
@@ -326,6 +370,13 @@ const formatRoleLabel = (role: string): string => {
   return role.charAt(0).toUpperCase() + role.slice(1);
 };
 
+/** Never show an email in the greeting; prefer real name. */
+const resolveFirstName = (name?: string): string => {
+  const raw = String(name || '').trim();
+  if (raw && !raw.includes('@')) return raw.split(/\s+/)[0];
+  return 'Usuario';
+};
+
 const groupMenuByCategory = (items: typeof MENU_ITEMS) => {
   const map = new Map<string, typeof MENU_ITEMS>();
   items.forEach(item => {
@@ -338,29 +389,102 @@ const groupMenuByCategory = (items: typeof MENU_ITEMS) => {
     .map(category => ({ category, items: map.get(category)! }));
 };
 
-// ─── HOOK: PREFERENCIAS POR USUARIO EN FIRESTORE ──────────────────────────────
+// ─── HOOK: PREFERENCIAS POR USUARIO (Firestore + localStorage) ────────────────
 const useUserPrefs = (uid: string | undefined) => {
-  const [prefs, setPrefsLocal] = useState<UserPrefs>(DEFAULT_PREFS);
+  const [prefs, setPrefsLocal] = useState<UserPrefs>(() => {
+    if (!uid) return DEFAULT_PREFS;
+    const local = readLocalPrefs(uid);
+    const initial = { ...DEFAULT_PREFS, ...local };
+    applyTheme(initial);
+    return initial;
+  });
   const [loading, setLoading] = useState(true);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
 
   useEffect(() => {
-    if (!uid) { setLoading(false); return; }
-    getDoc(doc(db, 'userPrefs', uid)).then(snap => {
-      const merged = snap.exists() ? { ...DEFAULT_PREFS, ...snap.data() as Partial<UserPrefs> } : DEFAULT_PREFS;
-      setPrefsLocal(merged);
-      applyTheme(merged);
-    }).catch(() => applyTheme(DEFAULT_PREFS)).finally(() => setLoading(false));
+    if (!uid) {
+      setPrefsLocal(DEFAULT_PREFS);
+      applyTheme(DEFAULT_PREFS);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const local = readLocalPrefs(uid);
+    const boot = { ...DEFAULT_PREFS, ...local };
+    setPrefsLocal(boot);
+    applyTheme(boot);
+
+    getDoc(doc(db, 'userPrefs', uid))
+      .then(async (snap) => {
+        if (cancelled) return;
+        if (snap.exists()) {
+          const remote = sanitizePrefs(snap.data() as Partial<UserPrefs>);
+          const merged = { ...DEFAULT_PREFS, ...local, ...remote };
+          // Si Firestore no trae accent pero local sí, recuperar subiendo local (sin pisar a quien ya tiene remoto)
+          if (!remote.accentColor && local.accentColor) {
+            try {
+              await setDoc(
+                doc(db, 'userPrefs', uid),
+                { accentColor: local.accentColor },
+                { merge: true },
+              );
+            } catch (e) {
+              console.warn('No se pudo sincronizar accentColor local → Firestore:', e);
+            }
+          }
+          setPrefsLocal(merged);
+          applyTheme(merged);
+          writeLocalPrefs(uid, merged);
+          return;
+        }
+
+        // Sin doc remoto: si hay preferencias locales, subirlas (recupera elecciones no guardadas)
+        if (local.accentColor || local.themeMode || local.viewMode) {
+          try {
+            await setDoc(doc(db, 'userPrefs', uid), boot, { merge: true });
+          } catch (e) {
+            console.warn('No se pudo crear userPrefs desde local:', e);
+          }
+        }
+        setPrefsLocal(boot);
+        applyTheme(boot);
+        writeLocalPrefs(uid, boot);
+      })
+      .catch((e) => {
+        console.warn('Error leyendo userPrefs; se mantienen prefs locales:', e);
+        if (!cancelled) {
+          setPrefsLocal(boot);
+          applyTheme(boot);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [uid]);
 
   const setPrefs = useCallback(async (update: Partial<UserPrefs>) => {
-    setPrefsLocal(prev => {
-      const next = { ...prev, ...update };
-      applyTheme(next);
-      return next;
-    });
+    const patch = sanitizePrefs(update);
+    if (Object.keys(patch).length === 0) return;
+
+    const next = { ...prefsRef.current, ...patch };
+    prefsRef.current = next;
+    setPrefsLocal(next);
+    applyTheme(next);
+
     if (!uid) return;
-    try { await setDoc(doc(db, 'userPrefs', uid), update, { merge: true }); }
-    catch (e) { console.error('Error guardando prefs:', e); }
+    writeLocalPrefs(uid, next);
+    try {
+      await setDoc(doc(db, 'userPrefs', uid), patch, { merge: true });
+    } catch (e) {
+      console.error('Error guardando prefs:', e);
+      toast.error('No se pudo guardar tu personalización. Revisa tu conexión.');
+    }
   }, [uid]);
 
   return { prefs, setPrefs, loading };
@@ -582,11 +706,18 @@ const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNove
   onNovedadesWidgetHiddenChange: (hidden: boolean) => void;
 }) => {
   const colorRef = useRef<HTMLInputElement>(null);
-  const [custom, setCustom] = useState(prefs.accentColor);
+  const currentAccent = normalizeHex(prefs.accentColor) || DEFAULT_PREFS.accentColor;
+  const [custom, setCustom] = useState(currentAccent);
+
+  useEffect(() => {
+    setCustom(currentAccent);
+  }, [currentAccent]);
 
   const pick = (hex: string) => {
-    setCustom(hex);
-    setPrefs({ accentColor: hex });
+    const normalized = normalizeHex(hex);
+    if (!normalized) return;
+    setCustom(normalized);
+    setPrefs({ accentColor: normalized });
   };
 
   return (
@@ -626,18 +757,21 @@ const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNove
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2">Color de acento</p>
           <div className="grid grid-cols-6 gap-1.5 mb-2.5">
-            {PRESET_COLORS.map(({ hex, label }) => (
+            {PRESET_COLORS.map(({ hex, label }) => {
+              const selected = currentAccent === hex;
+              return (
               <button key={hex} title={label} onClick={() => pick(hex)}
                 className="relative w-8 h-8 rounded-lg transition-transform hover:scale-110 active:scale-95 border-2"
                 style={{
                   backgroundColor: hex,
-                  borderColor: prefs.accentColor === hex ? 'white' : 'transparent',
-                  boxShadow: prefs.accentColor === hex ? `0 0 0 1px ${hex}` : 'none',
+                  borderColor: selected ? 'white' : 'transparent',
+                  boxShadow: selected ? `0 0 0 1px ${hex}` : 'none',
                 }}
               >
-                {prefs.accentColor === hex && <Check className="w-3 h-3 text-white absolute inset-0 m-auto" strokeWidth={3} />}
+                {selected && <Check className="w-3 h-3 text-white absolute inset-0 m-auto" strokeWidth={3} />}
               </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* Picker libre */}
@@ -693,52 +827,6 @@ const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNove
 };
 
 // ─── WIDGETS ──────────────────────────────────────────────────────────────────
-const PatronesWidget = ({ navigateTo }: { navigateTo: any }) => {
-  const [stats, setStats] = useState({ vigentes: 0, vencidos: 0, mantenimiento: 0, loading: true });
-  useEffect(() => {
-    let m = true;
-    getDocs(collection(db, 'patronesCalibracion')).then(snap => {
-      if (!m) return;
-      let v = 0, x = 0, t = 0;
-      const hoy = new Date();
-      snap.forEach(d => {
-        const data = d.data();
-        if (['en_mantenimiento', 'fuera_servicio', 'con_falla'].includes(data.estadoProceso)) { t++; return; }
-        const f = data.fechaVencimiento || data.fecha;
-        const p = f ? parseISO(f) : null;
-        if (p && isValid(p) && differenceInDays(p, hoy) < 0) x++; else v++;
-      });
-      setStats({ vigentes: v, vencidos: x, mantenimiento: t, loading: false });
-    }).catch(() => { if (m) setStats(p => ({ ...p, loading: false })); });
-    return () => { m = false; };
-  }, []);
-  if (stats.loading) return <div className="h-28 rounded-2xl border ag-border animate-pulse ag-surface" />;
-  return (
-    <div className="rounded-2xl border ag-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-sm flex items-center gap-2 ag-text">
-          <Award className="w-4 h-4 acc-text" />Patrones Internos
-        </h3>
-        {stats.vencidos === 0 && <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">✓ Al Día</span>}
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { n: stats.vigentes, l: 'Vigentes', c: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-          { n: stats.vencidos, l: 'Vencidos', c: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20' },
-          { n: stats.mantenimiento, l: 'Taller', c: 'ag-muted', bg: 'ag-surface-hi ag-border' },
-        ].map(({ n, l, c, bg }) => (
-          <button key={l} onClick={() => navigateTo('programa-calibracion')}
-            className={`flex flex-col items-center py-2.5 rounded-xl border transition-all hover:scale-105 active:scale-95 ${bg}`}
-          >
-            <span className={`text-2xl font-bold ${c}`}>{n}</span>
-            <span className={`text-[10px] uppercase font-semibold mt-0.5 ${c} opacity-80`}>{l}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
-
 const TECH_ROLE_KEYS = ['metrologo', 'metrólogo', 'tecnico', 'técnico', 'ingeniero'];
 
 const isTechnicianUser = (u: { position?: string; puesto?: string; role?: string }) =>
@@ -934,10 +1022,16 @@ const ProfileModal = ({ currentUser, onClose, onUpdate }: {
         await uploadBytes(ref, localPhotoFile);
         newPhoto = await getDownloadURL(ref);
       }
-      await setDoc(doc(db, 'usuarios', uid), { name: localName, phone: localPhone, position: localPosition, photoUrl: newPhoto }, { merge: true });
+      await setDoc(doc(db, 'usuarios', uid), {
+        name: localName,
+        nombre: localName,
+        phone: localPhone,
+        photoUrl: newPhoto,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
       const auth = getAuth();
       if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: localName, photoURL: newPhoto });
-      onUpdate({ name: localName, photoUrl: newPhoto, phone: localPhone, role: localPosition });
+      onUpdate({ name: localName, photoUrl: newPhoto, phone: localPhone, role: role || localPosition });
       toast.success('¡Perfil actualizado!');
       setSaving(false); onClose();
     } catch (e: any) { toast.error('Error: ' + (e.message || 'Revisa permisos')); setSaving(false); }
@@ -969,14 +1063,21 @@ const ProfileModal = ({ currentUser, onClose, onUpdate }: {
               accept="image/*" className="hidden" />
           </div>
           {[
-            { label: 'Nombre', value: localName, set: setLocalName },
-            { label: 'Puesto', value: localPosition, set: setLocalPosition },
-            { label: 'Teléfono', value: localPhone, set: setLocalPhone },
-          ].map(({ label, value, set }) => (
+            { label: 'Nombre', value: localName, set: setLocalName, disabled: false },
+            { label: 'Puesto', value: localPosition, set: setLocalPosition, disabled: true },
+            { label: 'Teléfono', value: localPhone, set: setLocalPhone, disabled: false },
+          ].map(({ label, value, set, disabled }) => (
             <div key={label}>
               <label className="text-[11px] font-bold uppercase tracking-wide ag-muted mb-1 block">{label}</label>
-              <input value={value} onChange={e => set(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border text-sm ag-input acc-ring" />
+              <input
+                value={value}
+                onChange={e => set(e.target.value)}
+                disabled={disabled}
+                className={`w-full px-3 py-2.5 rounded-xl border text-sm ag-input acc-ring ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              />
+              {disabled && (
+                <p className="mt-1 text-[10px] ag-faint">El puesto solo lo cambia un administrador.</p>
+              )}
             </div>
           ))}
           <div>
@@ -1112,8 +1213,8 @@ const activateMenuItem = (
 };
 
 const MenuGridCard = ({
-  item, index, isDisabled, onNavigate, hideCategory, badgeCount,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number }) => {
+  item, index, isDisabled, onNavigate, hideCategory, badgeCount, disabledBadge = 'Pronto', disabledReason,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number; disabledBadge?: string; disabledReason?: string }) => {
   const rgb = getCategoryRgb(item.category);
   return (
     <motion.div
@@ -1123,7 +1224,8 @@ const MenuGridCard = ({
       role="button"
       tabIndex={isDisabled ? -1 : 0}
       aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
+      aria-label={isDisabled ? `${item.title} (${disabledReason || 'próximamente'})` : item.title}
+      title={isDisabled ? (disabledReason || undefined) : undefined}
       onClick={() => !isDisabled && onNavigate(item.id)}
       onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
       onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
@@ -1133,7 +1235,7 @@ const MenuGridCard = ({
       `}
     >
       {isDisabled && (
-        <span className="absolute top-3 right-3 z-20 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">Pronto</span>
+        <span className="absolute top-3 right-3 z-20 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">{disabledBadge}</span>
       )}
       {!isDisabled && badgeCount != null && badgeCount > 0 && (
         <span className="absolute top-3 right-3 z-20 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
@@ -1175,8 +1277,8 @@ const MenuGridCard = ({
 };
 
 const MenuListRow = ({
-  item, index, isDisabled, onNavigate, badgeCount,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number }) => {
+  item, index, isDisabled, onNavigate, badgeCount, disabledBadge = 'Pronto', disabledReason,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number; disabledBadge?: string; disabledReason?: string }) => {
   const rgb = getCategoryRgb(item.category);
   return (
     <motion.div
@@ -1185,7 +1287,8 @@ const MenuListRow = ({
       role="button"
       tabIndex={isDisabled ? -1 : 0}
       aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (próximamente)` : item.title}
+      aria-label={isDisabled ? `${item.title} (${disabledReason || 'próximamente'})` : item.title}
+      title={isDisabled ? (disabledReason || undefined) : undefined}
       onClick={() => !isDisabled && onNavigate(item.id)}
       onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
       onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
@@ -1198,6 +1301,9 @@ const MenuListRow = ({
         <item.icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: `rgb(${rgb})` }} />
       </div>
       <span className="flex-1 text-sm sm:text-[15px] font-medium ag-text tracking-tight">{item.title}</span>
+      {isDisabled && (
+        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">{disabledBadge}</span>
+      )}
       {!isDisabled && badgeCount != null && badgeCount > 0 && (
         <span className="min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white">
           {badgeCount > 99 ? '99+' : badgeCount}
@@ -1238,8 +1344,12 @@ export const MainMenu: React.FC = () => {
 
   const { allUpdates } = useAppUpdates();
 
-  const uid   = (user as any)?.uid   || (user as any)?.id    || '';
-  const email = (user as any)?.email || '';
+  const uid =
+    auth.currentUser?.uid ||
+    (user as { uid?: string; id?: string } | null)?.uid ||
+    (user as { uid?: string; id?: string } | null)?.id ||
+    '';
+  const email = (user as { email?: string } | null)?.email || '';
 
   const { prefs, setPrefs, loading: loadingPrefs } = useUserPrefs(uid);
   const viewMode = prefs.viewMode;
@@ -1304,7 +1414,7 @@ export const MainMenu: React.FC = () => {
 
   useEffect(() => {
     if (user) setLocalUser({
-      uid: (user as any).uid || '',
+      uid: (user as any).uid || (user as any).id || '',
       email: (user as any).email || '',
       name: ((user as any).name || (user as any).displayName || '').trim(),
       role: ((user as any).puesto || (user as any).role || '').trim().toLowerCase(),
@@ -1469,6 +1579,26 @@ export const MainMenu: React.FC = () => {
     [isAdmin, isCalidad, isJefe, isSuperAdmin, localUser],
   );
 
+  // Permisos TR: solo con asignación Celestica activa programada para hoy.
+  const canOpenPermisosTR = useMemo(
+    () => hasCelesticaAsignacionHoy(assignedServices, getHoyFechaLocal()),
+    [assignedServices],
+  );
+
+  const getMenuItemDisabled = useCallback((itemId: string): { disabled: boolean; badge?: string; reason?: string } => {
+    if (itemId === 'formatos' && !canOpenFormatos) {
+      return { disabled: true, badge: 'Pronto', reason: 'próximamente' };
+    }
+    if (itemId === 'permisos-trabajo' && !canOpenPermisosTR) {
+      return {
+        disabled: true,
+        badge: 'Celestica',
+        reason: 'Solo disponible con asignación Celestica de hoy',
+      };
+    }
+    return { disabled: false };
+  }, [canOpenFormatos, canOpenPermisosTR]);
+
   const permittedMenu = useMemo(() => {
     if (!localUser) return [];
     return MENU_ITEMS.filter(item => {
@@ -1476,9 +1606,12 @@ export const MainMenu: React.FC = () => {
       if (item.id === 'vencimientos') return isJefe || isCalidad || isSuperAdmin;
       if (['programa-calibracion', 'control-prestamos'].includes(item.id)) return isJefe || isCalidad || isSuperAdmin;
       if (item.id === 'control-vacaciones-rh') return isAdministrativo || isSuperAdmin;
+      if (item.id === 'gestion-usuarios') {
+        return isSuperAdmin || isAdmin || isCalidad || isJefe;
+      }
       return true;
     });
-  }, [localUser, isJefe, isCalidad, isSuperAdmin, isAdministrativo]);
+  }, [localUser, isJefe, isCalidad, isSuperAdmin, isAdministrativo, isAdmin]);
 
   const filteredMenu = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -1507,7 +1640,7 @@ export const MainMenu: React.FC = () => {
 
   if (!localUser || loadingPrefs) return <MenuLoadingSkeleton />;
 
-  const firstName = localUser.name.split(' ')[0];
+  const firstName = resolveFirstName(localUser.name);
   const clearFilters = () => { setSearchTerm(''); };
 
   const showNovedades = !novedadesWidgetHidden && (novedadesForUser.length > 0 || canCreateNovedades);
@@ -1529,12 +1662,7 @@ export const MainMenu: React.FC = () => {
   const widgetsDesktop = (
     <div className="flex flex-col gap-4 min-h-64">
       {novedadesWidget}
-      {showAdminWidgets && (
-        <>
-          <PatronesWidget navigateTo={navigateTo} />
-          <TechnicianStatusWidget />
-        </>
-      )}
+      {showAdminWidgets && <TechnicianStatusWidget />}
       <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
     </div>
   );
@@ -1719,10 +1847,7 @@ export const MainMenu: React.FC = () => {
                   <div className="snap-start shrink-0 w-[min(88vw,20rem)]">{novedadesWidget}</div>
                 )}
                 {showAdminWidgets && (
-                  <>
-                    <div className="snap-start shrink-0 w-[min(88vw,20rem)]"><PatronesWidget navigateTo={navigateTo} /></div>
-                    <div className="snap-start shrink-0 w-[min(88vw,20rem)]"><TechnicianStatusWidget /></div>
-                  </>
+                  <div className="snap-start shrink-0 w-[min(88vw,20rem)]"><TechnicianStatusWidget /></div>
                 )}
                 <div className="snap-start shrink-0 w-[min(88vw,20rem)] min-h-[16rem]">
                   <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
@@ -1787,13 +1912,17 @@ export const MainMenu: React.FC = () => {
                             </div>
                           )}
                           <div className={isSearching ? 'contents' : 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4'}>
-                            {items.map((item, i) => (
+                            {items.map((item, i) => {
+                              const disabledState = getMenuItemDisabled(item.id);
+                              return (
                               <MenuGridCard
                                 key={item.id}
                                 item={item}
                                 index={i}
                                 hideCategory={!isSearching}
-                                isDisabled={item.id === 'formatos' && !canOpenFormatos}
+                                isDisabled={disabledState.disabled}
+                                disabledBadge={disabledState.badge}
+                                disabledReason={disabledState.reason}
                                 onNavigate={navigateTo}
                                 badgeCount={
                                   item.id === 'calendario' && canSeePatronAlerts
@@ -1803,7 +1932,8 @@ export const MainMenu: React.FC = () => {
                                       : undefined
                                 }
                               />
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1823,12 +1953,16 @@ export const MainMenu: React.FC = () => {
                             </div>
                           )}
                           <div className="space-y-2">
-                            {items.map((item, i) => (
+                            {items.map((item, i) => {
+                              const disabledState = getMenuItemDisabled(item.id);
+                              return (
                               <MenuListRow
                                 key={item.id}
                                 item={item}
                                 index={i}
-                                isDisabled={item.id === 'formatos' && !canOpenFormatos}
+                                isDisabled={disabledState.disabled}
+                                disabledBadge={disabledState.badge}
+                                disabledReason={disabledState.reason}
                                 onNavigate={navigateTo}
                                 badgeCount={
                                   item.id === 'calendario' && canSeePatronAlerts
@@ -1838,7 +1972,8 @@ export const MainMenu: React.FC = () => {
                                       : undefined
                                 }
                               />
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
