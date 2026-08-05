@@ -48,6 +48,45 @@ async function processOneOfflineItem(
   item: OfflineQueueItem,
   user: UserLike
 ): Promise<void> {
+  const cert = String(item.data?.certificado || "").trim();
+  const incomingId = String(item.data?.id || "")
+    .trim()
+    .toUpperCase();
+
+  let docRefId = item.finalDocId;
+  if (!docRefId && cert) {
+    try {
+      const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", cert));
+      const existing = await getDocs(qCert);
+      if (!existing.empty) {
+        const d = existing.docs[0];
+        const existingId = String(d.data().id || "")
+          .trim()
+          .toUpperCase();
+        if (existingId && incomingId && existingId !== incomingId) {
+          throw new Error(
+            `CERT_EN_USO: El certificado ${cert} ya pertenece a ${existingId}. No se puede asignar a ${incomingId}.`
+          );
+        }
+        docRefId = d.id;
+      }
+    } catch (lookupErr) {
+      if (lookupErr instanceof Error && lookupErr.message.startsWith("CERT_EN_USO:")) {
+        throw lookupErr;
+      }
+      console.warn("[SaveProcessor] lookup certificado:", lookupErr);
+    }
+  }
+
+  // Firestore primero: evita PDF huérfano si el certificado ya es de otro equipo.
+  const baseData = { ...item.data, status: "completed" };
+  if (docRefId) {
+    await updateDoc(doc(db, "hojasDeTrabajo", docRefId), baseData);
+  } else {
+    const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), baseData);
+    docRefId = newDoc.id;
+  }
+
   const binaryStr = atob(item.pdfBlob);
   const bytes = new Uint8Array(binaryStr.length);
   for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
@@ -73,28 +112,9 @@ async function processOneOfflineItem(
 
   const updates: Record<string, string> = { pdfURL, cargado_drive: "Si", status: "completed" };
   await uploadFotoIfNeeded(item, updates);
+  await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
 
-  const fullData = { ...item.data, ...updates };
-
-  let docRefId = item.finalDocId;
-  if (!docRefId) {
-    const cert = String(item.data?.certificado || "").trim();
-    if (cert) {
-      try {
-        const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", cert));
-        const existing = await getDocs(qCert);
-        if (!existing.empty) docRefId = existing.docs[0].id;
-      } catch (lookupErr) {
-        console.warn("[SaveProcessor] lookup certificado:", lookupErr);
-      }
-    }
-  }
-  if (docRefId) {
-    await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
-  } else {
-    const newDoc = await addDoc(collection(db, "hojasDeTrabajo"), fullData);
-    docRefId = newDoc.id;
-  }
+  const fullData = { ...baseData, ...updates };
 
   try {
     await syncServicioInicioFromWorksheetRecord({
@@ -108,7 +128,6 @@ async function processOneOfflineItem(
     console.error("[SaveProcessor] sync servicio:", syncErr);
   }
 
-  const cert = String(item.data?.certificado || "");
   const mag =
     item.magnitudConsecutivo ||
     String(item.data.magnitudConsecutivo || item.data.magnitud || "");
@@ -134,6 +153,10 @@ export async function processWorksheetOfflineQueue(
       const msg = err instanceof Error ? err.message : String(err);
       result.errors.push(msg);
       console.error("[SaveProcessor] Error en cola offline:", err);
+      // Conflicto de certificado: no reintentar en loop (hay que regenerar consecutivo).
+      if (msg.startsWith("CERT_EN_USO:")) {
+        removeFromOfflineQueue(item.id);
+      }
     }
   }
   return result;

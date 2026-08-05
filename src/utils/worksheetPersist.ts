@@ -117,7 +117,8 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
     }
   }
 
-  // Si ya existe este certificado (reintento / cola offline), actualizar en lugar de crear otro.
+  // Reintento / cola offline: reutilizar doc del mismo certificado SOLO si es el mismo equipo.
+  // Si el certificado ya pertenece a otro ID, no pisar (causa empalmes tipo AGEL-0687 → EP vs MS).
   if (!finalDocId && firebaseOk && state.certificado?.trim()) {
     try {
       const qCert = query(
@@ -127,10 +128,23 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
       const certDocs = await getDocs(qCert);
       if (!certDocs.empty) {
         const d = certDocs.docs[0];
-        finalDocId = d.id;
-        existingData = d.data();
+        const existingId = String(d.data().id || "")
+          .trim()
+          .toUpperCase();
+        const incomingId = String(state.id || "")
+          .trim()
+          .toUpperCase();
+        if (!existingId || existingId === incomingId) {
+          finalDocId = d.id;
+          existingData = d.data();
+        } else {
+          throw new Error(
+            `CERT_EN_USO: El certificado ${state.certificado.trim()} ya pertenece a ${existingId}. No se puede asignar a ${incomingId || "este equipo"}.`
+          );
+        }
       }
     } catch (e) {
+      if (e instanceof Error && e.message.startsWith("CERT_EN_USO:")) throw e;
       if (!isRetriableNetworkError(e)) throw e;
     }
   }

@@ -906,14 +906,20 @@ async function drainBackgroundSaveQueue() {
       clearPendingSaveInFlight(job.id);
       localStorage.setItem("backup_worksheet_data", JSON.stringify(job.state));
       saveWorksheetDraft(job.state as unknown as Record<string, unknown>);
+      const conflictMsg =
+        e instanceof Error && e.message.startsWith("CERT_EN_USO:")
+          ? e.message.replace(/^CERT_EN_USO:\s*/, "")
+          : null;
       bgSaveToast?.({
-        message: "Error al guardar. Se conservó borrador y respaldo local.",
+        message: conflictMsg
+          ? `⚠️ ${conflictMsg}`
+          : "Error al guardar. Se conservó borrador y respaldo local.",
         type: "warning",
       });
       dispatchWorksheetSaveComplete({
         certificado: cert,
         success: false,
-        message: `Error al guardar ${cert}. Revisa borrador local.`,
+        message: conflictMsg || `Error al guardar ${cert}. Revisa borrador local.`,
       });
     }
   }
