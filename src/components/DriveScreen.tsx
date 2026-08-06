@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, startTransition } from "react";
 import { ref, listAll, getDownloadURL, uploadBytes, deleteObject, getMetadata } from "firebase/storage";
 import { doc, getDoc, deleteDoc, setDoc, collection, getDocs, updateDoc, query, limit, orderBy, where, writeBatch, documentId, onSnapshot } from "firebase/firestore";
 import { storage, db, auth } from "../utils/firebase";
@@ -816,7 +816,16 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
 });
 
 // ─── FOLDER CARD ──────────────────────────────
-const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, draggable, onDragStart, onDragOver, onDrop }: any) => {
+const FolderCard = React.memo(function FolderCard({
+  folder,
+  onOpen,
+  onContextMenu,
+  isDragTarget,
+  draggable,
+  onDragStart,
+  onDragOver,
+  onDrop,
+}: any) {
   const style = getFolderVisualStyle(folder.name);
   return (
     <div
@@ -824,8 +833,8 @@ const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, dragga
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
+      onDoubleClick={() => onOpen(folder)}
+      onContextMenu={(e) => onContextMenu(e, folder)}
       className={clsx(
         "group flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer transition-all duration-150 border select-none shadow-sm",
         isDragTarget
@@ -840,7 +849,7 @@ const FolderCard = ({ folder, onDoubleClick, onContextMenu, isDragTarget, dragga
       <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 flex-shrink-0 transition-colors" />
     </div>
   );
-};
+});
 
 // ─── DETAILS PANEL ────────────────────────────
 const DetailsPanel = ({ file, onClose, isQualityUser, onToggleStatus, onDownload, onDelete, onUpdateNotes, onRegeneratePdf, isGeneratingPdf, showRegeneratePdf, isPendingWorksheet, scrollRef }: any) => {
@@ -2764,11 +2773,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (ok) { showToast("Elemento movido", 'success'); loadContent(); }
   };
 
-  const handleFolderContextMenu = (e: React.MouseEvent, folder: DriveFolder) => {
-    e.preventDefault(); e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, file: null, folder });
-  };
-
   // --- INP FIX: Referencias estables ---
   const handleSelectRef = useRef(handleSelect);
   const handleToggleStarRef = useRef(handleToggleStar);
@@ -2797,6 +2801,29 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const onCardDoubleClick = useCallback((file: DriveFile) => handlePreviewRef.current(file), []);
   const onCardStar = useCallback((file: DriveFile) => handleToggleStarRef.current(file), []);
   const onCardDownload = useCallback((file: DriveFile) => handleDownload(file), []);
+
+  // INP: abrir carpeta fuera del input handler para no bloquear el siguiente paint
+  const folderNavBasePathRef = useRef<string[]>(path);
+  folderNavBasePathRef.current =
+    showSearchDropdown && browseBehindDisplay ? browseBehindDisplay.path : path;
+
+  const onFolderOpen = useCallback(
+    (folder: DriveFolder) => {
+      const nextPath = [...folderNavBasePathRef.current, folder.name];
+      startTransition(() => {
+        setPath(nextPath);
+        clearSearch();
+        setSearchFocused(false);
+      });
+    },
+    [clearSearch, setSearchFocused]
+  );
+
+  const onFolderContextMenu = useCallback((e: React.MouseEvent, folder: DriveFolder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, file: null, folder });
+  }, []);
 
   // ─── RENDER CONTENT ───────────────────────
   const renderContent = () => {
@@ -2992,8 +3019,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   onDragStart={(e: React.DragEvent) => handleItemDragStart(e, f, 'folder')}
                   onDragOver={(e: React.DragEvent) => handleFolderDragOver(e, f.fullPath)}
                   onDrop={(e: React.DragEvent) => handleFolderDrop(e, f)}
-                  onDoubleClick={() => { setPath([...contentPath, f.name]); clearSearch(); setSearchFocused(false); }}
-                  onContextMenu={(e: React.MouseEvent) => handleFolderContextMenu(e, f)}
+                  onOpen={onFolderOpen}
+                  onContextMenu={onFolderContextMenu}
                 />
               ))}
             </div>
