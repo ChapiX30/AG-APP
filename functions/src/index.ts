@@ -1,7 +1,6 @@
 import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import { addDays, addMonths, addYears, isValid, parseISO, format } from "date-fns";
-import { es } from "date-fns/locale";
 
 admin.initializeApp();
 
@@ -106,6 +105,7 @@ export const agbotMonitorDiario = functions.pubsub
         if (snapshot.empty) return null;
 
         let reporteHTML = "<ul>";
+        const { es } = require("date-fns/locale");
         snapshot.docs.forEach(doc => {
             const d = doc.data();
             const fVence = d._fechaVencimiento ? format(d._fechaVencimiento.toDate(), 'dd/MM/yyyy', { locale: es }) : "N/A";
@@ -674,6 +674,14 @@ export const getPatronCertificadoUrl = functions.https.onCall(async (data, conte
     const { runGetPatronCertificadoUrl } = require("./certificadoAccess");
     return runGetPatronCertificadoUrl(data, context);
 });
+
+/** Mueve archivos/carpetas en Storage con copia server-side (GCS copy). */
+export const moveDriveItems = functions
+    .runWith({ timeoutSeconds: 300, memory: "512MB" })
+    .https.onCall(async (data, context) => {
+        const { runMoveDriveItems } = require("./driveMove");
+        return runMoveDriveItems(data, context);
+    });
 
 export const adminCrearUsuario = functions.https.onCall(async (data, context) => {
     const { runAdminCrearUsuario } = require("./adminUsuarios");

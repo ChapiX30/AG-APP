@@ -6,7 +6,8 @@
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "npm run build && node scripts/withDiscoveryTimeout.cjs deploy --only functions",
+    "deploy:move": "npm run build && node scripts/withDiscoveryTimeout.cjs deploy --only functions:moveDriveItems",
     "logs": "firebase functions:log"
   },
   "engines": {
