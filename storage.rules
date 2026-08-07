@@ -133,16 +133,28 @@ service firebase.storage {
       allow delete: if isSignedIn();
     }
 
-    // Fotos de perfil — cada usuario solo escribe la suya; lectura para el equipo
+    // Fotos de perfil — cada usuario escribe la suya; admin/calidad/gerente pueden asignar a cualquiera
+    function canManageProfilePhotos() {
+      return isSignedIn() && roleText().matches(
+        '.*(calidad|quality|admin|gerente|manager).*'
+      );
+    }
+
     match /usuarios_fotos/{fileName} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()
-        && fileName == request.auth.uid + '.jpg'
         && request.resource != null
         && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && request.resource.contentType.matches('image/.*')
+        && (
+          fileName == request.auth.uid + '.jpg'
+          || canManageProfilePhotos()
+        );
       allow delete: if isSignedIn()
-        && fileName == request.auth.uid + '.jpg';
+        && (
+          fileName == request.auth.uid + '.jpg'
+          || canManageProfilePhotos()
+        );
     }
   }
 }

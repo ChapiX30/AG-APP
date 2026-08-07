@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Camera,
   Loader2,
   Search,
   ShieldCheck,
@@ -9,7 +10,8 @@ import {
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import clsx from "clsx";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { useAuth } from "../hooks/useAuth";
 import {
   AG_BRAND_BLUE,
@@ -17,7 +19,7 @@ import {
   OperationalScreenHeader,
   OperationalScreenShell,
 } from "./ui/OperationalScreenShell";
-import { db } from "../utils/firebase";
+import { db, storage } from "../utils/firebase";
 import {
   adminCrearUsuario,
   adminSetUsuarioActivo,
@@ -32,6 +34,7 @@ const SUPER_ADMINS = [
 ];
 
 const PUESTOS = ["Metrólogo", "Calidad", "Logistica", "Administrativo", "Gerente"] as const;
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 type UsuarioRow = {
   id: string;
@@ -39,6 +42,7 @@ type UsuarioRow = {
   email: string;
   puesto: string;
   activo: boolean;
+  photoUrl?: string;
 };
 
 const canManage = (email?: string, role?: string, puesto?: string) => {
@@ -53,6 +57,13 @@ const canManage = (email?: string, role?: string, puesto?: string) => {
   );
 };
 
+const initialsFromName = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ""}${parts[parts.length - 1][0] || ""}`.toUpperCase();
+};
+
 export const GestionUsuariosScreen: React.FC = () => {
   const { user } = useAuth();
   const allowed = canManage(user?.email, user?.role, user?.puesto);
@@ -65,6 +76,9 @@ export const GestionUsuariosScreen: React.FC = () => {
   const [puesto, setPuesto] = useState<(typeof PUESTOS)[number] | "">("");
   const [creating, setCreating] = useState(false);
   const [busyUid, setBusyUid] = useState<string | null>(null);
+  const [photoBusyUid, setPhotoBusyUid] = useState<string | null>(null);
+  const [photoTargetUid, setPhotoTargetUid] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!allowed) {
@@ -83,6 +97,7 @@ export const GestionUsuariosScreen: React.FC = () => {
               email: String(data.email || data.correo || "").trim().toLowerCase(),
               puesto: String(data.puesto || data.role || "").trim(),
               activo: data.activo !== false,
+              photoUrl: String(data.photoUrl || data.photoURL || "").trim() || undefined,
             };
           }),
         );
@@ -153,6 +168,60 @@ export const GestionUsuariosScreen: React.FC = () => {
     }
   };
 
+  const openPhotoPicker = (uid: string) => {
+    setPhotoTargetUid(uid);
+    requestAnimationFrame(() => photoInputRef.current?.click());
+  };
+
+  const handlePhotoSelected = async (file: File | undefined) => {
+    const targetUid = photoTargetUid;
+    setPhotoTargetUid(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (!file || !targetUid) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Elige una imagen (JPG, PNG, etc.).");
+      return;
+    }
+    if (file.size > PHOTO_MAX_BYTES) {
+      toast.error("La foto debe pesar menos de 5 MB.");
+      return;
+    }
+
+    setPhotoBusyUid(targetUid);
+    try {
+      const path = `usuarios_fotos/${targetUid}.jpg`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file);
+      const url = await getDownloadURL(ref);
+      await setDoc(
+        doc(db, "usuarios", targetUid),
+        {
+          photoUrl: url,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+      toast.success("Foto de perfil actualizada.");
+    } catch (err: unknown) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code)
+          : "";
+      if (code === "storage/unauthorized") {
+        toast.error(
+          "Sin permiso en Storage. Despliega las reglas: firebase deploy --only storage",
+        );
+      } else {
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo actualizar la foto.",
+        );
+      }
+    } finally {
+      setPhotoBusyUid(null);
+    }
+  };
+
   if (!allowed) {
     return (
       <OperationalScreenShell>
@@ -171,6 +240,13 @@ export const GestionUsuariosScreen: React.FC = () => {
   return (
     <OperationalScreenShell className={OPERATIONAL_SCREEN_BG}>
       <Toaster position="top-center" />
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => void handlePhotoSelected(e.target.files?.[0])}
+      />
       <OperationalScreenHeader
         title="Gestión de usuarios"
         subtitle="Solo personal autorizado puede entrar a la app"
@@ -243,7 +319,12 @@ export const GestionUsuariosScreen: React.FC = () => {
 
         <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-            <h2 className="text-base font-semibold text-slate-800 flex-1">Usuarios del sistema</h2>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-semibold text-slate-800">Usuarios del sistema</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Toca la foto o el botón de cámara para asignar la imagen de esa persona.
+              </p>
+            </div>
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -264,7 +345,32 @@ export const GestionUsuariosScreen: React.FC = () => {
           ) : (
             <ul className="divide-y divide-slate-100">
               {filtered.map((u) => (
-                <li key={u.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <li key={u.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                  <button
+                    type="button"
+                    title={`Cambiar foto de ${u.name}`}
+                    disabled={photoBusyUid === u.id}
+                    onClick={() => openPhotoPicker(u.id)}
+                    className="relative shrink-0 w-11 h-11 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 group disabled:opacity-60"
+                  >
+                    {u.photoUrl ? (
+                      <img src={u.photoUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span
+                        className="w-full h-full flex items-center justify-center text-white text-xs font-bold"
+                        style={{ backgroundColor: AG_BRAND_BLUE }}
+                      >
+                        {initialsFromName(u.name)}
+                      </span>
+                    )}
+                    <span className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      {photoBusyUid === u.id ? (
+                        <Loader2 className="w-4 h-4 text-white animate-spin" />
+                      ) : (
+                        <Camera className="w-4 h-4 text-white" />
+                      )}
+                    </span>
+                  </button>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-800 truncate">{u.name}</p>
                     <p className="text-xs text-slate-500 truncate">{u.email || "Sin correo"}</p>
@@ -278,6 +384,19 @@ export const GestionUsuariosScreen: React.FC = () => {
                   >
                     {u.activo ? "Activo" : "Inactivo"}
                   </span>
+                  <button
+                    type="button"
+                    disabled={photoBusyUid === u.id}
+                    onClick={() => openPhotoPicker(u.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
+                  >
+                    {photoBusyUid === u.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                    Foto
+                  </button>
                   <button
                     type="button"
                     disabled={busyUid === u.id || u.id === user?.id}
