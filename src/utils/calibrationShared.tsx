@@ -740,7 +740,10 @@ export const computeCompanyLabBacklogByArea = (
   });
 
   const buildSection = (area: LabAreaKey): AreaCompanyArrivals => {
-    const groups = sortCompanyArrivalGroups(Array.from(areaMaps.get(area)?.values() || []));
+    // Solo empresas con algo pendiente de calibrar (100% listos salen del TV).
+    const groups = sortCompanyArrivalGroups(Array.from(areaMaps.get(area)?.values() || [])).filter(
+      (g) => g.pending > 0
+    );
     return {
       area,
       areaLabel: LAB_AREA_TV_LABELS[area],

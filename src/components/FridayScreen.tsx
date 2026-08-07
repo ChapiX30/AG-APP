@@ -8,7 +8,8 @@ import {
   Lock, Shield, Check, Briefcase, 
   MessageSquare, Send, Clock, AlertTriangle, AlertCircle,
   MoreHorizontal, ArrowUpAZ, ArrowDownAZ, EyeOff, Eye, Pencil,
-  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette, Loader2, ShieldCheck
+  RotateCcw, Brain, Download, Filter, History, CheckCircle, Info, Palette, Loader2, ShieldCheck,
+  GripVertical, ArrowRightLeft, Layers
 } from "lucide-react";
 import { db } from "../utils/firebase";
 import { reconcileWorksheetDriveFlags } from "../utils/worksheetDriveSync";
@@ -173,10 +174,15 @@ const canUserEditFridayBoard = (profile: {
         [profile.puesto, profile.role, profile.departamento].filter(Boolean).join(" ")
     );
     const puestoNorm = normalizeText(profile.puesto || profile.role || "");
+    // Exacto o contiene (ej. "Ing. Calidad", "Calidad / SCL") — sin tocar datos, solo permiso UI
     const isSclPuesto =
         puestoNorm === "calidad" ||
         puestoNorm === "logistica" ||
-        puestoNorm === "logística";
+        puestoNorm === "logística" ||
+        puestoNorm.includes("calidad") ||
+        puestoNorm.includes("logist") ||
+        roleStr.includes("calidad") ||
+        roleStr.includes("logist");
     return isCalidadLogisticaRoleText(roleStr) || isSclPuesto || isNoraAmador;
 };
 
@@ -201,9 +207,32 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 const ROW_HEIGHT_PX = 44;
+/** Virtualizar grupos grandes con altura fija (scroll interno estable; evita pelear con #main-board-scroll). */
 const VIRTUALIZE_MIN_ROWS = 48;
 const VIRTUAL_LIST_MAX_HEIGHT = 520;
 const BOARD_POPOVER_Z = 9999;
+
+function scheduleWhenIdle(fn: () => void, timeoutMs: number): () => void {
+    let idleId: number | undefined;
+    let cancelled = false;
+    const run = () => {
+        if (cancelled) return;
+        fn();
+    };
+    const ric = typeof window !== "undefined" ? window.requestIdleCallback : undefined;
+    if (ric) {
+        idleId = ric(run, { timeout: timeoutMs });
+        return () => {
+            cancelled = true;
+            window.cancelIdleCallback?.(idleId!);
+        };
+    }
+    const t = window.setTimeout(run, Math.min(timeoutMs, 1200));
+    return () => {
+        cancelled = true;
+        clearTimeout(t);
+    };
+}
 
 type PopoverAlign = "left" | "center" | "right";
 
@@ -358,11 +387,92 @@ interface WorksheetData { docId: string; id: string; createdAt: string; lugarCal
 interface GroupData { id: string; name: string; color: string; collapsed: boolean; total?: number; rows?: WorksheetData[] }
 interface DragItem { type: 'row' | 'column'; index: number; id?: string; groupId?: string; }
 interface AGBotThought { id: number; type: 'info' | 'warning' | 'success'; message: string; timestamp: string; }
+/** Vista de agrupación — solo presentación; no reescribe hojasDeTrabajo. */
+type BoardGroupBy = "lugar" | "folio" | "cliente";
+interface FolioSubgroup {
+    key: string;
+    name: string;
+    rows: WorksheetData[];
+}
+interface DisplayBoardGroup extends GroupData {
+    rows: WorksheetData[];
+    subgroups?: FolioSubgroup[];
+}
+
+const GROUP_BY_OPTIONS: { id: BoardGroupBy; label: string }[] = [
+    { id: "lugar", label: "Sitio / Laboratorio" },
+    { id: "folio", label: "Folio HSDG" },
+    { id: "cliente", label: "Cliente" },
+];
+
+const rowOrderStorageKey = (year: number) => `friday_row_order_v1_${year}`;
+const groupByStorageKey = (year: number) => `friday_group_by_v1_${year}`;
+
+/** Folio de hoja de servicio: HSDG-0001 / HSDG.0001 */
+const isHsdgServiceFolio = (value: string): boolean =>
+    /^HSDG[-.]?\d+/i.test((value || "").trim());
+
+/** N° certificado (AGD-0075-26, AGPT-0004-24, AGEL-…) — no es folio HSDG. */
+const looksLikeCertificadoCode = (value: string): boolean => {
+    const s = (value || "").trim();
+    if (!s || isHsdgServiceFolio(s)) return false;
+    // Consecutivo certificado: LETRAS-####-AA
+    if (/^[A-Za-z]{2,}-\d{2,}-\d{2}$/.test(s)) return true;
+    if (/^AG[A-Za-z]*[-_]\d+/i.test(s)) return true;
+    return false;
+};
+
+const normalizeHsdgFolio = (value: string): string => {
+    const s = value.trim().toUpperCase();
+    const m = s.match(/^HSDG[.-]?(\d+)/i);
+    if (!m) return s;
+    return `HSDG-${m[1]}`;
+};
+
+/** Agrupar por folio de servicio = HSDG-…. Nunca por N° de certificado. */
+const getRowFolioKey = (row: WorksheetData, lugarId: string): string => {
+    const isLab = (lugarId || "").toLowerCase() === "laboratorio";
+    const candidates = isLab
+        ? [row.folioSalida, row.folio]
+        : [row.folio, row.folioSalida];
+
+    for (const raw of candidates) {
+        const s = String(raw || "").trim();
+        if (isHsdgServiceFolio(s)) return normalizeHsdgFolio(s);
+    }
+
+    // Fallback: folio numérico de servicio (lab), si no parece certificado
+    for (const raw of candidates) {
+        const s = String(raw || "").trim();
+        if (!s || looksLikeCertificadoCode(s)) continue;
+        if (row.certificado && normalizeText(s) === normalizeText(String(row.certificado))) continue;
+        if (/^\d{3,}$/.test(s)) return s;
+    }
+
+    return "(Sin folio HSDG)";
+};
+
+const getRowClienteKey = (row: WorksheetData): string =>
+    String(row.cliente || "").trim() || "(Sin cliente)";
+
+const SUBGROUP_PAGE_SIZE = 50;
+
+const sortRowsByOrder = (list: WorksheetData[], orderIds: string[] | undefined): WorksheetData[] => {
+    if (!orderIds?.length) return list;
+    const rank = new Map(orderIds.map((id, i) => [id, i]));
+    return [...list].sort((a, b) => {
+        const ra = rank.has(a.docId) ? rank.get(a.docId)! : Number.MAX_SAFE_INTEGER;
+        const rb = rank.has(b.docId) ? rank.get(b.docId)! : Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return 0;
+    });
+};
 
 /** Reconciliación Drive: servidor `scheduledDriveReconcile` (1×/día) + respaldo en tablero (AG-Bot / intervalo). */
-const AGBOT_INITIAL_DELAY_MS = 2_000;
+/** Diferidos tras el primer pintado para no pelear con el scroll (misma lógica, otro timing). */
+const AGBOT_INITIAL_DELAY_MS = 20_000;
 const DRIVE_RECONCILE_INTERVAL_MS = 2 * 60 * 60 * 1000;
-const DRIVE_RECONCILE_INITIAL_MS = 15_000;
+const DRIVE_RECONCILE_INITIAL_MS = 60_000;
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string }> = {
   "Desconocido": { label: "Desconocido", bg: "#c4c4c4" }, "En Revisión": { label: "En Revisión", bg: "#fdab3d" },
@@ -574,6 +684,9 @@ const FridaySelectionBar = ({
     onAssign,
     onDelete,
     onClear,
+    onExport,
+    onMoveToSitio,
+    onMoveToLab,
 }: {
     count: number;
     canEdit: boolean;
@@ -581,38 +694,46 @@ const FridaySelectionBar = ({
     onAssign: (name: string) => void;
     onDelete: () => void;
     onClear: () => void;
+    onExport: () => void;
+    onMoveToSitio: () => void;
+    onMoveToLab: () => void;
 }) => {
     if (count === 0 || typeof document === "undefined") return null;
 
     return createPortal(
         <div
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] pointer-events-none"
+            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[110] pointer-events-none px-3"
             role="toolbar"
             aria-label="Acciones de filas seleccionadas"
         >
-            <div className="pointer-events-auto bg-white shadow-2xl rounded-lg border border-gray-200 px-6 py-3 flex items-center gap-6 animate-in slide-in-from-bottom-4">
-                <div className="flex items-center gap-3 border-r border-gray-200 pr-6">
-                    <div className="bg-[#2464A3] text-white text-xs font-bold w-6 h-6 rounded flex items-center justify-center">
-                        {count}
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">Seleccionados</span>
+            <div className="pointer-events-auto bg-white shadow-[0_10px_40px_rgba(0,0,0,0.16)] rounded-2xl border border-gray-200/90 pl-2 pr-2 py-2 flex items-center gap-1 sm:gap-2 animate-in slide-in-from-bottom-4 max-w-[calc(100vw-1rem)] overflow-x-auto">
+                <div className="bg-[#0073ea] text-white text-[13px] font-semibold px-3 py-2 rounded-xl whitespace-nowrap tabular-nums shrink-0">
+                    {count} Elemento{count === 1 ? "" : "s"} seleccionado{count === 1 ? "" : "s"}
                 </div>
                 {canEdit ? (
                     <>
                         <BulkResponsablePicker metrologos={metrologos} onAssign={onAssign} />
-                        <button
-                            type="button"
-                            onClick={onDelete}
-                            className="flex flex-col items-center gap-1 text-gray-500 hover:text-red-600 transition-colors"
-                        >
+                        <button type="button" onClick={onExport} className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-emerald-700 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50 shrink-0" title="Exportar selección">
+                            <Download className="w-4 h-4" />
+                            <span className="text-[10px]">Exportar</span>
+                        </button>
+                        <button type="button" onClick={onMoveToSitio} className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-[#2464A3] transition-colors px-2 py-1 rounded-lg hover:bg-gray-50 shrink-0" title="Mover a Servicio en Sitio">
+                            <ArrowRightLeft className="w-4 h-4" />
+                            <span className="text-[10px]">Sitio</span>
+                        </button>
+                        <button type="button" onClick={onMoveToLab} className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-violet-700 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50 shrink-0" title="Mover a Laboratorio">
+                            <Layers className="w-4 h-4" />
+                            <span className="text-[10px]">Lab</span>
+                        </button>
+                        <button type="button" onClick={onDelete} className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-red-600 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50 shrink-0">
                             <Trash2 className="w-4 h-4" />
                             <span className="text-[10px]">Eliminar</span>
                         </button>
                     </>
                 ) : (
-                    <span className="text-xs text-gray-500">Modo lectura</span>
+                    <span className="text-xs text-gray-500 px-2">Modo lectura</span>
                 )}
-                <button type="button" onClick={onClear} className="ml-2 hover:bg-gray-100 p-1 rounded" title="Limpiar selección">
+                <button type="button" onClick={onClear} className="hover:bg-gray-100 p-2 rounded-xl shrink-0" title="Limpiar selección">
                     <X className="w-4 h-4 text-gray-500" />
                 </button>
             </div>
@@ -806,10 +927,31 @@ const BoardRow = React.memo(({ row, columns, color, isSelected, onToggleSelect, 
     );
 
     return (
-        <div id={`row-${row.docId}`} className="flex border-b border-[#e6e9ef] group transition-colors hover:!bg-[#f5f6f8]" style={{ backgroundColor: rowBackgroundColor, height: ROW_HEIGHT_PX }} draggable={canEditBoard} onDragStart={canEditBoard ? (e) => onDragStart(e, { type: 'row', index, id: row.docId, groupId }) : undefined} onDragOver={canEditBoard ? (e) => e.preventDefault() : undefined} onDragEnd={canEditBoard ? onDragEnd : undefined} onDrop={canEditBoard ? (e) => { e.stopPropagation(); onDrop(e, { type: 'row', index, id: row.docId, groupId }); } : undefined}>
+        <div
+            id={`row-${row.docId}`}
+            className="flex border-b border-[#e6e9ef] group transition-colors hover:!bg-[#f5f6f8]"
+            style={{ backgroundColor: rowBackgroundColor, height: ROW_HEIGHT_PX }}
+            onDragOver={canEditBoard ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } : undefined}
+            onDrop={canEditBoard ? (e) => { e.preventDefault(); e.stopPropagation(); onDrop(e, { type: 'row', index, id: row.docId, groupId }); } : undefined}
+        >
             <div className="w-1.5 flex-shrink-0 sticky left-0 z-20" style={{ backgroundColor: color }}></div>
             <div className="w-[40px] flex-shrink-0 border-r border-[#e6e9ef] sticky left-1.5 z-20 flex items-center justify-center" style={{ backgroundColor: rowBackgroundColor }}>
                  <div className="w-full h-full flex items-center justify-center relative group/control">
+                    {canEditBoard && (
+                        <div
+                            draggable
+                            onDragStart={(e) => {
+                                e.stopPropagation();
+                                onDragStart(e, { type: 'row', index, id: row.docId, groupId });
+                            }}
+                            onDragEnd={onDragEnd}
+                            className="absolute left-0 top-0 bottom-0 w-3.5 flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 group-hover/control:opacity-100 z-10"
+                            title="Arrastrar fila"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <GripVertical size={12} />
+                        </div>
+                    )}
                     <div className="hidden group-hover/control:flex gap-1 absolute bg-white shadow-lg p-1 rounded-md border border-gray-200 z-50 left-full ml-1">
                         <button onClick={() => onOpenComments(row)} className="p-1 hover:bg-blue-50 text-gray-500 hover:text-blue-600 rounded" title="Comentarios"><MessageSquare size={14}/></button>
                         <button onClick={() => onOpenHistory(row)} className="p-1 hover:bg-purple-50 text-gray-500 hover:text-purple-600 rounded" title="Historial"><History size={14}/></button>
@@ -1026,6 +1168,37 @@ const GroupRowsBody = React.memo(function GroupRowsBody(props: BoardRowSharedPro
     );
 });
 
+const BoardLoadingSkeleton = () => (
+    <div className="px-4 mt-6 space-y-8 animate-in fade-in duration-300" aria-busy="true" aria-label="Cargando tablero">
+        {[0, 1].map((g) => (
+            <div key={g}>
+                <div className="flex items-center gap-2 mb-3 px-3">
+                    <div className="w-1 h-6 rounded-full bg-slate-200" />
+                    <div className="h-5 w-40 rounded-md bg-slate-200/90 animate-pulse" />
+                    <div className="h-5 w-10 rounded-full bg-slate-100 animate-pulse" />
+                </div>
+                <div className="rounded-lg border border-[#e6e9ef] overflow-hidden bg-white">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-0 border-b border-[#e6e9ef] last:border-b-0" style={{ height: ROW_HEIGHT_PX }}>
+                            <div className="w-1.5 h-full bg-slate-100 shrink-0" />
+                            <div className="w-10 shrink-0 flex items-center justify-center border-r border-[#e6e9ef]">
+                                <div className="w-3.5 h-3.5 rounded bg-slate-100 animate-pulse" />
+                            </div>
+                            <div className="flex-1 flex gap-3 px-3">
+                                <div className="h-3 w-16 rounded bg-slate-100 animate-pulse" />
+                                <div className="h-3 w-28 rounded bg-slate-100 animate-pulse" />
+                                <div className="h-3 w-40 rounded bg-slate-100 animate-pulse hidden sm:block" />
+                                <div className="h-3 w-24 rounded bg-slate-100 animate-pulse hidden md:block" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        ))}
+        <p className="text-center text-xs text-slate-400 font-medium pt-2">Cargando tablero…</p>
+    </div>
+);
+
 const HiddenColumnsBar = ({ hiddenColumns, onUnhide }: { hiddenColumns: Column[], onUnhide: (key: string) => void }) => {
     if (hiddenColumns.length === 0) return null;
     return (
@@ -1056,10 +1229,21 @@ const FridayScreen: React.FC = () => {
     } | null>(null);
     const [userProfileResolved, setUserProfileResolved] = useState(false);
 
-    const canEditBoard = useMemo(
-        () => (userProfileResolved ? canUserEditFridayBoard(currentUserProfile) : false),
-        [currentUserProfile, userProfileResolved]
-    );
+    const canEditBoard = useMemo(() => {
+        if (userProfileResolved) return canUserEditFridayBoard(currentUserProfile);
+        // Mientras carga el perfil: no bloquear edición si el auth ya trae puesto Calidad/Logística
+        if (user) {
+            return canUserEditFridayBoard({
+                nombre: user.name,
+                name: user.name,
+                correo: user.email,
+                email: user.email,
+                puesto: user.role,
+                role: user.role,
+            });
+        }
+        return false;
+    }, [currentUserProfile, userProfileResolved, user]);
 
     const [rows, setRows] = useState<WorksheetData[]>([]);
     const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
@@ -1067,6 +1251,12 @@ const FridayScreen: React.FC = () => {
         { id: "sitio", name: "Servicios en Sitio", color: "#2464A3", collapsed: false },
         { id: "laboratorio", name: "Equipos en Laboratorio", color: "#a25ddc", collapsed: false }
     ]);
+    const [groupBy, setGroupBy] = useState<BoardGroupBy>("lugar");
+    const [rowOrderByGroup, setRowOrderByGroup] = useState<Record<string, string[]>>({});
+    /** Subgrupos (folio/cliente) empiezan colapsados — evita congelar al montar cientos de filas. */
+    const [expandedSubgroups, setExpandedSubgroups] = useState<Record<string, boolean>>({});
+    const [groupByMenuOpen, setGroupByMenuOpen] = useState(false);
+    const [subgroupVisibleLimit, setSubgroupVisibleLimit] = useState(SUBGROUP_PAGE_SIZE);
     const [metrologos, setMetrologos] = useState<any[]>([]); 
     const [clientes, setClientes] = useState<any[]>([]); 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1078,7 +1268,7 @@ const FridayScreen: React.FC = () => {
     const [isReconcilingDrive, setIsReconcilingDrive] = useState(false);
     
     const [search, setSearch] = useState("");
-    const debouncedSearch = useDebounce(search, 300);
+    const debouncedSearch = useDebounce(search, 200);
     const agBotRanRef = useRef(false);
     const orphanBackfillRanRef = useRef(false);
     const driveReconcileInFlightRef = useRef(false);
@@ -1405,24 +1595,61 @@ const FridayScreen: React.FC = () => {
             if (newThoughts.length > 0) setAgBotThoughts(prev => [...newThoughts, ...prev].slice(0, 10));
             await runAutoDriveReconcile("agbot");
         };
-        const timer = setTimeout(runAGBot, AGBOT_INITIAL_DELAY_MS);
-        return () => clearTimeout(timer);
+        let cancelIdle: (() => void) | undefined;
+        const timer = setTimeout(() => {
+            cancelIdle = scheduleWhenIdle(() => { void runAGBot(); }, 5_000);
+        }, AGBOT_INITIAL_DELAY_MS);
+        return () => {
+            clearTimeout(timer);
+            cancelIdle?.();
+        };
     }, [userProfileResolved, canEditBoard, isLoadingData, rows.length, runAutoDriveReconcile]);
 
     useEffect(() => {
         if (!userProfileResolved || !canEditBoard || isLoadingData || rows.length === 0) return;
         const tick = () => void runAutoDriveReconcile("interval");
-        const initialTimer = setTimeout(tick, DRIVE_RECONCILE_INITIAL_MS);
+        let cancelIdle: (() => void) | undefined;
+        const initialTimer = setTimeout(() => {
+            cancelIdle = scheduleWhenIdle(tick, 8_000);
+        }, DRIVE_RECONCILE_INITIAL_MS);
         const intervalId = setInterval(tick, DRIVE_RECONCILE_INTERVAL_MS);
         return () => {
             clearTimeout(initialTimer);
+            cancelIdle?.();
             clearInterval(intervalId);
         };
     }, [userProfileResolved, canEditBoard, isLoadingData, currentYear, rows.length, runAutoDriveReconcile]);
 
     useEffect(() => {
+        try {
+            const rawOrder = localStorage.getItem(rowOrderStorageKey(currentYear));
+            setRowOrderByGroup(rawOrder ? JSON.parse(rawOrder) : {});
+        } catch {
+            setRowOrderByGroup({});
+        }
+        try {
+            const rawGb = localStorage.getItem(groupByStorageKey(currentYear)) as BoardGroupBy | null;
+            if (rawGb === "lugar" || rawGb === "folio" || rawGb === "cliente") setGroupBy(rawGb);
+            else setGroupBy("lugar");
+        } catch {
+            setGroupBy("lugar");
+        }
+        setExpandedSubgroups({});
+        setSubgroupVisibleLimit(SUBGROUP_PAGE_SIZE);
         agBotRanRef.current = false;
     }, [currentYear]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(rowOrderStorageKey(currentYear), JSON.stringify(rowOrderByGroup));
+        } catch { /* ignore quota */ }
+    }, [rowOrderByGroup, currentYear]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(groupByStorageKey(currentYear), groupBy);
+        } catch { /* ignore */ }
+    }, [groupBy, currentYear]);
 
     const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
     const handleSort = (key: string, direction: 'asc' | 'desc') => { setSortConfig({ key, direction }); setActiveColumnMenu(null); };
@@ -1591,6 +1818,72 @@ const FridayScreen: React.FC = () => {
         }
     }, [canEditBoard, currentUserName]);
 
+    const handleExportSelected = useCallback(() => {
+        const ids = selectedIdsRef.current;
+        if (ids.size === 0) return;
+        const selectedRows = rows.filter((r) => ids.has(r.docId));
+        const headers = columns.filter((c) => !c.hidden).map((c) => c.label).join(",");
+        const csvRows = selectedRows
+            .map((row) =>
+                columns
+                    .filter((c) => !c.hidden)
+                    .map((c) => {
+                        let val = row[c.key] || "";
+                        if (c.key === "folio" && row.lugarCalibracion === "laboratorio") val = row.folioSalida || "";
+                        return `"${String(val).replace(/"/g, '""')}"`;
+                    })
+                    .join(",")
+            )
+            .join("\n");
+        const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + csvRows;
+        const link = document.createElement("a");
+        link.setAttribute("href", encodeURI(csvContent));
+        link.setAttribute("download", `seleccion_${selectedRows.length}_${currentYear}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    }, [rows, columns, currentYear]);
+
+    const handleBulkMoveLugar = useCallback(
+        async (toGroup: "sitio" | "laboratorio") => {
+            if (!canEditBoard) return;
+            const ids = Array.from(selectedIdsRef.current);
+            if (ids.length === 0) return;
+            const ubicacion = toGroup === "sitio" ? "Servicio en Sitio" : "Laboratorio";
+            const idSet = new Set(ids);
+            setRows((prev) =>
+                prev.map((r) =>
+                    idSet.has(r.docId) ? { ...r, lugarCalibracion: toGroup, ubicacion_real: ubicacion } : r
+                )
+            );
+            try {
+                const CHUNK = 200;
+                for (let i = 0; i < ids.length; i += CHUNK) {
+                    const chunk = ids.slice(i, i + CHUNK);
+                    const batch = writeBatch(db);
+                    for (const id of chunk) {
+                        batch.update(doc(db, "hojasDeTrabajo", id), {
+                            lugarCalibracion: toGroup,
+                            ubicacion_real: ubicacion,
+                            lastUpdated: new Date().toISOString(),
+                        });
+                    }
+                    await batch.commit();
+                }
+                setSelectedIds(new Set());
+                showToast(
+                    toGroup === "sitio"
+                        ? `${ids.length} movido(s) a Servicio en Sitio`
+                        : `${ids.length} movido(s) a Laboratorio`,
+                    "success"
+                );
+            } catch {
+                showToast("Error al mover selección", "error");
+            }
+        },
+        [canEditBoard]
+    );
+
     const toggleSelect = useCallback((id: string) => {
         setSelectedIds((prev) => {
             const next = new Set(prev);
@@ -1608,16 +1901,73 @@ const FridayScreen: React.FC = () => {
         document.removeEventListener('mouseup', handleMouseUp);
         resizingRef.current = null;
     }, []);
-    const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => { if (!canEditBoard) { e.preventDefault(); return; } if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; } dragItemRef.current = item; e.dataTransfer.effectAllowed = "move"; if (e.target instanceof HTMLElement) e.target.style.opacity = '0.5'; }, [columns, canEditBoard]);
+    const onDragStart = useCallback((e: React.DragEvent, item: DragItem) => {
+        if (!canEditBoard) { e.preventDefault(); return; }
+        if (item.type === 'column' && columns[item.index].sticky) { e.preventDefault(); return; }
+        dragItemRef.current = item;
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", item.id || item.type); } catch { /* ie */ }
+        if (e.target instanceof HTMLElement) e.target.style.opacity = '0.5';
+    }, [columns, canEditBoard]);
     const onDragEnd = (e: React.DragEvent) => { if (e.target instanceof HTMLElement) e.target.style.opacity = '1'; dragItemRef.current = null; };
     const onDrop = useCallback(async (e: React.DragEvent, target: DragItem) => {
         if (!canEditBoard) return;
-        e.preventDefault(); const dragItem = dragItemRef.current; if (!dragItem) return;
+        e.preventDefault();
+        const dragItem = dragItemRef.current;
+        if (!dragItem) return;
+
         if (dragItem.type === 'column' && target.type === 'column') {
              const fromIdx = dragItem.index; const toIdx = target.index; if(columns[toIdx].sticky || columns[fromIdx].sticky) return;
              let newCols = [...columns]; const [moved] = newCols.splice(fromIdx, 1); newCols.splice(toIdx, 0, moved); setColumns(newCols); await saveColumnsToFirebase(newCols);
+             return;
         }
-    }, [columns, canEditBoard]); 
+
+        if (dragItem.type === 'row' && target.type === 'row' && dragItem.id && target.id) {
+            const fromGroup = (dragItem.groupId || "").toLowerCase();
+            const toGroup = (target.groupId || "").toLowerCase();
+            if (!fromGroup || !toGroup) return;
+
+            if (fromGroup === toGroup) {
+                // Reorden visual (local) — no toca campos de la hoja
+                setRowOrderByGroup((prev) => {
+                    const groupRows = rows
+                        .filter((r) => (r.lugarCalibracion || "").toLowerCase() === fromGroup)
+                        .map((r) => r.docId);
+                    const base = (prev[fromGroup]?.length ? [...prev[fromGroup]] : groupRows)
+                        .filter((id) => groupRows.includes(id));
+                    for (const id of groupRows) if (!base.includes(id)) base.push(id);
+                    const fromIdx = base.indexOf(dragItem.id!);
+                    const toIdx = base.indexOf(target.id!);
+                    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return prev;
+                    const next = [...base];
+                    const [moved] = next.splice(fromIdx, 1);
+                    next.splice(toIdx, 0, moved);
+                    return { ...prev, [fromGroup]: next };
+                });
+                return;
+            }
+
+            // Mover Sitio ↔ Lab (solo lugar/ubicación; resto de datos intactos)
+            const ubicacion = toGroup === "sitio" ? "Servicio en Sitio" : "Laboratorio";
+            setRows((prev) =>
+                prev.map((r) =>
+                    r.docId === dragItem.id
+                        ? { ...r, lugarCalibracion: toGroup, ubicacion_real: ubicacion }
+                        : r
+                )
+            );
+            try {
+                await updateDoc(doc(db, "hojasDeTrabajo", dragItem.id), {
+                    lugarCalibracion: toGroup,
+                    ubicacion_real: ubicacion,
+                    lastUpdated: new Date().toISOString(),
+                });
+                showToast(toGroup === "sitio" ? "Movido a Servicio en Sitio" : "Movido a Laboratorio", "success");
+            } catch {
+                showToast("No se pudo mover la fila", "error");
+            }
+        }
+    }, [columns, canEditBoard, rows]); 
 
     const handleExportCSV = () => {
         const headers = columns.filter(c => !c.hidden).map(c => c.label).join(",");
@@ -1631,7 +1981,7 @@ const FridayScreen: React.FC = () => {
         return map;
     }, [rows]);
 
-    const groupedRows = useMemo(() => {
+    const groupedRows = useMemo((): DisplayBoardGroup[] => {
         const searchTerm = normalizeText(debouncedSearch);
         let filtered = rows;
 
@@ -1655,21 +2005,72 @@ const FridayScreen: React.FC = () => {
             });
         }
 
-        return groupsConfig.map((group) => ({
-            ...group,
-            rows: filtered.filter((r) => (r.lugarCalibracion || "").toLowerCase() === group.id),
-        }));
-    }, [rows, groupsConfig, debouncedSearch, sortConfig, activeFilters, searchBlobByDocId]);
+        return groupsConfig.map((group) => {
+            let groupRows = filtered.filter((r) => (r.lugarCalibracion || "").toLowerCase() === group.id);
+            groupRows = sortRowsByOrder(groupRows, rowOrderByGroup[group.id]);
+
+            if (groupBy === "lugar") {
+                return { ...group, rows: groupRows };
+            }
+
+            const buckets = new Map<string, WorksheetData[]>();
+            for (const row of groupRows) {
+                const key =
+                    groupBy === "folio"
+                        ? getRowFolioKey(row, group.id)
+                        : getRowClienteKey(row);
+                if (!buckets.has(key)) buckets.set(key, []);
+                buckets.get(key)!.push(row);
+            }
+
+            const subgroups: FolioSubgroup[] = Array.from(buckets.entries())
+                .sort((a, b) => {
+                    // Folios numéricos desc; texto al final
+                    const na = Number(a[0]); const nb = Number(b[0]);
+                    if (!Number.isNaN(na) && !Number.isNaN(nb)) return nb - na;
+                    return a[0].localeCompare(b[0], "es");
+                })
+                .map(([key, subRows]) => ({
+                    key,
+                    name: groupBy === "folio"
+                        ? (key.startsWith("(Sin") ? key : `Folio ${key}`)
+                        : key,
+                    rows: subRows,
+                }));
+
+            return { ...group, rows: groupRows, subgroups };
+        });
+    }, [rows, groupsConfig, debouncedSearch, sortConfig, activeFilters, searchBlobByDocId, groupBy, rowOrderByGroup]);
 
     const visibleRowCount = useMemo(
         () => groupedRows.reduce((sum, g) => sum + g.rows.length, 0),
         [groupedRows]
     );
 
+    const toggleSelectAllVisible = useCallback(() => {
+        const visibleIds = groupedRows.flatMap((g) => g.rows.map((r) => r.docId));
+        setSelectedIds((prev) => {
+            const allSelected = visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
+            const next = allSelected ? new Set<string>() : new Set(visibleIds);
+            selectedIdsRef.current = next;
+            return next;
+        });
+    }, [groupedRows]);
+
     const boardStats = useMemo(() => ({
         sitio: groupedRows.find((g) => g.id === "sitio")?.rows.length ?? 0,
         laboratorio: groupedRows.find((g) => g.id === "laboratorio")?.rows.length ?? 0,
     }), [groupedRows]);
+
+    const allVisibleSelected = useMemo(() => {
+        if (visibleRowCount === 0) return false;
+        for (const g of groupedRows) {
+            for (const r of g.rows) {
+                if (!selectedIds.has(r.docId)) return false;
+            }
+        }
+        return true;
+    }, [groupedRows, selectedIds, visibleRowCount]);
 
     const hiddenColumns = useMemo(() => columns.filter((c) => c.hidden), [columns]);
     const visibleColumns = useMemo(() => columns.filter((c) => !c.hidden), [columns]);
@@ -1718,30 +2119,28 @@ const FridayScreen: React.FC = () => {
         <div className="flex h-full min-h-0 flex-1 flex-col bg-slate-100 font-sans text-slate-800 w-full overflow-hidden">
             <div className="flex-1 flex flex-col min-w-0 bg-white relative transition-all w-full">
                 
-                {/* Chrome AG — el tablero (#main-board-scroll) no se modifica */}
-                <div className="px-4 sm:px-6 py-3 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3 bg-white sticky top-0 z-40 w-full shadow-sm">
-                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                        <button onClick={goBack} className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shrink-0" title="Regresar al Menú" aria-label="Regresar al Menú">
+                {/* Chrome AG — solo presentación; datos del tablero intactos */}
+                <div className="px-4 sm:px-5 py-2.5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2.5 bg-white sticky top-0 z-40 w-full">
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                        <button onClick={goBack} className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors shrink-0" title="Regresar al Menú" aria-label="Regresar al Menú">
                             <ArrowLeft className="w-5 h-5"/>
                         </button>
-                        <div className="flex items-center gap-3 border-r border-slate-200 pr-3 sm:pr-4 shrink-0">
-                             <img src={labLogo} alt="AG Metrology Logo" className="h-9 w-auto object-contain" draggable={false} />
-                        </div>
+                        <img src={labLogo} alt="AG Metrology Logo" className="h-8 w-auto object-contain shrink-0 hidden sm:block" draggable={false} />
                         <div className="flex flex-col min-w-0">
-                            <h1 className="text-lg sm:text-xl font-semibold leading-tight flex flex-wrap items-center gap-2 text-slate-900 tracking-tight">
+                            <h1 className="text-base sm:text-lg font-semibold leading-tight flex flex-wrap items-center gap-2 text-slate-900 tracking-tight">
                                 Tablero de Calibración
-                                <div className="inline-flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2025 ? "bg-white text-[#2464A3] shadow-sm" : "text-slate-500 hover:text-slate-800")}>2025</button>
-                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-3 py-1 rounded-md text-xs font-semibold transition-all", currentYear === 2026 ? "bg-white text-[#2464A3] shadow-sm" : "text-slate-500 hover:text-slate-800")}>2026</button>
+                                <div className="inline-flex bg-slate-100 rounded-md p-0.5 border border-slate-200/80">
+                                    <button onClick={() => setCurrentYear(2025)} className={clsx("px-2.5 py-0.5 rounded text-xs font-semibold transition-all", currentYear === 2025 ? "bg-white text-[#2464A3] shadow-sm" : "text-slate-500 hover:text-slate-800")}>2025</button>
+                                    <button onClick={() => setCurrentYear(2026)} className={clsx("px-2.5 py-0.5 rounded text-xs font-semibold transition-all", currentYear === 2026 ? "bg-white text-[#2464A3] shadow-sm" : "text-slate-500 hover:text-slate-800")}>2026</button>
                                 </div>
                             </h1>
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+                    <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
                         <div className="relative">
-                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                            <input placeholder="Buscar en tablero..." className="pl-9 pr-9 py-2 border border-slate-200 rounded-lg text-sm focus:border-[#2464A3] focus:ring-2 focus:ring-[#2464A3]/15 outline-none transition-all bg-white w-56 sm:w-72 shadow-sm" value={search} onChange={e => setSearch(e.target.value)} />
-                            {search !== debouncedSearch && <Loader2 className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-[#2464A3] animate-spin" />}
+                            <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/>
+                            <input placeholder="Buscar" className="pl-8 pr-8 py-1.5 border border-slate-200 rounded-lg text-sm focus:border-[#0073ea] focus:ring-2 focus:ring-[#0073ea]/15 outline-none transition-all bg-white w-40 sm:w-56" value={search} onChange={e => setSearch(e.target.value)} />
+                            {search !== debouncedSearch && <Loader2 className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-[#2464A3] animate-spin" />}
                         </div>
                         
                         <div className={clsx("p-2 rounded-lg transition-all", isThinking ? "text-purple-600 bg-purple-50 animate-pulse" : "text-slate-400")} title="AG-Bot Activo"><Brain size={18}/></div>
@@ -1749,20 +2148,20 @@ const FridayScreen: React.FC = () => {
                             thoughts={agBotThoughts}
                         />
 
-                        <button onClick={handleExportCSV} className="p-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-2 shadow-sm" title="Exportar a Excel"><Download size={18}/><span className="text-xs font-bold hidden md:inline">Exportar</span></button>
+                        <button onClick={handleExportCSV} className="p-2 text-emerald-700 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5" title="Exportar a Excel"><Download size={18}/><span className="text-xs font-semibold hidden md:inline">Exportar</span></button>
                         {canEditBoard && (
                             <button
                                 onClick={() => handleReconcileDriveFlags(false)}
                                 disabled={isReconcilingDrive}
-                                className="p-2 text-[#2464A3] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
+                                className="p-2 text-[#2464A3] hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
                                 title="Verifica fileMetadata (Drive) y corrige filas Si/Generado sin respaldo real"
                             >
                                 {isReconcilingDrive ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
-                                <span className="text-xs font-bold hidden md:inline">Reconciliar Drive</span>
+                                <span className="text-xs font-semibold hidden lg:inline">Drive</span>
                             </button>
                         )}
                         {canEditBoard && (
-                            <button onClick={handleResetLayout} className="p-2 text-slate-500 hover:bg-slate-100 hover:text-[#2464A3] rounded-lg transition-colors shadow-sm border border-slate-200" title="Restablecer vista original"><RotateCcw size={18}/></button>
+                            <button onClick={handleResetLayout} className="p-2 text-slate-500 hover:bg-slate-100 hover:text-[#2464A3] rounded-lg transition-colors" title="Restablecer vista original"><RotateCcw size={18}/></button>
                         )}
                         {userProfileResolved && !canEditBoard && (
                             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#2464A3] bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-md">
@@ -1772,10 +2171,53 @@ const FridayScreen: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="px-4 sm:px-6 py-2 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-3 sticky top-[57px] z-[35]">
-                    <span className="text-xs font-semibold text-slate-600">{visibleRowCount} elementos visibles</span>
-                    <span className="text-[10px] font-bold text-[#2464A3] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">Sitio {boardStats.sitio}</span>
-                    <span className="text-[10px] font-bold text-violet-700 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full">Lab {boardStats.laboratorio}</span>
+                <div className="px-4 sm:px-5 py-1.5 border-b border-slate-200 bg-[#f6f7fb] flex flex-wrap items-center gap-2 sticky top-[49px] z-[35]">
+                    <span className="text-xs font-medium text-slate-600 tabular-nums">{isLoadingData ? "…" : visibleRowCount} elementos</span>
+                    <span className="text-[10px] font-semibold text-[#2464A3] bg-white border border-blue-100 px-2 py-0.5 rounded-full">Sitio {isLoadingData ? "…" : boardStats.sitio}</span>
+                    <span className="text-[10px] font-semibold text-violet-700 bg-white border border-violet-100 px-2 py-0.5 rounded-full">Lab {isLoadingData ? "…" : boardStats.laboratorio}</span>
+
+                    <div className="relative ml-1">
+                        <button
+                            type="button"
+                            onClick={() => setGroupByMenuOpen((o) => !o)}
+                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 hover:border-[#0073ea]/40 hover:text-[#0073ea] rounded-lg px-2.5 py-1 transition-colors"
+                            title="Agrupar filas (solo vista)"
+                        >
+                            <Layers size={13} />
+                            Agrupar por
+                            <span className="text-[10px] font-bold text-[#0073ea] hidden sm:inline">
+                                ({GROUP_BY_OPTIONS.find((o) => o.id === groupBy)?.label})
+                            </span>
+                            <ChevronDown size={12} className={clsx("transition-transform", groupByMenuOpen && "rotate-180")} />
+                        </button>
+                        {groupByMenuOpen && (
+                            <div className="absolute left-0 top-full mt-1 z-50 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1 animate-in fade-in zoom-in-95">
+                                {GROUP_BY_OPTIONS.map((opt) => (
+                                    <button
+                                        key={opt.id}
+                                        type="button"
+                                        className={clsx(
+                                            "w-full text-left px-3 py-2 text-xs font-medium hover:bg-blue-50 flex items-center justify-between gap-2",
+                                            groupBy === opt.id ? "text-[#0073ea]" : "text-slate-700"
+                                        )}
+                                        onClick={() => {
+                                            setGroupByMenuOpen(false);
+                                            if (opt.id === groupBy) return;
+                                            setExpandedSubgroups({});
+                                            setSubgroupVisibleLimit(SUBGROUP_PAGE_SIZE);
+                                            startTransition(() => {
+                                                setGroupBy(opt.id);
+                                            });
+                                        }}
+                                    >
+                                        {opt.label}
+                                        {groupBy === opt.id && <Check size={14} className="text-[#0073ea]" />}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     {Object.entries(activeFilters).filter(([, v]) => v).map(([key, val]) => {
                         const col = columns.find((c) => c.key === key);
                         return (
@@ -1785,17 +2227,25 @@ const FridayScreen: React.FC = () => {
                         );
                     })}
                     {hasActiveFilters && (
-                        <button onClick={clearBoardFilters} className="text-xs text-blue-600 hover:underline font-medium ml-auto">Limpiar vista</button>
+                        <button onClick={clearBoardFilters} className="text-xs text-[#0073ea] hover:underline font-medium ml-auto">Limpiar vista</button>
                     )}
                 </div>
 
-                <div className="flex-1 overflow-auto bg-white w-full" id="main-board-scroll">
-                    <div className="inline-block min-w-full pb-32">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto bg-white w-full overscroll-contain" id="main-board-scroll">
+                    <div className="min-w-max w-full pb-32">
                         <HiddenColumnsBar hiddenColumns={hiddenColumns} onUnhide={handleUnhide} />
 
                         <div className="flex border-b border-[#e6e9ef] sticky top-0 z-30 bg-[#f5f6f8] h-[40px]">
                             <div className="w-1.5 bg-[#f5f6f8] sticky left-0 z-30"></div>
-                            <div className="w-[40px] border-r border-[#e6e9ef] bg-[#f5f6f8] sticky left-1.5 z-30 flex items-center justify-center"><input type="checkbox" className="rounded border-gray-300 text-[#2464A3]" /></div>
+                            <div className="w-[40px] border-r border-[#e6e9ef] bg-[#f5f6f8] sticky left-1.5 z-30 flex items-center justify-center">
+                                <input
+                                    type="checkbox"
+                                    className="rounded border-gray-300 text-[#2464A3] cursor-pointer"
+                                    checked={allVisibleSelected}
+                                    onChange={toggleSelectAllVisible}
+                                    title="Seleccionar visibles"
+                                />
+                            </div>
                             
                             {visibleColumns.map((col, index) => {
                                 const style: React.CSSProperties = { width: col.width, zIndex: col.sticky ? 30 : undefined };
@@ -1815,9 +2265,9 @@ const FridayScreen: React.FC = () => {
                             <div className="flex-1 border-b border-gray-100 min-w-[50px]"></div>
                         </div>
 
-                        <div className="px-4 mt-6">
+                        <div className={clsx("px-4 mt-6", isPending && "opacity-70")}>
                             {isLoadingData ? (
-                                <div className="p-10 flex flex-col items-center justify-center gap-3"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div><p className="text-gray-400 text-sm font-medium">Cargando tablero...</p></div>
+                                <BoardLoadingSkeleton />
                             ) : (
                                 groupedRows.map((group) => (
                                     <div key={group.id} className="mb-10">
@@ -1828,13 +2278,61 @@ const FridayScreen: React.FC = () => {
                                             <span className="ml-3 text-[11px] text-[#8B8D8C] font-medium border border-[#e6e9ef] px-2.5 py-0.5 rounded-full bg-[#f5f6f8]">{group.rows.length}</span>
                                         </div>
                                         {!group.collapsed && (
-                                            <div className="rounded-lg overflow-hidden border border-[#e6e9ef] bg-white min-h-[50px]">
-                                                <GroupRowsBody
-                                                    {...boardRowSharedProps}
-                                                    rows={group.rows}
-                                                    groupId={group.id}
-                                                    groupColor={group.color}
-                                                />
+                                            <div className="rounded-lg border border-[#e6e9ef] bg-white min-h-[50px]">
+                                                {group.subgroups && groupBy !== "lugar" ? (
+                                                    <>
+                                                        {group.subgroups.slice(0, subgroupVisibleLimit).map((sub) => {
+                                                            const subId = `${group.id}::${sub.key}`;
+                                                            const subExpanded = expandedSubgroups[subId] === true;
+                                                            return (
+                                                                <div
+                                                                    key={subId}
+                                                                    className="border-b border-[#e6e9ef] last:border-b-0"
+                                                                    style={{ contentVisibility: "auto", containIntrinsicSize: "auto 36px" }}
+                                                                >
+                                                                    <button
+                                                                        type="button"
+                                                                        className="w-full flex items-center gap-2 px-3 py-1.5 bg-[#f8f9fb] hover:bg-[#f0f2f6] text-left"
+                                                                        onClick={() =>
+                                                                            setExpandedSubgroups((prev) => ({
+                                                                                ...prev,
+                                                                                [subId]: !prev[subId],
+                                                                            }))
+                                                                        }
+                                                                    >
+                                                                        <ChevronDown className={clsx("w-4 h-4 text-[#8B8D8C] transition-transform shrink-0", !subExpanded && "-rotate-90")} />
+                                                                        <span className="text-[13px] font-semibold text-[#323338] truncate">{sub.name}</span>
+                                                                        <span className="text-[10px] text-[#8B8D8C] border border-[#e6e9ef] px-2 py-0.5 rounded-full bg-white shrink-0 tabular-nums">{sub.rows.length}</span>
+                                                                    </button>
+                                                                    {subExpanded && (
+                                                                        <GroupRowsBody
+                                                                            {...boardRowSharedProps}
+                                                                            rows={sub.rows}
+                                                                            groupId={group.id}
+                                                                            groupColor={group.color}
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        {(group.subgroups?.length || 0) > subgroupVisibleLimit && (
+                                                            <button
+                                                                type="button"
+                                                                className="w-full py-2.5 text-xs font-semibold text-[#0073ea] hover:bg-blue-50 border-t border-[#e6e9ef]"
+                                                                onClick={() => setSubgroupVisibleLimit((n) => n + SUBGROUP_PAGE_SIZE)}
+                                                            >
+                                                                Ver más ({group.subgroups!.length - subgroupVisibleLimit} restantes)
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <GroupRowsBody
+                                                        {...boardRowSharedProps}
+                                                        rows={group.rows}
+                                                        groupId={group.id}
+                                                        groupColor={group.color}
+                                                    />
+                                                )}
                                                 {canEditBoard && (
                                                 <div className="flex border-b border-[#e6e9ef] bg-white group hover:bg-[#f5f6f8]" style={{ height: ROW_HEIGHT_PX }}>
                                                     <div className="sticky left-0 z-20 flex bg-white group-hover:bg-gray-50">
@@ -1864,6 +2362,9 @@ const FridayScreen: React.FC = () => {
                     onAssign={handleBulkAssignResponsable}
                     onDelete={handleDeleteSelected}
                     onClear={() => setSelectedIds(new Set())}
+                    onExport={handleExportSelected}
+                    onMoveToSitio={() => void handleBulkMoveLugar("sitio")}
+                    onMoveToLab={() => void handleBulkMoveLugar("laboratorio")}
                 />
 
                 {canEditBoard && permissionMenu && (<PermissionMenu x={permissionMenu.x} y={permissionMenu.y} column={columns.find(c => c.key === permissionMenu.colKey)!} onClose={() => setPermissionMenu(null)} onTogglePermission={handleTogglePermission}/>)}

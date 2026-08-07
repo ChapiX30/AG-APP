@@ -26,7 +26,6 @@ import {
   Tooltip,
 } from "recharts";
 import {
-  CALIBRATION_COLORS,
   AreaCompanyArrivals,
   CompanyArrivalGroup,
   formatDateKeyDisplay,
@@ -78,11 +77,12 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
   };
 
   return (
-    <div className={`h-full flex flex-col rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 p-3`}>
-      <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-2 flex items-center gap-2">
-        <Clock className="w-4 h-4 text-blue-400" /> Calendario
+    <div className={`h-full flex flex-col tv-panel overflow-hidden`}>
+      <h3 className="tv-panel-head text-sm font-semibold text-[var(--tv-muted)] uppercase tracking-[0.14em] flex items-center gap-2 !py-2.5">
+        <Clock className="w-4 h-4 text-[var(--tv-brand-bright)]" />
+        <span className="tv-display text-[var(--tv-text)] normal-case tracking-tight text-base">Calendario</span>
       </h3>
-      <div className="tv-calendar-wrap flex-1 min-h-0 overflow-hidden">
+      <div className="tv-calendar-wrap flex-1 min-h-0 overflow-hidden px-2 pb-1">
         <Calendar
           value={selectedDate}
           onChange={(value: CalendarValue) => {
@@ -94,8 +94,8 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
           className="tv-calendar"
         />
       </div>
-      <p className="text-[10px] text-gray-500 mt-2 text-center leading-snug">
-        Naranja = llegadas · Morado = servicios programados
+      <p className="text-[10px] text-[var(--tv-dim)] mb-2.5 text-center leading-snug px-2">
+        Ámbar = llegadas · Azul = servicios
       </p>
     </div>
   );
@@ -266,10 +266,10 @@ function useTvKioskAutoScroll(
 }
 
 const AREA_HEADER_STYLES: Record<string, string> = {
-  DIMENSIONAL: "border-teal-500/40 bg-teal-950/40 text-teal-300",
-  MECANICA: "border-blue-500/40 bg-blue-950/40 text-blue-300",
-  ELECTRICA: "border-amber-500/40 bg-amber-950/40 text-amber-300",
-  "SIN ÁREA": "border-slate-500/40 bg-slate-800/60 text-slate-300",
+  DIMENSIONAL: "border-[rgba(45,212,191,0.35)] bg-[rgba(45,212,191,0.08)] text-teal-200",
+  MECANICA: "border-[rgba(91,163,224,0.4)] bg-[rgba(36,100,163,0.14)] text-sky-200",
+  ELECTRICA: "border-[rgba(232,165,75,0.4)] bg-[rgba(232,165,75,0.1)] text-amber-200",
+  "SIN ÁREA": "border-[var(--tv-line)] bg-white/[0.03] text-[var(--tv-muted)]",
 };
 
 const CompanyCard: React.FC<{ g: CompanyArrivalGroup }> = ({ g }) => {
@@ -278,57 +278,57 @@ const CompanyCard: React.FC<{ g: CompanyArrivalGroup }> = ({ g }) => {
   return (
     <div
       className={clsx(
-        "rounded-xl border p-3 transition-colors",
+        "rounded-xl border px-3.5 py-3 transition-colors",
         hasGap
-          ? "border-red-500/60 bg-red-950/30 ring-1 ring-red-500/40"
-          : "border-white/10 bg-slate-900/70 hover:border-orange-500/30"
+          ? "border-[rgba(232,106,92,0.45)] bg-[rgba(232,106,92,0.08)]"
+          : "border-[var(--tv-line)] bg-white/[0.025] hover:border-[var(--tv-line-strong)]"
       )}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
+      <div className="flex items-start justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-2 min-w-0">
-          <Building2 className="w-4 h-4 text-blue-400 shrink-0" />
-          <span className="font-bold text-white text-sm truncate" title={g.company}>
+          <Building2 className="w-4 h-4 text-[var(--tv-brand-bright)] shrink-0" />
+          <span className="font-semibold text-[var(--tv-text)] text-sm truncate" title={g.company}>
             {g.company}
           </span>
         </div>
-        <span className="text-[10px] text-gray-500 shrink-0">{pct}% listo</span>
+        <span className="tv-mono text-[10px] text-[var(--tv-muted)] shrink-0">{pct}%</span>
       </div>
       {hasGap && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-red-600/25 border border-red-500/50 px-2 py-1">
-          <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-          <span className="text-[11px] font-bold text-red-200">
+        <div className="mb-2.5 flex items-center gap-1.5 rounded-lg bg-[rgba(232,106,92,0.14)] border border-[rgba(232,106,92,0.35)] px-2 py-1">
+          <AlertCircle className="w-3.5 h-3.5 text-[var(--tv-coral)] shrink-0" />
+          <span className="text-[11px] font-semibold text-red-100">
             {g.incomplete === 1
               ? "1 sin terminar — ¿qué pasó?"
               : `${g.incomplete} sin terminar — ¿qué pasó?`}
           </span>
         </div>
       )}
-      <div className="flex items-center gap-3 text-center">
-        <div className="flex-1 rounded-lg bg-slate-800 px-2 py-1.5 border border-white/5">
-          <p className="text-[10px] text-gray-500 uppercase">En lab</p>
-          <p className="text-xl font-black text-white">{g.arrived}</p>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg bg-[var(--tv-ink-2)]/60 px-2 py-1.5 border border-[var(--tv-line)]">
+          <p className="text-[9px] uppercase tracking-wider text-[var(--tv-dim)] font-semibold">En lab</p>
+          <p className="tv-mono text-xl font-semibold text-[var(--tv-text)] leading-tight">{g.arrived}</p>
         </div>
-        <div className="flex-1 rounded-lg bg-amber-950/50 px-2 py-1.5 border border-amber-500/20">
-          <p className="text-[10px] text-amber-400/80 uppercase">Pendientes</p>
-          <p className="text-xl font-black text-amber-300">{g.pending}</p>
+        <div className="rounded-lg bg-[var(--tv-amber-soft)] px-2 py-1.5 border border-[rgba(232,165,75,0.28)]">
+          <p className="text-[9px] uppercase tracking-wider text-amber-300/80 font-semibold">Pend.</p>
+          <p className="tv-mono text-xl font-semibold text-amber-200 leading-tight">{g.pending}</p>
         </div>
-        <div className="flex-1 rounded-lg bg-emerald-950/40 px-2 py-1.5 border border-emerald-500/20">
-          <p className="text-[10px] text-emerald-400/80 uppercase">Calibrados</p>
-          <p className="text-xl font-black text-emerald-400">{g.calibrated}</p>
+        <div className="rounded-lg bg-[var(--tv-mint-soft)] px-2 py-1.5 border border-[rgba(61,186,140,0.28)]">
+          <p className="text-[9px] uppercase tracking-wider text-emerald-300/80 font-semibold">Listos</p>
+          <p className="tv-mono text-xl font-semibold text-emerald-300 leading-tight">{g.calibrated}</p>
         </div>
       </div>
-      <div className="mt-2 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+      <div className="mt-2.5 h-1 rounded-full bg-white/[0.06] overflow-hidden">
         <div
           className={clsx(
-            "h-full transition-all duration-700",
-            hasGap ? "bg-gradient-to-r from-red-500 to-amber-500" : "bg-gradient-to-r from-emerald-500 to-blue-500"
+            "h-full transition-all duration-700 rounded-full",
+            hasGap ? "bg-gradient-to-r from-[var(--tv-coral)] to-[var(--tv-amber)]" : "bg-gradient-to-r from-[var(--tv-mint)] to-[var(--tv-brand-bright)]"
           )}
           style={{ width: `${pct}%` }}
         />
       </div>
       {g.batches.length > 0 && (
-        <div className="mt-2.5 space-y-1 border-t border-white/10 pt-2">
-          <p className="text-[9px] uppercase tracking-wider text-gray-500 font-bold">Por fecha de llegada</p>
+        <div className="mt-2.5 space-y-1 border-t border-[var(--tv-line)] pt-2">
+          <p className="text-[9px] uppercase tracking-[0.14em] text-[var(--tv-dim)] font-semibold">Por llegada</p>
           {g.batches.map((batch) => {
             const dateLabel =
               batch.dateKey === "sin-fecha"
@@ -340,11 +340,13 @@ const CompanyCard: React.FC<{ g: CompanyArrivalGroup }> = ({ g }) => {
                 key={batch.dateKey}
                 className={clsx(
                   "flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[11px]",
-                  batchHasGap ? "bg-red-950/40 border border-red-500/30" : "bg-slate-800/80 border border-white/5"
+                  batchHasGap
+                    ? "bg-[rgba(232,106,92,0.1)] border border-[rgba(232,106,92,0.28)]"
+                    : "bg-white/[0.03] border border-[var(--tv-line)]"
                 )}
               >
-                <span className="font-bold text-orange-200 shrink-0">{dateLabel}</span>
-                <span className="text-gray-300">
+                <span className="font-semibold text-amber-200/90 shrink-0">{dateLabel}</span>
+                <span className="text-[var(--tv-muted)]">
                   {batch.arrived === 1 ? "1 equipo" : `${batch.arrived} equipos`}
                   {batch.pending > 0 && (
                     <span className="text-amber-300 font-semibold">
@@ -376,8 +378,8 @@ const CompanyArrivalsBody: React.FC<{ areas: AreaCompanyArrivals[]; hasAny: bool
 }) => {
   if (!hasAny) {
     return (
-      <div className="flex flex-col items-center justify-center text-gray-500 gap-2 py-10">
-        <CheckCircle2 className="w-10 h-10 text-emerald-500/80" />
+      <div className="flex flex-col items-center justify-center text-[var(--tv-dim)] gap-2 py-10">
+        <CheckCircle2 className="w-10 h-10 text-[var(--tv-mint)]/80" />
         <p className="text-sm font-medium">Sin equipos activos en {year}</p>
       </div>
     );
@@ -433,22 +435,22 @@ export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
   });
 
   return (
-    <div className={`h-full min-h-0 flex-1 flex flex-col rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 overflow-hidden`}>
-      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0 bg-slate-900/60">
-        <div>
-          <h3 className="text-base lg:text-lg font-bold text-orange-400 flex items-center gap-2">
-            <Truck className="w-5 h-5" /> Equipos en Laboratorio por Empresa
+    <div className="h-full min-h-0 flex-1 flex flex-col tv-panel overflow-hidden">
+      <div className="tv-panel-head flex items-center justify-between shrink-0 gap-3">
+        <div className="min-w-0">
+          <h3 className="tv-display text-base lg:text-lg font-bold text-[var(--tv-text)] flex items-center gap-2 tracking-tight">
+            <Truck className="w-5 h-5 text-[var(--tv-amber)]" /> Equipos en laboratorio
           </h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Solo {year} · activos por área, agrupados por fecha de llegada
+          <p className="text-[11px] text-[var(--tv-muted)] mt-0.5">
+            Solo {year} · activos por área y fecha de llegada
           </p>
         </div>
-        <div className="flex gap-2">
-          <span className="px-2.5 py-1 rounded-lg bg-orange-500/20 text-orange-300 text-xs font-bold border border-orange-500/30">
-            {totalArrived} activos
+        <div className="flex gap-2 shrink-0">
+          <span className="tv-chip text-amber-100 border-[rgba(232,165,75,0.35)] bg-[var(--tv-amber-soft)]">
+            <span className="tv-mono text-sm">{totalArrived}</span> activos
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-200 text-xs font-bold border border-amber-500/30 animate-pulse">
-            {totalPending} por calibrar
+          <span className="tv-chip text-amber-50 border-[rgba(232,165,75,0.45)] bg-[rgba(232,165,75,0.22)]">
+            <span className="tv-mono text-sm">{totalPending}</span> por calibrar
           </span>
         </div>
       </div>
@@ -479,24 +481,36 @@ export const CompanyArrivalsPanel: React.FC<CompanyArrivalsPanelProps> = ({
 };
 
 const SERVICE_STATUS: Record<string, { label: string; className: string }> = {
-  programado: { label: "Programado", className: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
-  en_proceso: { label: "En proceso", className: "bg-amber-500/20 text-amber-200 border-amber-500/30" },
-  finalizado: { label: "Finalizado", className: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
-  reprogramacion: { label: "Reprogramado", className: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
+  programado: {
+    label: "Programado",
+    className: "bg-[rgba(36,100,163,0.2)] text-sky-200 border-[rgba(91,163,224,0.35)]",
+  },
+  en_proceso: {
+    label: "En proceso",
+    className: "bg-[var(--tv-amber-soft)] text-amber-100 border-[rgba(232,165,75,0.4)]",
+  },
+  finalizado: {
+    label: "Finalizado",
+    className: "bg-[var(--tv-mint-soft)] text-emerald-200 border-[rgba(61,186,140,0.4)]",
+  },
+  reprogramacion: {
+    label: "Reprogramado",
+    className: "bg-white/[0.04] text-[var(--tv-muted)] border-[var(--tv-line)]",
+  },
 };
 
 const PRIORITY_DOT: Record<string, string> = {
-  critica: "bg-red-500",
-  alta: "bg-orange-500",
-  media: "bg-yellow-500",
-  baja: "bg-slate-500",
+  critica: "bg-[var(--tv-coral)]",
+  alta: "bg-[var(--tv-amber)]",
+  media: "bg-sky-400",
+  baja: "bg-[var(--tv-dim)]",
 };
 
-const STATUS_GLOW: Record<string, string> = {
-  programado: "from-blue-500/20 via-transparent to-indigo-500/10",
-  en_proceso: "from-amber-500/25 via-transparent to-orange-500/10",
-  finalizado: "from-emerald-500/20 via-transparent to-teal-500/10",
-  reprogramacion: "from-purple-500/20 via-transparent to-violet-500/10",
+const STATUS_ACCENT: Record<string, string> = {
+  programado: "bg-[var(--tv-brand-bright)]",
+  en_proceso: "bg-[var(--tv-amber)]",
+  finalizado: "bg-[var(--tv-mint)]",
+  reprogramacion: "bg-[var(--tv-dim)]",
 };
 
 const ServicioTvCard: React.FC<{
@@ -511,22 +525,7 @@ const ServicioTvCard: React.FC<{
     [service.personas, usuarios]
   );
   const st = SERVICE_STATUS[service.estado] || SERVICE_STATUS.programado;
-  const statusAccent =
-    service.estado === "en_proceso"
-      ? "bg-amber-500"
-      : service.estado === "finalizado"
-        ? "bg-emerald-500"
-        : service.estado === "reprogramacion"
-          ? "bg-purple-500"
-          : "bg-blue-500";
-  const statusGlow =
-    service.estado === "en_proceso"
-      ? "bg-amber-500"
-      : service.estado === "finalizado"
-        ? "bg-emerald-500"
-        : service.estado === "reprogramacion"
-          ? "bg-purple-500"
-          : "bg-blue-500";
+  const accent = STATUS_ACCENT[service.estado] || STATUS_ACCENT.programado;
 
   const tipoLabel = service.tipo
     ? service.tipo.charAt(0).toUpperCase() + service.tipo.slice(1)
@@ -541,131 +540,118 @@ const ServicioTvCard: React.FC<{
   const certDone = totalEquipos > 0 && reviewedEquipos >= totalEquipos;
 
   return (
-    <article
-      className={clsx(
-        "group relative rounded-2xl border border-white/[0.08] bg-gradient-to-br p-[1px] overflow-hidden transition-all duration-300 hover:border-white/20",
-        STATUS_GLOW[service.estado] || STATUS_GLOW.programado
-      )}
-    >
-      <div className="relative rounded-[15px] bg-slate-900/80 backdrop-blur-sm p-3.5 overflow-hidden">
-        <div
-          className={clsx(
-            "absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-30 pointer-events-none",
-            statusGlow
-          )}
-        />
-        <div className="flex items-start gap-3">
-          <div
-            className={clsx(
-              "w-1 rounded-full self-stretch shrink-0 shadow-lg",
-              statusAccent
-            )}
-          />
-          <div className="min-w-0 flex-1 space-y-2.5">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-start gap-2 min-w-0 flex-1">
-                <span
+    <article className="relative rounded-xl border border-[var(--tv-line)] bg-white/[0.03] overflow-hidden hover:border-[var(--tv-line-strong)] transition-colors">
+      <div className="flex">
+        <div className={clsx("w-[3px] shrink-0", accent)} />
+        <div className="min-w-0 flex-1 p-3 space-y-2.5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2 min-w-0 flex-1">
+              <span
+                className={clsx(
+                  "w-1.5 h-1.5 rounded-full mt-1.5 shrink-0",
+                  PRIORITY_DOT[service.prioridad] || "bg-[var(--tv-dim)]"
+                )}
+              />
+              <div className="min-w-0">
+                <h5 className="tv-display font-bold text-[var(--tv-text)] text-[15px] leading-snug line-clamp-2">
+                  {service.titulo}
+                </h5>
+                <p className="text-xs text-[var(--tv-muted)] truncate flex items-center gap-1.5 mt-1">
+                  <Building2 className="w-3.5 h-3.5 shrink-0 text-[var(--tv-brand-bright)]" />
+                  <span className="text-sky-100/90 font-medium">{service.cliente}</span>
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <span
+                className={clsx(
+                  "text-[10px] px-2 py-0.5 rounded-md border font-bold uppercase tracking-wide",
+                  st.className
+                )}
+              >
+                {st.label}
+              </span>
+              {showDateBadge && dateBadge && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[var(--tv-brand-soft)] text-sky-100 border border-[rgba(91,163,224,0.3)]">
+                  {dateBadge}
+                </span>
+              )}
+              {showCertCounter && (
+                <div
                   className={clsx(
-                    "w-2 h-2 rounded-full mt-1.5 shrink-0 ring-2 ring-slate-800",
-                    PRIORITY_DOT[service.prioridad] || "bg-slate-500"
+                    "text-center px-2 py-1 rounded-md border min-w-[3.1rem]",
+                    certDone
+                      ? "bg-[var(--tv-mint-soft)] border-[rgba(61,186,140,0.4)]"
+                      : service.estado === "finalizado"
+                        ? "bg-[var(--tv-amber-soft)] border-[rgba(232,165,75,0.4)]"
+                        : "bg-white/[0.03] border-[var(--tv-line)]"
                   )}
-                />
-                <div className="min-w-0">
-                  <h5 className="font-bold text-white text-[15px] leading-snug line-clamp-2">
-                    {service.titulo}
-                  </h5>
-                  <p className="text-xs text-slate-400 truncate flex items-center gap-1.5 mt-1">
-                    <Building2 className="w-3.5 h-3.5 shrink-0 text-blue-400" />
-                    <span className="text-blue-200/90 font-medium">{service.cliente}</span>
+                  title={`${totalEquipos} equipos · ${reviewedEquipos} revisados por calidad`}
+                >
+                  <p
+                    className={clsx(
+                      "tv-mono text-base font-semibold tabular-nums leading-none",
+                      certDone
+                        ? "text-emerald-300"
+                        : service.estado === "finalizado"
+                          ? "text-amber-200"
+                          : "text-[var(--tv-text)]"
+                    )}
+                  >
+                    {totalEquipos}/{reviewedEquipos}
+                  </p>
+                  <p className="text-[8px] uppercase tracking-[0.12em] text-[var(--tv-dim)] font-semibold mt-0.5">
+                    cert.
                   </p>
                 </div>
-              </div>
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <span className={clsx("text-[10px] px-2 py-1 rounded-lg border font-bold uppercase tracking-wide", st.className)}>
-                  {st.label}
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 text-[11px]">
+            {tipoLabel && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-[var(--tv-line)] px-2 py-1 text-[var(--tv-muted)]">
+                <Briefcase className="w-3 h-3 shrink-0" />
+                <span className="font-medium text-[var(--tv-text)]/90 capitalize truncate">{tipoLabel}</span>
+              </span>
+            )}
+            {(service.horaInicio || service.horaFin) && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-[var(--tv-line)] px-2 py-1">
+                <Clock className="w-3 h-3 text-[var(--tv-amber)] shrink-0" />
+                <span className="tv-mono font-medium text-[var(--tv-text)]/90 tabular-nums">
+                  {service.horaInicio}
+                  {service.horaFin ? ` – ${service.horaFin}` : ""}
                 </span>
-                {showDateBadge && dateBadge && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
-                    {dateBadge}
-                  </span>
-                )}
-                {showCertCounter && (
-                  <div
-                    className={clsx(
-                      "text-center px-2.5 py-1 rounded-lg border min-w-[3.25rem]",
-                      certDone
-                        ? "bg-emerald-500/15 border-emerald-400/40"
-                        : service.estado === "finalizado"
-                          ? "bg-amber-500/15 border-amber-400/40"
-                          : "bg-slate-800/90 border-white/10"
-                    )}
-                    title={`${totalEquipos} equipos · ${reviewedEquipos} revisados por calidad`}
-                  >
-                    <p
-                      className={clsx(
-                        "text-base font-black tabular-nums leading-none",
-                        certDone
-                          ? "text-emerald-300"
-                          : service.estado === "finalizado"
-                            ? "text-amber-200"
-                            : "text-white"
-                      )}
-                    >
-                      {totalEquipos}/{reviewedEquipos}
-                    </p>
-                    <p className="text-[8px] uppercase tracking-wider text-slate-500 font-bold mt-0.5">
-                      cert.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+              </span>
+            )}
+            {service.ubicacion && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-[var(--tv-line)] px-2 py-1 max-w-full">
+                <MapPin className="w-3 h-3 text-[var(--tv-coral)] shrink-0" />
+                <span className="text-[var(--tv-muted)] truncate">{service.ubicacion}</span>
+              </span>
+            )}
+          </div>
 
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              {tipoLabel && (
-                <div className="flex items-center gap-1.5 rounded-lg bg-slate-800/80 border border-white/5 px-2 py-1.5">
-                  <Briefcase className="w-3 h-3 text-slate-400 shrink-0" />
-                  <span className="font-semibold text-slate-200 capitalize truncate">{tipoLabel}</span>
-                </div>
-              )}
-              {(service.horaInicio || service.horaFin) && (
-                <div className="flex items-center gap-1.5 rounded-lg bg-slate-800/80 border border-white/5 px-2 py-1.5">
-                  <Clock className="w-3 h-3 text-amber-400 shrink-0" />
-                  <span className="font-semibold text-slate-200 tabular-nums">
-                    {service.horaInicio}
-                    {service.horaFin ? ` – ${service.horaFin}` : ""}
-                  </span>
-                </div>
-              )}
-              {service.ubicacion && (
-                <div className="col-span-2 flex items-center gap-1.5 rounded-lg bg-slate-800/60 border border-white/5 px-2 py-1.5">
-                  <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
-                  <span className="text-slate-300 truncate">{service.ubicacion}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-white/5">
-              {assignees.length > 0 ? (
-                assignees.map((a) => (
-                  <span
-                    key={a.id}
-                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-800/90 border border-white/10 text-[11px] font-semibold text-slate-100"
-                    title={a.name}
-                  >
-                    {a.color && (
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0 ring-1 ring-white/20"
-                        style={{ backgroundColor: a.color }}
-                      />
-                    )}
-                    <span className="truncate max-w-[140px]">{a.name}</span>
-                  </span>
-                ))
-              ) : (
-                <span className="text-[11px] font-medium text-amber-300/80 italic">Sin metrólogo asignado</span>
-              )}
-            </div>
+          <div className="flex items-center gap-1.5 flex-wrap pt-0.5 border-t border-[var(--tv-line)]">
+            {assignees.length > 0 ? (
+              assignees.map((a) => (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] border border-[var(--tv-line)] text-[11px] font-medium text-[var(--tv-text)]"
+                  title={a.name}
+                >
+                  {a.color && (
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: a.color }}
+                    />
+                  )}
+                  <span className="truncate max-w-[140px]">{a.name}</span>
+                </span>
+              ))
+            ) : (
+              <span className="text-[11px] font-medium text-amber-300/80 italic">Sin metrólogo asignado</span>
+            )}
           </div>
         </div>
       </div>
@@ -707,26 +693,26 @@ const ServiceColumn: React.FC<{
   const accentStyles =
     accent === "purple"
       ? {
-          header: "from-purple-500/15 to-transparent border-purple-500/20 text-purple-200",
-          badge: "bg-purple-500/25 text-purple-100 border-purple-400/30",
-          dot: "bg-purple-400",
+          header: "from-[rgba(36,100,163,0.2)] to-transparent border-[rgba(91,163,224,0.25)] text-sky-100",
+          badge: "bg-[var(--tv-brand-soft)] text-sky-100 border-[rgba(91,163,224,0.35)]",
+          dot: "bg-[var(--tv-brand-bright)]",
         }
       : accent === "emerald"
         ? {
-            header: "from-emerald-500/15 to-transparent border-emerald-500/20 text-emerald-200",
-            badge: "bg-emerald-500/25 text-emerald-100 border-emerald-400/30",
-            dot: "bg-emerald-400",
+            header: "from-[rgba(61,186,140,0.16)] to-transparent border-[rgba(61,186,140,0.28)] text-emerald-100",
+            badge: "bg-[var(--tv-mint-soft)] text-emerald-100 border-[rgba(61,186,140,0.35)]",
+            dot: "bg-[var(--tv-mint)]",
           }
         : {
-            header: "from-indigo-500/15 to-transparent border-indigo-500/20 text-indigo-200",
-            badge: "bg-indigo-500/25 text-indigo-100 border-indigo-400/30",
-            dot: "bg-indigo-400",
+            header: "from-white/[0.04] to-transparent border-[var(--tv-line)] text-[var(--tv-muted)]",
+            badge: "bg-white/[0.04] text-[var(--tv-text)] border-[var(--tv-line)]",
+            dot: "bg-[var(--tv-dim)]",
           };
 
   return (
     <div
       className={clsx(
-        "flex flex-col min-h-0 rounded-xl border border-white/[0.06] bg-slate-900/40 overflow-hidden",
+        "flex flex-col min-h-0 rounded-xl border border-[var(--tv-line)] bg-[rgba(8,14,24,0.55)] overflow-hidden",
         className ?? "h-full"
       )}
     >
@@ -738,9 +724,9 @@ const ServiceColumn: React.FC<{
       >
         <div className="flex items-center gap-2">
           <span className={clsx("w-1.5 h-1.5 rounded-full", accentStyles.dot)} />
-          <h4 className="text-[11px] font-black uppercase tracking-[0.15em]">{title}</h4>
+          <h4 className="tv-display text-[11px] font-bold uppercase tracking-[0.16em]">{title}</h4>
         </div>
-        <span className={clsx("text-[10px] font-bold px-2 py-0.5 rounded-full border", accentStyles.badge)}>
+        <span className={clsx("tv-mono text-[11px] font-semibold px-2 py-0.5 rounded-md border", accentStyles.badge)}>
           {count}
         </span>
       </div>
@@ -755,7 +741,7 @@ const ServiceColumn: React.FC<{
         onBlur={() => setScrollPaused(false)}
       >
         {count === 0 ? (
-          <p className="text-xs text-slate-500 italic text-center py-6">{emptyMessage}</p>
+          <p className="text-xs text-[var(--tv-dim)] italic text-center py-6">{emptyMessage}</p>
         ) : (
           <div data-tv-scroll="track" className="space-y-0">
             <div ref={segmentRef} data-tv-scroll="segment" className="space-y-2 pb-1">
@@ -790,40 +776,40 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
   );
 
   return (
-    <div
-      className={`h-full flex flex-col rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/40 backdrop-blur-md overflow-hidden shadow-xl shadow-black/20`}
-    >
-      <div className="px-4 py-3 border-b border-white/10 shrink-0 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-purple-950/30 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-purple-500/15 border border-purple-500/25">
-            <Briefcase className="w-5 h-5 text-purple-300" />
+    <div className="h-full flex flex-col tv-panel overflow-hidden">
+      <div className="tv-panel-head flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 rounded-xl bg-[var(--tv-brand-soft)] border border-[rgba(91,163,224,0.3)]">
+            <Briefcase className="w-5 h-5 text-[var(--tv-brand-bright)]" />
           </div>
-          <div>
-            <h3 className="text-base lg:text-lg font-bold text-white tracking-tight">Servicios</h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              Operación · finalizados con avance de calidad
+          <div className="min-w-0">
+            <h3 className="tv-display text-base lg:text-lg font-bold text-[var(--tv-text)] tracking-tight">
+              Servicios
+            </h3>
+            <p className="text-[11px] text-[var(--tv-muted)] mt-0.5 truncate">
+              Campo · avance de calidad
             </p>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <div className="text-center px-2.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
-            <p className="text-lg font-black text-purple-200 leading-none">{todayServices.length}</p>
-            <p className="text-[9px] uppercase tracking-wider text-purple-400/80 font-bold mt-0.5">Hoy</p>
+        <div className="flex gap-1.5 shrink-0">
+          <div className="text-center px-2.5 py-1 rounded-lg bg-[var(--tv-brand-soft)] border border-[rgba(91,163,224,0.28)]">
+            <p className="tv-mono text-lg font-semibold text-sky-100 leading-none">{todayServices.length}</p>
+            <p className="text-[9px] uppercase tracking-[0.12em] text-[var(--tv-brand-bright)] font-semibold mt-0.5">Hoy</p>
           </div>
-          <div className="text-center px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-            <p className="text-lg font-black text-emerald-200 leading-none">{finalizedServices.length}</p>
-            <p className="text-[9px] uppercase tracking-wider text-emerald-400/80 font-bold mt-0.5">Fin.</p>
+          <div className="text-center px-2.5 py-1 rounded-lg bg-[var(--tv-mint-soft)] border border-[rgba(61,186,140,0.28)]">
+            <p className="tv-mono text-lg font-semibold text-emerald-100 leading-none">{finalizedServices.length}</p>
+            <p className="text-[9px] uppercase tracking-[0.12em] text-[var(--tv-mint)] font-semibold mt-0.5">Fin.</p>
           </div>
-          <div className="text-center px-2.5 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-            <p className="text-lg font-black text-indigo-200 leading-none">{programmedServices.length}</p>
-            <p className="text-[9px] uppercase tracking-wider text-indigo-400/80 font-bold mt-0.5">Prog.</p>
+          <div className="text-center px-2.5 py-1 rounded-lg bg-white/[0.03] border border-[var(--tv-line)]">
+            <p className="tv-mono text-lg font-semibold text-[var(--tv-text)] leading-none">{programmedServices.length}</p>
+            <p className="text-[9px] uppercase tracking-[0.12em] text-[var(--tv-muted)] font-semibold mt-0.5">Prog.</p>
           </div>
         </div>
       </div>
 
       {!hasAny ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 gap-2">
-          <Briefcase className="w-10 h-10 text-slate-600" />
+        <div className="flex-1 flex flex-col items-center justify-center text-[var(--tv-dim)] gap-2">
+          <Briefcase className="w-10 h-10 opacity-40" />
           <p className="text-sm font-medium">Sin servicios para hoy, finalizados ni programados</p>
         </div>
       ) : (
@@ -901,21 +887,31 @@ interface LabStatusBarProps {
 }
 
 export const LabStatusBar: React.FC<LabStatusBarProps> = ({ pendientes, total }) => (
-  <div className="flex flex-wrap items-center gap-2 lg:gap-3 bg-slate-800/50 p-2 rounded-2xl border border-white/10">
-    <span className="text-xs font-bold text-gray-400 flex items-center gap-1.5 px-1">
-      <Activity className="w-4 h-4 text-orange-400" /> Lab activo:
-      <span className="text-white text-base font-black">{total}</span>
+  <div className="flex flex-wrap items-center gap-2 lg:gap-2.5 px-2.5 py-1.5 rounded-xl border border-[var(--tv-line)] bg-white/[0.03]">
+    <span className="text-xs font-semibold text-[var(--tv-muted)] flex items-center gap-1.5 px-1">
+      <Activity className="w-4 h-4 text-[var(--tv-amber)]" /> Lab
+      <span className="tv-mono text-[var(--tv-text)] text-base font-semibold">{total}</span>
     </span>
     {Object.entries(pendientes).map(([dep, count]) => {
       if (count === 0 && dep === "Sin Asignar") return null;
       return (
         <div
           key={dep}
-          className="flex items-center gap-1.5 bg-slate-900 border border-white/5 px-2.5 py-1 rounded-xl"
+          className="flex items-center gap-1.5 bg-[rgba(8,14,24,0.65)] border border-[var(--tv-line)] px-2.5 py-1 rounded-lg"
         >
-          <div className={clsx("w-2 h-2 rounded-full", count > 0 ? "bg-orange-500 animate-pulse" : "bg-emerald-500")} />
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{dep}</span>
-          <span className={clsx("text-sm font-black", count > 0 ? "text-orange-400" : "text-emerald-400")}>
+          <div
+            className={clsx(
+              "w-1.5 h-1.5 rounded-full",
+              count > 0 ? "bg-[var(--tv-amber)]" : "bg-[var(--tv-mint)]"
+            )}
+          />
+          <span className="text-[10px] font-semibold text-[var(--tv-dim)] uppercase tracking-wide">{dep}</span>
+          <span
+            className={clsx(
+              "tv-mono text-sm font-semibold",
+              count > 0 ? "text-[var(--tv-amber)]" : "text-[var(--tv-mint)]"
+            )}
+          >
             {count}
           </span>
         </div>
@@ -937,16 +933,16 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
   );
 
   return (
-    <div className={`h-full rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 overflow-hidden flex flex-col min-h-0`}>
-      <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between shrink-0">
-        <h3 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400" /> Prioridad en Laboratorio
+    <div className="h-full tv-panel overflow-hidden flex flex-col min-h-0">
+      <div className="tv-panel-head flex items-center justify-between shrink-0 !py-2.5">
+        <h3 className="tv-display text-sm font-bold text-[var(--tv-text)] flex items-center gap-2 tracking-tight">
+          <AlertCircle className="w-4 h-4 text-[var(--tv-coral)]" /> Prioridad en laboratorio
         </h3>
-        <span className="text-[10px] text-gray-500">
-          {total} pendientes · solo {year}
+        <span className="text-[10px] text-[var(--tv-muted)]">
+          <span className="tv-mono font-semibold text-[var(--tv-text)]">{total}</span> pendientes · {year}
         </span>
       </div>
-      <div className="flex text-[9px] text-gray-500 uppercase font-bold px-3 py-1.5 border-b border-white/5 shrink-0">
+      <div className="flex text-[9px] text-[var(--tv-dim)] uppercase font-semibold tracking-wider px-3 py-1.5 border-b border-[var(--tv-line)] shrink-0">
         <div className="w-[26%]">Cliente</div>
         <div className="w-[28%]">Equipo</div>
         <div className="w-[22%] text-center">Estado</div>
@@ -954,13 +950,13 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto hide-scrollbar">
         {sectionsWithItems.length === 0 ? (
-          <p className="text-center text-gray-500 text-xs py-6">Laboratorio al día ({year})</p>
+          <p className="text-center text-[var(--tv-dim)] text-xs py-6">Laboratorio al día ({year})</p>
         ) : (
           sectionsWithItems.map((section) => (
             <div key={section.area}>
               <div
                 className={clsx(
-                  "sticky top-0 z-10 px-3 py-1 text-[10px] font-black tracking-widest border-b border-white/10",
+                  "sticky top-0 z-10 px-3 py-1 text-[10px] font-bold tracking-[0.14em] border-b border-[var(--tv-line)]",
                   AREA_HEADER_STYLES[section.areaLabel] || AREA_HEADER_STYLES["SIN ÁREA"]
                 )}
               >
@@ -969,17 +965,17 @@ export const LabPendingTable: React.FC<LabPendingTableProps> = ({ byArea, total,
               {section.items.map((eq, idx) => (
                 <div
                   key={eq.docId || eq.id || `${section.area}-${idx}`}
-                  className="flex items-center px-3 py-2 border-b border-white/5 text-xs hover:bg-white/5"
+                  className="flex items-center px-3 py-2 border-b border-[var(--tv-line)] text-xs hover:bg-white/[0.03]"
                 >
-                  <div className="w-[26%] pr-1 truncate text-blue-300 font-semibold">{eq.cliente || "—"}</div>
-                  <div className="w-[28%] pr-1 truncate text-gray-200">{eq.equipo || "—"}</div>
+                  <div className="w-[26%] pr-1 truncate text-sky-200 font-semibold">{eq.cliente || "—"}</div>
+                  <div className="w-[28%] pr-1 truncate text-[var(--tv-text)]/90">{eq.equipo || "—"}</div>
                   <div className="w-[22%] flex justify-center">
-                    <span className={clsx("px-1.5 py-0.5 rounded text-[10px] border border-white/10", eq.statusColor)}>
+                    <span className={clsx("px-1.5 py-0.5 rounded text-[10px] border border-[var(--tv-line)]", eq.statusColor)}>
                       {eq.daysLabel}
                     </span>
                   </div>
                   <div
-                    className="w-[24%] flex justify-end items-center gap-1 text-gray-300"
+                    className="w-[24%] flex justify-end items-center gap-1 text-[var(--tv-muted)]"
                     title={eq.nombre || eq.assignedTo || "Sin asignar"}
                   >
                     <UserCircle className="w-3 h-3 shrink-0" />
@@ -1014,45 +1010,45 @@ const TecnicoPendienteRow: React.FC<{ tecnico: TecnicoPendiente }> = ({ tecnico 
   const ocultos = tecnico.dias.length - visibles.length;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5 last:border-b-0">
+    <div className="flex items-center gap-3 px-3 py-2.5 border-b border-[var(--tv-line)] last:border-b-0">
       <span
-        className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-slate-900"
+        className="w-2 h-2 rounded-full shrink-0"
         style={{ backgroundColor: tecnico.color }}
       />
 
       <div className="w-[26%] min-w-0">
-        <p className="text-sm font-bold text-white truncate" title={tecnico.name}>
+        <p className="tv-display text-sm font-bold text-[var(--tv-text)] truncate" title={tecnico.name}>
           {formatTecnicoShortName(tecnico.name)}
         </p>
-        <p className="text-[10px] text-slate-500">{tecnico.totalMes} en el mes</p>
+        <p className="text-[10px] text-[var(--tv-dim)]">{tecnico.totalMes} en el mes</p>
       </div>
 
       <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
         {visibles.map((dia) => (
           <span
             key={dia.dateKey}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[11px]"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[rgba(232,165,75,0.3)] bg-[var(--tv-amber-soft)] px-2 py-1 text-[11px]"
             title={`${dia.dateKey}: calibró ${dia.hechas}, cargó ${dia.cerradas}`}
           >
-            <span className="font-bold text-amber-200 tabular-nums">
+            <span className="tv-mono font-semibold text-amber-100 tabular-nums">
               {formatChipDate(dia.dateKey)}
             </span>
-            <span className="text-slate-400 tabular-nums">
+            <span className="tv-mono text-[var(--tv-muted)] tabular-nums">
               {dia.cerradas}/{dia.hechas}
             </span>
-            <span className="font-black text-red-300 tabular-nums">+{dia.debe}</span>
+            <span className="tv-mono font-semibold text-[var(--tv-coral)] tabular-nums">+{dia.debe}</span>
           </span>
         ))}
         {ocultos > 0 && (
-          <span className="text-[10px] text-slate-500 font-semibold">+{ocultos} días más</span>
+          <span className="text-[10px] text-[var(--tv-dim)] font-semibold">+{ocultos} días más</span>
         )}
       </div>
 
       <div className="shrink-0 text-right">
-        <p className="text-2xl font-black text-red-400 leading-none tabular-nums">
+        <p className="tv-mono text-2xl font-semibold text-[var(--tv-coral)] leading-none tabular-nums">
           {tecnico.debeTotal}
         </p>
-        <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mt-0.5">
+        <p className="text-[9px] uppercase tracking-[0.1em] text-[var(--tv-dim)] font-semibold mt-0.5">
           {tecnico.debeSitio > 0 && `Sitio ${tecnico.debeSitio}`}
           {tecnico.debeSitio > 0 && tecnico.debeLaboratorio > 0 && " · "}
           {tecnico.debeLaboratorio > 0 && `Lab ${tecnico.debeLaboratorio}`}
@@ -1071,21 +1067,19 @@ export const TecnicosPendientesPanel: React.FC<TecnicosPendientesPanelProps> = (
   const totalDebe = useMemo(() => data.reduce((s, t) => s + t.debeTotal, 0), [data]);
 
   return (
-    <div
-      className={`h-full min-h-0 rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 flex flex-col overflow-hidden`}
-    >
-      <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between shrink-0">
+    <div className="h-full min-h-0 tv-panel flex flex-col overflow-hidden">
+      <div className="tv-panel-head flex items-center justify-between shrink-0 !py-2.5">
         <div>
-          <h3 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-            <UploadCloud className="w-4 h-4 text-red-400" /> Pendientes por Técnico
+          <h3 className="tv-display text-sm font-bold text-[var(--tv-text)] flex items-center gap-2 tracking-tight">
+            <UploadCloud className="w-4 h-4 text-[var(--tv-coral)]" /> Pendientes por técnico
           </h3>
-          <p className="text-[10px] text-gray-500 mt-0.5">
+          <p className="text-[10px] text-[var(--tv-muted)] mt-0.5">
             Calibrado sin cargar en Drive · últimos {dias} días
           </p>
         </div>
         {totalDebe > 0 && (
-          <span className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 text-xs font-black border border-red-500/30 tabular-nums">
-            {totalDebe} por cargar
+          <span className="tv-chip text-[var(--tv-coral)] border-[rgba(232,106,92,0.4)] bg-[var(--tv-coral-soft)]">
+            <span className="tv-mono text-sm">{totalDebe}</span> por cargar
           </span>
         )}
       </div>
@@ -1097,8 +1091,8 @@ export const TecnicosPendientesPanel: React.FC<TecnicosPendientesPanelProps> = (
         onMouseLeave={() => setScrollPaused(false)}
       >
         {data.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-500 py-6">
-            <CheckCircle2 className="w-8 h-8 text-emerald-500/80" />
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-[var(--tv-dim)] py-6">
+            <CheckCircle2 className="w-8 h-8 text-[var(--tv-mint)]/80" />
             <p className="text-sm font-medium">Todos al corriente</p>
           </div>
         ) : (
@@ -1151,12 +1145,10 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
   );
 
   return (
-    <div
-      className={`h-full min-h-0 rounded-2xl border ${CALIBRATION_COLORS.cardBorder} bg-slate-800/50 p-3 flex flex-col overflow-hidden`}
-    >
+    <div className="h-full min-h-0 tv-panel p-3 flex flex-col overflow-hidden">
       <div className="flex items-baseline justify-between gap-2 mb-2 shrink-0">
-        <h3 className="text-sm font-bold text-gray-300">Calibraciones del mes</h3>
-        <span className="text-[10px] text-gray-500">Solo metrólogos · número sobre barra</span>
+        <h3 className="tv-display text-sm font-bold text-[var(--tv-text,#edf2f8)]">Calibraciones del mes</h3>
+        <span className="text-[10px] text-[var(--tv-muted,#8fa0b8)]">Solo metrólogos · número sobre barra</span>
       </div>
       <div className="flex-1 min-h-[120px] w-full min-w-0">
         {data.length > 0 ? (
