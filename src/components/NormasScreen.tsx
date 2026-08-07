@@ -22,6 +22,7 @@ import {
   OperationalScreenHeader,
   OperationalScreenShell,
 } from './ui/OperationalScreenShell';
+import { filterVisibleUsers } from '../utils/hiddenUsers';
 
 const AG_BLUE = AG_BRAND_BLUE;
 const COLLECTION_NAME_PATRONES = COLLECTION_PATRONES;
@@ -420,7 +421,11 @@ const NormasScreen = () => {
       try {
         const usersQ = query(collection(db, "usuarios"), where("puesto", "==", "Metrólogo"));
         const usersSnap = await getDocs(usersQ);
-        setMetrologos(usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre)));
+        setMetrologos(
+          filterVisibleUsers(
+            usersSnap.docs.map(d => ({ id: d.id, nombre: d.data().name || d.data().nombre })),
+          ).sort((a, b) => a.nombre.localeCompare(b.nombre)),
+        );
 
         const patronesSnap = await getDocs(query(collection(db, COLLECTION_NAME_PATRONES)));
         const { mapDropdown, mapScanner } = buildPatronMaps(patronesSnap);

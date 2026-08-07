@@ -30,6 +30,7 @@ import {
 import { useNavigation } from "../hooks/useNavigation";
 import { useAppDialog } from "../hooks/useAppDialog";
 import { useAuth } from "../hooks/useAuth";
+import { isHiddenTestAccount } from "../utils/hiddenUsers";
 import toast, { Toaster } from 'react-hot-toast';
 
 // --- CONSTANTES DE FILTRO (Nombres Completos) ---
@@ -753,6 +754,7 @@ const EmpresasScreen = () => {
       try {
         const usersSnapshot = await getDocs(collection(db, "usuarios"));
         const usersList = usersSnapshot.docs
+          .filter((d) => !isHiddenTestAccount(d.data()))
           .map((d) => d.data().nombre || d.data().name)
           .filter((nombre): nombre is string => !!nombre && NOMBRES_PERMITIDOS.includes(nombre));
         setStaffOptions(usersList);

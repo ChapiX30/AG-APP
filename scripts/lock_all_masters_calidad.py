@@ -293,10 +293,11 @@ MASTERS = [
         "unlock": [
             "D4", "E4", "F4",
             "B10", "B11", "B12",
-            "F10", "J9", "J10", "J11", "E18",
+            "F10", "J9", "J10", "J11", "E18", "F18",
             "F13", "J13", "F14", "J14",
             "M12", "M13", "M14",
-            "D20:F45", "I20:I45",
+            # Lecturas IBC: valor generado, resolución, X1-X3, EMP
+            "A20:B45", "D20:F45", "I20:I45",
         ],
         "layout": "temp",
         "instrumento": "B9",
@@ -521,6 +522,29 @@ def ensure_historial_formulas(calc, cfg: dict) -> None:
                 pass
     except Exception as e:
         print("    aviso fechas", e)
+
+    # Calibró = técnico del certificado (historial col J)
+    calibro = cfg.get("calibro")
+    if calibro is None:
+        if cfg.get("layout") == "vernier":
+            calibro = "M13"
+        elif cfg.get("layout") == "torque":
+            calibro = None
+        else:
+            calibro = "M8"
+    if calibro:
+        try:
+            rng = calc.Range(calibro)
+            if rng.MergeCells:
+                rng = rng.MergeArea
+            rng.Formula = idx_formula(hist, "J", cert_row)
+            rng.Locked = True
+            try:
+                rng.Validation.Delete()
+            except Exception:
+                pass
+        except Exception as e:
+            print("    aviso calibro", e)
 
 
 def protect_sheet_full(ws) -> None:

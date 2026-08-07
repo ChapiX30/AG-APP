@@ -30,6 +30,7 @@ import { shouldShowInFridayServicios } from '../utils/calibrationShared';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
 import { getUserTeamColor } from '../utils/teamAvatarColor';
+import { filterVisibleUsers } from '../utils/hiddenUsers';
 import TeamColorPickerModal from './TeamColorPickerModal';
 
 // ==========================================
@@ -1268,7 +1269,7 @@ const FridayServiciosScreen: React.FC = () => {
     const unsubUsers = onSnapshot(
       collection(db, 'usuarios'),
       (snap) => {
-        setUsuarios(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Usuario)));
+        setUsuarios(filterVisibleUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Usuario))));
         setUsuariosLoading(false);
       },
       (error) => {

@@ -30,20 +30,10 @@ import {
   getVacationYear,
   type VacacionesSaldoYear,
 } from '../utils/vacationBalance';
+import { isHiddenTestAccount } from '../utils/hiddenUsers';
 
 const AG_BLUE = AG_BRAND_BLUE;
 const CURRENT_YEAR = getVacationYear();
-
-const isTestUser = (name: string, email: string): boolean => {
-  const combined = `${name} ${email}`.toLowerCase();
-  return (
-    combined.includes('prueba') ||
-    combined.includes('test') ||
-    combined.includes('demo') ||
-    combined.includes('temporal') ||
-    combined.includes('ejemplo')
-  );
-};
 
 interface UsuarioRh {
   id: string;
@@ -93,7 +83,7 @@ export const ControlVacacionesRhScreen: React.FC = () => {
         const name = String(data.name || data.nombre || '').trim();
         const email = String(data.email || data.correo || '').trim();
         if (!name && !email) return;
-        if (isTestUser(name, email)) return;
+        if (isHiddenTestAccount({ name, email })) return;
         list.push({
           id: d.id,
           name: name || email,

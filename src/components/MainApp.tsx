@@ -94,7 +94,7 @@ export const MainApp: React.FC = () => {
   const uid = user?.uid || user?.id || localStorage.getItem('usuario_id') || '';
 
   usePushNotifications(uid, user?.email || localStorage.getItem('usuario.email') || '');
-  usePresence(isAuthenticated ? uid : undefined);
+  usePresence(isAuthenticated ? uid : undefined, isAuthenticated ? currentScreen : null);
   useWorksheetQueueSync(user, isAuthenticated);
   const { allUpdates } = useAppUpdates();
   const { update: whatsNewUpdate, dismiss: dismissWhatsNew } = useWhatsNew(

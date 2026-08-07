@@ -6,6 +6,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { isHiddenTestAccount } from './hiddenUsers';
 
 export interface NotificarConfirmacionAsistenciaParams {
   servicioId: string;
@@ -19,6 +20,7 @@ async function getCalidadDestinatarios(): Promise<string[]> {
   const usersSnap = await getDocs(collection(db, 'usuarios'));
   return usersSnap.docs
     .filter(d => {
+      if (isHiddenTestAccount(d.data())) return false;
       const rol = String(d.data().role || d.data().puesto || '').toLowerCase();
       return (
         rol.includes('calidad') ||

@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useNavigation } from '../hooks/useNavigation';
 import { useAuth } from '../hooks/useAuth';
 import {
-  X, ChevronRight, Search, Loader2, Check, MoreHorizontal,
+  X, ChevronRight, Search, Loader2, Check, MoreHorizontal, Camera, Lock,
 } from 'lucide-react';
 import {
   PiPulseDuotone, PiBriefcaseDuotone, PiClipboardTextDuotone, PiClockCounterClockwiseDuotone,
@@ -62,11 +62,15 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { autoStartServiciosIfDue, getHoyFechaLocal, hasCelesticaAsignacionHoy } from '../utils/servicioAutomation';
 import { getTotalWorksheetQueueCount } from '../utils/worksheetQueueRunner';
 import { isUserOnline } from '../hooks/usePresence';
 import { COLLECTION_PATRONES, countPatronesEnAlerta, isCalidadRole } from '../utils/patronCalibracion';
+import { isMetrologyRole, isQualityRole } from '../utils/calibrationShared';
+import { isJorgeAmador } from '../utils/calendarPermissions';
+import { isHiddenTestAccount } from '../utils/hiddenUsers';
 import {
   upsertRecordatorioConfirmacionJunta,
   eliminarRecordatorioConfirmacionJunta,
@@ -83,7 +87,7 @@ interface Service {
 
 interface UserData {
   uid: string; email: string; name: string; role: string;
-  photoUrl?: string; phone?: string;
+  photoUrl?: string; phone?: string; notaPerfil?: string;
 }
 
 interface UserPrefs {
@@ -514,11 +518,12 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
     setSending(true);
     try {
       const usersSnap = await getDocs(collection(db, 'usuarios'));
-      const allUids = usersSnap.docs.map(d => d.id);
+      const visibleDocs = usersSnap.docs.filter((d) => !isHiddenTestAccount(d.data()));
+      const allUids = visibleDocs.map(d => d.id);
       
       // Recolectar todos los tokens de FCM
       const tokens: string[] = [];
-      usersSnap.docs.forEach(d => {
+      visibleDocs.forEach(d => {
         const userData = d.data();
         if (userData.fcmTokens && typeof userData.fcmTokens === 'object') {
           Object.keys(userData.fcmTokens).forEach(t => { if (t && !tokens.includes(t)) tokens.push(t); });
@@ -826,10 +831,39 @@ const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNove
 };
 
 // ─── WIDGETS ──────────────────────────────────────────────────────────────────
-const TECH_ROLE_KEYS = ['metrologo', 'metrólogo', 'tecnico', 'técnico', 'ingeniero'];
+type PersonalVisibility = 'tecnicos' | 'calidad' | 'todos';
 
-const isTechnicianUser = (u: { position?: string; puesto?: string; role?: string }) =>
-  TECH_ROLE_KEYS.some(k => (u.position || u.puesto || u.role || '').toLowerCase().includes(k));
+type PresenceRow = {
+  id: string;
+  name?: string;
+  photoUrl?: string;
+  lastActive?: unknown;
+  presenceActivity?: string | null;
+  position?: string;
+  puesto?: string;
+  role?: string;
+  status: string;
+  color: string;
+  bg: string;
+  detail: string;
+  dot: string;
+};
+
+const toUsuarioRow = (u: { id: string; position?: string; puesto?: string; role?: string }) => ({
+  id: u.id,
+  puesto: u.puesto || u.position || '',
+  role: u.role || '',
+});
+
+const isVacationToday = (
+  v: { solicitanteUid?: string; fechaInicio?: string; fechaFin?: string },
+  hoyStr: string,
+) =>
+  !!v.solicitanteUid &&
+  !!v.fechaInicio &&
+  !!v.fechaFin &&
+  v.fechaInicio <= hoyStr &&
+  hoyStr <= v.fechaFin;
 
 const findActiveService = (techId: string, serviciosHoy: Service[], ahora: Date) =>
   serviciosHoy.find(sv => {
@@ -842,13 +876,40 @@ const findActiveService = (techId: string, serviciosHoy: Service[], ahora: Date)
     return isWithinInterval(ahora, { start: hi, end: hf });
   });
 
-const mapTechnicianPresence = (tecnicos: any[], serviciosHoy: Service[]) => {
+const mapPersonalPresence = (
+  people: any[],
+  serviciosHoy: Service[],
+  onVacationIds: Set<string>,
+): PresenceRow[] => {
   const ahora = new Date();
-  return tecnicos.map(tech => {
-    const active = findActiveService(tech.id, serviciosHoy, ahora);
+  return people.map(person => {
+    if (onVacationIds.has(person.id)) {
+      return {
+        ...person,
+        status: 'Vacaciones',
+        color: 'text-sky-400',
+        bg: 'bg-sky-500/10',
+        detail: 'De vacaciones',
+        dot: 'bg-sky-500',
+      };
+    }
+
+    const activity = person.presenceActivity;
+    if (isUserOnline(person.lastActive, ahora) && (activity === 'consecutivos' || activity === 'hoja')) {
+      return {
+        ...person,
+        status: 'Ocupado',
+        color: 'text-blue-400',
+        bg: 'bg-blue-500/10',
+        detail: activity === 'hoja' ? 'En hoja de trabajo' : 'Generando consecutivos',
+        dot: 'bg-blue-500',
+      };
+    }
+
+    const active = findActiveService(person.id, serviciosHoy, ahora);
     if (active) {
       return {
-        ...tech,
+        ...person,
         status: 'En proceso',
         color: 'text-amber-400',
         bg: 'bg-amber-500/10',
@@ -856,18 +917,21 @@ const mapTechnicianPresence = (tecnicos: any[], serviciosHoy: Service[]) => {
         dot: 'bg-amber-500',
       };
     }
-    if (isUserOnline(tech.lastActive, ahora)) {
+
+    if (isUserOnline(person.lastActive, ahora)) {
+      const nota = String(person.notaPerfil || '').trim();
       return {
-        ...tech,
+        ...person,
         status: 'Conectado',
         color: 'text-emerald-400',
         bg: 'bg-emerald-500/10',
-        detail: 'En la app',
+        detail: nota || 'En la app',
         dot: 'bg-emerald-500',
       };
     }
+
     return {
-      ...tech,
+      ...person,
       status: 'Ausente',
       color: 'ag-muted',
       bg: '',
@@ -877,19 +941,43 @@ const mapTechnicianPresence = (tecnicos: any[], serviciosHoy: Service[]) => {
   });
 };
 
-const TechnicianStatusWidget = () => {
-  const [techs, setTechs] = useState<any[]>([]);
+const filterPersonalRoster = (usersRaw: any[], visibility: PersonalVisibility) => {
+  const visible = usersRaw.filter((u) => !isHiddenTestAccount(u));
+  if (visibility === 'tecnicos') {
+    return visible.filter((u) => isMetrologyRole(toUsuarioRow(u)));
+  }
+  if (visibility === 'calidad') {
+    return visible.filter((u) => isQualityRole(toUsuarioRow(u)));
+  }
+  return visible.filter(
+    (u) => isMetrologyRole(toUsuarioRow(u)) || isQualityRole(toUsuarioRow(u)),
+  );
+};
+
+const personalCountLabel = (count: number, visibility: PersonalVisibility) => {
+  if (visibility === 'calidad') return `${count} calidad`;
+  if (visibility === 'todos') return `${count} personas`;
+  return `${count} técnicos`;
+};
+
+const TechnicianStatusWidget = ({ visibility }: { visibility: PersonalVisibility }) => {
+  const [people, setPeople] = useState<PresenceRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let usersRaw: any[] = [];
     let serviciosHoy: Service[] = [];
+    let vacationUids = new Set<string>();
     let hasUsers = false;
 
     const recompute = () => {
       if (!hasUsers) return;
-      const tecnicos = usersRaw.filter(isTechnicianUser);
-      setTechs(mapTechnicianPresence(tecnicos, serviciosHoy));
+      const roster = filterPersonalRoster(usersRaw, visibility);
+      const mapped = mapPersonalPresence(roster, serviciosHoy, vacationUids);
+      mapped.sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }),
+      );
+      setPeople(mapped);
       setLoading(false);
     };
 
@@ -897,7 +985,14 @@ const TechnicianStatusWidget = () => {
     const unsubUsers = onSnapshot(
       collection(db, 'usuarios'),
       snap => {
-        usersRaw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        usersRaw = snap.docs.map(d => {
+          const data = d.data() as Record<string, unknown>;
+          return {
+            id: d.id,
+            ...data,
+            name: String(data.name || data.nombre || data.displayName || ''),
+          };
+        });
         hasUsers = true;
         recompute();
       },
@@ -913,22 +1008,38 @@ const TechnicianStatusWidget = () => {
       () => setLoading(false)
     );
 
+    const unsubVacaciones = onSnapshot(
+      query(collection(db, 'solicitudesVacaciones'), where('estado', '==', 'aprobada')),
+      snap => {
+        vacationUids = new Set(
+          snap.docs
+            .map((d) => d.data() as { solicitanteUid?: string; fechaInicio?: string; fechaFin?: string })
+            .filter((v) => isVacationToday(v, hoyStr))
+            .map((v) => v.solicitanteUid as string),
+        );
+        recompute();
+      },
+      () => setLoading(false)
+    );
+
     return () => {
       unsubUsers();
       unsubServicios();
+      unsubVacaciones();
     };
-  }, []);
+  }, [visibility]);
+
   if (loading) return <div className="h-40 rounded-2xl border ag-border animate-pulse ag-surface" />;
   return (
     <div className="rounded-2xl border ag-card overflow-hidden">
       <div className="p-3 border-b ag-border flex items-center gap-2">
         <Users className="w-4 h-4 acc-text" />
         <span className="font-semibold text-sm ag-text">Personal</span>
-        <span className="text-[10px] ml-auto ag-faint">{techs.length} técnicos</span>
+        <span className="text-[10px] ml-auto ag-faint">{personalCountLabel(people.length, visibility)}</span>
       </div>
       <div className="p-2 space-y-1.5 max-h-52 overflow-y-auto cs">
-        {techs.length === 0 ? <p className="text-xs text-center py-4 ag-faint">Sin técnicos</p>
-          : techs.map(t => (
+        {people.length === 0 ? <p className="text-xs text-center py-4 ag-faint">Sin personal</p>
+          : people.map(t => (
             <div key={t.id} className="flex items-center gap-2.5 p-2.5 rounded-xl border ag-border">
               <div className="relative flex-shrink-0">
                 <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center ag-surface-hi">
@@ -937,7 +1048,7 @@ const TechnicianStatusWidget = () => {
                 <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-transparent ${t.dot}`} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold ag-text truncate">{t.name || 'Técnico'}</p>
+                <p className="text-xs font-semibold ag-text truncate">{t.name || 'Usuario'}</p>
                 <p className="text-[10px] ag-muted truncate">{t.detail}</p>
               </div>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.bg} ${t.color}`}>{t.status}</span>
@@ -999,99 +1110,353 @@ const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]
 );
 
 // ─── MODAL PERFIL ─────────────────────────────────────────────────────────────
+const profileInitials = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
+};
+
 const ProfileModal = ({ currentUser, onClose, onUpdate }: {
   currentUser: UserData; onClose: () => void; onUpdate: (d: Partial<UserData>) => void;
 }) => {
-  const { uid, name, email, phone, role, photoUrl: initPhoto } = currentUser;
+  const { uid, name, email, phone, role, photoUrl: initPhoto, notaPerfil: initNota } = currentUser;
   const [localName, setLocalName] = useState(name || '');
   const [localPhone, setLocalPhone] = useState(phone || '');
-  const [localPosition, setLocalPosition] = useState(role || '');
+  const [localNota, setLocalNota] = useState(initNota || '');
   const [localPhotoUrl, setLocalPhotoUrl] = useState(initPhoto || '');
   const [localPhotoFile, setLocalPhotoFile] = useState<File | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!uid) return;
+    getDoc(doc(db, 'usuarios', uid)).then((snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.phone != null && !phone) setLocalPhone(String(data.phone));
+      if (data.notaPerfil != null && !initNota) setLocalNota(String(data.notaPerfil));
+      if ((data.photoUrl || data.photoURL) && !initPhoto) {
+        setLocalPhotoUrl(String(data.photoUrl || data.photoURL));
+      }
+    }).catch(() => { /* ignore */ });
+  }, [uid, phone, initNota, initPhoto]);
+
+  const previewName = localName.trim() || 'Tu nombre';
+  const roleLabel = formatRoleLabel(role || '');
+  const initials = profileInitials(previewName);
+  const notaLen = localNota.trim().length;
+  const NOTA_MAX = 48;
+
+  const pickPhoto = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Elige una imagen');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('La foto debe pesar menos de 5 MB');
+      return;
+    }
+    setLocalPhotoFile(file);
+    setLocalPhotoUrl(URL.createObjectURL(file));
+    setRemovePhoto(false);
+  };
+
+  const clearPhoto = () => {
+    setLocalPhotoFile(null);
+    setLocalPhotoUrl('');
+    setRemovePhoto(true);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
   const handleSave = async () => {
-    if (!uid) { toast.error('ID de usuario no detectado'); return; }
+    const authUid = getAuth().currentUser?.uid || uid;
+    if (!authUid) { toast.error('ID de usuario no detectado'); return; }
+    const trimmedName = localName.trim();
+    if (!trimmedName) { toast.error('El nombre no puede quedar vacío'); return; }
     setSaving(true);
     try {
-      let newPhoto = localPhotoUrl;
-      if (localPhotoFile) {
-        const ref = storageRef(storage, `usuarios_fotos/${uid}.jpg`);
-        await uploadBytes(ref, localPhotoFile);
-        newPhoto = await getDownloadURL(ref);
+      let newPhoto = removePhoto ? '' : localPhotoUrl;
+      // Nunca persistir blob: locales en Firestore / Auth
+      if (newPhoto.startsWith('blob:')) {
+        if (!localPhotoFile) {
+          newPhoto = initPhoto && !initPhoto.startsWith('blob:') ? initPhoto : '';
+        }
       }
-      await setDoc(doc(db, 'usuarios', uid), {
-        name: localName,
-        nombre: localName,
-        phone: localPhone,
+      if (localPhotoFile) {
+        try {
+          const ref = storageRef(storage, `usuarios_fotos/${authUid}.jpg`);
+          await uploadBytes(ref, localPhotoFile);
+          newPhoto = await getDownloadURL(ref);
+        } catch (storageErr: any) {
+          console.warn('No se pudo subir la foto:', storageErr);
+          toast.error(
+            storageErr?.code === 'storage/unauthorized'
+              ? 'Sin permiso para subir la foto. Se guardará el resto del perfil.'
+              : 'No se pudo subir la foto. Se guardará el resto del perfil.',
+          );
+          newPhoto = initPhoto && !String(initPhoto).startsWith('blob:') ? initPhoto : '';
+        }
+      }
+      const nota = localNota.trim().slice(0, NOTA_MAX);
+      const phoneTrim = localPhone.trim();
+
+      await setDoc(doc(db, 'usuarios', authUid), {
+        name: trimmedName,
+        nombre: trimmedName,
+        phone: phoneTrim,
         photoUrl: newPhoto,
+        notaPerfil: nota,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
-      const auth = getAuth();
-      if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: localName, photoURL: newPhoto });
-      onUpdate({ name: localName, photoUrl: newPhoto, phone: localPhone, role: role || localPosition });
+
+      // Auth es opcional: si falla (p. ej. photoURL), el perfil en Firestore ya quedó.
+      try {
+        const authUser = getAuth().currentUser;
+        if (authUser) {
+          const authPhoto =
+            newPhoto && /^https?:\/\//i.test(newPhoto) ? newPhoto : null;
+          await updateProfile(authUser, {
+            displayName: trimmedName,
+            photoURL: authPhoto,
+          });
+        }
+      } catch (authErr) {
+        console.warn('Perfil Auth no actualizado:', authErr);
+      }
+
+      onUpdate({
+        name: trimmedName,
+        photoUrl: newPhoto,
+        phone: phoneTrim,
+        notaPerfil: nota,
+        role: role || '',
+        uid: authUid,
+      });
       toast.success('¡Perfil actualizado!');
-      setSaving(false); onClose();
-    } catch (e: any) { toast.error('Error: ' + (e.message || 'Revisa permisos')); setSaving(false); }
+      onClose();
+    } catch (e: any) {
+      console.error('Error guardando perfil:', e);
+      toast.error('Error: ' + (e?.message || 'Revisa permisos o conexión'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-        role="dialog" aria-modal="true" aria-labelledby="profile-modal-title"
-        className="w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden ag-card" style={{ borderColor: 'var(--border-color)' }}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.98 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-modal-title"
+        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl border overflow-hidden ag-card max-h-[92vh] flex flex-col"
+        style={{ borderColor: 'var(--border-color)' }}
       >
-        <div className="flex items-center justify-between p-5 border-b ag-border">
-          <h3 id="profile-modal-title" className="text-base font-bold ag-text">Editar Perfil</h3>
-          <button onClick={onClose} className="ag-muted"><X size={18} /></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="flex justify-center">
-            <div className="relative group cursor-pointer" onClick={() => fileRef.current?.click()}>
-              <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 ag-border">
-                {localPhotoUrl ? <img src={localPhotoUrl} className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center ag-surface-hi"><User className="w-8 h-8 ag-muted" /></div>}
-              </div>
-              <div className="absolute inset-0 bg-black/40 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-xs font-medium text-white">Cambiar</span>
-              </div>
+        {/* Hero */}
+        <div className="relative shrink-0 overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-90"
+            style={{
+              background:
+                'linear-gradient(145deg, rgba(var(--acc-rgb)/0.45) 0%, rgba(var(--acc-rgb)/0.08) 48%, transparent 72%)',
+            }}
+          />
+          <div className="relative flex items-start justify-between p-4 sm:p-5">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider acc-text mb-0.5">Tu cuenta</p>
+              <h3 id="profile-modal-title" className="text-lg font-bold ag-text tracking-tight">Editar perfil</h3>
             </div>
-            <input type="file" ref={fileRef}
-              onChange={e => { if (e.target.files?.[0]) { setLocalPhotoFile(e.target.files[0]); setLocalPhotoUrl(URL.createObjectURL(e.target.files[0])); } }}
-              accept="image/*" className="hidden" />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="p-2 rounded-xl ag-muted hover:ag-surface-hi transition-colors"
+            >
+              <X size={18} />
+            </button>
           </div>
-          {[
-            { label: 'Nombre', value: localName, set: setLocalName, disabled: false },
-            { label: 'Puesto', value: localPosition, set: setLocalPosition, disabled: true },
-            { label: 'Teléfono', value: localPhone, set: setLocalPhone, disabled: false },
-          ].map(({ label, value, set, disabled }) => (
-            <div key={label}>
-              <label className="text-[11px] font-bold uppercase tracking-wide ag-muted mb-1 block">{label}</label>
+
+          <div className="relative px-5 pb-5 flex flex-col items-center">
+            <div className="relative">
+              <div
+                className="w-[5.5rem] h-[5.5rem] rounded-3xl overflow-hidden border-2 shadow-lg"
+                style={{ borderColor: 'rgba(var(--acc-rgb)/0.55)', boxShadow: '0 8px 28px rgba(var(--acc-rgb)/0.25)' }}
+              >
+                {localPhotoUrl ? (
+                  <img src={localPhotoUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div
+                    className="w-full h-full flex items-center justify-center text-white text-2xl font-bold tracking-wide"
+                    style={{ background: 'linear-gradient(145deg, var(--acc), rgba(var(--acc-rgb)/0.55))' }}
+                  >
+                    {initials}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                aria-label="Cambiar foto"
+                className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full acc text-white flex items-center justify-center shadow-md border-2 border-transparent hover:opacity-90 transition-opacity"
+                style={{ borderColor: 'var(--surface)' }}
+              >
+                <Camera size={16} />
+              </button>
               <input
-                value={value}
-                onChange={e => set(e.target.value)}
-                disabled={disabled}
-                className={`w-full px-3 py-2.5 rounded-xl border text-sm ag-input acc-ring ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                type="file"
+                ref={fileRef}
+                onChange={(e) => pickPhoto(e.target.files?.[0])}
+                accept="image/*"
+                className="hidden"
               />
-              {disabled && (
-                <p className="mt-1 text-[10px] ag-faint">El puesto solo lo cambia un administrador.</p>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="text-[11px] font-semibold acc-text hover:underline"
+              >
+                Cambiar foto
+              </button>
+              {localPhotoUrl && (
+                <>
+                  <span className="ag-faint text-[10px]">·</span>
+                  <button
+                    type="button"
+                    onClick={clearPhoto}
+                    className="text-[11px] font-semibold text-rose-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Trash2 size={11} /> Quitar
+                  </button>
+                </>
               )}
             </div>
-          ))}
-          <div>
-            <label className="text-[11px] font-bold uppercase tracking-wide ag-muted mb-1 block">Email</label>
-            <input disabled value={email} className="w-full px-3 py-2.5 rounded-xl border text-sm ag-input opacity-50 cursor-not-allowed" />
           </div>
         </div>
-        <div className="flex gap-3 p-5 border-t ag-border">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border ag-border ag-muted text-sm font-medium hover:ag-surface-hi transition-colors">
+
+        <div className="flex-1 overflow-y-auto cs px-5 pb-2 space-y-4">
+          {/* Preview */}
+          <div className="rounded-2xl border ag-border p-3 ag-surface-hi">
+            <p className="text-[10px] font-bold uppercase tracking-wider ag-faint mb-2">Así te ven los demás</p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 border ag-border">
+                {localPhotoUrl ? (
+                  <img src={localPhotoUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div
+                    className="w-full h-full flex items-center justify-center text-white text-xs font-bold"
+                    style={{ background: 'linear-gradient(145deg, var(--acc), rgba(var(--acc-rgb)/0.55))' }}
+                  >
+                    {initials}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold ag-text truncate">{previewName}</p>
+                <p className="text-[11px] ag-muted truncate">
+                  {localNota.trim() || 'En la app'} · {roleLabel}
+                </p>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 shrink-0">
+                Conectado
+              </span>
+            </div>
+          </div>
+
+          {/* Identity */}
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider ag-muted">Identidad</p>
+            <div>
+              <label className="text-[11px] font-semibold ag-muted mb-1 block">Nombre visible</label>
+              <input
+                value={localName}
+                onChange={(e) => setLocalName(e.target.value)}
+                maxLength={60}
+                placeholder="Cómo quieres que te llamen"
+                className="w-full px-3 py-2.5 rounded-xl border text-sm ag-input acc-ring"
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-semibold ag-muted">Estado / nota</label>
+                <span className={`text-[10px] tabular-nums ${notaLen >= NOTA_MAX ? 'text-amber-400' : 'ag-faint'}`}>
+                  {notaLen}/{NOTA_MAX}
+                </span>
+              </div>
+              <input
+                value={localNota}
+                onChange={(e) => setLocalNota(e.target.value.slice(0, NOTA_MAX))}
+                maxLength={NOTA_MAX}
+                placeholder="Ej. En laboratorio · Disponible por WhatsApp"
+                className="w-full px-3 py-2.5 rounded-xl border text-sm ag-input acc-ring"
+              />
+              <p className="mt-1 text-[10px] ag-faint leading-snug">
+                Se muestra en Personal cuando estás conectado.
+              </p>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold ag-muted mb-1 block">Teléfono</label>
+              <input
+                type="tel"
+                value={localPhone}
+                onChange={(e) => setLocalPhone(e.target.value)}
+                placeholder="Opcional · para contacto interno"
+                className="w-full px-3 py-2.5 rounded-xl border text-sm ag-input acc-ring"
+              />
+            </div>
+          </div>
+
+          {/* Locked account */}
+          <div className="space-y-2 pb-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider ag-muted">Cuenta</p>
+            <div className="rounded-2xl border ag-border divide-y ag-border overflow-hidden">
+              <div className="flex items-center gap-3 px-3.5 py-3 ag-surface-hi">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-amber-500/10">
+                  <Lock size={14} className="text-amber-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] ag-faint">Puesto</p>
+                  <p className="text-sm font-medium ag-text truncate">{roleLabel || 'Sin puesto'}</p>
+                </div>
+                <span className="text-[9px] font-bold uppercase tracking-wide ag-faint shrink-0">Solo admin</span>
+              </div>
+              <div className="flex items-center gap-3 px-3.5 py-3 ag-surface-hi">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(var(--acc-rgb)/0.12)' }}>
+                  <Lock size={14} className="acc-text" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] ag-faint">Email</p>
+                  <p className="text-sm font-medium ag-text truncate">{email}</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-[10px] ag-faint px-0.5">
+              El puesto y el correo solo los cambia un administrador.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-3 p-4 sm:p-5 border-t ag-border shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border ag-border ag-muted text-sm font-medium hover:ag-surface-hi transition-colors"
+          >
             Cancelar
           </button>
-          <button onClick={handleSave} disabled={saving}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 acc hover:opacity-90 disabled:opacity-50 transition-all"
           >
-            {saving && <Loader2 className="animate-spin w-4 h-4" />}{saving ? 'Guardando...' : 'Guardar'}
+            {saving && <Loader2 className="animate-spin w-4 h-4" />}
+            {saving ? 'Guardando...' : 'Guardar'}
           </button>
         </div>
       </motion.div>
@@ -1412,14 +1777,36 @@ export const MainMenu: React.FC = () => {
   }, [selectedNovedad, uid]);
 
   useEffect(() => {
-    if (user) setLocalUser({
-      uid: (user as any).uid || (user as any).id || '',
-      email: (user as any).email || '',
-      name: ((user as any).name || (user as any).displayName || '').trim(),
-      role: ((user as any).puesto || (user as any).role || '').trim().toLowerCase(),
-      photoUrl: (user as any).photoUrl || (user as any).photoURL,
-      phone: (user as any).phone,
+    if (!user) return;
+    const userUid =
+      auth.currentUser?.uid ||
+      (user as { uid?: string; id?: string }).uid ||
+      (user as { uid?: string; id?: string }).id ||
+      '';
+    setLocalUser({
+      uid: userUid,
+      email: user.email || '',
+      name: (user.name || '').trim(),
+      role: ((user as { puesto?: string }).puesto || user.role || '').trim().toLowerCase(),
+      photoUrl: (user as { photoUrl?: string; photoURL?: string }).photoUrl
+        || (user as { photoUrl?: string; photoURL?: string }).photoURL
+        || auth.currentUser?.photoURL
+        || undefined,
+      phone: (user as { phone?: string }).phone,
     });
+    if (!userUid) return;
+    getDoc(doc(db, 'usuarios', userUid)).then((snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      setLocalUser((prev) => prev ? {
+        ...prev,
+        name: String(data.name || data.nombre || prev.name || '').trim() || prev.name,
+        phone: data.phone != null ? String(data.phone) : prev.phone,
+        photoUrl: String(data.photoUrl || data.photoURL || prev.photoUrl || '') || prev.photoUrl,
+        notaPerfil: data.notaPerfil != null ? String(data.notaPerfil) : prev.notaPerfil,
+        role: String(data.puesto || data.role || prev.role || '').trim().toLowerCase() || prev.role,
+      } : prev);
+    }).catch(() => { /* ignore */ });
   }, [user]);
 
   // Notificaciones en tiempo real
@@ -1571,6 +1958,41 @@ export const MainMenu: React.FC = () => {
     [localUser],
   );
 
+  const isMetrologo = useMemo(
+    () =>
+      !!(
+        localUser &&
+        isMetrologyRole({
+          id: localUser.uid || uid,
+          puesto: localUser.role,
+          role: localUser.role,
+        })
+      ),
+    [localUser, uid],
+  );
+
+  const isJorge = useMemo(
+    () =>
+      isJorgeAmador({
+        id: localUser?.uid || uid,
+        email: localUser?.email,
+        nombre: localUser?.name,
+        name: localUser?.name,
+        role: localUser?.role,
+        puesto: localUser?.role,
+      }),
+    [localUser, uid],
+  );
+
+  const personalVisibility: PersonalVisibility | null = useMemo(() => {
+    if (isJorge || isAdmin || isSuperAdmin) return 'todos';
+    if (isCalidad) return 'tecnicos';
+    if (isMetrologo) return 'calidad';
+    return null;
+  }, [isJorge, isAdmin, isSuperAdmin, isCalidad, isMetrologo]);
+
+  const showPersonalWidget = personalVisibility !== null;
+
   // Formatos Máster: calidad/admin/gerencia gestionan; metrólogos entran en modo consulta (solo descarga).
   // El puesto puede venir con o sin acento ("Metrólogo" / "Metrologo").
   const canOpenFormatos = useMemo(
@@ -1642,7 +2064,6 @@ export const MainMenu: React.FC = () => {
   const clearFilters = () => { setSearchTerm(''); };
 
   const showNovedades = !novedadesWidgetHidden && (novedadesForUser.length > 0 || canCreateNovedades);
-  const showAdminWidgets = isCalidad || isAdmin || isSuperAdmin;
 
   const novedadesWidget = showNovedades ? (
     <NovedadesWidget
@@ -1657,16 +2078,26 @@ export const MainMenu: React.FC = () => {
     />
   ) : null;
 
+  const personalWidgetDesktop =
+    showPersonalWidget && personalVisibility ? (
+      <TechnicianStatusWidget visibility={personalVisibility} />
+    ) : null;
+  const personalWidgetMobile =
+    showPersonalWidget && personalVisibility ? (
+      <TechnicianStatusWidget visibility={personalVisibility} />
+    ) : null;
+
   const widgetsDesktop = (
     <div className="flex flex-col gap-4 min-h-64">
       {novedadesWidget}
-      {showAdminWidgets && <TechnicianStatusWidget />}
+      {personalWidgetDesktop}
       <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
     </div>
   );
 
   return (
     <>
+      <ToastContainer position="top-center" autoClose={2800} theme="colored" newestOnTop />
       <ThemeStyle />
       <div className="min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-mesh ag-text transition-colors relative" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
@@ -1844,8 +2275,8 @@ export const MainMenu: React.FC = () => {
                 {novedadesWidget && (
                   <div className="snap-start shrink-0 w-[min(88vw,20rem)]">{novedadesWidget}</div>
                 )}
-                {showAdminWidgets && (
-                  <div className="snap-start shrink-0 w-[min(88vw,20rem)]"><TechnicianStatusWidget /></div>
+                {personalWidgetMobile && (
+                  <div className="snap-start shrink-0 w-[min(88vw,20rem)]">{personalWidgetMobile}</div>
                 )}
                 <div className="snap-start shrink-0 w-[min(88vw,20rem)] min-h-[16rem]">
                   <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />

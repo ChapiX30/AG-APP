@@ -65,6 +65,7 @@ import {
 } from "../utils/worksheetOfflineQueue";
 import { recoverWorksheetByCertificado, isConsecutivoLike } from "../utils/worksheetRecover";
 import { getTotalWorksheetQueueCount } from "../utils/worksheetQueueRunner";
+import { moveDriveFile, moveDriveFolder, moveDriveItems, warmupDriveMoveServer } from "../utils/driveMove";
 
 const BRAND_NAME = 'Equipos y Servicios AG';
 const BRAND_SUBTITLE = 'Sistema de gestión metrológica';
@@ -1194,6 +1195,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   const isQuality = useMemo(() => checkIsQualityUser(currentUserData), [currentUserData]);
 
+  useEffect(() => {
+    if (isQuality) warmupDriveMoveServer();
+  }, [isQuality]);
+
   // ── Load user ──
   useEffect(() => {
     const loadUser = async () => {
@@ -2258,41 +2263,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     finally { setIsMoving(false); }
   };
 
-  // ── Move folder recursive ──
-  const moveFolderRecursive = async (src: string, dest: string) => {
-    const res = await listAll(ref(storage, src));
-    for (const item of res.items) {
-      const url = await getDownloadURL(item);
-      const blob = await (await fetch(url)).blob();
-      const newPath = `${dest}/${item.name}`;
-      const newRef = ref(storage, newPath);
-      await uploadBytes(newRef, blob);
-      
-      const newPdfUrl = await getDownloadURL(newRef);
-
-      if (item.name !== '.keep') {
-        const oldId = item.fullPath.replace(/\//g, '_');
-        const newId = newPath.replace(/\//g, '_');
-        const old = await getDoc(doc(db, 'fileMetadata', oldId));
-        const data = old.exists() ? old.data() : {};
-        if (old.exists()) await deleteDoc(doc(db, 'fileMetadata', oldId));
-        await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, updated: new Date().toISOString() }, { merge: true });
-        
-        try {
-          const possibleId = extractWorksheetLinkId(item.name);
-          const wsDoc = await resolveWorksheetDoc(possibleId);
-          if (wsDoc) {
-            await updateDoc(wsDoc.ref, { pdfURL: newPdfUrl });
-          }
-        } catch (syncErr) {
-          console.error("Error sincronizando link al mover carpeta:", syncErr);
-        }
-      }
-      await deleteObject(item);
-    }
-    for (const sub of res.prefixes) await moveFolderRecursive(sub.fullPath, `${dest}/${sub.name}`);
-  };
-
+  // ── Move (servidor GCS copy + fallback cliente paralelo) ──
   const executeMoveFolder = async (folder: DriveFolder, dest: string) => {
     const newPath = `${dest}/${folder.name}`;
     if (newPath.startsWith(folder.fullPath) || newPath === folder.fullPath) {
@@ -2300,9 +2271,19 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       return false;
     }
     setIsMoving(true);
-    try { await moveFolderRecursive(folder.fullPath, newPath); return true; }
-    catch (e) { showToast("Error al mover la carpeta", 'error'); return false; }
-    finally { setIsMoving(false); }
+    try {
+      const result = await moveDriveFolder(folder.fullPath, newPath);
+      if (!result.ok) {
+        showToast(result.error || "Error al mover la carpeta", 'error');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      showToast("Error al mover la carpeta", 'error');
+      return false;
+    } finally {
+      setIsMoving(false);
+    }
   };
 
   // ── Move file ──
@@ -2312,54 +2293,137 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     if (newPath === file.fullPath) return false;
     setIsMoving(true);
     try {
-      const url = file.url || await getDownloadURL(ref(storage, file.fullPath));
-      const blob = await (await fetch(url)).blob();
-      const newRef = ref(storage, newPath);
-      await uploadBytes(newRef, blob);
-      
-      const newPdfUrl = await getDownloadURL(newRef);
-
-      const oldId = file.fullPath.replace(/\//g, '_');
-      const newId = newPath.replace(/\//g, '_');
-      const old = await getDoc(doc(db, 'fileMetadata', oldId));
-      const data = old.exists() ? old.data() : {};
-      if (old.exists()) await deleteDoc(doc(db, 'fileMetadata', oldId));
-      await setDoc(doc(db, 'fileMetadata', newId), { ...data, filePath: newPath, name: targetName, updated: new Date().toISOString() }, { merge: true });
-      
-      try {
-        const possibleId = extractWorksheetLinkId(targetName);
-        const wsDoc = await resolveWorksheetDoc(possibleId);
-        if (wsDoc) {
-          await updateDoc(wsDoc.ref, { pdfURL: newPdfUrl });
-        }
-      } catch (syncErr) {
-        console.error("Error sincronizando link al mover archivo:", syncErr);
+      const result = await moveDriveFile({
+        fromPath: file.fullPath,
+        toPath: newPath,
+        sourceUrl: file.url || undefined,
+      });
+      if (!result.ok) {
+        showToast(result.error || "Error al mover el archivo", 'error');
+        return false;
       }
-
-      await deleteObject(ref(storage, file.fullPath));
       return true;
-    } catch (e) { showToast("Error al mover el archivo", 'error'); return false; }
-    finally { setIsMoving(false); }
+    } catch (e) {
+      showToast("Error al mover el archivo", 'error');
+      return false;
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  const applyOptimisticFileMoves = (moved: Array<{ fromPath: string; toPath: string; name?: string }>) => {
+    if (moved.length === 0) return;
+    const fromSet = new Set(moved.map((m) => m.fromPath));
+    const destPrefix = [currentRoot, ...path].join("/") + "/";
+    const stayingInView = moved.filter((m) => m.toPath.startsWith(destPrefix) && !m.toPath.slice(destPrefix.length).includes("/"));
+
+    setFiles((prev) => {
+      const without = prev.filter((f) => !fromSet.has(f.fullPath));
+      // Si el destino es la carpeta actual, reinsertar con ruta nueva; si no, solo quitar
+      if (stayingInView.length === 0) return without;
+      const byFrom = new Map(prev.map((f) => [f.fullPath, f]));
+      const reinserted = stayingInView
+        .map((m) => {
+          const old = byFrom.get(m.fromPath);
+          if (!old) return null;
+          const name = m.name || m.toPath.split("/").pop() || old.name;
+          return {
+            ...old,
+            name,
+            rawName: name,
+            fullPath: m.toPath,
+            parentFolder: path.length > 0 ? path[path.length - 1] : "Raíz",
+            updated: new Date().toISOString(),
+          } as DriveFile;
+        })
+        .filter(Boolean) as DriveFile[];
+      return [...reinserted, ...without];
+    });
+
+    setFolders((prev) => prev.filter((f) => !fromSet.has(f.fullPath)));
+    setSelectedIds(new Set());
+    setPreviewFile((prev) => (prev && fromSet.has(prev.fullPath) ? null : prev));
   };
 
   const handleModalMove = async () => {
     const dest = [currentRoot, ...moveToPath].join('/');
     if (moveTargetFolder) {
-      const ok = await executeMoveFolder(moveTargetFolder, dest);
-      if (ok) { showToast("Carpeta movida", 'success'); setMoveDialogOpen(false); setMoveTargetFolder(null); setMoveToPath([]); loadContent(); }
-    } else if (moveTargetFiles.length > 0) {
-      let movedCount = 0;
-      for (const file of moveTargetFiles) {
-        const ok = await executeMoveFile(file, dest);
-        if (ok) movedCount++;
+      const folder = moveTargetFolder;
+      const newPath = `${dest}/${folder.name}`;
+      if (newPath.startsWith(folder.fullPath) || newPath === folder.fullPath) {
+        showToast("No puedes mover una carpeta dentro de sí misma", 'error');
+        return;
       }
-      if (movedCount > 0) {
-        showToast(`${movedCount} archivo(s) movido(s)`, 'success');
-        setMoveDialogOpen(false);
-        setMoveTargetFiles([]);
-        setMoveToPath([]);
-        setSelectedIds(new Set()); 
+      setIsMoving(true);
+      setMoveDialogOpen(false);
+      setMoveTargetFolder(null);
+      setMoveToPath([]);
+      setFolders((prev) => prev.filter((f) => f.fullPath !== folder.fullPath));
+      showToast(`Moviendo carpeta "${folder.name}"…`, 'info');
+      try {
+        const result = await moveDriveFolder(folder.fullPath, newPath);
+        if (!result.ok) {
+          showToast(result.error || "Error al mover la carpeta", 'error');
+          loadContent();
+          return;
+        }
+        showToast("Carpeta movida", 'success');
+        // Quiet refresh por si hay subarchivos / realtime
+        scheduleQuietReload();
+      } catch {
+        showToast("Error al mover la carpeta", 'error');
         loadContent();
+      } finally {
+        setIsMoving(false);
+      }
+    } else if (moveTargetFiles.length > 0) {
+      const filesToMove = [...moveTargetFiles];
+      const moves = filesToMove.map((file) => ({
+        fromPath: file.fullPath,
+        toPath: `${dest}/${file.name}`,
+        sourceUrl: file.url || undefined,
+        name: file.name,
+      }));
+
+      setIsMoving(true);
+      setMoveDialogOpen(false);
+      setMoveTargetFiles([]);
+      setMoveToPath([]);
+      applyOptimisticFileMoves(moves);
+      showToast(
+        filesToMove.length > 1
+          ? `Moviendo ${filesToMove.length} archivos…`
+          : `Moviendo "${filesToMove[0]?.name}"…`,
+        'info'
+      );
+
+      try {
+        const result = await moveDriveItems({
+          moves: moves.map(({ fromPath, toPath, sourceUrl }) => ({ fromPath, toPath, sourceUrl })),
+        });
+        if (!result.ok) {
+          showToast(result.error || "Error al mover archivos", 'error');
+          loadContent();
+          return;
+        }
+        if (result.failedCount > 0) {
+          showToast(
+            `${result.movedCount} movido(s), ${result.failedCount} con error`,
+            'error'
+          );
+          loadContent();
+          return;
+        }
+        showToast(
+          `${result.movedCount} archivo(s) movido(s)`,
+          'success'
+        );
+        scheduleQuietReload();
+      } catch {
+        showToast("Error al mover archivos", 'error');
+        loadContent();
+      } finally {
+        setIsMoving(false);
       }
     }
   };
@@ -2761,16 +2825,36 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   const handleFolderDrop = async (e: React.DragEvent, target: DriveFolder) => {
     e.preventDefault(); e.stopPropagation(); setDropTargetFolder(null);
     if (!draggingItem) return;
-    let ok = false;
-    if (draggingItem.type === 'folder') {
-      const f = draggingItem.data as DriveFolder;
-      if (f.fullPath !== target.fullPath) ok = await executeMoveFolder(f, target.fullPath);
-    } else {
-      const f = draggingItem.data as DriveFile;
-      if (!f.fullPath.startsWith(target.fullPath)) ok = await executeMoveFile(f, target.fullPath);
-    }
+    const item = draggingItem;
     setDraggingItem(null);
-    if (ok) { showToast("Elemento movido", 'success'); loadContent(); }
+
+    if (item.type === 'folder') {
+      const f = item.data as DriveFolder;
+      if (f.fullPath === target.fullPath) return;
+      setFolders((prev) => prev.filter((x) => x.fullPath !== f.fullPath));
+      showToast(`Moviendo carpeta "${f.name}"…`, 'info');
+      const ok = await executeMoveFolder(f, target.fullPath);
+      if (ok) {
+        showToast("Elemento movido", 'success');
+        scheduleQuietReload();
+      } else {
+        loadContent();
+      }
+      return;
+    }
+
+    const f = item.data as DriveFile;
+    if (f.fullPath.startsWith(target.fullPath + "/") || f.fullPath === target.fullPath) return;
+    const toPath = `${target.fullPath}/${f.name}`;
+    applyOptimisticFileMoves([{ fromPath: f.fullPath, toPath, name: f.name }]);
+    showToast(`Moviendo "${f.name}"…`, 'info');
+    const ok = await executeMoveFile(f, target.fullPath);
+    if (ok) {
+      showToast("Elemento movido", 'success');
+      scheduleQuietReload();
+    } else {
+      loadContent();
+    }
   };
 
   // --- INP FIX: Referencias estables ---

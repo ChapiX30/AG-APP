@@ -9,6 +9,7 @@ import {
   VACATION_RH_EMAILS,
   type VacationWorkflowStep,
 } from './vacationPermissions';
+import { isHiddenTestAccount } from './hiddenUsers';
 
 function normalizeName(value: string): string {
   return value
@@ -36,6 +37,7 @@ async function findUserIdsByNameHints(hints: string[]): Promise<string[]> {
   const ids: string[] = [];
   for (const docSnap of snap.docs) {
     const data = docSnap.data();
+    if (isHiddenTestAccount(data)) continue;
     const name = normalizeName(String(data.name || data.nombre || ''));
     if (hints.some((h) => name.includes(normalizeName(h)))) {
       ids.push(docSnap.id);
@@ -49,6 +51,7 @@ async function findCalidadApproverIds(): Promise<string[]> {
   const ids: string[] = [];
   for (const docSnap of snap.docs) {
     const data = docSnap.data();
+    if (isHiddenTestAccount(data)) continue;
     const user = toCalendarUser(data);
     if (isCalidadApprover(user)) ids.push(docSnap.id);
   }
@@ -64,6 +67,7 @@ export async function getApproverEmailsForStep(
 
   for (const docSnap of snap.docs) {
     const data = docSnap.data();
+    if (isHiddenTestAccount(data)) continue;
     const email = userEmail(data);
     if (!email) continue;
     const user = toCalendarUser(data);

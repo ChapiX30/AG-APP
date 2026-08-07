@@ -28,6 +28,7 @@ import {
   buildServicioCertProgressMap,
   ServicioCertProgress,
 } from "../utils/calibrationShared.tsx";
+import { filterVisibleUsers } from "../utils/hiddenUsers";
 
 export type MetrologoMonthStat = {
   name: string;
@@ -79,7 +80,7 @@ export function useCalibrationDashboardData(selectedDate: Date) {
     const windowStart = getWindowStartDateKey();
 
     const unsubUsuarios = onSnapshot(collection(db, "usuarios"), (snapshot) => {
-      setUsuarios(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UsuarioRow)));
+      setUsuarios(filterVisibleUsers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UsuarioRow))));
     });
 
     const unsubHojas = onSnapshot(

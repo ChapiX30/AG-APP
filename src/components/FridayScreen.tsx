@@ -19,6 +19,7 @@ import clsx from "clsx";
 import { useNavigation } from '../hooks/useNavigation';
 import { useAppDialog } from '../hooks/useAppDialog';
 import { useAuth } from "../hooks/useAuth"; 
+import { filterVisibleUsers } from "../utils/hiddenUsers";
 import labLogo from '../assets/lab_logo.png';
 
 // --- TIPOS ---
@@ -1155,7 +1156,7 @@ const FridayScreen: React.FC = () => {
                 setColumns(merged);
             } else { setColumns(DEFAULT_COLUMNS); }
         });
-        const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), orderBy("name")), (snap) => { setMetrologos(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+        const unsubMetrologos = onSnapshot(query(collection(db, "usuarios"), orderBy("name")), (snap) => { setMetrologos(filterVisibleUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))); });
         const unsubClientes = onSnapshot(query(collection(db, "clientes"), orderBy("nombre")), (snap) => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         
         const yearStart = `${currentYear}-01-01`;

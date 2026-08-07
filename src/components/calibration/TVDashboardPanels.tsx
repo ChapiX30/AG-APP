@@ -41,6 +41,7 @@ import {
   TecnicoPendiente,
   ServicioCertProgress,
 } from "../../utils/calibrationShared.tsx";
+import { isHiddenTestAccount } from "../../utils/hiddenUsers";
 
 type CalendarValue = Date | [Date | null, Date | null] | null;
 
@@ -784,7 +785,7 @@ export const ServicesDashboardPanel: React.FC<ServicesDashboardPanelProps> = ({
     todayServices.length > 0 || programmedServices.length > 0 || finalizedServices.length > 0;
 
   const usuariosMetrologia = useMemo(
-    () => usuarios.filter((u) => isMetrologyRole(u)),
+    () => usuarios.filter((u) => !isHiddenTestAccount(u) && isMetrologyRole(u)),
     [usuarios]
   );
 

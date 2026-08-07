@@ -27,6 +27,7 @@ import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion'
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
 import { notificarCalidadConfirmacionAsistencia } from '../utils/notificacionesConfirmacionJunta';
 import { eliminarRecordatorioConfirmacionJunta } from '../utils/notificacionesRecordatorioJunta';
+import { filterVisibleUsers } from '../utils/hiddenUsers';
 import {
   COLLECTION_PATRONES,
   countPatronesEnAlerta,
@@ -1264,7 +1265,9 @@ export const CalendarScreen: React.FC = () => {
         const unsub = onSnapshot(query(collection(db, 'servicios')), async (snapshot) => {
             try {
                 const usuariosSnap = await getDocs(collection(db, 'usuarios'));
-                const fetchedUsers = usuariosSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+                const fetchedUsers = filterVisibleUsers(
+                  usuariosSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })),
+                );
                 setUsers(fetchedUsers);
 
                 const calendarEvents = snapshot.docs.map(doc => {

@@ -27,6 +27,7 @@ import {
   CalibrationChartTooltip,
   UsuarioRow,
 } from "../utils/calibrationShared.tsx";
+import { filterVisibleUsers } from "../utils/hiddenUsers";
 
 const COLORS = CALIBRATION_COLORS;
 const FALLBACK_COLORS = FALLBACK_CHART_COLORS;
@@ -73,7 +74,7 @@ const CalibrationStatsScreen: React.FC = () => {
   useEffect(() => {
     setLoading(true);
     const unsubUsuarios = onSnapshot(collection(db, "usuarios"), (snapshot) => {
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UsuarioRow));
+      const data = filterVisibleUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as UsuarioRow)));
       setUsuarios(data);
     });
 

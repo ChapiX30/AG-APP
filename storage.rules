@@ -132,5 +132,17 @@ service firebase.storage {
         && request.resource.contentType == 'application/pdf';
       allow delete: if isSignedIn();
     }
+
+    // Fotos de perfil — cada usuario solo escribe la suya; lectura para el equipo
+    match /usuarios_fotos/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && fileName == request.auth.uid + '.jpg'
+        && request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn()
+        && fileName == request.auth.uid + '.jpg';
+    }
   }
 }

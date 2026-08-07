@@ -23,6 +23,7 @@ import {
   adminSetUsuarioActivo,
   adminUsuariosErrorMessage,
 } from "../utils/adminUsuariosApi";
+import { filterVisibleUsers } from "../utils/hiddenUsers";
 
 const SUPER_ADMINS = [
   "jesus.sustaita@agsolutions.com",
@@ -73,16 +74,18 @@ export const GestionUsuariosScreen: React.FC = () => {
     const unsub = onSnapshot(
       collection(db, "usuarios"),
       (snap) => {
-        const rows: UsuarioRow[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            name: String(data.nombre || data.name || "").trim() || "Sin nombre",
-            email: String(data.email || data.correo || "").trim().toLowerCase(),
-            puesto: String(data.puesto || data.role || "").trim(),
-            activo: data.activo !== false,
-          };
-        });
+        const rows: UsuarioRow[] = filterVisibleUsers(
+          snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: String(data.nombre || data.name || "").trim() || "Sin nombre",
+              email: String(data.email || data.correo || "").trim().toLowerCase(),
+              puesto: String(data.puesto || data.role || "").trim(),
+              activo: data.activo !== false,
+            };
+          }),
+        );
         rows.sort((a, b) => a.name.localeCompare(b.name, "es"));
         setUsuarios(rows);
         setLoading(false);

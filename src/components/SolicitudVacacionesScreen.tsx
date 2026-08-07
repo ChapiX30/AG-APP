@@ -39,6 +39,7 @@ import {
   OperationalScreenShell,
 } from './ui/OperationalScreenShell';
 import { db, storage } from '../utils/firebase';
+import { isHiddenTestAccount } from '../utils/hiddenUsers';
 import {
   canSubmitVacationRequest,
   canCreateUrgentVacationRequest,
@@ -237,6 +238,7 @@ export const SolicitudVacacionesScreen: React.FC = () => {
           const role = String(data.role || '').trim();
           if (!name && !email) return;
           const u = { id: d.id, name: name || email, email, puesto, role };
+          if (isHiddenTestAccount(u)) return;
           if (isJorgeAmador(u)) return;
           if (!canSubmitVacationRequest(u)) return;
           list.push(u);

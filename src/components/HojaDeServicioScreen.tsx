@@ -17,6 +17,7 @@ import { encolarCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
 import { watchAlertaCorreo } from '../utils/alertaCorreoWatcher';
 import { useAuth } from '../hooks/useAuth';
 import { useAppDialog } from '../hooks/useAppDialog';
+import { isHiddenTestAccount } from '../utils/hiddenUsers';
 import toast, { Toaster } from 'react-hot-toast';
 import logoImage from '../assets/lab_logo.png';
 import { ScreenShell } from './ui/ScreenShell';
@@ -719,8 +720,9 @@ export default function HojaDeServicioScreen() {
       // =====================================================================
       try {
         const usersSnap = await getDocs(collection(db, 'usuarios'));
+        const visible = usersSnap.docs.filter(d => !isHiddenTestAccount(d.data()));
         
-        let destinatarios = usersSnap.docs
+        let destinatarios = visible
             .filter(d => {
                 const rol = (d.data().role || d.data().puesto || '').toLowerCase();
                 return rol.includes('calidad') || rol.includes('admin') || rol.includes('gerente');
@@ -728,7 +730,7 @@ export default function HojaDeServicioScreen() {
             .map(d => d.id);
         
         if (destinatarios.length === 0) {
-            destinatarios = usersSnap.docs.map(d => d.id);
+            destinatarios = visible.map(d => d.id);
         }
 
         // Título y cuerpo claros y concretos

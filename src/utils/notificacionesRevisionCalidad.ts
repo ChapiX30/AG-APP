@@ -6,6 +6,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { isHiddenTestAccount } from "./hiddenUsers";
 
 export interface NotificarRevisionCalidadParams {
   worksheetDocId: string;
@@ -18,7 +19,8 @@ export interface NotificarRevisionCalidadParams {
 
 async function getCalidadDestinatarios(): Promise<string[]> {
   const usersSnap = await getDocs(collection(db, "usuarios"));
-  const destinatarios = usersSnap.docs
+  const visible = usersSnap.docs.filter((d) => !isHiddenTestAccount(d.data()));
+  const destinatarios = visible
     .filter((d) => {
       const rol = String(d.data().role || d.data().puesto || "").toLowerCase();
       return (
@@ -30,7 +32,7 @@ async function getCalidadDestinatarios(): Promise<string[]> {
     })
     .map((d) => d.id);
 
-  return destinatarios.length > 0 ? destinatarios : usersSnap.docs.map((d) => d.id);
+  return destinatarios.length > 0 ? destinatarios : visible.map((d) => d.id);
 }
 
 /** Notifica a usuarios de calidad que un técnico marcó trabajo como realizado. */
