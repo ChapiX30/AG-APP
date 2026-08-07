@@ -1128,9 +1128,11 @@ const MetrologoMonthTooltip = ({
   const calibraciones = payload[0]?.value ?? row?.total ?? 0;
   const enLab = row?.carrying ?? 0;
   return (
-    <div className="bg-slate-800/95 border border-slate-700 p-3 rounded-lg shadow-xl">
-      <p className="text-slate-200 text-xs font-bold mb-1">{label}</p>
-      <p className="text-white text-sm font-black">{calibraciones} equipos calibrados (mes)</p>
+    <div className="rounded-lg border border-[var(--tv-line)] bg-[rgba(12,18,32,0.96)] p-3 shadow-xl backdrop-blur-md">
+      <p className="tv-display text-[var(--tv-text)] text-xs font-bold mb-1">{label}</p>
+      <p className="tv-mono text-[var(--tv-text)] text-sm font-semibold">
+        {calibraciones} equipos calibrados (mes)
+      </p>
       {enLab > 0 && (
         <p className="text-amber-200 text-xs mt-1 font-semibold">{enLab} en laboratorio ahora</p>
       )}
@@ -1147,30 +1149,32 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
   return (
     <div className="h-full min-h-0 tv-panel p-3 flex flex-col overflow-hidden">
       <div className="flex items-baseline justify-between gap-2 mb-2 shrink-0">
-        <h3 className="tv-display text-sm font-bold text-[var(--tv-text,#edf2f8)]">Calibraciones del mes</h3>
-        <span className="text-[10px] text-[var(--tv-muted,#8fa0b8)]">Solo metrólogos · número sobre barra</span>
+        <h3 className="tv-display text-sm font-bold text-[var(--tv-text)] tracking-tight">
+          Calibraciones del mes
+        </h3>
+        <span className="text-[10px] text-[var(--tv-muted)]">Metrólogos · total del mes</span>
       </div>
       <div className="flex-1 min-h-[120px] w-full min-w-0">
         {data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <BarChart data={data} margin={{ top: 26, right: 8, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,173,204,0.12)" vertical={false} />
               <XAxis
                 dataKey="name"
-                stroke="#94a3b8"
+                stroke="#8fa0b8"
                 fontSize={10}
                 tickLine={false}
                 interval={0}
-                tick={{ fill: "#cbd5e1", fontWeight: 600 }}
+                tick={{ fill: "#c5d0e0", fontWeight: 600 }}
                 tickFormatter={(v) => (typeof v === "string" ? v.split(" ")[0] : v)}
               />
               <YAxis
-                stroke="#94a3b8"
+                stroke="#8fa0b8"
                 fontSize={11}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
-                tick={{ fill: "#e2e8f0", fontWeight: 600 }}
+                tick={{ fill: "#edf2f8", fontWeight: 600 }}
                 width={32}
               />
               <Tooltip content={<MetrologoMonthTooltip />} />
@@ -1184,9 +1188,9 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
                 <LabelList
                   dataKey="total"
                   position="top"
-                  fill="#f8fafc"
-                  fontSize={15}
-                  fontWeight={900}
+                  fill="#edf2f8"
+                  fontSize={14}
+                  fontWeight={700}
                   formatter={(value: number) => (value > 0 ? String(value) : "")}
                 />
                 {data.map((e, i) => {
@@ -1195,7 +1199,7 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
                     <Cell
                       key={`${e.name}-${i}`}
                       fill={e.color}
-                      stroke={isLeader ? "#fbbf24" : undefined}
+                      stroke={isLeader ? "#e8a54b" : undefined}
                       strokeWidth={isLeader ? 2 : 0}
                     />
                   );
@@ -1204,7 +1208,7 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <div className="h-full flex items-center justify-center text-gray-500 text-xs">
+          <div className="h-full flex items-center justify-center text-[var(--tv-dim)] text-xs">
             Sin calibraciones de metrólogos este mes
           </div>
         )}
@@ -1212,7 +1216,7 @@ export const MetrologosMonthChart: React.FC<MetrologosMonthChartProps> = ({ data
       <style>{`
         .recharts-label-list text {
           paint-order: stroke fill;
-          stroke: #0f172a;
+          stroke: #070b12;
           stroke-width: 4px;
           stroke-linejoin: round;
         }

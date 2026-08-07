@@ -12,6 +12,7 @@ import {
   LabStatusBar,
   LabPendingTable,
   TecnicosPendientesPanel,
+  MetrologosMonthChart,
 } from "./calibration/TVDashboardPanels";
 
 /** Aislado del resto del dashboard: el tick de 1 s no debe re-renderizar los paneles. */
@@ -65,6 +66,7 @@ const TVDashboardScreen: React.FC = () => {
     totalPendingToday,
     tecnicosPendientes,
     arrivalsForMonth,
+    metrologosMonth,
     usuarios,
   } = useCalibrationDashboardData(selectedDate);
 
@@ -163,14 +165,17 @@ const TVDashboardScreen: React.FC = () => {
           </div>
         </section>
 
-        <section className="col-span-12 lg:col-span-7 min-h-[180px] max-h-[280px] row-span-1 tv-enter" style={{ animationDelay: "190ms" }}>
+        <section className="col-span-12 lg:col-span-4 min-h-[180px] max-h-[280px] row-span-1 tv-enter" style={{ animationDelay: "190ms" }}>
           <LabPendingTable
             byArea={labPending.byArea}
             total={labPending.totalPendientes}
             year={labPending.year}
           />
         </section>
-        <section className="col-span-12 lg:col-span-5 min-h-[180px] max-h-[280px] row-span-1 h-full flex flex-col tv-enter" style={{ animationDelay: "230ms" }}>
+        <section className="col-span-12 lg:col-span-4 min-h-[180px] max-h-[280px] row-span-1 h-full flex flex-col tv-enter" style={{ animationDelay: "220ms" }}>
+          <MetrologosMonthChart data={metrologosMonth} />
+        </section>
+        <section className="col-span-12 lg:col-span-4 min-h-[180px] max-h-[280px] row-span-1 h-full flex flex-col tv-enter" style={{ animationDelay: "250ms" }}>
           <TecnicosPendientesPanel data={tecnicosPendientes} dias={DEUDA_TECNICO_DIAS} />
         </section>
       </main>
