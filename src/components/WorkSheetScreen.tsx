@@ -523,6 +523,18 @@ const getLocalISODate = () => {
     return `${year}-${month}-${day}`;
 };
 
+const parseWorksheetDate = (fecha: string): Date => {
+    if (!fecha) return new Date(NaN);
+    const iso = parseISO(fecha);
+    if (isValid(iso)) return iso;
+    const parts = fecha.split("-");
+    if (parts.length === 3) {
+        const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        if (!isNaN(dateObj.getTime())) return dateObj;
+    }
+    return new Date(NaN);
+};
+
 const findTechopsById = (id: string): MasterRecord | null => {
   const normalized = String(id).trim();
   const records = (masterTechops as MasterRecord[]).filter((r) => String(r.A ?? "").trim() === normalized);
