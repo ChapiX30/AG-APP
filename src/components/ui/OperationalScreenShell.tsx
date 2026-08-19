@@ -29,11 +29,12 @@ export const OperationalScreenShell: React.FC<OperationalScreenShellProps> = ({
   </div>
 );
 
-type HeaderMaxWidth = '5xl' | '6xl';
+type HeaderMaxWidth = '5xl' | '6xl' | 'full';
 
 const maxWidthClass: Record<HeaderMaxWidth, string> = {
   '5xl': 'max-w-5xl',
   '6xl': 'max-w-6xl',
+  full: 'max-w-none w-full',
 };
 
 export interface OperationalScreenHeaderProps {
@@ -43,7 +44,10 @@ export interface OperationalScreenHeaderProps {
   titleIcon?: React.ReactNode;
   /** Badge o meta a la derecha en desktop (p. ej. «Permiso TR»). */
   badge?: React.ReactNode;
+  /** Acciones siempre visibles a la derecha (botones, toggles). */
+  actions?: React.ReactNode;
   maxWidth?: HeaderMaxWidth;
+  compact?: boolean;
   onBack?: () => void;
   backLabel?: string;
 }
@@ -53,7 +57,9 @@ export const OperationalScreenHeader: React.FC<OperationalScreenHeaderProps> = (
   subtitle,
   titleIcon,
   badge,
+  actions,
   maxWidth = '6xl',
+  compact = false,
   onBack,
   backLabel = 'Volver',
 }) => {
@@ -61,11 +67,12 @@ export const OperationalScreenHeader: React.FC<OperationalScreenHeaderProps> = (
   const handleBack = onBack ?? goBack;
 
   return (
-    <div className="bg-white border-b border-slate-200 shadow-sm">
+    <div className="bg-white border-b border-slate-200 shadow-sm shrink-0">
       <div
         className={clsx(
           maxWidthClass[maxWidth],
-          'mx-auto px-4 sm:px-6 py-4 flex items-center gap-4',
+          'mx-auto px-3 sm:px-5 flex items-center gap-3',
+          compact ? 'py-2.5' : 'py-4',
         )}
       >
         <button
@@ -80,18 +87,22 @@ export const OperationalScreenHeader: React.FC<OperationalScreenHeaderProps> = (
         <img
           src={labLogo}
           alt="Equipos y Servicios AG"
-          className="h-10 w-auto object-contain shrink-0"
+          className={clsx('w-auto object-contain shrink-0', compact ? 'h-8' : 'h-10')}
           draggable={false}
         />
-        <div className="flex-1 min-w-0 border-l border-slate-200 pl-4">
-          <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight flex items-center gap-2">
+        <div className="flex-1 min-w-0 border-l border-slate-200 pl-3 sm:pl-4">
+          <h1 className={clsx(
+            'font-semibold text-slate-900 tracking-tight flex items-center gap-2',
+            compact ? 'text-base sm:text-lg' : 'text-lg sm:text-xl',
+          )}>
             {titleIcon}
             {title}
           </h1>
           {subtitle ? (
-            <p className="text-xs sm:text-sm text-slate-500 truncate">{subtitle}</p>
+            <p className={clsx('text-slate-500 truncate', compact ? 'hidden sm:block text-xs' : 'text-xs sm:text-sm')}>{subtitle}</p>
           ) : null}
         </div>
+        {actions ? <div className="shrink-0 flex items-center gap-2">{actions}</div> : null}
         {badge ? <div className="hidden sm:flex shrink-0">{badge}</div> : null}
       </div>
     </div>

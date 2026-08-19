@@ -165,6 +165,8 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
   const lugarNormalizado =
     stateForFirestore.lugarCalibracion.toLowerCase() === "sitio" ? "sitio" : "laboratorio";
 
+  const clienteId = String(stateForFirestore.clienteId || existingData?.clienteId || "").trim();
+
   const fullData: Record<string, unknown> = {
     ...stateForFirestore,
     lugarCalibracion: lugarNormalizado,
@@ -180,6 +182,12 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
     userId: user?.id || "unknown",
     magnitudConsecutivo: job.magnitudConsecutivo || "",
   };
+
+  if (clienteId) {
+    fullData.clienteId = clienteId;
+  } else {
+    delete fullData.clienteId;
+  }
 
   if (!fullData.fechaEntrada) {
     fullData.fechaEntrada =

@@ -11,6 +11,7 @@ import {
   OperationalScreenHeader,
   OperationalScreenShell,
 } from './ui/OperationalScreenShell';
+import { markCelesticaSitioCueDone } from '../utils/celesticaSitioCues';
 
 const AG_BLUE = AG_BRAND_BLUE;
 const INPUT_CLASS =
@@ -268,6 +269,7 @@ export const PermisosTrabajoScreen: React.FC = () => {
 
       const pdfBytes = await pdfDoc.save();
       saveAs(new Blob([pdfBytes]), `Permiso_TR_${fecha.replace(/\//g, '-')}_${metrologosActivos[0]?.nombre.split(' ')[0]}.pdf`);
+      markCelesticaSitioCueDone('permiso_tr');
     } catch (e) {
       await showAlert({ title: 'Error', message: 'Error al generar PDF. Revisa la consola.', variant: 'danger' });
       console.error(e);

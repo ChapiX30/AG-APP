@@ -65,6 +65,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { autoStartServiciosIfDue, getHoyFechaLocal, hasCelesticaAsignacionHoy } from '../utils/servicioAutomation';
+import { ensureHojasServicioIdsReparados, mensajeReparacionHojasServicio } from '../utils/repararHojasServicioIds';
 import { getTotalWorksheetQueueCount } from '../utils/worksheetQueueRunner';
 import { isUserOnline } from '../hooks/usePresence';
 import { COLLECTION_PATRONES, countPatronesEnAlerta, isCalidadRole } from '../utils/patronCalibracion';
@@ -1721,6 +1722,16 @@ export const MainMenu: React.FC = () => {
 
   useEffect(() => {
     if (uid) setNovedadesWidgetHiddenState(isNovedadesWidgetHidden(uid));
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    void ensureHojasServicioIdsReparados()
+      .then((r) => {
+        const msg = mensajeReparacionHojasServicio(r);
+        if (msg) toast.success(msg);
+      })
+      .catch((err) => console.error("[MainMenu] Reparación hojas de servicio:", err));
   }, [uid]);
 
   useEffect(() => {

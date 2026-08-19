@@ -38,6 +38,7 @@ export interface AsignacionClienteItem {
   fecha?: string;
   estado?: string;
   horaInicio?: string;
+  personas?: string[];
 }
 
 const ESTADOS_EXCLUIDOS_ASIGNACION = new Set([
@@ -62,6 +63,19 @@ function isAsignacionActivaDelDia(servicio: AsignacionClienteItem, hoy: string):
   return !ESTADOS_EXCLUIDOS_ASIGNACION.has(st);
 }
 
+function isAsignacionPendienteDesdeHoy(servicio: AsignacionClienteItem, hoy: string): boolean {
+  const fecha = normalizeServicioFecha(servicio.fecha);
+  if (!fecha || fecha < hoy) return false;
+  const st = (servicio.estado || '').toLowerCase();
+  return !ESTADOS_EXCLUIDOS_ASIGNACION.has(st);
+}
+
+export function isUserInPersonas(personas: unknown, userIds: string | string[]): boolean {
+  if (!Array.isArray(personas) || personas.length === 0) return false;
+  const ids = (Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean);
+  return ids.some((id) => personas.includes(id));
+}
+
 /** Technician has an active (non-finished) Celestica service scheduled for today. */
 export function hasCelesticaAsignacionHoy(
   servicios: AsignacionClienteItem[],
@@ -70,6 +84,47 @@ export function hasCelesticaAsignacionHoy(
   return servicios.some(
     (s) => isAsignacionActivaDelDia(s, hoy) && isCelesticaClienteNombre(s.cliente)
   );
+}
+
+/** Current user is assigned to an active Celestica service today. */
+export function hasCelesticaAsignacionHoyForUser(
+  servicios: AsignacionClienteItem[],
+  userId: string | string[],
+  hoy: string = getHoyFechaLocal()
+): boolean {
+  return servicios.some(
+    (s) =>
+      isAsignacionActivaDelDia(s, hoy) &&
+      isCelesticaClienteNombre(s.cliente) &&
+      isUserInPersonas(s.personas, userId)
+  );
+}
+
+/** Active Celestica service today or upcoming (not finished). */
+export function isCelesticaAsignacionPendiente(
+  servicio: AsignacionClienteItem,
+  hoy: string = getHoyFechaLocal()
+): boolean {
+  return isAsignacionPendienteDesdeHoy(servicio, hoy) && isCelesticaClienteNombre(servicio.cliente);
+}
+
+/** Current user is assigned to a pending Celestica service (today or later). */
+export function hasCelesticaAsignacionPendienteForUser(
+  servicios: AsignacionClienteItem[],
+  userId: string | string[],
+  hoy: string = getHoyFechaLocal()
+): boolean {
+  return servicios.some(
+    (s) => isCelesticaAsignacionPendiente(s, hoy) && isUserInPersonas(s.personas, userId)
+  );
+}
+
+/** Active Celestica service for today (any assignee). */
+export function isCelesticaServicioActivoHoy(
+  servicio: AsignacionClienteItem,
+  hoy: string = getHoyFechaLocal()
+): boolean {
+  return isAsignacionActivaDelDia(servicio, hoy) && isCelesticaClienteNombre(servicio.cliente);
 }
 
 /**

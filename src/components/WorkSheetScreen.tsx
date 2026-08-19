@@ -62,9 +62,9 @@ import { FlowCard, FlowSection } from "./worksheet-flow/FlowCard";
 import { accentFromMagnitude } from "./worksheet-flow/flowTheme";
 import {
   getHoyFechaLocal,
-  normalizeClienteNombre,
   pickClienteFromAsignacionHoy,
 } from "../utils/servicioAutomation";
+import { canonicalizeClienteNombre } from "../utils/hojaServicioMatch";
 
 // ====================================================================
 // LabelPrinterButton y helpers de etiqueta: ver ./LabelPrinterButton
@@ -1123,7 +1123,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
         }
 
         const matched = listaClientes.find(
-          (c) => normalizeClienteNombre(c.nombre) === normalizeClienteNombre(nombreAsignado)
+          (c) => canonicalizeClienteNombre(c.nombre) === canonicalizeClienteNombre(nombreAsignado)
         );
         const finalNombre = matched?.nombre || nombreAsignado;
 
@@ -1388,9 +1388,20 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
     setIsSaving(true);
 
+    const clienteCatalogo = listaClientes.find((c) => {
+      if (c.nombre === state.cliente) return true;
+      const typed = canonicalizeClienteNombre(state.cliente);
+      const catalog = canonicalizeClienteNombre(c.nombre);
+      return Boolean(typed && catalog && typed === catalog);
+    });
+
     const saveJob: BackgroundSaveJob = {
       id: `save_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      state: { ...state },
+      state: {
+        ...state,
+        cliente: clienteCatalogo?.nombre || state.cliente,
+        clienteId: clienteCatalogo?.id || state.clienteId || "",
+      },
       electricalValues: { ...electricalValues },
       localExc: { ...localExc },
       user,

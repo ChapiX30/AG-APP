@@ -1,6 +1,24 @@
-﻿import { defineConfig } from 'vite'
+﻿import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+function copyPdfiumWasm(): Plugin {
+    const copy = () => {
+        const src = resolve('node_modules/@embedpdf/pdfium/dist/pdfium.wasm')
+        const destDir = resolve('public/embedpdf')
+        const dest = resolve(destDir, 'pdfium.wasm')
+        if (!existsSync(src)) return
+        mkdirSync(destDir, { recursive: true })
+        copyFileSync(src, dest)
+    }
+    return {
+        name: 'copy-pdfium-wasm',
+        buildStart: copy,
+        configureServer: copy,
+    }
+}
 
 export default defineConfig({
     resolve: {
@@ -8,6 +26,7 @@ export default defineConfig({
         extensions: ['.mjs', '.js', '.mts', '.tsx', '.ts', '.jsx', '.json'],
     },
     plugins: [
+        copyPdfiumWasm(),
         react(),
         VitePWA({
             registerType: 'prompt',
@@ -41,7 +60,7 @@ export default defineConfig({
                     },
                 ],
             },
-            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png'],
+            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png', 'embedpdf/pdfium.wasm'],
             workbox: {
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,

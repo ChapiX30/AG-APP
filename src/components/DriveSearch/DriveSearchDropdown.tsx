@@ -5,6 +5,7 @@ import {
   Eye,
   Folder,
   FolderOpen,
+  Home,
   Loader2,
 } from "lucide-react";
 import clsx from "clsx";
@@ -21,6 +22,7 @@ import type { SearchSuggestion } from "./types";
 
 export type DriveSearchDropdownProps = {
   open: boolean;
+  scopeLabel: string;
   activeSearchTerm: string;
   isFilterPending: boolean;
   resultCount: number;
@@ -35,6 +37,7 @@ export type DriveSearchDropdownProps = {
 
 export const DriveSearchDropdown = React.memo(function DriveSearchDropdown({
   open,
+  scopeLabel,
   activeSearchTerm,
   isFilterPending,
   resultCount,
@@ -51,18 +54,21 @@ export const DriveSearchDropdown = React.memo(function DriveSearchDropdown({
   return (
     <>
       <div
-        className="fixed inset-0 z-[60] bg-slate-900/10"
+        className="fixed inset-x-0 top-14 bottom-0 z-[60] bg-transparent"
         aria-hidden
         onMouseDown={onClose}
       />
       <div className="absolute left-0 top-full z-[70] w-full min-w-[280px] sm:min-w-[420px]">
-        <div className="rounded-b-xl border border-t-0 border-[#2464A3]/25 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80 animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="rounded-b-xl border border-t-0 border-[#2464A3]/25 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/80 animate-in fade-in slide-in-from-top-1 duration-100">
           <div className="px-3.5 py-2 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold text-slate-600 truncate">
-              Resultados para «{activeSearchTerm}»
+            <p className="text-[11px] font-semibold text-slate-600 truncate inline-flex items-center gap-1.5">
+              <Home size={11} className="text-slate-400 flex-shrink-0" />
+              {scopeLabel}
             </p>
             <span className="text-[10px] text-slate-400 flex-shrink-0 inline-flex items-center gap-1.5">
-              {isFilterPending && <Loader2 size={10} className="animate-spin" />}
+              {(isFilterPending || catalogLoading) && (
+                <Loader2 size={10} className="animate-spin" />
+              )}
               {resultCount} encontrado{resultCount === 1 ? "" : "s"}
             </span>
           </div>

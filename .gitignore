@@ -27,3 +27,4 @@ credenciales-drive.json
 firebase-service-account.json
 **/google-services.json
 .vercel
+public/embedpdf/pdfium.wasm

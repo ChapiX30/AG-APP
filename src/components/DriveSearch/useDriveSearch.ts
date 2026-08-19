@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   driveFileMatchesEquipmentId,
   extractEquipmentIdFromFileName,
@@ -40,9 +40,22 @@ const sortDriveFiles = (list: DriveSearchFile[], sortBy: DriveSearchSortType): D
   return result;
 };
 
+const mergeSearchPool = (
+  browseFiles: DriveSearchFile[],
+  catalogFiles: DriveSearchFile[]
+): DriveSearchFile[] => {
+  if (catalogFiles.length === 0) return browseFiles;
+  if (browseFiles.length === 0) return catalogFiles;
+  const seen = new Set(catalogFiles.map((f) => f.fullPath));
+  const extra = browseFiles.filter((f) => !seen.has(f.fullPath));
+  return extra.length ? [...extra, ...catalogFiles] : catalogFiles;
+};
+
 export type UseDriveSearchOptions = {
   files: DriveSearchFile[];
   folders: { name: string; fullPath: string }[];
+  catalogFiles?: DriveSearchFile[];
+  applySearchToList?: boolean;
   sortBy: DriveSearchSortType;
   pendingWorksheetFile: DriveSearchFile | null;
 };
@@ -50,6 +63,8 @@ export type UseDriveSearchOptions = {
 export function useDriveSearch({
   files,
   folders,
+  catalogFiles = [],
+  applySearchToList = false,
   sortBy,
   pendingWorksheetFile,
 }: UseDriveSearchOptions) {
@@ -63,8 +78,9 @@ export function useDriveSearch({
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
 
-  const debouncedSearch = useDebounce(filterQuery, 120);
-  const searchCatalogActive = debouncedSearch.trim().length > 0;
+  const debouncedSearch = useDebounce(filterQuery, 80);
+  const activeSearchTerm = filterQuery.trim();
+  const searchCatalogActive = activeSearchTerm.length > 0;
 
   const clearSearch = useCallback(() => {
     setFilterQuery("");
@@ -72,23 +88,23 @@ export function useDriveSearch({
     setSearchClearSignal((s) => s + 1);
   }, []);
 
-  const handleFilterQueryChange = useCallback((q: string) => setFilterQuery(q), []);
+  const handleFilterQueryChange = useCallback((q: string) => {
+    startTransition(() => setFilterQuery(q));
+  }, []);
 
   useEffect(() => {
     haystackCacheRef.current.clear();
-  }, [files]);
+  }, [files, catalogFiles]);
 
-  const activeSearchTerm = useMemo(() => {
-    if (!searchCatalogActive) return "";
-    return filterQuery.trim() || debouncedSearch.trim();
-  }, [searchCatalogActive, debouncedSearch, filterQuery]);
+  const searchPool = useMemo(
+    () => mergeSearchPool(files, catalogFiles),
+    [files, catalogFiles]
+  );
 
-  const processedFiles = useMemo(() => {
+  const matchedFiles = useMemo(() => {
+    if (!activeSearchTerm) return [] as DriveSearchFile[];
     const cache = haystackCacheRef.current;
-    let result = [...files];
-    if (activeSearchTerm) {
-      result = result.filter((f) => matchDriveSearch(f, activeSearchTerm, cache));
-    }
+    let result = searchPool.filter((f) => matchDriveSearch(f, activeSearchTerm, cache));
 
     let pinnedPending: DriveSearchFile | null = null;
     const isCertQuery = /^ag[a-z]{0,4}-?\d/i.test(activeSearchTerm.replace(/\s/g, ""));
@@ -109,17 +125,24 @@ export function useDriveSearch({
     result = sortDriveFiles(result, sortBy);
     if (pinnedPending) return [pinnedPending, ...result];
     return result;
-  }, [files, pendingWorksheetFile, activeSearchTerm, sortBy]);
+  }, [searchPool, pendingWorksheetFile, activeSearchTerm, sortBy]);
+
+  const processedFiles = useMemo(() => {
+    if (applySearchToList && activeSearchTerm) return matchedFiles;
+    return sortDriveFiles(files, sortBy);
+  }, [applySearchToList, activeSearchTerm, matchedFiles, files, sortBy]);
 
   const visibleFolders = useMemo(() => {
-    if (!activeSearchTerm) return folders;
-    return folders.filter((f) => matchDriveSearchText(f.name, activeSearchTerm));
-  }, [folders, activeSearchTerm]);
+    if (applySearchToList && activeSearchTerm) {
+      return folders.filter((f) => matchDriveSearchText(f.name, activeSearchTerm));
+    }
+    return folders;
+  }, [folders, activeSearchTerm, applySearchToList]);
 
   const catalogFolderHints = useMemo(() => {
     const out: FolderMatch[] = [];
     const seen = new Set<string>();
-    for (const f of files) {
+    for (const f of searchPool) {
       const parts = (f.fullPath || "").split("/").filter(Boolean);
       for (let i = 1; i < parts.length - 1; i++) {
         const key = parts.slice(0, i + 1).join("/");
@@ -128,8 +151,16 @@ export function useDriveSearch({
         out.push({ name: parts[i], pathSegments: parts.slice(1, i + 1) });
       }
     }
+    for (const folder of folders) {
+      const parts = (folder.fullPath || "").split("/").filter(Boolean);
+      if (parts.length < 2) continue;
+      const key = parts.join("/");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name: folder.name, pathSegments: parts.slice(1) });
+    }
     return out;
-  }, [files]);
+  }, [searchPool, folders]);
 
   const folderMatches = useMemo(() => {
     if (!searchCatalogActive || !activeSearchTerm) return [] as FolderMatch[];
@@ -145,20 +176,25 @@ export function useDriveSearch({
       key: `folder-${f.pathSegments.join("/")}`,
       folder: f,
     }));
-    const fileItems: SearchSuggestion[] = processedFiles.slice(0, 12).map((f) => ({
+    const browsePaths = new Set(files.map((f) => f.fullPath));
+    const ranked = [...matchedFiles].sort((a, b) => {
+      const aLocal = browsePaths.has(a.fullPath) ? 0 : 1;
+      const bLocal = browsePaths.has(b.fullPath) ? 0 : 1;
+      return aLocal - bLocal;
+    });
+    const fileItems: SearchSuggestion[] = ranked.slice(0, 12).map((f) => ({
       kind: "file",
       key: `file-${f.fullPath}`,
       file: f,
     }));
     return [...folderItems, ...fileItems];
-  }, [searchCatalogActive, folderMatches, processedFiles]);
+  }, [searchCatalogActive, folderMatches, matchedFiles, files]);
 
-  const showSearchDropdown =
-    searchFocused && searchCatalogActive && searchHasText;
+  const showSearchDropdown = searchFocused && searchHasText;
 
   useEffect(() => {
     setSearchActiveIndex(-1);
-  }, [debouncedSearch]);
+  }, [activeSearchTerm]);
 
   return {
     searchInputRef,
@@ -167,6 +203,8 @@ export function useDriveSearch({
     searchCatalogActive,
     activeSearchTerm,
     processedFiles,
+    matchedFiles,
+    searchResultCount: matchedFiles.length,
     visibleFolders,
     searchSuggestions,
     showSearchDropdown,

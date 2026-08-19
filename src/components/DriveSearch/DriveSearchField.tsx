@@ -11,6 +11,7 @@ export type DriveSearchFieldProps = {
   catalogActive: boolean;
   dropdownOpen: boolean;
   catalogLoading: boolean;
+  scopeLabel: string;
   activeSearchTerm: string;
   isFilterPending: boolean;
   resultCount: number;
@@ -35,6 +36,7 @@ export const DriveSearchField = React.memo(function DriveSearchField({
   catalogActive,
   dropdownOpen,
   catalogLoading,
+  scopeLabel,
   activeSearchTerm,
   isFilterPending,
   resultCount,
@@ -53,12 +55,17 @@ export const DriveSearchField = React.memo(function DriveSearchField({
 }: DriveSearchFieldProps) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!searchFocused || suggestions.length === 0) {
-        if (e.key === "Escape") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (searchFocused && suggestions.length > 0) {
+          onCloseDropdown();
+          onActiveIndexChange(-1);
+        } else {
           onClearAndBlur();
         }
         return;
       }
+      if (!searchFocused || suggestions.length === 0) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         onActiveIndexChange((activeIndex + 1) % suggestions.length);
@@ -68,14 +75,9 @@ export const DriveSearchField = React.memo(function DriveSearchField({
           activeIndex <= 0 ? suggestions.length - 1 : activeIndex - 1
         );
       } else if (e.key === "Enter") {
-        if (activeIndex >= 0 && activeIndex < suggestions.length) {
-          e.preventDefault();
-          onSelectSuggestion(suggestions[activeIndex]);
-        }
-      } else if (e.key === "Escape") {
+        const idx = activeIndex >= 0 ? activeIndex : 0;
         e.preventDefault();
-        onCloseDropdown();
-        onActiveIndexChange(-1);
+        onSelectSuggestion(suggestions[idx]);
       }
     },
     [
@@ -90,7 +92,7 @@ export const DriveSearchField = React.memo(function DriveSearchField({
   );
 
   return (
-    <div ref={containerRef} className="relative flex-1 max-w-xl overflow-visible z-[70]">
+    <div ref={containerRef} className="group relative flex-1 max-w-xl overflow-visible z-[70]">
       <Search
         size={15}
         className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#2464A3] transition-colors z-10 pointer-events-none"
@@ -109,6 +111,7 @@ export const DriveSearchField = React.memo(function DriveSearchField({
       />
       <DriveSearchDropdown
         open={dropdownOpen}
+        scopeLabel={scopeLabel}
         activeSearchTerm={activeSearchTerm}
         isFilterPending={isFilterPending}
         resultCount={resultCount}

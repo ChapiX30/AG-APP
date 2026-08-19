@@ -3,25 +3,37 @@ import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import format from 'date-fns/format';
 import parse from 'date-fns/parse';
 import startOfWeek from 'date-fns/startOfWeek';
+import endOfWeek from 'date-fns/endOfWeek';
 import getDay from 'date-fns/getDay';
 import es from 'date-fns/locale/es';
 import parseISO from 'date-fns/parseISO';
 import differenceInDays from 'date-fns/differenceInDays';
 import isValid from 'date-fns/isValid';
+import addMonths from 'date-fns/addMonths';
+import addWeeks from 'date-fns/addWeeks';
+import addDays from 'date-fns/addDays';
+import isSameDay from 'date-fns/isSameDay';
+import isToday from 'date-fns/isToday';
+import startOfDay from 'date-fns/startOfDay';
+import endOfDay from 'date-fns/endOfDay';
 import { collection, onSnapshot, query, getDocs, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, storage } from '../utils/firebase';
-import { useNavigation } from '../hooks/useNavigation';
 import { useAppDialog } from '../hooks/useAppDialog';
 import { 
-  ArrowLeft, Calendar as CalendarIcon, Clock, CheckCircle2, RotateCcw, 
-  X, Users, ChevronLeft, ChevronRight, ChevronDown, Search, MapPin, ShieldCheck,
-  Building2, FileText, Settings, Zap, Eye, Bell, LayoutGrid, Plus, Trash2, Check, UserCheck, Shield, TableProperties,
-  Upload, ExternalLink, Loader2
+  Calendar as CalendarIcon, Clock, CheckCircle2,
+  X, Users, ChevronLeft, ChevronRight, Search, MapPin, ShieldCheck,
+  Building2, FileText, Settings, Zap, Eye, Bell, LayoutGrid, Plus, Trash2, Check, UserCheck, TableProperties,
+  Upload, ExternalLink, Loader2, Filter, List
 } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import labLogoG from '../assets/lab_logoG.png';
+import {
+  AG_BRAND_BLUE,
+  OPERATIONAL_SCREEN_BG,
+  OperationalScreenHeader,
+  OperationalScreenShell,
+} from './ui/OperationalScreenShell';
 import toast, { Toaster } from 'react-hot-toast';
 import { buildMensajeAsignacionServicio } from '../utils/asignacionNotificacion';
 import { crearNotificacionAsignacion } from '../utils/notificacionesAsignacion';
@@ -475,7 +487,7 @@ const UnifiedEventModal = ({ isOpen, onClose, event, initialData, technicalStaff
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
-            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                 
                 <div className={`px-6 py-4 border-b flex justify-between items-center ${isPJLA ? 'bg-pink-50 border-pink-100' : showDetailView ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50/50 border-slate-200'}`}>
                     <div>
@@ -966,7 +978,7 @@ const GanttPTView = ({ events, onCellClick, onEventClick, onDeleteMagnitud, isCa
     };
 
     return (
-        <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm mt-3">
+        <div className="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="bg-[#00FF00] text-black font-bold text-center py-1.5 text-[11px] border-b border-slate-300 shrink-0">
                 Programa y seguimiento de estudios Interlaboratorios
             </div>
@@ -1128,77 +1140,208 @@ const CustomEvent = ({ event, currentUser, authUid, usersList }: { event: any; c
     const hexColor = getEventHexColor(event);
     const useDarkText = isColorLight(hexColor);
     const textColorClass = useDarkText ? 'text-slate-900' : 'text-white';
-    const subColorClass = useDarkText ? 'text-slate-600 font-bold' : 'text-white/80';
 
     const assigned = !event.esVencimientoPatron && !isPJLA && isUserAssignedToEvent(currentUser, event.personas || [], authUid, usersList || []);
     const ackKeys = buildUserIdentityKeys(currentUser, authUid, usersList || []);
     const acknowledged = assigned && (event.enterados || []).some((e: string) => ackKeys.has(String(e).toLowerCase()));
 
+    const lugar = resolveEventLugar(event);
+    const hora = event.horaInicio
+        ? `${event.horaInicio}${event.horaFin ? `–${event.horaFin}` : ''}`
+        : '';
+    const tip = [event.title, hora, lugar].filter(Boolean).join(' · ');
+
     return (
-      <div className="flex flex-col h-full justify-center px-1 py-0.5 overflow-hidden">
-        <div className="flex items-center gap-1 truncate">
-          <Icon size={10} className={`${useDarkText ? 'text-slate-800' : 'text-white'} shrink-0`} />
-          <span className={`text-[10px] leading-tight font-black truncate flex-1 ${textColorClass}`}>{event.title}</span>
-          {assigned && (
-            <span
-              className={`shrink-0 text-[7px] font-black uppercase px-1 rounded ${acknowledged ? 'bg-emerald-500/90 text-white' : 'bg-amber-400 text-amber-950'}`}
-              title={acknowledged ? getAckLabel(event.tipo) : 'Pendiente confirmación'}
-            >
-              {acknowledged ? '✓' : '!'}
-            </span>
-          )}
-        </div>
-        {resolveEventLugar(event) && (
-          <div className={`text-[9px] leading-none opacity-90 truncate mt-0.5 flex items-center gap-0.5 ${subColorClass}`}>
-            <MapPin size={8} className="shrink-0" />
-            <span className="truncate">{resolveEventLugar(event)}</span>
-          </div>
+      <div className="flex items-center gap-0.5 h-full px-0.5 overflow-hidden" title={tip}>
+        <Icon size={9} className={`${useDarkText ? 'text-slate-800' : 'text-white'} shrink-0`} />
+        <span className={`text-[10px] leading-none font-semibold truncate flex-1 ${textColorClass}`}>{event.title}</span>
+        {assigned && (
+          <span
+            className={`shrink-0 w-1.5 h-1.5 rounded-full ${acknowledged ? 'bg-emerald-200' : 'bg-amber-300'}`}
+            title={acknowledged ? getAckLabel(event.tipo) : 'Pendiente confirmación'}
+          />
         )}
       </div>
     );
 };
-  
-const CALENDAR_VIEW_LABELS: Record<string, string> = {
+
+type CalView = 'month' | 'week' | 'day' | 'agenda';
+
+const CALENDAR_VIEW_LABELS: Record<CalView, string> = {
     month: 'Mes',
     week: 'Semana',
     day: 'Día',
     agenda: 'Agenda',
 };
 
-const CustomToolbar = (toolbar: any) => (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-1 sm:mb-1.5 shrink-0">
-        <div className="flex items-center gap-0.5 shrink-0">
-            <button type="button" onClick={() => toolbar.onNavigate('PREV')} aria-label="Mes anterior" className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors touch-manipulation"><ChevronLeft size={16}/></button>
-            <button type="button" onClick={() => toolbar.onNavigate('TODAY')} className="px-2 py-1 text-[10px] font-black text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg touch-manipulation">Hoy</button>
-            <button type="button" onClick={() => toolbar.onNavigate('NEXT')} aria-label="Mes siguiente" className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors touch-manipulation"><ChevronRight size={16}/></button>
-            <h2 className="sm:hidden text-sm font-black text-slate-800 capitalize tracking-tight truncate ml-1 min-w-0">
-                {format(toolbar.date, 'MMM yyyy', { locale: es })}
-            </h2>
-        </div>
-        <h2 className="hidden sm:block text-base font-black text-slate-800 capitalize tracking-tight text-center sm:flex-1 sm:px-2 truncate">
-            {format(toolbar.date, 'MMMM yyyy', { locale: es })}
-        </h2>
-        <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 overflow-x-auto scrollbar-hide shrink-0">
-            {['month', 'week', 'day', 'agenda'].map(v => (
-                <button
-                    key={v}
-                    type="button"
-                    onClick={() => toolbar.onView(v)}
-                    className={`min-w-[3.25rem] px-2 py-1 rounded-md text-[10px] font-bold transition-all whitespace-nowrap touch-manipulation ${
-                        toolbar.view === v ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'
-                    }`}
-                >
-                    {CALENDAR_VIEW_LABELS[v]}
-                </button>
-            ))}
-        </div>
-    </div>
-);
+const CALENDAR_MESSAGES = {
+    date: 'Fecha',
+    time: 'Hora',
+    event: 'Actividad',
+    allDay: 'Todo el día',
+    week: 'Semana',
+    work_week: 'Semana laboral',
+    day: 'Día',
+    month: 'Mes',
+    previous: 'Anterior',
+    next: 'Siguiente',
+    yesterday: 'Ayer',
+    tomorrow: 'Mañana',
+    today: 'Hoy',
+    agenda: 'Agenda',
+    noEventsInRange: 'No hay actividades en este periodo.',
+    showMore: (total: number) => `+${total} más`,
+};
+
+const TIME_VIEW_MIN = new Date(1970, 0, 1, 6, 0, 0);
+const TIME_VIEW_MAX = new Date(1970, 0, 1, 21, 0, 0);
+
+const eventOverlapsDay = (ev: { start: Date; end: Date }, day: Date) => {
+    const from = startOfDay(day).getTime();
+    const to = endOfDay(day).getTime();
+    const start = ev.start instanceof Date ? ev.start.getTime() : new Date(ev.start).getTime();
+    const end = ev.end instanceof Date ? ev.end.getTime() : start;
+    return start <= to && end >= from;
+};
+
+const AgendaEventRow = ({ event, onClick }: { event: any; onClick: (ev: any) => void }) => {
+    const hex = getEventHexColor(event);
+    const tipo = CONSTANTS.tipos.find(t => t.value === event.tipo);
+    const lugar = resolveEventLugar(event);
+    const time = event.esVencimientoPatron
+        ? 'Vencimiento'
+        : event.horaInicio
+            ? `${event.horaInicio}${event.horaFin ? `–${event.horaFin}` : ''}`
+            : event.allDay
+                ? 'Todo el día'
+                : format(event.start, 'HH:mm');
+
+    return (
+        <button
+            type="button"
+            onClick={() => onClick(event)}
+            className="w-full text-left flex gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors"
+        >
+            <span className="w-1 rounded-full shrink-0 self-stretch" style={{ background: hex }} />
+            <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-slate-800 truncate leading-tight">{event.title}</p>
+                <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    {time}
+                    {lugar ? ` · ${lugar}` : ''}
+                    {tipo ? ` · ${tipo.label}` : ''}
+                </p>
+            </div>
+        </button>
+    );
+};
+
+const DayAgendaPanel = ({
+    selectedDay,
+    events,
+    onSelectEvent,
+    onCreate,
+    createLabel,
+    onClose,
+}: {
+    selectedDay: Date;
+    events: any[];
+    onSelectEvent: (ev: any) => void;
+    onCreate?: () => void;
+    createLabel: string;
+    onClose?: () => void;
+}) => {
+    const dayEvents = events
+        .filter(ev => eventOverlapsDay(ev, selectedDay))
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    const upcomingGroups = (() => {
+        const groups: { day: Date; items: any[] }[] = [];
+        for (let i = 1; i <= 7; i++) {
+            const day = addDays(startOfDay(selectedDay), i);
+            const items = events
+                .filter(ev => eventOverlapsDay(ev, day) && !ev.esVencimientoPatron)
+                .sort((a: any, b: any) => a.start.getTime() - b.start.getTime());
+            if (items.length) groups.push({ day, items });
+        }
+        return groups.slice(0, 4);
+    })();
+
+    return (
+        <aside className="flex flex-col min-h-0 h-full bg-white">
+            <div className="px-3 py-2.5 border-b border-slate-100 flex items-start justify-between gap-2 shrink-0">
+                <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        {isToday(selectedDay) ? 'Hoy' : format(selectedDay, 'EEEE', { locale: es })}
+                    </p>
+                    <h3 className="text-sm font-semibold text-slate-900 capitalize truncate">
+                        {format(selectedDay, "d 'de' MMMM", { locale: es })}
+                    </h3>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[11px] font-semibold tabular-nums text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                        {dayEvents.length}
+                    </span>
+                    {onClose && (
+                        <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded-md lg:hidden" aria-label="Cerrar agenda">
+                            <X size={14} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                {dayEvents.length === 0 ? (
+                    <div className="px-3 py-8 text-center">
+                        <CalendarIcon size={22} className="mx-auto text-slate-300 mb-2" />
+                        <p className="text-xs text-slate-500">Sin actividades este día.</p>
+                        {onCreate && (
+                            <button
+                                type="button"
+                                onClick={onCreate}
+                                className="mt-3 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white"
+                                style={{ backgroundColor: AG_BRAND_BLUE }}
+                            >
+                                <Plus size={12} /> {createLabel}
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <div className="p-1.5 space-y-0.5">
+                        {dayEvents.map(ev => (
+                            <AgendaEventRow
+                                key={ev.id}
+                                event={ev}
+                                onClick={onSelectEvent}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {upcomingGroups.length > 0 && (
+                    <div className="border-t border-slate-100 mt-1">
+                        <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Próximos días
+                        </p>
+                        {upcomingGroups.map(g => (
+                            <div key={g.day.toISOString()} className="px-1.5 pb-1.5">
+                                <p className="px-2 py-1 text-[11px] font-semibold text-slate-500 capitalize">
+                                    {format(g.day, "EEE d MMM", { locale: es })} · {g.items.length}
+                                </p>
+                                {g.items.slice(0, 3).map(ev => (
+                                    <AgendaEventRow key={ev.id} event={ev} onClick={onSelectEvent} />
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </aside>
+    );
+};
 
 // --- 6. COMPONENTE PRINCIPAL (SCREEN) ---
 
 export const CalendarScreen: React.FC = () => {
-    const { navigateTo, goBack } = useNavigation();
     const { confirm } = useAppDialog();
     
     const [authUser, setAuthUser] = useState<any>(null);
@@ -1257,8 +1400,15 @@ export const CalendarScreen: React.FC = () => {
     const [initialModalData, setInitialModalData] = useState<any | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [filterStatus, setFilterStatus] = useState('todos');
+    const [filterTipo, setFilterTipo] = useState('todos');
+    const [onlyMine, setOnlyMine] = useState(false);
     const [searchText, setSearchText] = useState('');
     const [showLegend, setShowLegend] = useState(false);
+    const [calDate, setCalDate] = useState(() => new Date());
+    const [calView, setCalView] = useState<CalView>('month');
+    const [selectedDay, setSelectedDay] = useState(() => new Date());
+    const [showAgendaMobile, setShowAgendaMobile] = useState(false);
+    const [patronListOpen, setPatronListOpen] = useState(false);
 
     useEffect(() => {
         setLoading(true);
@@ -1458,281 +1608,482 @@ export const CalendarScreen: React.FC = () => {
     }, [events, canSeeAllEvents, currentUserData, authUser?.uid]);
 
     const filteredServicioEvents = useMemo(() => {
+        const q = searchText.trim().toLowerCase();
         return roleVisibleEvents.filter(ev => {
             if (isReprogramadoEstado(ev.estado, ev.estatus)) return false;
 
             const isPJLA = ev.esAlertaAutomatica || ev.cliente === 'Perry Johnson Labs';
-            
-            // Si NO es de calidad, ocultamos los avisos de PJLA
             if (!canSeeAllEvents && isPJLA) return false;
 
+            if (onlyMine && !isUserAssignedToEvent(currentUserData, ev.personas || [], authUser?.uid, users)) {
+                return false;
+            }
+
             const matchStatus = filterStatus === 'todos' || ev.estado === filterStatus;
-            const matchSearch = !searchText || ev.title.toLowerCase().includes(searchText.toLowerCase()) || ev.cliente.toLowerCase().includes(searchText.toLowerCase());
-            return matchStatus && matchSearch;
+            const matchTipo = filterTipo === 'todos' || ev.tipo === filterTipo;
+            const lugar = resolveEventLugar(ev).toLowerCase();
+            const matchSearch = !q
+                || String(ev.title || '').toLowerCase().includes(q)
+                || String(ev.cliente || '').toLowerCase().includes(q)
+                || lugar.includes(q)
+                || String(ev.descripcion || '').toLowerCase().includes(q);
+            return matchStatus && matchTipo && matchSearch;
         });
-    }, [roleVisibleEvents, filterStatus, searchText, canSeeAllEvents]);
+    }, [roleVisibleEvents, filterStatus, filterTipo, searchText, canSeeAllEvents, onlyMine, currentUserData, authUser?.uid, users]);
 
     const filteredEvents = useMemo(() => {
         if (!canSeePatronAlerts) return filteredServicioEvents;
+        if (filterTipo !== 'todos' && filterTipo !== 'mtto_patrones') return filteredServicioEvents;
+        if (filterStatus !== 'todos') return filteredServicioEvents;
+        const q = searchText.trim().toLowerCase();
         const patronFiltered = patronCalendarEvents.filter(ev => {
-            if (!searchText) return true;
-            const q = searchText.toLowerCase();
+            if (!q) return true;
             return ev.title.toLowerCase().includes(q) || (ev.patronNoControl || '').toLowerCase().includes(q);
         });
         return [...filteredServicioEvents, ...patronFiltered];
-    }, [filteredServicioEvents, patronCalendarEvents, searchText, canSeePatronAlerts]);
+    }, [filteredServicioEvents, patronCalendarEvents, searchText, canSeePatronAlerts, filterTipo, filterStatus]);
 
     const stats = useMemo(() => {
-        const servicios = filteredServicioEvents.filter(ev => isServicioOperativoTipo(ev.tipo));
+        const servicios = roleVisibleEvents.filter(ev => !isReprogramadoEstado(ev.estado, ev.estatus));
         return {
             total: servicios.length,
             programado: servicios.filter(e => e.estado === 'programado').length,
             en_proceso: servicios.filter(e => e.estado === 'en_proceso').length,
+            finalizado: servicios.filter(e => e.estado === 'finalizado').length,
         };
-    }, [filteredServicioEvents]);
+    }, [roleVisibleEvents]);
+
+    const selectedDayCount = useMemo(
+        () => filteredEvents.filter(ev => eventOverlapsDay(ev, selectedDay) && !ev.esVencimientoPatron).length,
+        [filteredEvents, selectedDay],
+    );
+
+    const calTitle = useMemo(() => {
+        if (calView === 'month' || calView === 'agenda') return format(calDate, 'MMMM yyyy', { locale: es });
+        if (calView === 'day') return format(calDate, "EEEE d 'de' MMMM", { locale: es });
+        const s = startOfWeek(calDate, { weekStartsOn: 1 });
+        const e = endOfWeek(calDate, { weekStartsOn: 1 });
+        return `${format(s, 'd MMM', { locale: es })} – ${format(e, 'd MMM yyyy', { locale: es })}`;
+    }, [calDate, calView]);
+
+    const shiftCalDate = (dir: -1 | 0 | 1) => {
+        if (dir === 0) {
+            const t = new Date();
+            setCalDate(t);
+            setSelectedDay(t);
+            return;
+        }
+        const next = calView === 'month' ? addMonths(calDate, dir)
+            : calView === 'week' ? addWeeks(calDate, dir)
+            : addDays(calDate, dir);
+        setCalDate(next);
+        if (calView === 'day') setSelectedDay(next);
+    };
+
+    const openCreateForDay = (day: Date) => {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        setInitialModalData({ fecha: dateStr, fechaFin: dateStr });
+        setSelectedEvent(null);
+        setIsModalOpen(true);
+    };
+
+    const openEvent = (ev: any) => {
+        if (ev.esVencimientoPatron) {
+            toast(`Vencimiento de patrón ${ev.patronNoControl || ''}`.trim(), { icon: '⏱' });
+            return;
+        }
+        setSelectedDay(ev.start);
+        setSelectedEvent(ev);
+        setIsModalOpen(true);
+    };
 
     const eventPropGetter = useCallback((event: any) => {
         const hex = getEventHexColor(event);
         const darkText = isColorLight(hex);
-        return { 
-            style: { 
-                backgroundColor: hex, 
-                border: 'none', 
+        return {
+            style: {
+                backgroundColor: hex,
+                border: 'none',
                 color: darkText ? '#0f172a' : '#ffffff',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.06)'
-            } 
+                boxShadow: 'none',
+            }
         };
     }, []);
+
+    const dayPropGetter = useCallback((date: Date) => {
+        if (isSameDay(date, selectedDay) && !isToday(date)) {
+            return { className: 'cal-day-selected' };
+        }
+        return {};
+    }, [selectedDay]);
 
     const calendarEventComponent = useCallback(
         (props: { event: any }) => (
             <CustomEvent event={props.event} currentUser={currentUserData} authUid={authUser?.uid} usersList={users} />
         ),
-        [currentUserData, authUser?.uid],
+        [currentUserData, authUser?.uid, users],
+    );
+
+    const createLabel = isCalidad ? 'Nueva prueba' : 'Nueva junta';
+
+    const agendaPanel = (
+        <DayAgendaPanel
+            selectedDay={selectedDay}
+            events={filteredEvents}
+            onSelectEvent={openEvent}
+            onCreate={() => openCreateForDay(selectedDay)}
+            createLabel={createLabel}
+            onClose={() => setShowAgendaMobile(false)}
+        />
     );
 
     return (
-        <div className="flex h-full min-h-0 flex-1 flex-col bg-[#f8fafc] font-sans text-slate-900 overflow-hidden">
-            <main className="flex-1 flex flex-col h-full relative min-h-0">
-                
-                {/* --- HEADER compacto --- */}
-                <header className="bg-white border-b border-slate-200 px-2 py-1.5 sm:px-4 sm:py-2 z-30 shadow-sm shrink-0">
-                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                        <button type="button" onClick={goBack} aria-label="Volver" className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 shrink-0 touch-manipulation"><ArrowLeft size={17}/></button>
-                        <img
-                            src={labLogoG}
-                            alt="Equipos y Servicios Especializados AG"
-                            className="h-8 sm:h-9 w-auto max-w-[10.5rem] sm:max-w-[14rem] md:max-w-[16rem] object-contain object-left shrink-0 select-none"
-                            draggable={false}
-                        />
-                        {viewMode === 'calendar' && (
-                            <div className="relative hidden md:block flex-1 min-w-0 max-w-[180px] ml-1">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"/>
-                                <input
-                                    type="search"
-                                    placeholder="Buscar..."
-                                    value={searchText}
-                                    onChange={e => setSearchText(e.target.value)}
-                                    className="w-full pl-7 pr-2 py-1 bg-slate-100 border border-transparent focus:bg-white focus:border-blue-500 rounded-lg outline-none text-xs"
-                                />
-                            </div>
-                        )}
-                        {viewMode === 'calendar' && (
-                            <div className="hidden lg:flex items-center gap-1 shrink-0 ml-auto">
-                                {([
-                                    { key: 'todos', label: 'Total', value: stats.total, active: 'bg-slate-200 text-slate-800' },
-                                    { key: 'programado', label: 'Pend.', value: stats.programado, active: 'bg-blue-100 text-blue-800' },
-                                    { key: 'en_proceso', label: 'Proc.', value: stats.en_proceso, active: 'bg-amber-100 text-amber-800' },
-                                ] as const).map(f => (
-                                    <button
-                                        key={f.key}
-                                        type="button"
-                                        onClick={() => setFilterStatus(f.key)}
-                                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold tabular-nums transition-all ${filterStatus === f.key ? f.active : 'text-slate-500 hover:bg-slate-50'}`}
-                                    >
-                                        {f.label} {f.value}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                        {canSeePatronAlerts && patronAlertCount > 0 && (
-                            <span className="hidden sm:inline-flex shrink-0 items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold border border-amber-200">
-                                <Bell size={9} /> {patronAlertCount}
-                            </span>
-                        )}
-                        <button
-                            type="button"
-                            onClick={() => { setSelectedEvent(null); setInitialModalData(null); setIsModalOpen(true); }}
-                            className="ml-auto sm:ml-0 px-2.5 sm:px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] sm:text-xs font-bold flex items-center gap-1 shrink-0 touch-manipulation"
-                        >
-                            <Plus size={13}/>
-                            <span className="hidden sm:inline">{isCalidad ? 'Nueva Prueba' : 'Nueva Junta'}</span>
-                        </button>
-                        <div className="bg-slate-100 p-0.5 rounded-lg flex border border-slate-200 shrink-0">
-                            <button type="button" onClick={() => setViewMode('calendar')} title="Calendario" className={`p-1.5 rounded-md transition-all ${viewMode === 'calendar' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>
-                                <LayoutGrid size={14}/>
+        <OperationalScreenShell className="h-full !min-h-0 flex-1 flex flex-col overflow-hidden">
+            <OperationalScreenHeader
+                maxWidth="full"
+                compact
+                title="Calendario"
+                subtitle={isCalidad ? 'Programación, PT y vencimientos' : 'Tus actividades y juntas'}
+                titleIcon={<CalendarIcon size={18} style={{ color: AG_BRAND_BLUE }} />}
+                backLabel="Menú"
+                actions={
+                    <>
+                        <div className="bg-slate-100 p-0.5 rounded-lg flex border border-slate-200">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('calendar')}
+                                title="Calendario"
+                                className={`p-1.5 rounded-md transition-all ${viewMode === 'calendar' ? 'bg-white shadow-sm text-[#2464A3]' : 'text-slate-500'}`}
+                            >
+                                <LayoutGrid size={15} />
                             </button>
                             {isCalidad && (
-                                <button type="button" onClick={() => setViewMode('gantt_pt')} title="Gantt PT" className={`p-1.5 rounded-md transition-all ${viewMode === 'gantt_pt' ? 'bg-[#0070C0] text-white' : 'text-slate-500'}`}>
-                                    <TableProperties size={14}/>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('gantt_pt')}
+                                    title="Gantt PT"
+                                    className={`p-1.5 rounded-md transition-all ${viewMode === 'gantt_pt' ? 'text-white' : 'text-slate-500'}`}
+                                    style={viewMode === 'gantt_pt' ? { backgroundColor: AG_BRAND_BLUE } : undefined}
+                                >
+                                    <TableProperties size={15} />
                                 </button>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => openCreateForDay(selectedDay)}
+                            className="px-2.5 sm:px-3 py-1.5 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0"
+                            style={{ backgroundColor: AG_BRAND_BLUE }}
+                        >
+                            <Plus size={14} />
+                            <span className="hidden sm:inline">{createLabel}</span>
+                        </button>
+                    </>
+                }
+            />
+
+            {viewMode === 'calendar' && (
+                <div className="bg-white border-b border-slate-200 px-3 sm:px-5 py-2 shrink-0 space-y-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-0.5 shrink-0">
+                            <button type="button" onClick={() => shiftCalDate(-1)} aria-label="Anterior" className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600">
+                                <ChevronLeft size={16} />
+                            </button>
+                            <button type="button" onClick={() => shiftCalDate(0)} className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">
+                                Hoy
+                            </button>
+                            <button type="button" onClick={() => shiftCalDate(1)} aria-label="Siguiente" className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600">
+                                <ChevronRight size={16} />
+                            </button>
+                        </div>
+                        <h2 className="flex-1 min-w-0 text-sm sm:text-base font-semibold text-slate-800 capitalize truncate">
+                            {calTitle}
+                        </h2>
+                        <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 shrink-0">
+                            {(['month', 'week', 'day', 'agenda'] as CalView[]).map(v => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => {
+                                        setCalView(v);
+                                        if (v === 'day') setSelectedDay(calDate);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap ${
+                                        calView === v ? 'bg-white shadow-sm text-[#2464A3]' : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                                >
+                                    {CALENDAR_VIEW_LABELS[v]}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowAgendaMobile(true)}
+                            className="xl:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                            <List size={13} />
+                            Día{selectedDayCount ? ` · ${selectedDayCount}` : ''}
+                        </button>
+                    </div>
+                    <div className="sm:hidden flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/80">
+                        {(['month', 'week', 'day', 'agenda'] as CalView[]).map(v => (
+                            <button
+                                key={v}
+                                type="button"
+                                onClick={() => setCalView(v)}
+                                className={`flex-1 py-1 rounded-md text-[11px] font-semibold ${
+                                    calView === v ? 'bg-white shadow-sm text-[#2464A3]' : 'text-slate-500'
+                                }`}
+                            >
+                                {CALENDAR_VIEW_LABELS[v]}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <div className="relative flex-1 min-w-[10rem] max-w-xs">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                            <input
+                                type="search"
+                                placeholder="Buscar actividad, cliente o lugar…"
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#2464A3] rounded-lg outline-none text-xs"
+                            />
+                        </div>
+                        <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide shrink-0">
+                            {([
+                                { key: 'todos', label: 'Todos', value: stats.total },
+                                { key: 'programado', label: 'Prog.', value: stats.programado },
+                                { key: 'en_proceso', label: 'Proceso', value: stats.en_proceso },
+                                { key: 'finalizado', label: 'Hecho', value: stats.finalizado },
+                            ] as const).map(f => (
+                                <button
+                                    key={f.key}
+                                    type="button"
+                                    onClick={() => setFilterStatus(f.key)}
+                                    className={`px-2 py-1 rounded-md text-[11px] font-semibold tabular-nums whitespace-nowrap ${
+                                        filterStatus === f.key
+                                            ? 'bg-slate-800 text-white'
+                                            : 'text-slate-500 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    {f.label} {f.value}
+                                </button>
+                            ))}
+                        </div>
+                        <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 shrink-0">
+                            <Filter size={12} />
+                            <select
+                                value={filterTipo}
+                                onChange={e => setFilterTipo(e.target.value)}
+                                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-700 outline-none focus:border-[#2464A3]"
+                            >
+                                <option value="todos">Todos los tipos</option>
+                                {CONSTANTS.tipos.map(t => (
+                                    <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                        {canSeeAllEvents && (
+                            <button
+                                type="button"
+                                onClick={() => setOnlyMine(v => !v)}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-semibold border ${
+                                    onlyMine
+                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                                Míos
+                            </button>
+                        )}
+                        <div className="relative ml-auto shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setShowLegend(v => !v)}
+                                className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 border border-slate-200 hover:bg-slate-50"
+                            >
+                                Leyenda
+                            </button>
+                            {showLegend && (
+                                <>
+                                    <button type="button" className="fixed inset-0 z-30 cursor-default" aria-label="Cerrar leyenda" onClick={() => setShowLegend(false)} />
+                                    <div className="absolute right-0 top-full mt-1 z-40 w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-3">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipos</p>
+                                        <div className="space-y-1">
+                                            {CONSTANTS.tipos.map(t => (
+                                                <div key={t.value} className="flex items-center gap-2">
+                                                    <div className="w-2.5 h-2.5 rounded-sm border border-black/10" style={{ backgroundColor: t.hex }} />
+                                                    <span className="text-[11px] text-slate-600">{t.label}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {canSeePatronAlerts && (
+                                            <>
+                                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-2.5 mb-1.5">Patrones</p>
+                                                {(['vencido', 'urgente7', 'proximo30', 'ok'] as PatronUrgency[]).map(u => (
+                                                    <div key={u} className="flex items-center gap-2">
+                                                        <div className="w-2.5 h-2.5 rounded-sm border border-black/10" style={{ backgroundColor: getPatronUrgencyHex(u) }} />
+                                                        <span className="text-[11px] text-slate-600">{getPatronUrgencyLabel(u)}</span>
+                                                    </div>
+                                                ))}
+                                            </>
+                                        )}
+                                    </div>
+                                </>
                             )}
                         </div>
                     </div>
-                    {viewMode === 'calendar' && (
-                        <div className="flex items-center gap-1.5 mt-1.5 md:mt-1 min-w-0">
-                            <div className="relative flex-1 min-w-0 md:hidden">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"/>
-                                <input
-                                    type="search"
-                                    placeholder="Buscar..."
-                                    value={searchText}
-                                    onChange={e => setSearchText(e.target.value)}
-                                    className="w-full pl-7 pr-2 py-1 bg-slate-100 rounded-lg outline-none text-xs border border-transparent focus:border-blue-500 focus:bg-white"
-                                />
+                    {canSeePatronAlerts && upcomingPatrones.length > 0 && showPatronPanel && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50/80 overflow-hidden">
+                            <div className="flex items-center gap-2 px-2.5 py-1.5">
+                                <ShieldCheck size={14} className="text-amber-600 shrink-0" />
+                                <button type="button" onClick={() => setPatronListOpen(v => !v)} className="flex-1 min-w-0 text-left text-[12px] font-semibold text-amber-900 truncate">
+                                    {patronAlertCount} patrón{patronAlertCount === 1 ? '' : 'es'} por vencer
+                                </button>
+                                <button type="button" onClick={() => setPatronListOpen(v => !v)} className="text-[11px] font-semibold text-amber-800">
+                                    {patronListOpen ? 'Ocultar' : 'Ver'}
+                                </button>
+                                <button type="button" onClick={handleDismissPatronPanel} className="p-0.5 text-amber-500 hover:text-amber-800 rounded" aria-label="Descartar avisos">
+                                    <X size={13} />
+                                </button>
                             </div>
-                            <div className="flex lg:hidden items-center gap-0.5 shrink-0 overflow-x-auto scrollbar-hide">
-                                {([
-                                    { key: 'todos', label: 'T', value: stats.total },
-                                    { key: 'programado', label: 'P', value: stats.programado },
-                                    { key: 'en_proceso', label: 'E', value: stats.en_proceso },
-                                ] as const).map(f => (
-                                    <button
-                                        key={f.key}
-                                        type="button"
-                                        onClick={() => setFilterStatus(f.key)}
-                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${filterStatus === f.key ? 'bg-slate-200 text-slate-900' : 'text-slate-500'}`}
-                                    >
-                                        {f.label}:{f.value}
-                                    </button>
-                                ))}
-                            </div>
-                            {canSeePatronAlerts && patronAlertCount > 0 && (
-                                <span className="sm:hidden shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold">
-                                    <Bell size={9} /> {patronAlertCount}
-                                </span>
+                            {patronListOpen && (
+                                <ul className="max-h-28 overflow-y-auto custom-scrollbar divide-y divide-amber-100 bg-white/70">
+                                    {upcomingPatrones.map(p => {
+                                        const f = getPatronFechaVencimiento(p);
+                                        const urgency = getPatronUrgency(p);
+                                        const hex = getPatronUrgencyHex(urgency);
+                                        let days = 0;
+                                        try {
+                                            if (f && isValid(parseISO(f))) days = differenceInDays(parseISO(f), new Date());
+                                        } catch { /* ignore */ }
+                                        return (
+                                            <li key={p.id || p.noControl} className="flex items-center gap-2 px-2.5 py-1 text-[11px]">
+                                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hex }} />
+                                                <span className="font-mono font-semibold text-slate-700">{p.noControl}</span>
+                                                <span className="flex-1 truncate text-slate-600">{p.descripcion || p.nombre || '—'}</span>
+                                                <span className="font-semibold shrink-0" style={{ color: hex }}>{getPatronUrgencyLabel(urgency)}</span>
+                                                <span className="text-slate-400 shrink-0 tabular-nums">{f || '—'}{days >= 0 ? ` (${days}d)` : ''}</span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
                             )}
                         </div>
                     )}
-                </header>
-
-                {/* --- ÁREA PRINCIPAL DE CONTENIDO --- */}
-                <div className="flex-1 p-1 sm:p-2 overflow-hidden bg-slate-50/50 flex flex-col min-h-0">
-                    {viewMode === 'calendar' && canSeePatronAlerts && upcomingPatrones.length > 0 && showPatronPanel && (
-                        <div className="mb-1.5 shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
-                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 bg-slate-50">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                    <ShieldCheck size={12} className="text-amber-600 shrink-0" />
-                                    <span className="text-[10px] font-bold text-slate-800 truncate">Vencimientos patrones</span>
-                                </div>
-                                <button type="button" onClick={handleDismissPatronPanel} className="p-0.5 text-slate-400 hover:text-slate-600 rounded touch-manipulation" aria-label="Ocultar">
-                                    <X size={12} />
-                                </button>
-                            </div>
-                            <ul className="max-h-[4.5rem] sm:max-h-20 overflow-y-auto custom-scrollbar divide-y divide-slate-100">
-                                {upcomingPatrones.map(p => {
-                                    const f = getPatronFechaVencimiento(p);
-                                    const urgency = getPatronUrgency(p);
-                                    const hex = getPatronUrgencyHex(urgency);
-                                    let days = 0;
-                                    try {
-                                        if (f && isValid(parseISO(f))) days = differenceInDays(parseISO(f), new Date());
-                                    } catch { /* ignore */ }
-                                    return (
-                                        <li key={p.id || p.noControl} className="flex items-center gap-2 px-2 py-1 text-[10px] sm:text-xs">
-                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hex }} />
-                                            <span className="font-mono font-bold text-slate-700">{p.noControl}</span>
-                                            <span className="flex-1 truncate text-slate-600">{p.descripcion || p.nombre || '—'}</span>
-                                            <span className="font-semibold shrink-0" style={{ color: hex }}>{getPatronUrgencyLabel(urgency)}</span>
-                                            <span className="text-slate-400 shrink-0 tabular-nums">{f || '—'}{days >= 0 ? ` (${days}d)` : ''}</span>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    )}
-
-                    {loading ? (
-                        <div className="h-full flex items-center justify-center flex-col gap-3"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div><p className="text-slate-400 font-bold text-xs">Sincronizando...</p></div>
-                    ) : viewMode === 'calendar' ? (
-                        <div className="bg-white rounded-lg sm:rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0 overflow-hidden">
-                            <div className="p-1 sm:p-2 flex-1 min-h-0 flex flex-col calendar-shell">
-                                <Calendar localizer={localizer} events={filteredEvents} culture='es' startAccessor="start" endAccessor="end" components={{ toolbar: CustomToolbar, event: calendarEventComponent }} onSelectEvent={ev => { if (!ev.esVencimientoPatron) { setSelectedEvent(ev); setIsModalOpen(true); } }} eventPropGetter={eventPropGetter} views={['month', 'week', 'day', 'agenda']} />
-                            </div>
-                            <div className="border-t border-slate-200 bg-slate-50 shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowLegend(v => !v)}
-                                    className="w-full flex items-center justify-center gap-1 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100/80 transition-colors"
-                                >
-                                    <ChevronDown size={12} className={`transition-transform ${showLegend ? 'rotate-180' : ''}`}/>
-                                    Leyenda de colores
-                                </button>
-                                {showLegend && (
-                                    <div className="px-2 pb-2 flex flex-wrap gap-x-3 gap-y-1 justify-center max-h-24 overflow-y-auto custom-scrollbar">
-                                        {CONSTANTS.tipos.map(t => (
-                                            <div key={t.value} className="flex items-center gap-1">
-                                                <div className="w-2.5 h-2.5 rounded border border-black/10" style={{ backgroundColor: t.hex }} />
-                                                <span className="text-[9px] font-semibold text-slate-600">{t.label}</span>
-                                            </div>
-                                        ))}
-                                        {canSeePatronAlerts && (['vencido', 'urgente7', 'proximo30', 'ok'] as PatronUrgency[]).map(u => (
-                                            <div key={u} className="flex items-center gap-1">
-                                                <div className="w-2.5 h-2.5 rounded border border-black/10" style={{ backgroundColor: getPatronUrgencyHex(u) }} />
-                                                <span className="text-[9px] font-semibold text-slate-600">Patrón {getPatronUrgencyLabel(u)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        <GanttPTView events={roleVisibleEvents} onCellClick={handleGanttCellClick} onEventClick={ev => { setSelectedEvent(ev); setIsModalOpen(true); }} onDeleteMagnitud={handleDeleteMagnitud} isCalidad={isCalidad} canEdit={canEditEvents} technicalStaff={users} onUploadEvidencia={handleUploadEvidenciaPT} currentUser={currentUserData} authUid={authUser?.uid} />
-                    )}
                 </div>
+            )}
 
-                <UnifiedEventModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} event={selectedEvent} initialData={initialModalData} technicalStaff={users} isCalidad={isCalidad} canEdit={canEditEvents} currentUser={currentUserData} authUid={authUser?.uid} />
-                <Toaster position="top-center" toastOptions={{ duration: 2800, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
-            </main>
-            
+            <div className="flex-1 p-2 sm:p-3 overflow-hidden flex flex-col min-h-0">
+                {loading ? (
+                    <div className="h-full flex items-center justify-center flex-col gap-3">
+                        <div className="w-7 h-7 border-[3px] border-[#2464A3] border-t-transparent rounded-full animate-spin" />
+                        <p className="text-slate-400 font-medium text-xs">Sincronizando…</p>
+                    </div>
+                ) : viewMode === 'calendar' ? (
+                    <div className="flex-1 flex min-h-0 gap-2 overflow-hidden">
+                        <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                            <div className="flex-1 min-h-0 p-1.5 sm:p-2 flex flex-col calendar-shell">
+                                <Calendar
+                                    localizer={localizer}
+                                    events={filteredEvents}
+                                    culture="es"
+                                    date={calDate}
+                                    view={calView}
+                                    onNavigate={(next) => {
+                                        setCalDate(next);
+                                        if (calView === 'day') setSelectedDay(next);
+                                    }}
+                                    onView={(v) => setCalView(v as CalView)}
+                                    startAccessor="start"
+                                    endAccessor="end"
+                                    components={{ toolbar: () => null, event: calendarEventComponent }}
+                                    onSelectEvent={openEvent}
+                                    onSelectSlot={(slot: { start: Date; action?: string }) => {
+                                        setSelectedDay(slot.start);
+                                        if (slot.action === 'doubleClick') openCreateForDay(slot.start);
+                                    }}
+                                    selectable
+                                    popup
+                                    eventPropGetter={eventPropGetter}
+                                    dayPropGetter={dayPropGetter}
+                                    views={['month', 'week', 'day', 'agenda']}
+                                    messages={CALENDAR_MESSAGES}
+                                    min={TIME_VIEW_MIN}
+                                    max={TIME_VIEW_MAX}
+                                    step={30}
+                                    timeslots={2}
+                                />
+                            </div>
+                        </div>
+                        {calView !== 'agenda' && (
+                            <div className="hidden xl:flex w-72 shrink-0 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                {agendaPanel}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <GanttPTView
+                        events={roleVisibleEvents}
+                        onCellClick={handleGanttCellClick}
+                        onEventClick={openEvent}
+                        onDeleteMagnitud={handleDeleteMagnitud}
+                        isCalidad={isCalidad}
+                        canEdit={canEditEvents}
+                        technicalStaff={users}
+                        onUploadEvidencia={handleUploadEvidenciaPT}
+                        currentUser={currentUserData}
+                        authUid={authUser?.uid}
+                    />
+                )}
+            </div>
+
+            {showAgendaMobile && viewMode === 'calendar' && (
+                <div className="fixed inset-0 z-40 xl:hidden">
+                    <button type="button" className="absolute inset-0 bg-slate-900/40" aria-label="Cerrar agenda" onClick={() => setShowAgendaMobile(false)} />
+                    <div className="absolute inset-y-0 right-0 w-[min(100%,20rem)] shadow-2xl">
+                        {agendaPanel}
+                    </div>
+                </div>
+            )}
+
+            <UnifiedEventModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} event={selectedEvent} initialData={initialModalData} technicalStaff={users} isCalidad={isCalidad} canEdit={canEditEvents} currentUser={currentUserData} authUid={authUser?.uid} />
+            <Toaster position="top-center" toastOptions={{ duration: 2800, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
+
             <style>{`
                 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
                 .scrollbar-hide::-webkit-scrollbar { display: none; }
-                .touch-manipulation { touch-action: manipulation; }
-                .calendar-shell .rbc-calendar { font-family: 'Inter', system-ui, sans-serif; border: none; min-height: 0; height: 100%; display: flex; flex-direction: column; }
-                .calendar-shell .rbc-month-view { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; flex: 1; min-height: 0; }
-                .calendar-shell .rbc-time-view { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-                .calendar-shell .rbc-agenda-view { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-                .calendar-shell .rbc-month-row { border-top: 1px solid #f1f5f9; min-height: 0; flex: 1 1 0; }
-                .calendar-shell .rbc-month-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-                .calendar-shell .rbc-month-view .rbc-row-content { min-height: 0; }
-                .calendar-shell .rbc-day-bg { border-left: 1px solid #f1f5f9; }
-                .calendar-shell .rbc-header { padding: 8px 2px; font-size: 0.65rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); }
-                .calendar-shell .rbc-today { background-color: #eff6ff; }
-                .calendar-shell .rbc-now .rbc-button-link { color: #2563eb; font-weight: 800; }
                 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 8px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
-                .calendar-shell .rbc-event { border-radius: 6px !important; margin: 1px 2px !important; padding: 3px 5px !important; transition: transform 0.15s ease, box-shadow 0.15s ease; box-shadow: 0 1px 2px rgba(15,23,42,0.08); min-height: 1.25rem; }
-                .calendar-shell .rbc-event:active { transform: scale(0.98); }
-                @media (hover: hover) {
-                    .calendar-shell .rbc-event:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(15,23,42,0.12); }
-                }
-                .calendar-shell .rbc-date-cell { padding: 3px 6px; font-size: 0.7rem; font-weight: 600; color: #334155; }
+                .calendar-shell .rbc-calendar { font-family: inherit; border: none; min-height: 0; height: 100%; display: flex; flex-direction: column; }
+                .calendar-shell .rbc-month-view,
+                .calendar-shell .rbc-time-view,
+                .calendar-shell .rbc-agenda-view { border: none; border-radius: 0; overflow: hidden; background: #fff; flex: 1; min-height: 0; }
+                .calendar-shell .rbc-month-view { display: flex; flex-direction: column; }
+                .calendar-shell .rbc-month-row { border-top: 1px solid #eef2f7; min-height: 0; flex: 1 1 0; }
+                .calendar-shell .rbc-month-view .rbc-row-content { min-height: 0; }
+                .calendar-shell .rbc-month-view .rbc-row-segment { padding: 0 1px; }
+                .calendar-shell .rbc-day-bg { border-left: 1px solid #eef2f7; }
+                .calendar-shell .rbc-header { padding: 6px 2px; font-size: 0.68rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+                .calendar-shell .rbc-today { background-color: #eff6ff; box-shadow: inset 0 2px 0 #2464A3; }
+                .calendar-shell .cal-day-selected { background-color: #dbeafe !important; }
+                .calendar-shell .rbc-now .rbc-button-link { color: #2464A3; font-weight: 700; }
+                .calendar-shell .rbc-event { border-radius: 4px !important; margin: 0 1px 1px !important; padding: 1px 4px !important; min-height: 0; box-shadow: none; }
+                .calendar-shell .rbc-event:focus { outline: 2px solid rgba(36,100,163,0.35); }
+                .calendar-shell .rbc-date-cell { padding: 2px 5px; font-size: 0.7rem; font-weight: 600; color: #475569; }
                 .calendar-shell .rbc-off-range-bg { background: #f8fafc; }
-                .calendar-shell .rbc-show-more { color: #2563eb; font-size: 0.65rem; font-weight: 700; }
+                .calendar-shell .rbc-off-range { color: #94a3b8; }
+                .calendar-shell .rbc-show-more { color: #2464A3; font-size: 0.65rem; font-weight: 600; background: transparent; }
+                .calendar-shell .rbc-overlay { z-index: 50; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(15,23,42,0.12); }
                 .calendar-shell .rbc-agenda-table { font-size: 0.8rem; }
                 .calendar-shell .rbc-agenda-date-cell, .calendar-shell .rbc-agenda-time-cell { white-space: nowrap; }
-                @media (min-width: 640px) {
-                    .calendar-shell .rbc-header { padding: 8px 4px; font-size: 0.7rem; }
-                    .calendar-shell .rbc-date-cell { padding: 4px 8px; font-size: 0.75rem; }
-                    .calendar-shell .rbc-event { margin: 2px 3px !important; padding: 4px 6px !important; }
-                }
-                @media (max-width: 639px) {
-                    .calendar-shell .rbc-month-view .rbc-row-segment { padding: 0 1px; }
-                    .calendar-shell .rbc-toolbar { margin-bottom: 0; }
-                }
+                .calendar-shell .rbc-time-header-content, .calendar-shell .rbc-time-content { border-color: #eef2f7; }
+                .calendar-shell .rbc-timeslot-group { min-height: 36px; }
+                .calendar-shell .rbc-current-time-indicator { background-color: #2464A3; }
+                .calendar-shell .rbc-toolbar { display: none; }
             `}</style>
-        </div>
+        </OperationalScreenShell>
     );
 };
 

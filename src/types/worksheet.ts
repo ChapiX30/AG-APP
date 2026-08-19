@@ -6,6 +6,7 @@ export interface WorksheetState {
   certificado: string;
   nombre: string;
   cliente: string;
+  clienteId?: string;
   id: string;
   equipo: string;
   marca: string;

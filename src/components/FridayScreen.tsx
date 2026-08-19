@@ -21,6 +21,7 @@ import { useNavigation } from '../hooks/useNavigation';
 import { useAppDialog } from '../hooks/useAppDialog';
 import { useAuth } from "../hooks/useAuth"; 
 import { filterVisibleUsers } from "../utils/hiddenUsers";
+import { ensureHojasServicioIdsReparados, mensajeReparacionHojasServicio } from "../utils/repararHojasServicioIds";
 import labLogo from '../assets/lab_logo.png';
 
 // --- TIPOS ---
@@ -1454,6 +1455,16 @@ const FridayScreen: React.FC = () => {
         setToasts((prev) => [...prev, { id, message, type }]);
         setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
     };
+
+    useEffect(() => {
+        if (!user?.id) return;
+        void ensureHojasServicioIdsReparados()
+            .then((r) => {
+                const msg = mensajeReparacionHojasServicio(r);
+                if (msg) showToast(msg, "success");
+            })
+            .catch((err) => console.error("[Friday] Reparación hojas de servicio:", err));
+    }, [user?.id]);
 
     const runAutoDriveReconcile = useCallback(
         async (source: "agbot" | "interval" | "manual" = "manual") => {

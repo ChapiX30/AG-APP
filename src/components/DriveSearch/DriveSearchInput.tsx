@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import clsx from "clsx";
 
@@ -29,15 +29,14 @@ export const DriveSearchInput = React.memo(function DriveSearchInput({
   onKeyDown,
 }: DriveSearchInputProps) {
   const [value, setValue] = useState("");
-  const deferredValue = useDeferredValue(value);
 
   useEffect(() => {
-    onFilterQueryChange(deferredValue);
-  }, [deferredValue, onFilterQueryChange]);
+    onFilterQueryChange(value);
+  }, [value, onFilterQueryChange]);
 
   useEffect(() => {
-    onFilterPendingChange(value.trim() !== deferredValue.trim());
-  }, [value, deferredValue, onFilterPendingChange]);
+    onFilterPendingChange(false);
+  }, [onFilterPendingChange]);
 
   useEffect(() => {
     onHasTextChange(value.trim().length > 0);

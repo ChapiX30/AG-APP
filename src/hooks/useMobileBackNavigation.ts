@@ -24,7 +24,7 @@ function shouldIgnoreGesture(event?: TouchEvent): boolean {
 
   const target = event?.target;
   if (target instanceof Element) {
-    if (target.closest('.ag-pdf-viewer-scroll, [aria-modal="true"], dialog[open], [data-ag-no-swipe-back]')) {
+    if (target.closest('.ag-pdf-viewer-scroll, .ag-pdf-engine, .ag-docx-preview, .ag-image-viewer, [aria-modal="true"], dialog[open], [data-ag-no-swipe-back]')) {
       return true;
     }
   } else if (document.querySelector('[aria-modal="true"], dialog[open]')) {

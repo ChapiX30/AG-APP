@@ -23,6 +23,7 @@ import {
   OperationalScreenShell,
 } from './ui/OperationalScreenShell';
 import { filterVisibleUsers } from '../utils/hiddenUsers';
+import { markCelesticaSitioCueDone } from '../utils/celesticaSitioCues';
 
 const AG_BLUE = AG_BRAND_BLUE;
 const COLLECTION_NAME_PATRONES = COLLECTION_PATRONES;
@@ -467,6 +468,7 @@ const NormasScreen = () => {
     try {
       if (type === 'cel') {
           await generateCelesticaPdf(data, allTools);
+          markCelesticaSitioCueDone('hoja_herramienta');
       } else {
           await generateGenericPdf(data, allTools);
       }

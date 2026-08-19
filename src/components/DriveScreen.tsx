@@ -314,9 +314,39 @@ function metadataToDriveFile(
   };
 }
 
-/** Catálogo en memoria para búsqueda (se filtra en cliente, sin re-descargar). */
-const SEARCH_CATALOG_LIMIT = 1000;
-const CATALOG_CACHE_MS = 2 * 60 * 1000;
+/** Catálogo en memoria para búsqueda (se filtra en cliente, sin tocar la carpeta abierta). */
+const SEARCH_CATALOG_LIMIT = 1500;
+const CATALOG_CACHE_MS = 5 * 60 * 1000;
+
+async function fetchDriveSearchCatalog(options: {
+  currentRoot: "worksheets" | "certificados";
+  isQuality: boolean;
+  myName: string;
+}): Promise<DriveFile[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, "fileMetadata"),
+      orderBy("created", "desc"),
+      limit(SEARCH_CATALOG_LIMIT)
+    )
+  );
+  const results: DriveFile[] = [];
+  snap.forEach((docSnap) => {
+    const data = docSnap.data();
+    const rawName = data.name || docSnap.id;
+    const fullPath = normalizeDriveFullPath(data.filePath, rawName, options.currentRoot);
+    if (!fullPath.startsWith(`${options.currentRoot}/`)) return;
+    if (!options.isQuality) {
+      const isUploader = normalizeText(String(data.uploadedBy || "")) === options.myName;
+      if (!fullPath.toLowerCase().includes(options.myName) && !isUploader) return;
+    }
+    results.push(metadataToDriveFile(data, rawName, fullPath));
+  });
+  return results.map((f) => ({
+    ...f,
+    parentFolder: resolveTechnicianGroupKey(f),
+  }));
+}
 /** Documentos recientes que el listener en vivo vigila fuera de una carpeta. */
 const REALTIME_RECENT_LIMIT = 400;
 
@@ -433,13 +463,6 @@ const sortDriveFiles = (list: DriveFile[], sortBy: SortType): DriveFile[] => {
     }
   });
   return result;
-};
-
-type BrowseSnapshot = {
-  files: DriveFile[];
-  folders: DriveFolder[];
-  path: string[];
-  activeFilter: FilterType;
 };
 
 const getFileIcon = (fileName?: string, size: number = 24) => {
@@ -1079,8 +1102,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   } | null>(null);
   const filesRef = useRef(files);
   const foldersRef = useRef(folders);
-  const browseSnapshotRef = useRef<BrowseSnapshot | null>(null);
-  const [browseBehindSnap, setBrowseBehindSnap] = useState<BrowseSnapshot | null>(null);
+  const catalogFetchIdRef = useRef(0);
+  const [searchCatalogFiles, setSearchCatalogFiles] = useState<DriveFile[]>([]);
+  const [searchCatalogLoading, setSearchCatalogLoading] = useState(false);
+  const [applySearchToList, setApplySearchToList] = useState(false);
   const PENDING_REVIEW_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
   const DOWNLOAD_URL_CACHE_TTL_MS = 12 * 60 * 1000;
 
@@ -1156,6 +1181,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     searchCatalogActive,
     activeSearchTerm,
     processedFiles,
+    searchResultCount,
     visibleFolders,
     searchSuggestions,
     showSearchDropdown,
@@ -1172,9 +1198,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   } = useDriveSearch({
     files: filesWithOffline,
     folders,
+    catalogFiles: searchCatalogFiles,
+    applySearchToList,
     sortBy,
     pendingWorksheetFile,
   });
+
+  useEffect(() => {
+    if (!searchCatalogActive) setApplySearchToList(false);
+  }, [searchCatalogActive]);
 
   const filesForList = useMemo(() => {
     if (currentRoot !== "worksheets" || activeFilter !== "all") return processedFiles;
@@ -1194,6 +1226,44 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   }, []);
 
   const isQuality = useMemo(() => checkIsQualityUser(currentUserData), [currentUserData]);
+
+  const ensureSearchCatalog = useCallback(async () => {
+    if (!currentUserData) return;
+    const key = `${currentRoot}|${isQuality}|${normalizeText(currentUserData.name || "")}`;
+    const cached = metadataCatalogCacheRef.current;
+    if (cached && cached.key === key && Date.now() - cached.at < CATALOG_CACHE_MS) {
+      setSearchCatalogFiles(cached.files);
+      setSearchCatalogLoading(false);
+      return;
+    }
+    const requestId = ++catalogFetchIdRef.current;
+    setSearchCatalogLoading(true);
+    try {
+      const mapped = await fetchDriveSearchCatalog({
+        currentRoot,
+        isQuality,
+        myName: normalizeText(currentUserData.name || ""),
+      });
+      if (requestId !== catalogFetchIdRef.current) return;
+      metadataCatalogCacheRef.current = { key, files: mapped, at: Date.now() };
+      setSearchCatalogFiles(mapped);
+    } catch (e) {
+      console.error("search catalog", e);
+    } finally {
+      if (requestId === catalogFetchIdRef.current) setSearchCatalogLoading(false);
+    }
+  }, [currentUserData, currentRoot, isQuality]);
+
+  useEffect(() => {
+    if (!currentUserData) return;
+    const t = window.setTimeout(() => { void ensureSearchCatalog(); }, 200);
+    return () => window.clearTimeout(t);
+  }, [currentUserData, currentRoot, ensureSearchCatalog]);
+
+  useEffect(() => {
+    setSearchCatalogFiles([]);
+    setApplySearchToList(false);
+  }, [currentRoot]);
 
   useEffect(() => {
     if (isQuality) warmupDriveMoveServer();
@@ -1226,7 +1296,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   // ── Suggested files (Quick Access) ──
   useEffect(() => {
     const load = async () => {
-      if (!currentUserData || path.length > 0 || debouncedSearch) { setSuggestedFiles([]); return; }
+      if (!currentUserData || path.length > 0 || applySearchToList) { setSuggestedFiles([]); return; }
       try {
         const q = query(collection(db, 'fileMetadata'), orderBy('updated', 'desc'), limit(50));
         const snap = await getDocs(q);
@@ -1259,49 +1329,20 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       } catch (e) { console.error(e); }
     };
     load();
-  }, [currentUserData, path, debouncedSearch, isQuality, currentRoot]);
+  }, [currentUserData, path, applySearchToList, isQuality, currentRoot]);
 
   // ── Load content ──
   const loadContent = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
-    const isSearchBrowse = searchCatalogActive && activeFilter === "all";
+    const useGlobalCatalog = activeFilter !== "all";
     setContextMenu(null);
-    if (!isSearchBrowse) {
-      metadataCatalogCacheRef.current = null;
-      setSelectedIds(new Set());
-      setLastSelectedId(null);
-    }
-
-    const useGlobalCatalog = activeFilter !== "all" || searchCatalogActive;
-    const hasVisibleFiles = filesRef.current.length > 0;
-    if (useGlobalCatalog) {
-      if (isSearchBrowse && hasVisibleFiles) setFilesLoading(true);
-      else setLoading(true);
-    }
+    setSelectedIds(new Set());
+    setLastSelectedId(null);
 
     try {
       if (useGlobalCatalog) {
-        if (!(isSearchBrowse && hasVisibleFiles)) {
-          setLoading(true);
-        }
-        setFilesLoading(isSearchBrowse && hasVisibleFiles);
-
-        const catalogCacheKey = `${currentRoot}|${isQuality}|${normalizeText(currentUserData?.name || "")}|all`;
-        const cachedCatalog = metadataCatalogCacheRef.current;
-        if (
-          isSearchBrowse &&
-          cachedCatalog &&
-          cachedCatalog.key === catalogCacheKey &&
-          Date.now() - cachedCatalog.at < CATALOG_CACHE_MS
-        ) {
-          if (requestId === loadRequestIdRef.current) {
-            setFiles(cachedCatalog.files);
-            setFolders([]);
-            setLoading(false);
-            setFilesLoading(false);
-          }
-          return;
-        }
+        setLoading(true);
+        setFilesLoading(true);
 
         if (activeFilter === 'pending_review' && currentRoot === 'worksheets') {
           const now = Date.now();
@@ -1326,9 +1367,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           limit(
             activeFilter === 'pending_review'
               ? PENDING_REVIEW_METADATA_LIMIT
-              : searchCatalogActive
-                ? SEARCH_CATALOG_LIMIT
-                : 400
+              : 400
           )
         );
 
@@ -1396,27 +1435,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           results.push(fileObj);
         });
 
-        const mapped = results.map((f) => ({
-          ...f,
-          parentFolder: resolveTechnicianGroupKey(f),
-        }));
-
-        // Búsqueda: guardar catálogo completo en caché y filtrar en cliente (instantáneo)
-        if (isSearchBrowse) {
-          metadataCatalogCacheRef.current = {
-            key: catalogCacheKey,
-            files: mapped,
-            at: Date.now(),
-          };
-          if (requestId === loadRequestIdRef.current) {
-            setFiles(mapped);
-            setFolders([]);
-            setLoading(false);
-            setFilesLoading(false);
-          }
-          return;
-        }
-
         const isGlobalPendingOrCompleted =
           activeFilter === "pending_review" || activeFilter === "completed";
         const enriched = await enrichFilesWithWorksheetInfo(
@@ -1447,7 +1465,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
           ) {
             console.warn("listAll certificados fallback to fileMetadata", listErr);
             const fallback = await buildDriveBrowseFromMetadata(currentRoot, path, {
-              debouncedSearch,
+              debouncedSearch: "",
               isQuality,
               myName,
             });
@@ -1622,7 +1640,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         try {
           const myName = normalizeText(currentUserData?.name || "");
           const fallback = await buildDriveBrowseFromMetadata(currentRoot, path, {
-            debouncedSearch,
+            debouncedSearch: "",
             isQuality,
             myName,
           });
@@ -1648,27 +1666,12 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         setFilesLoading(false);
       }
     }
-  }, [path, activeFilter, currentUserData, searchCatalogActive, isQuality, currentRoot, showToast]);
+  }, [path, activeFilter, currentUserData, isQuality, currentRoot, showToast]);
 
   useEffect(() => { if (currentUserData) loadContent(); }, [loadContent]);
 
   useEffect(() => { filesRef.current = files; });
   useEffect(() => { foldersRef.current = folders; });
-
-  const saveBrowseSnapshot = useCallback(() => {
-    browseSnapshotRef.current = {
-      files: filesRef.current,
-      folders: foldersRef.current,
-      path: [...path],
-      activeFilter,
-    };
-  }, [path, activeFilter]);
-
-  useEffect(() => {
-    if (!searchCatalogActive) {
-      saveBrowseSnapshot();
-    }
-  }, [files, folders, path, activeFilter, searchCatalogActive, saveBrowseSnapshot]);
 
   // ── Realtime: refleja borrados / cambios / subidas de otros usuarios ──
   const loadContentRef = useRef(loadContent);
@@ -1710,7 +1713,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     if (!currentUserData) return;
     const scopeToFolder =
-      activeFilter === "all" && !searchCatalogActive && path.length > 0;
+      activeFilter === "all" && path.length > 0;
 
     let liveQuery;
     if (scopeToFolder) {
@@ -1757,7 +1760,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             }
           }
         });
-        if (needsReload && !searchCatalogActive) scheduleQuietReload();
+        if (needsReload) scheduleQuietReload();
       },
       (err) => {
         console.warn("[Drive] realtime listener:", err);
@@ -1774,7 +1777,6 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     currentRoot,
     path,
     activeFilter,
-    searchCatalogActive,
     removeFileWithAnimation,
     scheduleQuietReload,
   ]);
@@ -1904,45 +1906,17 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
     [showToast]
   );
 
-  useEffect(() => {
-    if (showSearchDropdown) {
-      setBrowseBehindSnap((prev) => prev ?? browseSnapshotRef.current);
-    } else {
-      setBrowseBehindSnap(null);
-    }
-  }, [showSearchDropdown]);
-
-  const browseBehindDisplay = useMemo(() => {
-    if (!browseBehindSnap || browseBehindSnap.activeFilter !== "all") return null;
-    const displayFiles = sortDriveFiles(browseBehindSnap.files, sortBy);
-    const contentPath = browseBehindSnap.path;
-    const isMetrologist =
-      contentPath.length > 0 &&
-      !contentPath.some((p) =>
-        ["hojas de trabajo", "hojas de servicio"].some((ex) =>
-          p.toLowerCase().includes(ex)
-        )
-      );
-    return {
-      files: displayFiles,
-      folders: browseBehindSnap.folders,
-      path: contentPath,
-      isMetrologist,
-      groups: isMetrologist ? groupFilesByUbicacion(displayFiles) : null,
-    };
-  }, [browseBehindSnap, sortBy]);
-
   const isMetrologistFolderView = useMemo(
     () =>
       activeFilter === "all" &&
-      !debouncedSearch &&
+      !applySearchToList &&
       path.length > 0 &&
       !path.some((p) =>
         ["hojas de trabajo", "hojas de servicio"].some((ex) =>
           p.toLowerCase().includes(ex)
         )
       ),
-    [activeFilter, debouncedSearch, path]
+    [activeFilter, applySearchToList, path]
   );
 
   const metrologistFileGroups = useMemo(() => {
@@ -2787,6 +2761,8 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       }
       showToast(`${count} archivo(s) subido(s)`, 'success');
       metadataCatalogCacheRef.current = null;
+      setSearchCatalogFiles([]);
+      void ensureSearchCatalog();
       loadContent();
     } catch (e) { showToast("Error al subir archivos", 'error'); }
     finally { setIsUploading(false); }
@@ -2888,8 +2864,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // INP: abrir carpeta fuera del input handler para no bloquear el siguiente paint
   const folderNavBasePathRef = useRef<string[]>(path);
-  folderNavBasePathRef.current =
-    showSearchDropdown && browseBehindDisplay ? browseBehindDisplay.path : path;
+  folderNavBasePathRef.current = path;
 
   const onFolderOpen = useCallback(
     (folder: DriveFolder) => {
@@ -2911,9 +2886,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
 
   // ─── RENDER CONTENT ───────────────────────
   const renderContent = () => {
-    const useBrowseBehindSearch = !!(showSearchDropdown && browseBehindDisplay);
-
-    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && !groupView && !useBrowseBehindSearch) {
+    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && !groupView && !applySearchToList) {
       const groups = Object.keys(groupedFiles);
       if (groups.length === 0) return <EmptyState icon={activeFilter === 'completed' ? FileCheck : Bell} title={activeFilter === 'completed' ? "No hay servicios completados" : "No hay archivos por revisar"} />;
       return (
@@ -2942,44 +2915,39 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       );
     }
 
-    let displayFiles = useBrowseBehindSearch
-      ? browseBehindDisplay!.files
-      : filesForList;
-    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView && !useBrowseBehindSearch) {
+    let displayFiles = filesForList;
+    if ((activeFilter === 'completed' || activeFilter === 'pending_review') && groupView && !applySearchToList) {
       displayFiles = groupedFiles[groupView] || [];
     }
-    const contentFolders = useBrowseBehindSearch ? browseBehindDisplay!.folders : visibleFolders;
-    const contentPath = useBrowseBehindSearch ? browseBehindDisplay!.path : path;
+    const contentFolders = visibleFolders;
+    const contentPath = path;
     const showFolders =
       activeFilter === "all" &&
-      (useBrowseBehindSearch || !debouncedSearch) &&
+      !applySearchToList &&
       contentFolders.length > 0;
 
-    const isMetrologistContent = useBrowseBehindSearch
-      ? browseBehindDisplay!.isMetrologist
-      : activeFilter === "all" &&
-        !debouncedSearch &&
-        path.length > 0 &&
-        !path.some((p) =>
-          ["hojas de trabajo", "hojas de servicio"].some((ex) =>
-            p.toLowerCase().includes(ex)
-          )
-        );
-    const metrologistGroupsContent = useBrowseBehindSearch
-      ? browseBehindDisplay!.groups
-      : isMetrologistContent
-        ? groupFilesByUbicacion(displayFiles)
-        : null;
+    const isMetrologistContent =
+      activeFilter === "all" &&
+      !applySearchToList &&
+      path.length > 0 &&
+      !path.some((p) =>
+        ["hojas de trabajo", "hojas de servicio"].some((ex) =>
+          p.toLowerCase().includes(ex)
+        )
+      );
+    const metrologistGroupsContent = isMetrologistContent
+      ? groupFilesByUbicacion(displayFiles)
+      : null;
 
-    if (!useBrowseBehindSearch && displayFiles.length === 0 && !showFolders && !filesLoading) {
-      if (debouncedSearch && pendingWorksheetLoading && currentRoot === "worksheets") {
+    if (displayFiles.length === 0 && !showFolders && !filesLoading) {
+      if (applySearchToList && pendingWorksheetLoading && currentRoot === "worksheets") {
         return <LoadingSkeleton compact />;
       }
-      if (debouncedSearch) {
-        const idHint = isEquipmentIdQuery(debouncedSearch)
+      if (applySearchToList) {
+        const idHint = isEquipmentIdQuery(activeSearchTerm)
           ? "Si la hoja existe en Friday pero no tiene PDF, aparecerá arriba como «Sin PDF» para generarlo."
           : "Usa el ID de equipo (ej. MS-182), folio o parte del nombre del certificado.";
-        return <EmptyState icon={Search} title={`Sin resultados para "${debouncedSearch}"`} subtitle={idHint} />;
+        return <EmptyState icon={Search} title={`Sin resultados para "${activeSearchTerm}"`} subtitle={idHint} />;
       }
       return <EmptyState icon={Folder} title="Esta carpeta está vacía" subtitle="Sube archivos o crea una carpeta para comenzar" />;
     }
@@ -3007,7 +2975,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
                   removing={removingPaths.has(file.fullPath)}
-                  searchActive={!!debouncedSearch || activeFilter !== 'all'}
+                  searchActive={applySearchToList || activeFilter !== 'all'}
                   onSelect={onCardSelect}
                   onContextMenu={onCardContextMenu}
                   onDoubleClick={onCardDoubleClick}
@@ -3033,7 +3001,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
                   key={file.fullPath} file={file}
                   selected={selectedIds.has(file.fullPath)}
                   removing={removingPaths.has(file.fullPath)}
-                  searchActive={!!debouncedSearch || activeFilter !== 'all'}
+                  searchActive={applySearchToList || activeFilter !== 'all'}
                   onSelect={onCardSelect}
                   onContextMenu={onCardContextMenu}
                   onDoubleClick={onCardDoubleClick}
@@ -3063,7 +3031,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             </div>
           </div>
         )}
-        {contentPath.length === 0 && activeFilter === 'all' && (useBrowseBehindSearch || !debouncedSearch) && suggestedFiles.length > 0 && (
+        {contentPath.length === 0 && activeFilter === 'all' && !applySearchToList && suggestedFiles.length > 0 && (
           <section className="mb-8">
             <h2 className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-2">
               <Zap size={13} className="text-amber-500" /> Acceso Rápido
@@ -3116,11 +3084,11 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             <div className="flex items-center justify-between mb-3 sticky top-0 bg-[#f0f2f5]/90 backdrop-blur-sm py-2 z-10">
               <h2 className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                 <File size={13} className="text-slate-400" />
-                {debouncedSearch && !useBrowseBehindSearch ? 'Resultados' : 'Archivos'}
+                {applySearchToList ? 'Resultados' : 'Archivos'}
                 <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md">
                   {displayFiles.length}
                 </span>
-                {filesLoading && !useBrowseBehindSearch && <Loader2 size={12} className="animate-spin text-blue-500" />}
+                {filesLoading && <Loader2 size={12} className="animate-spin text-blue-500" />}
               </h2>
               {selectedIds.size > 0 && (
                 <div className="fixed md:relative bottom-4 md:bottom-auto left-3 right-3 md:left-auto md:right-auto z-20 flex items-center gap-2 animate-in slide-in-from-bottom md:slide-in-from-right fade-in duration-150 bg-white md:bg-transparent border md:border-0 border-slate-200 rounded-2xl md:rounded-none shadow-lg md:shadow-none px-3 py-2 md:p-0">
@@ -3295,23 +3263,31 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
             clearSignal={searchClearSignal}
             catalogActive={searchCatalogActive}
             dropdownOpen={showSearchDropdown}
-            catalogLoading={filesLoading}
+            catalogLoading={searchCatalogLoading && searchCatalogFiles.length === 0}
+            scopeLabel={currentRoot === "worksheets" ? "Mi Unidad" : "Certificados"}
             activeSearchTerm={activeSearchTerm}
-            isFilterPending={isSearchFilterPending}
-            resultCount={processedFiles.length}
+            isFilterPending={isSearchFilterPending || (searchCatalogLoading && searchResultCount === 0)}
+            resultCount={searchResultCount}
             suggestions={searchSuggestions}
             activeIndex={searchActiveIndex}
             searchFocused={searchFocused}
             onFilterQueryChange={handleFilterQueryChange}
             onFilterPendingChange={setIsSearchFilterPending}
             onHasTextChange={setSearchHasText}
-            onFocusBrowse={() => { saveBrowseSnapshot(); setSearchFocused(true); }}
+            onFocusBrowse={() => {
+              setSearchFocused(true);
+              void ensureSearchCatalog();
+            }}
             onActiveIndexChange={setSearchActiveIndex}
             onSelectSuggestion={openSearchSuggestion}
             onCloseDropdown={() => setSearchFocused(false)}
-            onViewAllResults={() => setSearchFocused(false)}
+            onViewAllResults={() => {
+              setApplySearchToList(true);
+              setSearchFocused(false);
+            }}
             onClearAndBlur={() => {
               clearSearch();
+              setApplySearchToList(false);
               searchInputRef.current?.blur();
             }}
           />
@@ -3341,24 +3317,15 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               <span className="flex items-center gap-1.5 font-semibold text-[#2464A3]"><Filter size={11} />{filterLabels[activeFilter]}
                 {groupView && ( <div className="flex items-center ml-1"><ChevronRight size={11} className="text-slate-400 mr-1" /><span className="text-slate-700 bg-white border border-[#2464A3]/20 px-2 py-0.5 rounded-md flex items-center gap-1">{groupView}<button onClick={() => setGroupView(null)} className="hover:bg-slate-100 rounded-full p-0.5 ml-1 transition-colors text-slate-400 hover:text-slate-700"><X size={10} /></button></span></div> )}
               </span>
-            ) : debouncedSearch && !showSearchDropdown ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-[#2464A3]" />Resultados para "{debouncedSearch}" <span className="text-slate-400 font-normal">({processedFiles.length})</span></span> ) : (
+            ) : applySearchToList && searchCatalogActive ? ( <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Search size={11} className="text-[#2464A3]" />Resultados para "{activeSearchTerm}" <span className="text-slate-400 font-normal">({searchResultCount})</span></span> ) : (
               <nav className="flex items-center gap-1 text-slate-500">
-                {(() => {
-                  const crumbPath = showSearchDropdown && browseBehindSnap
-                    ? browseBehindSnap.path
-                    : path;
-                  return (
-                    <>
-                      <button onClick={() => { setPath([]); setSearchFocused(false); }} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", crumbPath.length === 0 ? "text-slate-800 font-semibold" : "")}><Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}</button>
-                      {crumbPath.map((folder, i) => (
-                        <React.Fragment key={folder}>
-                          <ChevronRight size={11} className="text-slate-300" />
-                          <button onClick={() => { setPath(crumbPath.slice(0, i + 1)); setSearchFocused(false); }} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === crumbPath.length - 1 ? "text-slate-800 font-semibold" : "")}>{folder}</button>
-                        </React.Fragment>
-                      ))}
-                    </>
-                  );
-                })()}
+                <button onClick={() => { setPath([]); setSearchFocused(false); }} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors flex items-center gap-1", path.length === 0 ? "text-slate-800 font-semibold" : "")}><Home size={11} /> {currentRoot === 'worksheets' ? "Mi Unidad" : "Certificados"}</button>
+                {path.map((folder, i) => (
+                  <React.Fragment key={folder}>
+                    <ChevronRight size={11} className="text-slate-300" />
+                    <button onClick={() => { setPath(path.slice(0, i + 1)); setSearchFocused(false); }} className={clsx("hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors truncate max-w-[120px]", i === path.length - 1 ? "text-slate-800 font-semibold" : "")}>{folder}</button>
+                  </React.Fragment>
+                ))}
               </nav>
             )}
           </div>
@@ -3370,7 +3337,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className={clsx("flex-1 overflow-y-auto min-w-0 transition-all duration-200")}>
             <div className="p-4 md:p-6">
-              {loading && !(searchCatalogActive && files.length > 0) && !(showSearchDropdown && browseBehindDisplay) ? <LoadingSkeleton /> : renderContent()}
+              {loading && files.length === 0 && folders.length === 0 ? <LoadingSkeleton /> : renderContent()}
             </div>
           </div>
           {detailsOpen && selectedIds.size === 1 && (() => {

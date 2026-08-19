@@ -1,4 +1,5 @@
 import type { TooltipProps } from "recharts";
+import { canonicalizeClienteNombre } from "./hojaServicioMatch";
 
 // --- Paleta y metrólogos (compartido TV + Stats) ---
 export const CALIBRATION_COLORS = {
@@ -386,8 +387,8 @@ const hojaMatchesServicioCliente = (
   const serviceClienteId = (service.clienteId || "").trim();
   const rowClienteId = (row.clienteId || "").trim();
   if (serviceClienteId && rowClienteId && serviceClienteId === rowClienteId) return true;
-  const serviceKey = normalizeClienteKey(service.cliente);
-  const rowKey = normalizeClienteKey(row.cliente);
+  const serviceKey = canonicalizeClienteNombre(service.cliente);
+  const rowKey = canonicalizeClienteNombre(row.cliente);
   return Boolean(serviceKey && rowKey && serviceKey === rowKey);
 };
 

@@ -1,8 +1,3 @@
-/**
- * Gestión de Servicios — pulido visual (ago 2026).
- * Para volver al diseño anterior:
- *   Copy-Item src/components/FridayServiciosScreen.legacy.tsx src/components/FridayServiciosScreen.tsx
- */
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { 
   ArrowLeft, Plus, Calendar, Search, Eye, Edit3, Trash2, X, 
@@ -38,10 +33,6 @@ import { getUserTeamColor } from '../utils/teamAvatarColor';
 import { filterVisibleUsers } from '../utils/hiddenUsers';
 import TeamColorPickerModal from './TeamColorPickerModal';
 import { CelesticaSitioCardCues, CelesticaSitioCueBar, CelesticaSitioDetailCues } from './CelesticaSitioCueBar';
-import { AG_BRAND_BLUE } from './ui/OperationalScreenShell';
-import { useCargaTecnicos } from '../hooks/useCargaTecnicos';
-import { TECNICO_CARGA_STYLES, TecnicoCargaLeyenda, TecnicoCargaMeter } from './TecnicoCargaMeter';
-import { describeCarga, type TecnicoCarga } from '../utils/tecnicoCarga';
 
 // ==========================================
 // TYPES
@@ -103,30 +94,17 @@ interface FileUploadState {
 // HELPERS
 // ==========================================
 
-const getFechaDiffDays = (dateString: string) => {
-  if (!dateString) return null;
+const formatDateRelative = (dateString: string) => {
+  if (!dateString) return 'Sin fecha';
   const [year, month, day] = dateString.split('-').map(Number);
   const date = new Date(year, month - 1, day);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return Math.round((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-};
-
-const formatDateRelative = (dateString: string) => {
-  const diffDays = getFechaDiffDays(dateString);
-  if (diffDays === null) return 'Sin fecha';
+  const diffDays = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return 'Hoy';
   if (diffDays === 1) return 'Mañana';
   if (diffDays === -1) return 'Ayer';
-  const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', weekday: 'short' });
-};
-
-const formatHorario = (inicio?: string, fin?: string) => {
-  if (inicio && fin) return `${inicio} – ${fin}`;
-  if (inicio) return `desde ${inicio}`;
-  if (fin) return `hasta ${fin}`;
-  return 'Sin horario';
+  return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', weekday: 'short' });
 };
 
 const getInitials = (name: string) => name ? name.substring(0, 2).toUpperCase() : '??';
@@ -377,17 +355,6 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
   const [showMenu, setShowMenu] = useState(false);
   const showCelesticaCues = isCelesticaAsignacionPendiente(service) && isUserInPersonas(service.personas, currentUserIds);
   const cueUserId = Array.isArray(currentUserIds) ? currentUserIds[0] : currentUserIds;
-  const fechaDiff = getFechaDiffDays(service.fecha);
-  const esHoy = fechaDiff === 0;
-  const esManana = fechaDiff === 1;
-  const esTerminado = service.estado === 'finalizado';
-  const cardTone = esTerminado
-    ? 'opacity-60 hover:opacity-90'
-    : esHoy
-      ? 'border-[#2464A3]/35 ring-1 ring-[#2464A3]/15 shadow-md'
-      : esManana
-        ? 'border-slate-300'
-        : '';
 
   const renderQuickButton = () => {
     if (service.estado === 'programado') return (
@@ -412,7 +379,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
 
   if (variant === 'list') {
     return (
-      <div onClick={onClick} className={`group bg-white rounded-xl border border-gray-200 p-3 shadow-sm hover:border-[#2464A3]/50 hover:shadow-lg transition-all cursor-pointer flex flex-col sm:flex-row gap-3 items-center relative ${cardTone}`}>
+      <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-3 shadow-sm hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col sm:flex-row gap-3 items-center relative">
         <div className={`p-2.5 rounded-lg hidden sm:flex flex-shrink-0 ${tipoConfig?.color || 'bg-gray-100 text-gray-500'}`}>
           <TipoIcon className="w-4 h-4" />
         </div>
@@ -426,8 +393,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
           <h4 className="font-bold text-gray-900 truncate text-sm">{service.titulo}</h4>
           <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
             <span className="flex items-center gap-1 truncate"><Building2 className="w-3 h-3" /> {service.cliente}</span>
-            <span className={`flex items-center gap-1 ${esHoy ? 'text-[#2464A3] font-semibold' : esManana ? 'text-slate-700 font-medium' : ''}`}><Calendar className="w-3 h-3" /> {formatDateRelative(service.fecha)}</span>
-            {service.horaInicio && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatHorario(service.horaInicio, service.horaFin)}</span>}
+            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDateRelative(service.fecha)}</span>
             {service.mensajes?.length > 0 && <span className="flex items-center gap-1 text-blue-500 font-medium"><MessageCircle className="w-3 h-3" /> {service.mensajes.length}</span>}
           </div>
           {showCelesticaCues && cueUserId && (
@@ -458,8 +424,8 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
   }
 
   return (
-    <div onClick={onClick} className={`group bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl hover:border-[#2464A3]/40 transition-all cursor-pointer flex flex-col gap-3 relative overflow-visible ${cardTone}`}>
-      <div className={`absolute top-0 left-0 w-1 h-full rounded-l-xl ${esHoy ? 'bg-[#2464A3]' : statusConfig.dot}`} />
+    <div onClick={onClick} className="group bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-xl hover:border-blue-300 transition-all cursor-pointer flex flex-col gap-3 relative overflow-visible">
+      <div className={`absolute top-0 left-0 w-1 h-full rounded-l-xl ${statusConfig.dot}`} />
       <div className="flex justify-between items-start pl-2">
         <div className="flex flex-col gap-1">
           <PriorityBadge priority={service.prioridad} />
@@ -476,7 +442,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
       <div className="pl-2">
         <h4 className="font-bold text-gray-900 leading-snug mb-1 line-clamp-2 text-sm">{service.titulo}</h4>
         <p className="text-xs text-gray-500 flex items-center gap-1 mb-1"><Building2 className="w-3 h-3" /> {service.cliente}</p>
-        <p className={`text-xs flex items-center gap-1 ${esHoy ? 'text-[#2464A3] font-semibold' : esManana ? 'text-slate-600 font-medium' : 'text-gray-400'}`}><Calendar className="w-3 h-3" /> {formatDateRelative(service.fecha)}{service.horaInicio ? ` · ${formatHorario(service.horaInicio, service.horaFin)}` : ''}</p>
+        <p className="text-xs text-gray-400 flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDateRelative(service.fecha)}</p>
         {showCelesticaCues && cueUserId && (
           <CelesticaSitioCardCues uid={cueUserId} enabled onOpen={onOpenCelesticaCue} />
         )}
@@ -548,13 +514,14 @@ const ServiceDetailModal = ({ isOpen, onClose, service, usuarios, onEdit, onDele
       <div className="bg-white w-full max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden">
         
         {/* Header */}
-        <div className="relative bg-white px-6 py-5 border-b border-slate-200 shrink-0">
-          <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50"><X className="w-4 h-4" /></button>
+        <div className="relative bg-gray-50 px-6 py-5 border-b border-gray-200 shrink-0">
+          <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-white rounded-full text-gray-500 hover:text-gray-900 shadow-sm"><X className="w-4 h-4" /></button>
           <div className="flex items-center gap-2 mb-2">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${statusConfig.bg} ${statusConfig.color} border ${statusConfig.border}`}>
               <StatusIcon className="w-3.5 h-3.5" /> {statusConfig.label}
             </span>
             <PriorityBadge priority={service.prioridad} />
+            {!canEdit && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ml-auto mr-6"><Eye className="w-3 h-3 inline mr-1"/> Modo Lectura</span>}
           </div>
           <h2 className="text-xl font-bold text-gray-900 leading-tight pr-8">{service.titulo}</h2>
           <div className="flex items-center gap-2 mt-1.5 text-gray-500 text-xs">
@@ -593,47 +560,11 @@ const ServiceDetailModal = ({ isOpen, onClose, service, usuarios, onEdit, onDele
                 </div>
                 <div className="flex items-center justify-between text-xs p-2.5 bg-gray-50 rounded-xl border border-gray-100">
                   <span className="text-gray-500 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> Horario</span>
-                  <span className="font-bold text-gray-900">{formatHorario(service.horaInicio, service.horaFin)}</span>
+                  <span className="font-bold text-gray-900">{service.horaInicio || '--'} – {service.horaFin || '--'}</span>
                 </div>
               </div>
             </div>
           </div>
-
-          {(service.descripcion || service.contacto || service.telefono || service.email || service.notas) && (
-            <div className="space-y-3">
-              {service.descripcion && (
-                <div>
-                  <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Descripción</h3>
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{service.descripcion}</p>
-                </div>
-              )}
-              {(service.contacto || service.telefono || service.email) && (
-                <div className="flex flex-wrap gap-2">
-                  {service.contacto && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-100 text-xs text-slate-600">
-                      <User className="w-3 h-3" /> {service.contacto}
-                    </span>
-                  )}
-                  {service.telefono && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-100 text-xs text-slate-600">
-                      <Phone className="w-3 h-3" /> {service.telefono}
-                    </span>
-                  )}
-                  {service.email && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-100 text-xs text-slate-600">
-                      <Mail className="w-3 h-3" /> {service.email}
-                    </span>
-                  )}
-                </div>
-              )}
-              {service.notas && (
-                <div className="px-3 py-2 rounded-xl bg-amber-50/70 border border-amber-100">
-                  <h3 className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">Notas del equipo</h3>
-                  <p className="text-xs text-amber-900/80 whitespace-pre-wrap">{service.notas}</p>
-                </div>
-              )}
-            </div>
-          )}
 
           <hr className="border-gray-100" />
 
@@ -664,7 +595,7 @@ const ServiceDetailModal = ({ isOpen, onClose, service, usuarios, onEdit, onDele
             <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
               <MessageCircle className="w-3.5 h-3.5 text-blue-500" /> Bitácora / Chat del Servicio
             </h3>
-            <div className={`bg-slate-50 rounded-2xl p-3 flex flex-col border border-slate-200 ${service.mensajes?.length > 0 ? 'h-56' : 'h-36'}`}>
+            <div className="bg-gray-50 rounded-2xl p-4 flex flex-col h-72 border border-gray-200">
               <div className="flex-1 overflow-y-auto space-y-4 mb-4 custom-scrollbar pr-2">
                 {service.mensajes?.length > 0 ? service.mensajes.map((msg: any) => {
                   const isMe = msg.usuarioId === currentUser?.id;
@@ -699,8 +630,7 @@ const ServiceDetailModal = ({ isOpen, onClose, service, usuarios, onEdit, onDele
                 <button
                   onClick={handleEnviarMensaje}
                   disabled={enviando || !nuevoMensaje.trim()}
-                  className="w-10 h-10 text-white rounded-xl flex items-center justify-center disabled:opacity-50 transition-colors shrink-0"
-                  style={{ backgroundColor: AG_BRAND_BLUE }}
+                  className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center disabled:opacity-50 transition-colors shrink-0"
                 >
                   {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
@@ -729,7 +659,7 @@ const ServiceDetailModal = ({ isOpen, onClose, service, usuarios, onEdit, onDele
             <button onClick={() => onDelete(service.id)} className="p-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Eliminar">
               <Trash2 className="w-5 h-5" />
             </button>
-            <button onClick={() => onEdit(service)} className="flex-1 text-white py-3 rounded-xl font-medium shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 hover:opacity-90" style={{ backgroundColor: AG_BRAND_BLUE }}>
+            <button onClick={() => onEdit(service)} className="flex-1 bg-gray-900 hover:bg-gray-800 text-white py-3 rounded-xl font-medium shadow-lg shadow-gray-200 active:scale-95 transition-all flex items-center justify-center gap-2">
               <Edit3 className="w-4 h-4" /> Editar / Gestionar Servicio
             </button>
           </div>
@@ -869,7 +799,7 @@ const ClienteCombobox = ({ clientes, value, onChange }: { clientes: any[], value
   );
 };
 
-const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, clientes, usuarios, cargaByUserId, cargaLoading }: any) => {
+const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, clientes, usuarios }: any) => {
   const [formData, setFormData] = useState(initialData);
   const [activeStep, setActiveStep] = useState(0);
   const [uploadStates, setUploadStates] = useState<FileUploadState[]>([]);
@@ -1130,20 +1060,18 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Asignar Personal</h3>
-                  <p className="text-xs text-[#2464A3] mt-0.5">Se enviará una notificación a sus celulares/PC.</p>
+                  <p className="text-xs text-blue-500 mt-0.5">Se enviará una notificación a sus celulares/PC.</p>
                 </div>
               </div>
 
-              <TecnicoCargaLeyenda loading={cargaLoading} />
-
               {personasArray.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 p-3 bg-[#2464A3]/[0.05] rounded-xl border border-[#2464A3]/15">
+                <div className="flex flex-wrap gap-1.5 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
                   {personasArray.map((id: string) => {
                     const m = usuarios.find((u: any) => u.id === id);
                     return (
-                      <div key={id} className="flex items-center gap-1.5 bg-white border border-[#2464A3]/25 rounded-full pl-1 pr-2 py-0.5 shadow-sm">
+                      <div key={id} className="flex items-center gap-1.5 bg-white border border-blue-200 rounded-full pl-1 pr-2 py-0.5 shadow-sm">
                         <Avatar user={m} size="sm" />
-                        <span className="text-xs font-bold text-[#2464A3]">{m?.name || m?.nombre || 'Usuario Desconocido'}</span>
+                        <span className="text-xs font-bold text-blue-800">{m?.name || m?.nombre || 'Usuario Desconocido'}</span>
                         <button
                           onClick={() => handleChange('personas', personasArray.filter((i: string) => i !== id))}
                           className="text-gray-400 hover:text-red-500 ml-0.5"
@@ -1159,10 +1087,6 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {metrologosDisponibles.length > 0 ? metrologosDisponibles.map((m: any) => {
                   const selected = personasArray.includes(m.id);
-                  const carga: TecnicoCarga | undefined = cargaByUserId?.get(m.id);
-                  const cargaStyle = carga ? TECNICO_CARGA_STYLES[carga.nivel] : null;
-                  const pesado = carga?.nivel === 'saturado' || carga?.nivel === 'cargado';
-
                   return (
                     <div
                       key={m.id}
@@ -1172,37 +1096,14 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
                           : [...personasArray, m.id];
                         handleChange('personas', next);
                       }}
-                      title={describeCarga(carga)}
-                      className={`relative overflow-hidden flex items-center gap-3 p-3 pl-4 rounded-xl border cursor-pointer transition-all duration-200 select-none ${
-                        selected
-                          ? 'bg-[#2464A3]/[0.06] border-[#2464A3] ring-1 ring-[#2464A3]/25 shadow-sm'
-                          : carga?.nivel === 'saturado'
-                            ? 'bg-rose-50/50 border-rose-200 hover:border-rose-300'
-                            : 'bg-white border-gray-200 hover:border-[#2464A3]/40 hover:bg-[#2464A3]/[0.03]'
-                      } ${!selected && pesado ? 'opacity-[0.72] hover:opacity-100' : ''}`}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all select-none ${selected ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-400 shadow-sm' : 'bg-white border-gray-200 hover:border-blue-200 hover:bg-blue-50/30'}`}
                     >
-                      {cargaStyle && <span className={`absolute left-0 top-0 h-full w-1 ${cargaStyle.edge}`} />}
-
                       <Avatar user={m} size="md" />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{m.name || m.nombre}</p>
-                          {carga?.esMayorCarga && (
-                            <span className="flex-shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">
-                              Más cargado
-                            </span>
-                          )}
-                        </div>
-                        {carga ? (
-                          <div className="mt-1"><TecnicoCargaMeter carga={carga} /></div>
-                        ) : (
-                          <p className="text-xs text-gray-400 truncate">{m.position || m.puesto || m.role || 'Personal'}</p>
-                        )}
+                        <p className="text-sm font-semibold text-gray-900 truncate">{m.name || m.nombre}</p>
+                        <p className="text-xs text-gray-400 truncate">{m.position || m.puesto || m.role || 'Personal'}</p>
                       </div>
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${selected ? 'border-transparent' : 'border-gray-300'}`}
-                        style={selected ? { backgroundColor: AG_BRAND_BLUE } : undefined}
-                      >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${selected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
                         {selected && <Check className="w-3 h-3 text-white" />}
                       </div>
                     </div>
@@ -1285,7 +1186,7 @@ const ServiceFormModal = ({ isOpen, onClose, initialData, onSubmit, loading, cli
           {activeStep < FORM_STEPS.length - 1 ? (
             <button onClick={goNext} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition-all active:scale-95">Siguiente →</button>
           ) : (
-            <button onClick={handleSubmit} disabled={loading} className="px-6 py-2 text-white font-semibold rounded-xl flex items-center gap-2 transition-all disabled:opacity-70 active:scale-95 text-sm hover:opacity-90" style={{ backgroundColor: AG_BRAND_BLUE }}>
+            <button onClick={handleSubmit} disabled={loading} className="px-6 py-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-xl flex items-center gap-2 transition-all disabled:opacity-70 active:scale-95 text-sm">
               {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><CheckCircle2 className="w-4 h-4" /> Guardar</>}
             </button>
           )}
@@ -1426,8 +1327,6 @@ const FridayServiciosScreen: React.FC = () => {
     navigateTo(screen);
   }, [navigateTo]);
 
-  const { cargaByUserId, loading: cargaLoading } = useCargaTecnicos(Boolean(authUser), usuarios, servicios);
-
   useEffect(() => {
     if (!authUser) return;
 
@@ -1494,9 +1393,7 @@ const FridayServiciosScreen: React.FC = () => {
 
   const filteredServices = useMemo(() => servicios.filter(s => {
     const matchSearch = !filterText || s.titulo.toLowerCase().includes(filterText.toLowerCase()) || s.cliente.toLowerCase().includes(filterText.toLowerCase());
-    const matchStatus = filterStatus === 'todos'
-      || (filterStatus === 'critico_filter' && (s.prioridad === 'critica' || s.prioridad === 'alta'))
-      || s.estado === filterStatus;
+    const matchStatus = filterStatus === 'todos' || s.estado === filterStatus;
     const matchMyTasks = canEdit
       ? (!showOnlyMyTasks || (currentUserId && Array.isArray(s.personas) && s.personas.includes(currentUserId)))
       : true;
@@ -1644,37 +1541,41 @@ const FridayServiciosScreen: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col bg-[#eef2f7] font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50/50 font-sans text-slate-900 overflow-hidden">
       <main className="flex-1 flex flex-col h-full min-w-0 relative">
 
-        <header className="bg-white border-b border-slate-200 z-10 sticky top-0 shadow-sm">
+        <header className="bg-white/95 backdrop-blur-md border-b border-gray-200/80 z-10 sticky top-0 shadow-sm">
           <div className="px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <button onClick={() => navigateTo('menu')} className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors flex-shrink-0" title="Regresar al menú">
+              <button onClick={() => navigateTo('menu')} className="p-2 -ml-1 text-gray-500 hover:bg-gray-100 rounded-lg border border-transparent hover:border-gray-200 transition-colors flex-shrink-0" title="Regresar al menú">
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <img src={labLogo} alt="AG Metrology Logo" className="h-9 sm:h-10 w-auto object-contain flex-shrink-0" draggable={false} />
-              <div className="min-w-0 border-l border-slate-200 pl-3 sm:pl-4">
-                <h2 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight truncate">Gestión de Servicios</h2>
-                <p className="text-xs text-slate-500 hidden sm:block mt-0.5">Calibraciones · Mantenimientos · Verificaciones</p>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex-shrink-0 flex items-center justify-center p-1.5 bg-gradient-to-br from-slate-50 to-white rounded-xl border border-gray-100 shadow-sm">
+                  <img src={labLogo} alt="AG Metrology Logo" className="h-8 sm:h-9 w-auto object-contain drop-shadow-sm" />
+                </div>
+                <div className="h-9 w-px bg-gray-200 hidden sm:block flex-shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight truncate">Gestión de Servicios</h2>
+                  <p className="text-xs text-gray-500 hidden sm:block mt-0.5">Calibraciones · Mantenimientos · Verificaciones</p>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-60 group">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-[#2464A3] transition-colors" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                 <input
                   type="text"
                   placeholder="Buscar servicio o cliente..."
                   value={filterText}
                   onChange={e => setFilterText(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent focus:bg-white focus:border-[#2464A3] border rounded-xl outline-none transition-all text-sm"
+                  className="w-full pl-9 pr-4 py-2 bg-gray-100 border-transparent focus:bg-white focus:border-blue-400 border rounded-xl outline-none transition-all text-sm"
                 />
               </div>
               {canEdit && (
                 <button
                   onClick={() => { setSelectedService(null); setIsFormOpen(true); }}
-                  className="text-white px-4 py-2 rounded-xl font-semibold shadow-sm flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap text-sm hover:opacity-90"
-                  style={{ backgroundColor: AG_BRAND_BLUE }}
+                  className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-xl font-semibold shadow-lg flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap text-sm"
                 >
                   <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Nuevo</span>
                 </button>
@@ -1682,7 +1583,7 @@ const FridayServiciosScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 py-2.5 overflow-x-auto border-t border-slate-100 bg-[#f7f9fc] flex items-center gap-3 scrollbar-hide">
+          <div className="px-4 sm:px-6 py-2.5 overflow-x-auto border-t border-gray-100 bg-gradient-to-r from-slate-50/80 via-gray-50/60 to-slate-50/80 flex items-center gap-3 scrollbar-hide">
             {[
               { label: 'Todos', value: 'todos', count: stats.total, color: 'gray' },
               { label: 'Pendientes', value: 'programado', count: stats.pendientes, color: 'blue' },
@@ -1691,8 +1592,8 @@ const FridayServiciosScreen: React.FC = () => {
             ].map(f => (
               <button
                 key={f.value}
-                onClick={() => setFilterStatus(f.value)}
-                className={`flex flex-col items-start min-w-[88px] p-2.5 rounded-xl border transition-all ${filterStatus === f.value ? 'bg-white border-[#2464A3] shadow-md ring-1 ring-[#2464A3]/15' : 'bg-white border-slate-200 hover:border-[#2464A3]/30 hover:shadow-sm shadow-sm'}`}
+                onClick={() => setFilterStatus(f.value === 'critico_filter' ? filterStatus : f.value)}
+                className={`flex flex-col items-start min-w-[88px] p-2.5 rounded-xl border transition-all ${filterStatus === f.value ? 'bg-white border-blue-400 shadow-md ring-1 ring-blue-100' : 'bg-white/90 border-gray-200 hover:border-blue-200 hover:shadow-sm shadow-sm'}`}
               >
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{f.label}</span>
                 <span className={`text-lg font-black ${f.color === 'blue' ? 'text-blue-600' : f.color === 'amber' ? 'text-amber-600' : f.color === 'red' ? 'text-red-600' : 'text-gray-900'}`}>{f.count}</span>
@@ -1711,13 +1612,13 @@ const FridayServiciosScreen: React.FC = () => {
             {canEdit && (
               <button
                 onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
-                className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${showOnlyMyTasks ? 'bg-[#2464A3]/10 text-[#2464A3] border-[#2464A3]/20' : 'bg-white text-gray-500 border-gray-200'}`}
+                className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${showOnlyMyTasks ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-gray-200'}`}
               >
                 <User className="w-3.5 h-3.5" /> Mis asignaciones
               </button>
             )}
             {!canEdit && currentUserId && (
-              <span className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#2464A3]/10 text-[#2464A3] border border-[#2464A3]/15">
+              <span className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
                 <User className="w-3.5 h-3.5" /> Mis asignaciones
               </span>
             )}
@@ -1731,7 +1632,7 @@ const FridayServiciosScreen: React.FC = () => {
         </header>
 
         {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#eef2f7]">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gradient-to-br from-slate-100/80 via-gray-50 to-slate-100/60">
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
               {[1, 2, 3].map(i => <div key={i} className="h-64 bg-gray-200 rounded-2xl" />)}
@@ -1827,8 +1728,6 @@ const FridayServiciosScreen: React.FC = () => {
           loading={processing}
           clientes={clientes}
           usuarios={usuarios}
-          cargaByUserId={cargaByUserId}
-          cargaLoading={cargaLoading}
         />
 
         {previewAttachment && (
@@ -1851,8 +1750,7 @@ const FridayServiciosScreen: React.FC = () => {
         {canEdit && (
           <button
             onClick={() => { setSelectedService(null); setIsFormOpen(true); }}
-            className="lg:hidden fixed bottom-6 right-6 w-14 h-14 text-white rounded-full shadow-2xl flex items-center justify-center z-40 active:scale-90 transition-transform"
-            style={{ backgroundColor: AG_BRAND_BLUE }}
+            className="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-gray-900 text-white rounded-full shadow-2xl flex items-center justify-center z-40 active:scale-90 transition-transform"
           >
             <Plus className="w-6 h-6" />
           </button>

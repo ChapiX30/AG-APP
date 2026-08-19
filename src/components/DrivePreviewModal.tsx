@@ -101,28 +101,6 @@ async function fetchImageBlobUrl(sourceUrl: string, retries = 2): Promise<string
   throw lastError;
 }
 
-const NativeImagePreview: React.FC<{
-  url: string;
-  alt: string;
-  fallbackUrl?: string;
-}> = ({ url, alt, fallbackUrl }) => {
-  const [useFallback, setUseFallback] = useState(false);
-  const src = useFallback && fallbackUrl ? fallbackUrl : url;
-
-  return (
-    <div className="w-full h-full flex items-center justify-center overflow-auto touch-pan-y p-3 sm:p-6">
-      <img
-        src={src}
-        alt={alt}
-        className="max-w-full max-h-full object-contain shadow-lg rounded-lg select-none"
-        onError={() => {
-          if (!useFallback && fallbackUrl) setUseFallback(true);
-        }}
-      />
-    </div>
-  );
-};
-
 export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
   file,
   onClose,
@@ -211,7 +189,7 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
   const renderPreviewBody = () => {
     if (isPdf && pdfData) {
       return (
-        <div className="flex-1 min-h-0 w-full flex flex-col">
+        <div className="flex min-h-0 w-full flex-1 flex-col">
           <FileViewer
             key={`${file.fullPath}-${pdfData.byteLength}`}
             url={directUrl || file.url}
@@ -226,22 +204,23 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
 
     if (isImage && imagePreviewUrl) {
       return (
-        <NativeImagePreview
+        <FileViewer
           url={imagePreviewUrl}
-          alt={file.name}
-          fallbackUrl={directUrl !== imagePreviewUrl ? directUrl : undefined}
+          fileName={file.name}
+          maxHeight="100%"
+          style={{ height: "100%", minHeight: 0, flex: 1 }}
         />
       );
     }
 
     if (!isPdf && !isImage && directUrl) {
       return (
-        <div className="flex-1 min-h-0 w-full">
+        <div className="flex min-h-0 w-full flex-1 flex-col">
           <FileViewer
             url={directUrl}
             fileName={file.name}
             maxHeight="100%"
-            style={{ height: "100%", minHeight: 0 }}
+            style={{ height: "100%", minHeight: 0, flex: 1 }}
           />
         </div>
       );
@@ -322,7 +301,7 @@ export const DrivePreviewModal: React.FC<DrivePreviewModalProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 bg-[#f8f9fa] flex flex-col overflow-hidden relative min-h-0">
+          <div className="flex-1 bg-[#eceff3] flex flex-col overflow-hidden relative min-h-0">
           {loading ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-3">
               <Loader2 size={36} className="animate-spin text-blue-500" />

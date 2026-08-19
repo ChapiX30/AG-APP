@@ -8,9 +8,15 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { writeDriveFileMetadata } from '../utils/driveFileMetadata';
 import {
   collection, getDocs, query, where, doc, getDoc,
-  setDoc, addDoc, Timestamp, writeBatch,
+  setDoc, addDoc, Timestamp, writeBatch, runTransaction,
   onSnapshot, deleteDoc, serverTimestamp
 } from "firebase/firestore";
+import {
+  esCalibracionSitio,
+  hojaPerteneceAEmpresa,
+  normalizeEquipoIdKey,
+  splitEquipoIds,
+} from "../utils/hojaServicioMatch";
 import { getAuth } from 'firebase/auth';
 import { finalizeServicioFromHoja, registerServicioInicioFromWorksheet } from '../utils/servicioAutomation';
 import { encolarCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
@@ -18,6 +24,7 @@ import { watchAlertaCorreo } from '../utils/alertaCorreoWatcher';
 import { useAuth } from '../hooks/useAuth';
 import { useAppDialog } from '../hooks/useAppDialog';
 import { isHiddenTestAccount } from '../utils/hiddenUsers';
+import { ensureHojasServicioIdsReparados, mensajeReparacionHojasServicio } from '../utils/repararHojasServicioIds';
 import toast, { Toaster } from 'react-hot-toast';
 import logoImage from '../assets/lab_logo.png';
 import { ScreenShell } from './ui/ScreenShell';
@@ -81,19 +88,30 @@ const formatDate = (dateString: string): string => {
   return new Intl.DateTimeFormat('es-MX', options).format(date);
 };
 
+function parseHsdgNumber(folio?: string): number {
+  const raw = String(folio || '');
+  if (!raw.toUpperCase().startsWith('HSDG-')) return 0;
+  const num = parseInt(raw.replace(/HSDG-/i, ''), 10);
+  return Number.isNaN(num) ? 0 : num;
+}
+
 async function getNextFolio(): Promise<string> {
   const folioPrefix = 'HSDG-';
-  const q = query(collection(db, "hojasDeServicio"));
-  const querySnapshot = await getDocs(q);
-  let lastNumber = 0;
-  querySnapshot.forEach(docSnapshot => {
+  const querySnapshot = await getDocs(collection(db, "hojasDeServicio"));
+  let scannedMax = 0;
+  querySnapshot.forEach((docSnapshot) => {
     const data = docSnapshot.data();
-    if (data.folio && typeof data.folio === 'string' && data.folio.startsWith(folioPrefix)) {
-      const num = parseInt(data.folio.replace(folioPrefix, ''), 10);
-      if (!isNaN(num) && num > lastNumber) lastNumber = num;
-    }
+    scannedMax = Math.max(scannedMax, parseHsdgNumber(data.folio), parseHsdgNumber(docSnapshot.id));
   });
-  const nextNumber = lastNumber + 1;
+
+  const contadorRef = doc(db, "contadores", "HSDG");
+  let nextNumber = scannedMax + 1;
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(contadorRef);
+    const current = snap.exists() ? Number(snap.data().valor) || 0 : 0;
+    nextNumber = Math.max(current, scannedMax) + 1;
+    transaction.set(contadorRef, { valor: nextNumber, prefijo: "HSDG" }, { merge: true });
+  });
   return folioPrefix + nextNumber.toString().padStart(4, '0');
 }
 
@@ -167,11 +185,11 @@ function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalib
 
         equipos.forEach((equipo: EquipoCalibrado) => {
             if (equipo.id) {
-                equipo.id.split(',').forEach((idSingle: string) => {
+                splitEquipoIds(equipo.id).forEach((idSingle: string) => {
                     const trimmedId = idSingle.trim();
                     if (!trimmedId) return;
-                    const key = trimmedId.toUpperCase();
-                    if (idsVistos.has(key)) return;
+                    const key = normalizeEquipoIdKey(trimmedId);
+                    if (!key || idsVistos.has(key)) return;
                     idsVistos.add(key);
                     equiposUnificadosPorTecnico[tecnico].push({
                         id: trimmedId,
@@ -190,7 +208,7 @@ function organizarEquiposUnificado(equiposCalibrados: Record<string, EquipoCalib
     return resultado;
 }
 
-async function generarPDFFormal({
+export async function generarPDFFormal({
   campos,
   firmaTecnico,
   firmaCliente,
@@ -690,27 +708,24 @@ export default function HojaDeServicioScreen() {
       });
 
       try {
-        const batch = writeBatch(db);
-        const todosLosIDs = Object.values(equiposCalibrados).flat().map(eq => eq.id);
-        
-        const chunkSize = 30;
-        for (let i = 0; i < todosLosIDs.length; i += chunkSize) {
-            const chunk = todosLosIDs.slice(i, i + chunkSize);
-            if(chunk.length === 0) continue;
-
-            const qArchivos = query(collection(db, "hojasDeTrabajo"), where("id", "in", chunk));
-            const querySnapshot = await getDocs(qArchivos);
-            
-            querySnapshot.forEach((docArchivo) => {
-                batch.update(docArchivo.ref, { 
-                    folio: campos.folio,
-                    servicioVinculado: true 
-                });
+        const docIds = [...new Set(
+          Object.values(equiposCalibrados)
+            .flat()
+            .map((eq) => eq.docId)
+            .filter(Boolean)
+        )];
+        const chunkSize = 400;
+        for (let i = 0; i < docIds.length; i += chunkSize) {
+          const batch = writeBatch(db);
+          docIds.slice(i, i + chunkSize).forEach((docId) => {
+            batch.update(doc(db, "hojasDeTrabajo", docId), {
+              folio: campos.folio,
+              servicioVinculado: true,
             });
+          });
+          await batch.commit();
         }
-        await batch.commit();
         console.log("Archivos etiquetados correctamente con el folio:", campos.folio);
-
       } catch (error) {
         console.error("Error etiquetando archivos:", error);
       }
@@ -861,6 +876,16 @@ export default function HojaDeServicioScreen() {
   }, []);
 
   useEffect(() => {
+    if (!user?.id) return;
+    void ensureHojasServicioIdsReparados()
+      .then((r) => {
+        const msg = mensajeReparacionHojasServicio(r);
+        if (msg) toast.success(msg);
+      })
+      .catch((err) => console.error("[HojaDeServicio] Reparación IDs:", err));
+  }, [user?.id]);
+
+  useEffect(() => {
     const fetchEmpresas = async () => {
       const q = query(collection(db, "clientes"));
       const qs = await getDocs(q);
@@ -902,17 +927,10 @@ export default function HojaDeServicioScreen() {
 
     setLoadingEquipos(true);
 
-    const q = query(
-      collection(db, "hojasDeTrabajo"),
-      where("cliente", "==", campos.empresa),
-      where("fecha", "==", campos.fecha)
-    );
-
-    const unsubscribe = onSnapshot(q, (qs) => {
+    const processDocs = (docs: Map<string, { id: string; data: () => Record<string, unknown> }>) => {
       const equiposPorTecnico: Record<string, EquipoCalibrado[]> = {};
       let earliestSitioMs: number | null = null;
 
-      /** Mejor candidato por ID de equipo (evita listar el mismo EP dos veces). */
       type Candidato = {
         id: string;
         docId: string;
@@ -923,37 +941,40 @@ export default function HojaDeServicioScreen() {
       };
       const mejorPorId = new Map<string, Candidato>();
 
-      qs.forEach(docSnap => {
+      docs.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.lugarCalibracion && data.lugarCalibracion.toLowerCase().includes("sitio")) {
-          const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
+        if (!esCalibracionSitio(data)) return;
+        if (!hojaPerteneceAEmpresa(data, campos.empresa, campos.empresaId, empresas)) return;
 
-          const ts = new Date(data.createdAt || data.timestamp || 0).getTime();
-          if (ts > 0 && (earliestSitioMs === null || ts < earliestSitioMs)) {
-            earliestSitioMs = ts;
-          }
+        const tecnico = data.tecnicoResponsable || data.tecnico || data.nombre || 'Sin Técnico';
 
-          const idBase = String(data.id || '').toUpperCase().trim();
-          const certificadoString = String(data.certificado || '').toUpperCase().trim();
+        const ts = new Date(String(data.createdAt || data.timestamp || 0)).getTime();
+        if (ts > 0 && (earliestSitioMs === null || ts < earliestSitioMs)) {
+          earliestSitioMs = ts;
+        }
 
-          const classificationString = certificadoString || idBase;
-          const isAGRD = classificationString.includes('AGRD-');
-          const estado: 'CALIBRADO' | 'RECHAZADO' = isAGRD ? 'RECHAZADO' : 'CALIBRADO';
+        const certificadoString = String(data.certificado || '').toUpperCase().trim();
+        const isAGRD = certificadoString.includes('AGRD-');
+        const estado: 'CALIBRADO' | 'RECHAZADO' = isAGRD ? 'RECHAZADO' : 'CALIBRADO';
 
-          if (!idBase) return;
+        const ids = splitEquipoIds(String(data.id || ''));
+        if (ids.length === 0) return;
 
-          const score =
-            (String(data.pdfURL || "").includes("firebasestorage") ? 4 : 0) +
-            (String(data.status || "").toLowerCase() === "completed" ? 2 : 0) +
-            (String(data.status_certificado || "").toLowerCase().includes("generado") ||
-            String(data.status_certificado || "").toLowerCase().includes("firmado")
-              ? 1
-              : 0);
+        const score =
+          (String(data.pdfURL || "").includes("firebasestorage") ? 4 : 0) +
+          (String(data.status || "").toLowerCase() === "completed" ? 2 : 0) +
+          (String(data.status_certificado || "").toLowerCase().includes("generado") ||
+          String(data.status_certificado || "").toLowerCase().includes("firmado")
+            ? 1
+            : 0);
 
-          const prev = mejorPorId.get(idBase);
+        ids.forEach((rawId) => {
+          const key = normalizeEquipoIdKey(rawId);
+          if (!key) return;
+          const prev = mejorPorId.get(key);
           if (!prev || score > prev.score || (score === prev.score && ts >= prev.ts)) {
-            mejorPorId.set(idBase, {
-              id: idBase,
+            mejorPorId.set(key, {
+              id: rawId.trim().toUpperCase(),
               docId: docSnap.id,
               estado,
               tecnico: String(tecnico),
@@ -961,7 +982,7 @@ export default function HojaDeServicioScreen() {
               ts: Number.isFinite(ts) ? ts : 0,
             });
           }
-        }
+        });
       });
 
       mejorPorId.forEach((eq) => {
@@ -1003,13 +1024,38 @@ export default function HojaDeServicioScreen() {
         setCampos(prev => ({ ...prev, tecnicoResponsable: '' }));
       }
       setLoadingEquipos(false);
+    };
+
+    const buckets = [new Map<string, { id: string; data: () => Record<string, unknown> }>(), new Map<string, { id: string; data: () => Record<string, unknown> }>()];
+    const rebuild = () => {
+      const merged = new Map<string, { id: string; data: () => Record<string, unknown> }>();
+      buckets.forEach((bucket) => bucket.forEach((docSnap, id) => merged.set(id, docSnap)));
+      processDocs(merged);
+    };
+
+    const qFecha = query(collection(db, "hojasDeTrabajo"), where("fecha", "==", campos.fecha));
+    const qFechaCalib = query(collection(db, "hojasDeTrabajo"), where("fecha_calib", "==", campos.fecha));
+
+    const unsubFecha = onSnapshot(qFecha, (qs) => {
+      buckets[0] = new Map(qs.docs.map((d) => [d.id, d]));
+      rebuild();
     }, (error) => {
       console.error("Error al cargar equipos en tiempo real:", error);
       setLoadingEquipos(false);
     });
 
-    return () => unsubscribe();
-  }, [campos.empresa, campos.fecha]);
+    const unsubFechaCalib = onSnapshot(qFechaCalib, (qs) => {
+      buckets[1] = new Map(qs.docs.map((d) => [d.id, d]));
+      rebuild();
+    }, (error) => {
+      console.error("Error al cargar equipos (fecha_calib):", error);
+    });
+
+    return () => {
+      unsubFecha();
+      unsubFechaCalib();
+    };
+  }, [campos.empresa, campos.empresaId, campos.fecha, empresas]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -1533,7 +1579,7 @@ export default function HojaDeServicioScreen() {
                 <div className="text-center py-8 text-[#8B8D8C] flex flex-col items-center">
                   <FileText className="mb-2 opacity-40" size={32} />
                   <p className="font-semibold text-[#2464A3] text-sm">Sin equipos registrados</p>
-                  <p className="text-xs mt-1">Selecciona empresa y fecha válidas.</p>
+                  <p className="text-xs mt-1">Elige empresa y la misma fecha de las hojas de trabajo en sitio.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
