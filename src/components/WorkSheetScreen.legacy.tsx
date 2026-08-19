@@ -1,6 +1,6 @@
 /**
- * Respaldo anterior: WorkSheetScreen.legacy.tsx
- * (puntos auto + PASA/NO PASA; masa y eléctrica no cambian)
+ * Respaldo de WorkSheetScreen (19 ago 2026) antes de puntos auto + PASA/NO PASA.
+ * No se importa en la app. Para volver atrás: copiar este archivo sobre WorkSheetScreen.tsx
  */
 import React, { useEffect, useRef, useState, useCallback, useReducer, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -63,7 +63,6 @@ import { isRetriableNetworkError } from "../utils/worksheetOfflineQueue";
 import type { WorksheetState, BackgroundSaveJob } from "../types/worksheet";
 import { FlowScreenHeader } from "./worksheet-flow/FlowScreenHeader";
 import { FlowCard, FlowSection } from "./worksheet-flow/FlowCard";
-import { MedicionPuntosTable } from "./worksheet-flow/MedicionPuntosTable";
 import { accentFromMagnitude } from "./worksheet-flow/flowTheme";
 import {
   getHoyFechaLocal,
@@ -2182,17 +2181,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                     ))}
                     </div>
                   </div>
-                ) : state.magnitud === "Presión" ? (
-                  <MedicionPuntosTable
-                    alcance={state.alcance}
-                    resolucion={state.resolucion}
-                    medicionPatron={state.medicionPatron}
-                    medicionInstrumento={state.medicionInstrumento}
-                    onChange={(patron, instrumento) => {
-                      dispatch({ type: 'SET_FIELD', field: 'medicionPatron', payload: patron });
-                      dispatch({ type: 'SET_FIELD', field: 'medicionInstrumento', payload: instrumento });
-                    }}
-                  />
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
