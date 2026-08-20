@@ -60,13 +60,16 @@ export default defineConfig({
                     },
                 ],
             },
-            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png', 'embedpdf/pdfium.wasm'],
+            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png'],
             workbox: {
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,
                 skipWaiting: false,
                 // Evita que caches viejos / precache peleen con el SW de FCM.
                 navigateFallbackDenylist: [/^\/api/, /^\/__/],
+                globIgnores: ['**/*.wasm', '**/embedpdf/**'],
+                // PDFium .wasm ~4.6 MB; no va en precache del SW (se carga al abrir un PDF).
+                maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
             },
             // En build de Capacitor el SW PWA aporta más problemas que beneficios.
             devOptions: {
