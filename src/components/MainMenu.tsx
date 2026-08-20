@@ -1,7 +1,5 @@
 /**
  * MainMenu — diseño renovado.
- * Para volver al diseño anterior:
- *   Copy-Item src/components/MainMenu.legacy.tsx src/components/MainMenu.tsx
  */
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useNavigation } from '../hooks/useNavigation';
@@ -62,8 +60,7 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import toast, { Toaster } from 'react-hot-toast';
 import { autoStartServiciosIfDue, getHoyFechaLocal, hasCelesticaAsignacionHoy } from '../utils/servicioAutomation';
 import { ensureHojasServicioIdsReparados, mensajeReparacionHojasServicio } from '../utils/repararHojasServicioIds';
 import { getTotalWorksheetQueueCount } from '../utils/worksheetQueueRunner';
@@ -521,65 +518,24 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
       const usersSnap = await getDocs(collection(db, 'usuarios'));
       const visibleDocs = usersSnap.docs.filter((d) => !isHiddenTestAccount(d.data()));
       const allUids = visibleDocs.map(d => d.id);
-      
-      // Recolectar todos los tokens de FCM
-      const tokens: string[] = [];
-      visibleDocs.forEach(d => {
-        const userData = d.data();
-        if (userData.fcmTokens && typeof userData.fcmTokens === 'object') {
-          Object.keys(userData.fcmTokens).forEach(t => { if (t && !tokens.includes(t)) tokens.push(t); });
-        } else if (userData.fcmToken && typeof userData.fcmToken === 'string') {
-          if (!tokens.includes(userData.fcmToken)) tokens.push(userData.fcmToken);
-        }
-      });
 
       const autorSnap = await getDoc(doc(db, 'usuarios', uid));
       const autorNombre = autorSnap.exists() ? (autorSnap.data().name || 'Calidad') : 'Calidad';
 
-      // 1. Guardar en Firestore
+      // 1. Guardar en Firestore — FCM lo envía Cloud Function `enviarNotificacionCalidad`
+      //    (tipo aviso_global). No usar VITE_FCM_SERVER_KEY en el cliente.
       await addDoc(collection(db, 'notificaciones'), {
-        type, title: title.trim(), body: body.trim(),
-        autorUid: uid, autorNombre,
-        readBy: [], destinatarios: allUids,
-        timestamp: serverTimestamp(), global: true,
+        type,
+        tipo: 'aviso_global',
+        title: title.trim(),
+        body: body.trim(),
+        autorUid: uid,
+        autorNombre,
+        readBy: [],
+        destinatarios: allUids,
+        timestamp: serverTimestamp(),
+        global: true,
       });
-
-      // 2. Enviar Push Notification (FCM)
-      const serverKey = import.meta.env.VITE_FCM_SERVER_KEY as string | undefined;
-      if (serverKey && tokens.length > 0) {
-        const iconos: Record<string, string> = { info: '💡', warning: '⚠️', success: '✅', error: '🚨' };
-        const emoji = iconos[type] || '📢';
-        const color = type === 'error' ? '#E11D48' : type === 'success' ? '#10B981' : type === 'warning' ? '#F59E0B' : '#3B82F6';
-
-        const chunks: string[][] = [];
-        for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
-
-        await Promise.allSettled(chunks.map(chunk => 
-          fetch('https://fcm.googleapis.com/fcm/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `key=${serverKey}` },
-            body: JSON.stringify({
-              registration_ids: chunk,
-              notification: {
-                title: `${emoji} ${title.trim()}`,
-                body: body.trim(),
-                icon: '/bell.png',
-              },
-              data: { url: '/', type: 'aviso_global' },
-              android: {
-                priority: 'high',
-                notification: {
-                  color: color,
-                  channel_id: 'ag_avisos',
-                  visibility: 'public', // ESTO ES CLAVE para la pantalla de bloqueo
-                  default_sound: true,
-                  default_vibrate_timings: true,
-                }
-              }
-            })
-          })
-        ));
-      }
 
       toast.success('¡Aviso enviado a todos!');
       setTitle(''); setBody(''); setType('info'); setShowCompose(false);
@@ -1578,7 +1534,7 @@ const activateMenuItem = (
 };
 
 const MenuGridCard = ({
-  item, index, isDisabled, onNavigate, hideCategory, badgeCount, disabledBadge = 'Pronto', disabledReason,
+  item, index, isDisabled, onNavigate, hideCategory, badgeCount, disabledBadge = 'Bloqueado', disabledReason,
 }: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number; disabledBadge?: string; disabledReason?: string }) => {
   const rgb = getCategoryRgb(item.category);
   return (
@@ -1589,7 +1545,7 @@ const MenuGridCard = ({
       role="button"
       tabIndex={isDisabled ? -1 : 0}
       aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (${disabledReason || 'próximamente'})` : item.title}
+      aria-label={isDisabled ? `${item.title} (${disabledReason || 'no disponible'})` : item.title}
       title={isDisabled ? (disabledReason || undefined) : undefined}
       onClick={() => !isDisabled && onNavigate(item.id)}
       onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
@@ -1642,7 +1598,7 @@ const MenuGridCard = ({
 };
 
 const MenuListRow = ({
-  item, index, isDisabled, onNavigate, badgeCount, disabledBadge = 'Pronto', disabledReason,
+  item, index, isDisabled, onNavigate, badgeCount, disabledBadge = 'Bloqueado', disabledReason,
 }: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number; disabledBadge?: string; disabledReason?: string }) => {
   const rgb = getCategoryRgb(item.category);
   return (
@@ -1652,7 +1608,7 @@ const MenuListRow = ({
       role="button"
       tabIndex={isDisabled ? -1 : 0}
       aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (${disabledReason || 'próximamente'})` : item.title}
+      aria-label={isDisabled ? `${item.title} (${disabledReason || 'no disponible'})` : item.title}
       title={isDisabled ? (disabledReason || undefined) : undefined}
       onClick={() => !isDisabled && onNavigate(item.id)}
       onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
@@ -2019,7 +1975,11 @@ export const MainMenu: React.FC = () => {
 
   const getMenuItemDisabled = useCallback((itemId: string): { disabled: boolean; badge?: string; reason?: string } => {
     if (itemId === 'formatos' && !canOpenFormatos) {
-      return { disabled: true, badge: 'Pronto', reason: 'próximamente' };
+      return {
+        disabled: true,
+        badge: 'Rol',
+        reason: 'Solo Calidad, Admin o Metrólogo',
+      };
     }
     if (itemId === 'permisos-trabajo' && !canOpenPermisosTR) {
       return {
@@ -2108,7 +2068,7 @@ export const MainMenu: React.FC = () => {
 
   return (
     <>
-      <ToastContainer position="top-center" autoClose={2800} theme="colored" newestOnTop />
+      <Toaster position="top-center" toastOptions={{ duration: 2800, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
       <ThemeStyle />
       <div className="min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-mesh ag-text transition-colors relative" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 

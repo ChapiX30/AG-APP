@@ -79,7 +79,18 @@ async function processOneOfflineItem(
   }
 
   // Firestore primero: evita PDF huérfano si el certificado ya es de otro equipo.
-  const baseData = { ...item.data, status: "completed" };
+  const fechaCalib = String(item.data?.fecha_calib || item.data?.fecha || "").trim();
+  const tecnicoNombre = String(
+    item.data?.tecnicoResponsable || item.data?.tecnico || item.data?.nombre || ""
+  ).trim();
+  const baseData: Record<string, unknown> = {
+    ...item.data,
+    status: "completed",
+    ...(fechaCalib ? { fecha_calib: fechaCalib } : {}),
+    ...(tecnicoNombre
+      ? { tecnico: tecnicoNombre, tecnicoResponsable: tecnicoNombre }
+      : {}),
+  };
   if (docRefId) {
     await updateDoc(doc(db, "hojasDeTrabajo", docRefId), baseData);
   } else {
@@ -96,21 +107,30 @@ async function processOneOfflineItem(
   const uploadResult = await uploadBytes(pdfRef, blob);
   const pdfURL = await getDownloadURL(pdfRef);
 
-  try {
-    const uploadedBy =
-      getTechnicianFolderName(user) ||
-      item.nombreArchivo.split("/")[1] ||
-      "Desconocido";
-    await writeDriveFileMetadata(item.nombreArchivo, uploadResult, uploadedBy, {
-      workDate: item.data?.fecha as string | undefined,
-      ubicacion_real:
-        item.data?.lugarCalibracion === "sitio" ? "Servicio en Sitio" : "Laboratorio",
-    });
-  } catch (metaErr) {
-    console.error("[SaveProcessor] metadata Drive:", metaErr);
+  let driveMetaOk = false;
+  const uploadedBy =
+    getTechnicianFolderName(user) ||
+    item.nombreArchivo.split("/")[1] ||
+    "Desconocido";
+  for (let attempt = 0; attempt < 3 && !driveMetaOk; attempt++) {
+    try {
+      await writeDriveFileMetadata(item.nombreArchivo, uploadResult, uploadedBy, {
+        workDate: item.data?.fecha as string | undefined,
+        ubicacion_real:
+          item.data?.lugarCalibracion === "sitio" ? "Servicio en Sitio" : "Laboratorio",
+      });
+      driveMetaOk = true;
+    } catch (metaErr) {
+      console.error(`[SaveProcessor] metadata Drive intento ${attempt + 1}:`, metaErr);
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
   }
 
-  const updates: Record<string, string> = { pdfURL, cargado_drive: "Si", status: "completed" };
+  const updates: Record<string, string> = {
+    pdfURL,
+    cargado_drive: driveMetaOk ? "Si" : "Pendiente",
+    status: "completed",
+  };
   await uploadFotoIfNeeded(item, updates);
   await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
 
@@ -120,6 +140,7 @@ async function processOneOfflineItem(
     await syncServicioInicioFromWorksheetRecord({
       fecha: String(fullData.fecha || ""),
       cliente: String(fullData.cliente || ""),
+      clienteId: typeof fullData.clienteId === "string" ? fullData.clienteId : undefined,
       lugarCalibracion: String(fullData.lugarCalibracion || ""),
       createdAt: String(fullData.createdAt || ""),
       timestamp: typeof fullData.timestamp === "number" ? fullData.timestamp : item.timestamp,

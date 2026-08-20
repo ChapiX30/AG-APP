@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, PlusCircle, X } from 'lucide-react';
 import { VernierIcon } from './icons/VernierIcon';
 import { format } from 'date-fns';
-import { toast } from 'react-toastify';
+import { toast } from 'react-hot-toast';
 import { APP_SCREEN_OPTIONS, createAppNovedad } from '../utils/appNovedades';
 
 interface NovedadesComposeModalProps {

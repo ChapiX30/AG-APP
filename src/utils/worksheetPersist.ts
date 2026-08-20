@@ -167,11 +167,17 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
 
   const clienteId = String(stateForFirestore.clienteId || existingData?.clienteId || "").trim();
 
+  const tecnicoNombre = String(stateForFirestore.nombre || job.user?.name || "").trim();
+
   const fullData: Record<string, unknown> = {
     ...stateForFirestore,
     lugarCalibracion: lugarNormalizado,
     folio: stateForFirestore.certificado,
+    // Alias usados por Friday / Hoja de Servicio / reconciliación Drive
+    fecha_calib: stateForFirestore.fecha,
     serie: stateForFirestore.numeroSerie,
+    tecnico: tecnicoNombre,
+    tecnicoResponsable: tecnicoNombre,
     status: "completed",
     priority: "medium",
     status_equipo: "Calibrado",
@@ -303,15 +309,21 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
     const pdfRef = ref(storage, nombreArchivo);
     const uploadResult = await uploadBytes(pdfRef, blob);
     updates.pdfURL = await getDownloadURL(pdfRef);
-    try {
-      await writeDriveFileMetadata(nombreArchivo, uploadResult, getTechnicianFolderName(job.user), {
-        ubicacion_real: lugarNormalizado === "sitio" ? "Servicio en Sitio" : "Laboratorio",
-        workDate: state.fecha,
-      });
-    } catch (metaErr) {
-      console.error("[WorkSheet] Error al registrar metadata en Drive:", metaErr);
+
+    let driveMetaOk = false;
+    for (let attempt = 0; attempt < 3 && !driveMetaOk; attempt++) {
+      try {
+        await writeDriveFileMetadata(nombreArchivo, uploadResult, getTechnicianFolderName(job.user), {
+          ubicacion_real: lugarNormalizado === "sitio" ? "Servicio en Sitio" : "Laboratorio",
+          workDate: state.fecha,
+        });
+        driveMetaOk = true;
+      } catch (metaErr) {
+        console.error(`[WorkSheet] metadata Drive intento ${attempt + 1}:`, metaErr);
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
     }
-    updates.cargado_drive = "Si";
+    updates.cargado_drive = driveMetaOk ? "Si" : "Pendiente";
 
     if (docRefId) {
       await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);
@@ -327,6 +339,7 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
     await syncServicioInicioFromWorksheetRecord({
       fecha: state.fecha,
       cliente: state.cliente,
+      clienteId: typeof fullData.clienteId === "string" ? fullData.clienteId : undefined,
       lugarCalibracion: lugarNormalizado,
       createdAt: fullData.createdAt as string,
       timestamp: fullData.timestamp as number,

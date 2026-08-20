@@ -180,9 +180,21 @@ const renderScreen = (screen: string, user: any) => {
     case 'hoja-servicio': return <HojaDeServicioScreen />;
     case 'calibration-manager': return <CalibrationManager />;
     case 'drive': return <DriveScreen />;
-    case 'calibration-stats':
+    case 'calibration-stats': {
+      // Alineado con MainMenu: jefe (admin/gerente) o superadmin — no solo "administrativo".
       const role = (user?.puesto || user?.position || user?.role || "").trim().toLowerCase();
-      return role === "administrativo" ? <CalibrationStatsScreen /> : <MainMenu />;
+      const email = (user?.email || "").trim().toLowerCase();
+      const superAdmins = new Set([
+        "jesus.sustaita@agsolutions.com",
+        "admin@agsolutions.com",
+        "mgaese08@gmail.com",
+      ]);
+      const canStats =
+        superAdmins.has(email) ||
+        role.includes("admin") ||
+        role.includes("gerente");
+      return canStats ? <CalibrationStatsScreen /> : <MainMenu />;
+    }
     case 'tvdashboard': return <TVDashboardScreen />; // <-- AQUÍ SE AGREGÓ EL MODO TV
     case 'programa-calibracion': return <ProgramaCalibracionScreen />;
     case 'control-prestamos': return <ControlPrestamosScreen />;

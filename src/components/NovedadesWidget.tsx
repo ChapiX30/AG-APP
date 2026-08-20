@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ChevronRight, Loader2, PlusCircle, Trash2, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { toast } from 'react-toastify';
+import { toast } from 'react-hot-toast';
 import type { AppUpdate } from '../config/appUpdates';
 import { VernierIcon } from './icons/VernierIcon';
 import { deleteAppNovedad, isFirestoreAppNovedad } from '../utils/appNovedades';

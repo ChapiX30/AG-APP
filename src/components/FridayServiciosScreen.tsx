@@ -1,7 +1,5 @@
 /**
  * Gestión de Servicios — pulido visual (ago 2026).
- * Para volver al diseño anterior:
- *   Copy-Item src/components/FridayServiciosScreen.legacy.tsx src/components/FridayServiciosScreen.tsx
  */
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { 
@@ -22,8 +20,7 @@ import { db, storage } from '../utils/firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAppDialog } from '../hooks/useAppDialog';
-import { toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import toast from 'react-hot-toast';
 import { FileViewer } from './FileViewer';
 import labLogo from '../assets/lab_logo.png';
 

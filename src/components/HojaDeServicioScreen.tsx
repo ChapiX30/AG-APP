@@ -35,7 +35,6 @@ const AG_GRAY = '#8B8D8C';
 
 /**
  * UI V2 (pantalla). PDF: diseño original.
- * Para revertir también la pantalla: usa `HojaDeServicioScreen.backup.tsx`.
  */
 export const HOJA_SERVICIO_DESIGN_VERSION = 'v2-ui' as const;
 

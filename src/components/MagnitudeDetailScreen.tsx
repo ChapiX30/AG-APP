@@ -23,6 +23,8 @@ import {
   reconciliarContadorHuecos,
   normalizeHuecos,
   parseConsecutivo,
+  consecutivoDocId,
+  GRACE_RECLAMAR_HUERFANOS_MIN,
 } from '../utils/firebaseConsecutivos';
 import { deleteWorksheetStorageForHoja } from '../utils/worksheetStorageCleanup';
 import { 
@@ -131,7 +133,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
             `[Consecutivos] ${prefijo}: ${reconciliado.huecosEliminados} huecos falsos eliminados, valor ${reconciliado.valorAnterior}→${reconciliado.valorNuevo}`
           );
         }
-        await auditarHuerfanos(selectedMagnitude, anio, 60);
+        await auditarHuerfanos(selectedMagnitude, anio, GRACE_RECLAMAR_HUERFANOS_MIN);
 
         const contadorSnap = await getDoc(doc(db, "contadores", prefijo));
         if (contadorSnap.exists() && String(contadorSnap.data().anio) === anio) {
@@ -229,6 +231,15 @@ export const MagnitudeDetailScreen: React.FC = () => {
           id: hoja.id,
         });
         await deleteDoc(doc(db, "hojasDeTrabajo", docu.id));
+      }
+
+      // Por si quedó el ID canónico sin coincidir en el where de magnitud
+      if (parsed) {
+        try {
+          await deleteDoc(doc(db, "consecutivos", consecutivoDocId(parsed.prefijo, parsed.numero, parsed.anio)));
+        } catch {
+          /* puede no existir */
+        }
       }
 
       setDeshacerModalOpen(false);

@@ -1,11 +1,12 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { differenceInDays, parseISO } from 'date-fns'; 
 import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore'; 
 import { db } from '../utils/firebase';
 import { useAppDialog } from '../hooks/useAppDialog';
+import labLogo from '../assets/lab_logo.png';
 import { 
   Package, Plus, Loader2, AlertTriangle, 
   Camera, X, Save, FileText, Briefcase, Info, Printer
@@ -64,7 +65,8 @@ type ToolItem = {
   marca: string;
   modelo: string;
   serie: string;
-  estadoProceso?: PatronBase['estadoProceso']; 
+  estadoProceso?: PatronBase['estadoProceso'];
+  ownerKey?: string;
 };
 
 type FormInputs = {
@@ -108,6 +110,8 @@ const ETIQUETADORAS_CATALOG: { persona: string; ownerKey: string; item: ToolItem
   { persona: 'Dante', ownerKey: 'dante', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X1Y00150' } },
   { persona: 'Angel', ownerKey: 'angel', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700192' } },
   { persona: 'Edgar', ownerKey: 'edgar', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'X69X2700191' } },
+  { persona: 'Mario', ownerKey: 'mario', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'S/N' } },
+  { persona: 'Ricardo', ownerKey: 'ricardo', item: { herramienta: 'Etiquetadora Epson', qty: '1', marca: 'Epson', modelo: 'LW-PX400', serie: 'S/N' } },
 ];
 
 const resolveBackpackIdForUsuario = (usuarioNombre: string): string | null => {
@@ -128,8 +132,22 @@ const resolveOwnerKeyForUsuario = (usuarioNombre: string): string | null => {
   return null;
 };
 
-const isEtiquetadoraInList = (tools: ToolItem[], serie: string) =>
-  tools.some(t => t.serie === serie && (t.herramienta.toLowerCase().includes('etiquetadora') || t.herramienta.toLowerCase().includes('impresora')));
+const GENERIC_SERIALS = new Set(['s/n', 'n/a', 's/m', 'sm']);
+
+const isPrinterTool = (t: ToolItem) => {
+  const name = t.herramienta.toLowerCase();
+  return name.includes('etiquetadora') || name.includes('impresora');
+};
+
+const isEtiquetadoraInList = (tools: ToolItem[], etiq: (typeof ETIQUETADORAS_CATALOG)[number]) =>
+  tools.some(t => {
+    if (!isPrinterTool(t)) return false;
+    if (t.ownerKey && t.ownerKey === etiq.ownerKey) return true;
+    const serie = (t.serie || '').trim();
+    const catalogSerie = (etiq.item.serie || '').trim();
+    if (!serie || GENERIC_SERIALS.has(serie.toLowerCase())) return false;
+    return serie === catalogSerie;
+  });
 
 const getVencimientoStatus = (fecha: string): PatronBase['status'] => {
     if (!fecha || fecha === 'Por Comprar' || fecha === '') return 'pendiente';
@@ -255,40 +273,318 @@ async function generateCelesticaPdf(data: FormInputs, allTools: ToolItem[]) {
   }
 }
 
+const PDF_AG_BLUE = rgb(36 / 255, 100 / 255, 163 / 255);
+const PDF_AG_BLUE_LIGHT = rgb(0.92, 0.96, 0.99);
+const PDF_TEXT = rgb(0.12, 0.14, 0.18);
+const PDF_MUTED = rgb(0.42, 0.45, 0.5);
+const PDF_BORDER = rgb(0.82, 0.86, 0.9);
+const PDF_ROW_ALT = rgb(0.965, 0.973, 0.984);
+const PDF_WHITE = rgb(1, 1, 1);
+
+function fitPdfText(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  const raw = (text || '').trim() || '-';
+  if (font.widthOfTextAtSize(raw, size) <= maxWidth) return raw;
+  let cut = raw;
+  while (cut.length > 1 && font.widthOfTextAtSize(`${cut}...`, size) > maxWidth) {
+    cut = cut.slice(0, -1);
+  }
+  return `${cut}...`;
+}
+
 async function generateGenericPdf(data: FormInputs, allTools: ToolItem[]) {
   try {
     const pdfDoc = await PDFDocument.create();
-    let page = pdfDoc.addPage();
-    const { height } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
-    let y = height - 50;
-    page.drawText('Registro de Salida de Herramienta', { x: 50, y, size: 18, font: fontBold });
-    y -= 30;
-    page.drawText(`Fecha: ${data.fecha}`, { x: 50, y, size: 10, font });
-    page.drawText(`Usuario: ${data.usuario}`, { x: 250, y, size: 10, font });
-    y -= 30;
-    
-    const headers = ['Herramienta', 'Cant', 'Marca', 'Modelo', 'Serie'];
-    const xPos = [50, 250, 300, 400, 500];
-    
-    headers.forEach((h, i) => page.drawText(h, { x: xPos[i], y, size: 10, font: fontBold }));
-    y -= 15;
 
-    allTools.forEach(t => {
-        if (y < 50) { page = pdfDoc.addPage(); y = height - 50; }
-        page.drawText(cleanToolNameForPdf(t.herramienta).substring(0, 35), { x: 50, y, size: 9, font });
-        page.drawText(String(t.qty), { x: 250, y, size: 9, font });
-        page.drawText(t.marca.substring(0, 15), { x: 300, y, size: 9, font });
-        page.drawText(t.modelo.substring(0, 15), { x: 400, y, size: 9, font });
-        page.drawText(t.serie.substring(0, 15), { x: 500, y, size: 9, font });
-        y -= 15;
+    let logoImg: Awaited<ReturnType<PDFDocument['embedPng']>> | null = null;
+    try {
+      const logoBytes = await fetch(labLogo).then((res) => res.arrayBuffer());
+      logoImg = await pdfDoc.embedPng(logoBytes);
+    } catch (e) {
+      console.warn('No se pudo cargar el logo para PDF genérico', e);
+    }
+
+    const PAGE_W = 612;
+    const PAGE_H = 792;
+    const MARGIN = 42;
+    const HEADER_H = 86;
+    const FOOTER_H = 36;
+    const ROW_H = 18;
+    const SIG_H = 72;
+
+    const cols = [
+      { label: 'Herramienta', width: 188 },
+      { label: 'Cant.', width: 38 },
+      { label: 'Marca', width: 92 },
+      { label: 'Modelo', width: 92 },
+      { label: 'Serie', width: 118 },
+    ];
+    const tableWidth = cols.reduce((sum, col) => sum + col.width, 0);
+    const tableX = MARGIN;
+
+    const tools = allTools.filter(
+      (tool) => !['fuera_servicio', 'en_mantenimiento'].includes(tool.estadoProceso || ''),
+    );
+
+    const drawHeader = (page: PDFPage, isFirst: boolean) => {
+      const { width, height } = page.getSize();
+      page.drawRectangle({ x: 0, y: height - HEADER_H, width, height: HEADER_H, color: PDF_AG_BLUE_LIGHT });
+      page.drawRectangle({ x: 0, y: height - 5, width, height: 5, color: PDF_AG_BLUE });
+
+      let textX = MARGIN;
+      if (logoImg) {
+        const maxW = 78;
+        const maxH = 52;
+        const scale = Math.min(maxW / logoImg.width, maxH / logoImg.height, 1);
+        const w = logoImg.width * scale;
+        const h = logoImg.height * scale;
+        page.drawImage(logoImg, {
+          x: MARGIN,
+          y: height - HEADER_H + (HEADER_H - h) / 2 - 2,
+          width: w,
+          height: h,
+        });
+        textX = MARGIN + w + 14;
+      }
+
+      page.drawText('EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.', {
+        x: textX,
+        y: height - 32,
+        size: 10,
+        font: fontBold,
+        color: PDF_AG_BLUE,
+      });
+      page.drawText('Tlaquepaque No. 140, Col. Mitras Sur, Monterrey, N.L.', {
+        x: textX,
+        y: height - 46,
+        size: 8,
+        font,
+        color: PDF_MUTED,
+      });
+      page.drawText(isFirst ? 'Registro de salida de herramienta' : 'Registro de salida de herramienta (continuación)', {
+        x: textX,
+        y: height - 62,
+        size: 11,
+        font: fontBold,
+        color: PDF_TEXT,
+      });
+    };
+
+    const drawFooter = (page: PDFPage, pageIndex: number, totalPages: number) => {
+      const { width } = page.getSize();
+      page.drawRectangle({ x: 0, y: 0, width, height: 8, color: PDF_AG_BLUE });
+      page.drawLine({
+        start: { x: MARGIN, y: FOOTER_H },
+        end: { x: width - MARGIN, y: FOOTER_H },
+        thickness: 0.6,
+        color: PDF_BORDER,
+      });
+      page.drawText('Documento generado electrónicamente · Equipos y Servicios AG', {
+        x: MARGIN,
+        y: 18,
+        size: 7,
+        font,
+        color: PDF_MUTED,
+      });
+      const pageLabel = `Página ${pageIndex} de ${totalPages}`;
+      page.drawText(pageLabel, {
+        x: width - MARGIN - font.widthOfTextAtSize(pageLabel, 7),
+        y: 18,
+        size: 7,
+        font: fontBold,
+        color: PDF_AG_BLUE,
+      });
+    };
+
+    const drawMeta = (page: PDFPage, startY: number): number => {
+      const boxH = data.gafeteContratista ? 54 : 40;
+      const { width } = page.getSize();
+      page.drawRectangle({
+        x: MARGIN,
+        y: startY - boxH,
+        width: width - MARGIN * 2,
+        height: boxH,
+        color: PDF_WHITE,
+        borderColor: PDF_BORDER,
+        borderWidth: 0.8,
+      });
+      page.drawRectangle({
+        x: MARGIN,
+        y: startY - boxH,
+        width: 4,
+        height: boxH,
+        color: PDF_AG_BLUE,
+      });
+
+      const label = (title: string, value: string, x: number, y: number, maxW: number) => {
+        page.drawText(title, { x, y, size: 7, font: fontBold, color: PDF_AG_BLUE });
+        page.drawText(fitPdfText(value || '-', font, 9, maxW), {
+          x,
+          y: y - 12,
+          size: 9,
+          font,
+          color: PDF_TEXT,
+        });
+      };
+
+      const row1 = startY - 16;
+      label('FECHA', data.fecha, MARGIN + 14, row1, 110);
+      label('RESPONSABLE', data.usuario, MARGIN + 150, row1, 180);
+      label('NO. EMPLEADO', data.noEmpleado, MARGIN + 360, row1, 110);
+
+      const row2 = startY - 40;
+      label('COMPAÑÍA / DEPTO.', data.companiaDepto, MARGIN + 14, row2, 280);
+      if (data.gafeteContratista) {
+        label('GAFETE', data.gafeteContratista, MARGIN + 360, row2, 110);
+      }
+
+      return startY - boxH - 16;
+    };
+
+    const drawTableHeader = (page: PDFPage, y: number) => {
+      page.drawRectangle({
+        x: tableX,
+        y: y - ROW_H,
+        width: tableWidth,
+        height: ROW_H,
+        color: PDF_AG_BLUE,
+      });
+      let x = tableX;
+      cols.forEach((col) => {
+        page.drawText(col.label, {
+          x: x + 6,
+          y: y - 13,
+          size: 8,
+          font: fontBold,
+          color: PDF_WHITE,
+        });
+        x += col.width;
+      });
+      return y - ROW_H;
+    };
+
+    const drawRow = (page: PDFPage, y: number, tool: ToolItem, index: number) => {
+      const values = [
+        cleanToolNameForPdf(tool.herramienta),
+        String(tool.qty ?? ''),
+        tool.marca || '',
+        tool.modelo || '',
+        tool.serie || '',
+      ];
+      if (index % 2 === 1) {
+        page.drawRectangle({
+          x: tableX,
+          y: y - ROW_H,
+          width: tableWidth,
+          height: ROW_H,
+          color: PDF_ROW_ALT,
+        });
+      }
+      page.drawRectangle({
+        x: tableX,
+        y: y - ROW_H,
+        width: tableWidth,
+        height: ROW_H,
+        borderColor: PDF_BORDER,
+        borderWidth: 0.4,
+      });
+      let x = tableX;
+      values.forEach((value, i) => {
+        page.drawText(fitPdfText(value, font, 8, cols[i].width - 12), {
+          x: x + 6,
+          y: y - 12,
+          size: 8,
+          font,
+          color: PDF_TEXT,
+        });
+        x += cols[i].width;
+      });
+      return y - ROW_H;
+    };
+
+    const drawSignatures = (page: PDFPage, y: number) => {
+      const blockW = (tableWidth - 24) / 2;
+      const boxes = [
+        { title: 'Entrega (Metrólogo)', subtitle: data.usuario || '' },
+        { title: 'Recibe (Cliente / Seguridad)', subtitle: '' },
+      ];
+      boxes.forEach((box, i) => {
+        const x = tableX + i * (blockW + 24);
+        page.drawRectangle({
+          x,
+          y: y - SIG_H,
+          width: blockW,
+          height: SIG_H,
+          borderColor: PDF_BORDER,
+          borderWidth: 0.8,
+        });
+        page.drawText(box.title, {
+          x: x + 10,
+          y: y - 16,
+          size: 8,
+          font: fontBold,
+          color: PDF_AG_BLUE,
+        });
+        if (box.subtitle) {
+          page.drawText(fitPdfText(box.subtitle, font, 8, blockW - 20), {
+            x: x + 10,
+            y: y - 28,
+            size: 8,
+            font,
+            color: PDF_MUTED,
+          });
+        }
+        page.drawLine({
+          start: { x: x + 16, y: y - 54 },
+          end: { x: x + blockW - 16, y: y - 54 },
+          thickness: 0.6,
+          color: PDF_BORDER,
+        });
+        page.drawText('Nombre y firma', {
+          x: x + 10,
+          y: y - 66,
+          size: 7,
+          font,
+          color: PDF_MUTED,
+        });
+      });
+    };
+
+    const pages: PDFPage[] = [];
+    let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    pages.push(page);
+    drawHeader(page, true);
+    let y = PAGE_H - HEADER_H - 16;
+    y = drawMeta(page, y);
+    y = drawTableHeader(page, y);
+    let rowIndex = 0;
+
+    const newPage = (withTableHeader: boolean) => {
+      page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+      pages.push(page);
+      drawHeader(page, false);
+      y = PAGE_H - HEADER_H - 16;
+      if (withTableHeader) y = drawTableHeader(page, y);
+    };
+
+    tools.forEach((tool) => {
+      if (y - ROW_H < FOOTER_H + 8) newPage(true);
+      y = drawRow(page, y, tool, rowIndex);
+      rowIndex += 1;
     });
+
+    if (y - SIG_H - 20 < FOOTER_H + 8) newPage(false);
+    drawSignatures(page, y - 16);
+
+    pages.forEach((p, i) => drawFooter(p, i + 1, pages.length));
 
     const blob = new Blob([await pdfDoc.save()], { type: 'application/pdf' });
     saveAs(blob, `Registro_Generico_${data.usuario}.pdf`);
-  } catch (e) { throw new Error('Error generando PDF Genérico.'); }
+  } catch (e) {
+    console.error(e);
+    throw new Error('Error generando PDF Genérico.');
+  }
 }
 
 // ==================================================================
@@ -407,11 +703,11 @@ const NormasScreen = () => {
   };
 
   const handleAddEtiquetadora = (etiq: typeof ETIQUETADORAS_CATALOG[number]) => {
-    if (isEtiquetadoraInList(watchedManualTools, etiq.item.serie)) {
+    if (isEtiquetadoraInList(watchedManualTools, etiq)) {
       setLinkNotice(`La etiquetadora de ${etiq.persona} ya está en la lista.`);
       return;
     }
-    append({ ...etiq.item, isVencida: false, isUnavailable: false });
+    append({ ...etiq.item, ownerKey: etiq.ownerKey, isVencida: false, isUnavailable: false });
     setLinkNotice(`Etiquetadora de ${etiq.persona} agregada.`);
   };
 
@@ -781,7 +1077,7 @@ const NormasScreen = () => {
             <p className="text-xs text-slate-500 mb-3">Agregue la impresora que lleva o la que presta.</p>
             <div className="flex flex-wrap gap-2">
               {ETIQUETADORAS_CATALOG.map(etiq => {
-                const yaAgregada = isEtiquetadoraInList(watchedManualTools, etiq.item.serie);
+                const yaAgregada = isEtiquetadoraInList(watchedManualTools, etiq);
                 const esPropia = usuarioOwnerKey === etiq.ownerKey;
                 return (
                   <button

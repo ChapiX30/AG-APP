@@ -1,6 +1,5 @@
 /**
- * Respaldo anterior: WorkSheetScreen.legacy.tsx
- * (puntos auto + PASA/NO PASA; masa y eléctrica no cambian)
+ * Hoja de trabajo — calibración y guardado (Drive / Friday / hoja de servicio).
  */
 import React, { useEffect, useRef, useState, useCallback, useReducer, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -70,6 +69,7 @@ import {
   pickClienteFromAsignacionHoy,
 } from "../utils/servicioAutomation";
 import { canonicalizeClienteNombre } from "../utils/hojaServicioMatch";
+import { tocarConsecutivoActivo } from "../utils/firebaseConsecutivos";
 
 // ====================================================================
 // LabelPrinterButton y helpers de etiqueta: ver ./LabelPrinterButton
@@ -1027,6 +1027,19 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
        dispatch({ type: 'SET_FIELD', field: 'fecha', payload: getLocalISODate() });
     }
   }, [currentConsecutive, worksheetId]);
+
+  // Heartbeat: evita que otro técnico reclame este folio mientras la hoja está abierta.
+  useEffect(() => {
+    const cert = (state.certificado || currentConsecutive || "").trim();
+    if (!cert || worksheetId) return;
+
+    void tocarConsecutivoActivo(cert);
+    const interval = window.setInterval(() => {
+      void tocarConsecutivoActivo(cert);
+    }, 5 * 60 * 1000);
+
+    return () => window.clearInterval(interval);
+  }, [state.certificado, currentConsecutive, worksheetId]);
 
   useEffect(() => {
     if (!selectedMagnitude) return;

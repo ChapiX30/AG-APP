@@ -541,6 +541,7 @@ export const enviarNotificacionCalidad = functions.firestore
             'vacacion_rechazada',
             'vacacion_progreso',
             'vacacion_aprobada',
+            'aviso_global',
         ]);
         if (!nuevaNotificacion || !tipo || !tiposPush.has(tipo)) {
             return null;
@@ -602,12 +603,14 @@ export const enviarNotificacionCalidad = functions.firestore
             const url =
                 tipo === 'revision_calidad'
                     ? '/drive'
-                    : tipo === 'vacacion_pendiente' ||
-                        tipo === 'vacacion_rechazada' ||
-                        tipo === 'vacacion_progreso' ||
-                        tipo === 'vacacion_aprobada'
-                      ? '/solicitud-vacaciones'
-                      : '/calendario';
+                    : tipo === 'aviso_global'
+                      ? '/'
+                      : tipo === 'vacacion_pendiente' ||
+                          tipo === 'vacacion_rechazada' ||
+                          tipo === 'vacacion_progreso' ||
+                          tipo === 'vacacion_aprobada'
+                        ? '/solicitud-vacaciones'
+                        : '/calendario';
 
             const payload = {
                 data: {

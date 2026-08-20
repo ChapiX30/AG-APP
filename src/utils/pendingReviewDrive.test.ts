@@ -10,7 +10,7 @@ import {
   qualifiesForPendingReviewList,
   resolveTechnicianGroupKey,
   shouldTreatAsPendingReview,
-} from "./pendingReviewDriveLogic";
+} from "./pendingReviewDriveLogic.ts";
 
 const ABRAHAM_PATH = "worksheets/Abraham Ginez/CERT-001_EQ-123.pdf";
 
