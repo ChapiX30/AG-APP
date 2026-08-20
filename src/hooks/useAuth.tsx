@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useMemo } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useMemo, useRef } from 'react';
 import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -177,6 +177,49 @@ export const loadUserProfile = async (
 
 let authPersistencePromise: Promise<void> | null = null;
 
+/** Sin actividad → cerrar sesión (web y app). */
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_CHECK_MS = 15_000;
+const ACTIVITY_STORAGE_KEY = "ag_last_activity_at";
+const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
+  "pointerdown",
+  "keydown",
+  "touchstart",
+  "mousemove",
+  "scroll",
+  "wheel",
+];
+
+const readLastActivity = (): number => {
+  try {
+    const n = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY) || 0);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const writeLastActivity = (ts = Date.now()) => {
+  try {
+    localStorage.setItem(ACTIVITY_STORAGE_KEY, String(ts));
+  } catch {
+    /* ignore */
+  }
+};
+
+const clearLastActivity = () => {
+  try {
+    localStorage.removeItem(ACTIVITY_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+
+const isIdleExpired = (lastActivityAt: number): boolean => {
+  if (!lastActivityAt) return false;
+  return Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS;
+};
+
 const ensureAuthPersistence = (): Promise<void> => {
   if (!authPersistencePromise) {
     authPersistencePromise = setPersistence(auth, browserLocalPersistence).catch((err) => {
@@ -190,6 +233,27 @@ const ensureAuthPersistence = (): Promise<void> => {
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const lastActivityRef = useRef(Date.now());
+  const logoutRef = useRef<() => Promise<void>>(async () => {});
+
+  const logout = useCallback(async () => {
+    clearLastActivity();
+    lastActivityRef.current = 0;
+    await firebaseSignOut(auth);
+    setUser(null);
+  }, []);
+
+  logoutRef.current = logout;
+
+  const markActivity = useCallback(() => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    // No escribir en cada mousemove: como máximo cada ~20s
+    const stored = readLastActivity();
+    if (!stored || now - stored > 20_000) {
+      writeLastActivity(now);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,13 +271,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (cancelled) return;
 
           if (firebaseUser) {
+            const last = readLastActivity();
+            if (isIdleExpired(last)) {
+              console.info("Sesión cerrada por inactividad (al restaurar).");
+              clearLastActivity();
+              try {
+                await firebaseSignOut(auth);
+              } catch {
+                /* ignore */
+              }
+              if (!cancelled) setUser(null);
+              if (!cancelled) setAuthReady(true);
+              return;
+            }
+
             try {
               const profile = await loadUserProfile(
                 firebaseUser.uid,
                 firebaseUser.email || "",
                 firebaseUser.displayName,
               );
-              if (!cancelled) setUser(profile);
+              if (!cancelled) {
+                writeLastActivity(Date.now());
+                lastActivityRef.current = Date.now();
+                setUser(profile);
+              }
             } catch (err) {
               console.warn("Sesión rechazada (usuario no autorizado o inactivo):", err);
               try {
@@ -238,11 +320,56 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
+  /* Vigilancia de inactividad: 5 min sin uso → logout */
+  useEffect(() => {
+    if (!user) return;
+
+    const onActivity = () => markActivity();
+    for (const ev of ACTIVITY_EVENTS) {
+      window.addEventListener(ev, onActivity, { passive: true });
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const last = Math.max(lastActivityRef.current, readLastActivity());
+      if (isIdleExpired(last)) {
+        console.info("Sesión cerrada por inactividad (al volver a la app).");
+        void logoutRef.current();
+        return;
+      }
+      markActivity();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const intervalId = window.setInterval(() => {
+      const last = Math.max(lastActivityRef.current, readLastActivity());
+      if (isIdleExpired(last)) {
+        console.info("Sesión cerrada por inactividad.");
+        void logoutRef.current();
+      }
+    }, IDLE_CHECK_MS);
+
+    return () => {
+      for (const ev of ACTIVITY_EVENTS) {
+        window.removeEventListener(ev, onActivity);
+      }
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [user, markActivity]);
+
   const login = useCallback(async (email: string, password: string): Promise<AuthUser> => {
     await ensureAuthPersistence();
     const cred = await signInWithEmailAndPassword(auth, email, password);
     try {
-      return await loadUserProfile(cred.user.uid, cred.user.email || email, cred.user.displayName);
+      const profile = await loadUserProfile(
+        cred.user.uid,
+        cred.user.email || email,
+        cred.user.displayName,
+      );
+      writeLastActivity(Date.now());
+      lastActivityRef.current = Date.now();
+      return profile;
     } catch (err) {
       try {
         await firebaseSignOut(auth);
@@ -254,12 +381,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const completeLogin = useCallback((profile: AuthUser) => {
+    writeLastActivity(Date.now());
+    lastActivityRef.current = Date.now();
     setUser(profile);
-  }, []);
-
-  const logout = useCallback(async () => {
-    await firebaseSignOut(auth);
-    setUser(null);
   }, []);
 
   const value = useMemo(
