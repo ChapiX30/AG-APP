@@ -11,6 +11,7 @@ import {
 import { isQualityEmailAllowlisted } from "../utils/certificateAccess";
 import {
   motion, AnimatePresence, MotionConfig,
+  useMotionValue, useSpring, useTransform,
 } from "framer-motion";
 import { sendPasswordResetEmail, signOut, AuthError } from "firebase/auth";
 import { collection, query, where, getDocs, limit } from "firebase/firestore";
@@ -311,114 +312,77 @@ const LoginTransitionOverlay: React.FC<{
   );
 };
 
-/* ─── marca AG ─── */
+/* ─── marca AG — 3D en el logo (showcase elegante) ─── */
 const BrandMark: React.FC<{ size?: "lg" | "sm" }> = ({ size = "lg" }) => {
   const large = size === "lg";
-  const ring = large ? "inset-[-6%]" : "inset-[-10%]";
-  const gradId = `logoScanGrad-${size}`;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const hoverMx = useMotionValue(0);
+  const hoverMy = useMotionValue(0);
+  const spring = { stiffness: 120, damping: 22, mass: 0.4 };
+  const hoverRx = useSpring(useTransform(hoverMy, [-0.5, 0.5], [6, -6]), spring);
+  const hoverRy = useSpring(useTransform(hoverMx, [-0.5, 0.5], [-8, 8]), spring);
+
+  const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    hoverMx.set((e.clientX - r.left) / r.width - 0.5);
+    hoverMy.set((e.clientY - r.top) / r.height - 0.5);
+  };
+
+  const onLeave = () => {
+    hoverMx.set(0);
+    hoverMy.set(0);
+  };
 
   return (
     <div className={`relative flex flex-col items-center ${large ? "gap-8" : "gap-4"}`}>
       <div
+        ref={wrapRef}
         className={`relative flex items-center justify-center ${
           large ? "h-[19rem] w-[19rem]" : "h-32 w-32"
         }`}
+        style={{ perspective: large ? 1100 : 720 }}
+        onMouseMove={onMove}
+        onMouseLeave={onLeave}
       >
-        {/* halo suave de fondo */}
+        {/* capa hover: suma un toque extra al pasar el mouse */}
         <motion.div
-          className="pointer-events-none absolute inset-[-8%] rounded-full"
+          className="relative z-10"
           style={{
-            background:
-              "radial-gradient(circle, rgba(36,100,163,0.32) 0%, transparent 68%)",
+            rotateX: hoverRx,
+            rotateY: hoverRy,
+            transformStyle: "preserve-3d",
           }}
-          animate={{ opacity: [0.4, 0.7, 0.4], scale: [0.97, 1.04, 0.97] }}
-          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
-        />
-
-        {/* anillo orbital externo */}
-        <motion.div
-          className={`pointer-events-none absolute ${ring} rounded-full border border-[#5a93c9]/25`}
-          animate={{ rotate: 360 }}
-          transition={{ duration: 28, repeat: Infinity, ease: "linear" }}
         >
-          <span
-            className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#5a93c9]"
-            style={{ boxShadow: "0 0 10px rgba(90,147,201,0.9)" }}
-          />
-          <span
-            className="absolute bottom-[18%] left-[8%] h-1 w-1 rounded-full bg-[#34d399]/80"
-            style={{ boxShadow: "0 0 8px rgba(52,211,153,0.7)" }}
+          {/* el LOGO mismo: giro 3D suave tipo vitrina */}
+          <motion.img
+            src={labLogo}
+            alt="Equipos y Servicios AG"
+            className={`${large ? "h-[15rem]" : "h-28"} w-auto object-contain select-none will-change-transform`}
+            draggable={false}
+            style={{
+              transformStyle: "preserve-3d",
+              transformOrigin: "50% 50%",
+              backfaceVisibility: "hidden",
+            }}
+            animate={{
+              rotateY: [-18, 18, -18],
+              rotateX: [4, -3, 4],
+              y: [0, large ? -6 : -3, 0],
+              filter: [
+                "drop-shadow(-14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 18px rgba(36,100,163,0.2))",
+                "drop-shadow(14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 22px rgba(36,100,163,0.28))",
+                "drop-shadow(-14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 18px rgba(36,100,163,0.2))",
+              ],
+            }}
+            transition={{
+              duration: 8.5,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
           />
         </motion.div>
-
-        {/* anillo punteado (sentido inverso) */}
-        <motion.div
-          className={`pointer-events-none absolute ${
-            large ? "inset-[4%]" : "inset-[2%]"
-          } rounded-full border border-dashed border-[#2464A3]/35`}
-          animate={{ rotate: -360 }}
-          transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
-        />
-
-        {/* arco de “barrido” tipo instrumento */}
-        <motion.svg
-          className={`pointer-events-none absolute ${
-            large ? "inset-[10%]" : "inset-[8%]"
-          } h-auto w-auto`}
-          viewBox="0 0 100 100"
-          aria-hidden
-          animate={{ rotate: 360 }}
-          transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-        >
-          <circle
-            cx="50"
-            cy="50"
-            r="46"
-            fill="none"
-            stroke="rgba(90,147,201,0.12)"
-            strokeWidth="0.8"
-          />
-          <motion.circle
-            cx="50"
-            cy="50"
-            r="46"
-            fill="none"
-            stroke={`url(#${gradId})`}
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeDasharray="42 220"
-            initial={{ strokeDashoffset: 0 }}
-            animate={{ strokeDashoffset: -262 }}
-            transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-          />
-          <defs>
-            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(90,147,201,0)" />
-              <stop offset="55%" stopColor="rgba(90,147,201,0.85)" />
-              <stop offset="100%" stopColor="rgba(52,211,153,0.95)" />
-            </linearGradient>
-          </defs>
-        </motion.svg>
-
-        {/* logo: flotación + leve inclinación */}
-        <motion.img
-          src={labLogo}
-          alt="Equipos y Servicios AG"
-          className={`relative z-10 ${large ? "h-[15rem]" : "h-28"} w-auto object-contain`}
-          style={{
-            filter: "drop-shadow(0 12px 28px rgba(0,0,0,0.35))",
-          }}
-          animate={{
-            y: [0, large ? -7 : -3, 0],
-            rotate: [0, 1.2, -1.2, 0],
-            scale: [1, 1.025, 1],
-          }}
-          transition={{
-            duration: 6.5,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
       </div>
 
       <div className="text-center space-y-2">
@@ -447,41 +411,44 @@ const LabPhotoBackdrop: React.FC<{
   reducedMotion: boolean;
 }> = ({ index, reducedMotion }) => (
   <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-    <AnimatePresence initial={false} mode="sync">
-      <motion.div
-        key={LOGIN_BACKGROUNDS[index]}
-        className="absolute inset-0"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: reducedMotion ? 0.3 : 1.05, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <motion.img
-          src={LOGIN_BACKGROUNDS[index]}
-          alt=""
-          className="h-full w-full object-cover"
-          initial={
-            reducedMotion
-              ? { scale: 1.04 }
-              : { scale: 1.06, x: 0 }
-          }
-          animate={
-            reducedMotion
-              ? { scale: 1.04 }
-              : { scale: 1.14, x: index % 2 === 0 ? -10 : 10 }
-          }
-          transition={{
-            duration: reducedMotion ? 0 : BG_ROTATE_MS / 1000 + 0.9,
-            ease: "linear",
+    {LOGIN_BACKGROUNDS.map((src, i) => {
+      const active = i === index;
+      return (
+        <div
+          key={src}
+          className="absolute inset-0"
+          style={{
+            opacity: active ? 1 : 0,
+            transition: reducedMotion
+              ? "opacity 0.35s ease"
+              : "opacity 1.1s cubic-bezier(0.22, 1, 0.36, 1)",
+            zIndex: active ? 2 : 1,
           }}
-          draggable={false}
-        />
-      </motion.div>
-    </AnimatePresence>
+        >
+          <img
+            src={src}
+            alt=""
+            className="h-full w-full object-cover"
+            style={{
+              transform: reducedMotion
+                ? "scale(1.04)"
+                : active
+                  ? "scale(1.12) translateX(0)"
+                  : "scale(1.06)",
+              transition: reducedMotion
+                ? "none"
+                : `transform ${BG_ROTATE_MS + 400}ms linear`,
+              willChange: "transform, opacity",
+            }}
+            draggable={false}
+          />
+        </div>
+      );
+    })}
 
     {/* veladura: izquierda más abierta para que se vea el lab */}
     <div
-      className="absolute inset-0"
+      className="absolute inset-0 z-[3]"
       style={{
         background: `
           linear-gradient(105deg,
@@ -494,7 +461,7 @@ const LabPhotoBackdrop: React.FC<{
       }}
     />
     <div
-      className="absolute inset-0"
+      className="absolute inset-0 z-[3]"
       style={{
         background: `
           radial-gradient(ellipse 70% 55% at 28% 42%, rgba(36,100,163,0.18), transparent 60%),
@@ -504,7 +471,7 @@ const LabPhotoBackdrop: React.FC<{
       }}
     />
     <div
-      className="absolute inset-0 opacity-[0.04]"
+      className="absolute inset-0 z-[3] opacity-[0.04]"
       style={{
         backgroundImage: `
           linear-gradient(rgba(90,147,201,0.9) 1px, transparent 1px),
@@ -568,12 +535,12 @@ export const LoginScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (reducedMotion) return;
+    // El fondo SIEMPRE rota; reducedMotion solo suaviza el zoom, no detiene el cambio
     const id = window.setInterval(() => {
       setBgIndex((i) => (i + 1) % LOGIN_BACKGROUNDS.length);
     }, BG_ROTATE_MS);
     return () => window.clearInterval(id);
-  }, [reducedMotion]);
+  }, []);
 
   /* precarga para crossfades limpios */
   useEffect(() => {
@@ -713,11 +680,6 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const nowLabel = new Date().toLocaleTimeString("es-MX", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
   return (
     <MotionConfig reducedMotion="never">
     <div
@@ -729,73 +691,14 @@ export const LoginScreen: React.FC = () => {
       {/* ════════════════════════════════
           PANEL IZQUIERDO — Marca
       ════════════════════════════════ */}
-      <div className="relative hidden lg:flex w-[56%] flex-col justify-between overflow-hidden px-12 xl:px-16 py-10">
+      <div className="relative hidden lg:flex w-[56%] flex-col items-center justify-center overflow-hidden px-12 xl:px-16 py-10">
         <motion.div
-          className="relative z-10 flex items-center justify-between"
-          initial={{ opacity: 0, y: -12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="flex items-center gap-3">
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ background: "#34d399", boxShadow: "0 0 10px rgba(52,211,153,0.7)" }}
-            />
-            <p className="font-instrument text-[11px] tracking-[0.22em] uppercase text-[#c5d4e4]">
-              Laboratorio · En línea
-            </p>
-          </div>
-          <p className="font-instrument text-[11px] tracking-[0.18em] text-[#9aabbd]">
-            {nowLabel} CST
-          </p>
-        </motion.div>
-
-        <motion.div
-          className="relative z-10 flex flex-1 flex-col items-center justify-center"
+          className="relative z-10 flex flex-col items-center justify-center"
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         >
           <BrandMark size="lg" />
-        </motion.div>
-
-        <motion.div
-          className="relative z-10 flex items-center justify-between gap-4"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5, duration: 0.6 }}
-        >
-          <div className="flex items-center gap-6 font-instrument text-[10px] tracking-[0.2em] uppercase text-[#9aabbd]">
-            <span>SSL · 256</span>
-            <span className="h-px w-8 bg-[#2464A3]/50" />
-            <span>Trazabilidad</span>
-            <span className="h-px w-8 bg-[#2464A3]/50" />
-            <span>Acceso autorizado</span>
-          </div>
-
-          {/* indicadores del carrusel con progreso */}
-          <div className="flex items-center gap-1.5" aria-hidden>
-            {LOGIN_BACKGROUNDS.map((_, i) => (
-              <span
-                key={i}
-                className="relative h-1 overflow-hidden rounded-full bg-white/20"
-                style={{ width: i === bgIndex ? 22 : 6 }}
-              >
-                {i === bgIndex && !reducedMotion && (
-                  <motion.span
-                    key={`prog-${bgIndex}`}
-                    className="absolute inset-y-0 left-0 rounded-full bg-[#5a93c9]"
-                    initial={{ width: "0%" }}
-                    animate={{ width: "100%" }}
-                    transition={{ duration: BG_ROTATE_MS / 1000, ease: "linear" }}
-                  />
-                )}
-                {i === bgIndex && reducedMotion && (
-                  <span className="absolute inset-0 rounded-full bg-[#5a93c9]" />
-                )}
-              </span>
-            ))}
-          </div>
         </motion.div>
       </div>
 
@@ -831,28 +734,6 @@ export const LoginScreen: React.FC = () => {
         >
           <div className="mb-8 lg:hidden">
             <BrandMark size="sm" />
-            <div className="mt-5 flex justify-center gap-1.5" aria-hidden>
-              {LOGIN_BACKGROUNDS.map((_, i) => (
-                <span
-                  key={i}
-                  className="relative h-1 overflow-hidden rounded-full bg-white/20"
-                  style={{ width: i === bgIndex ? 18 : 5 }}
-                >
-                  {i === bgIndex && !reducedMotion && (
-                    <motion.span
-                      key={`mprog-${bgIndex}`}
-                      className="absolute inset-y-0 left-0 rounded-full bg-[#5a93c9]"
-                      initial={{ width: "0%" }}
-                      animate={{ width: "100%" }}
-                      transition={{ duration: BG_ROTATE_MS / 1000, ease: "linear" }}
-                    />
-                  )}
-                  {i === bgIndex && reducedMotion && (
-                    <span className="absolute inset-0 rounded-full bg-[#5a93c9]" />
-                  )}
-                </span>
-              ))}
-            </div>
           </div>
 
           <div className="mb-8">

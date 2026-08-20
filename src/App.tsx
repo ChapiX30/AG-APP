@@ -8,8 +8,8 @@ import UpdateBanner from './components/UpdateBanner';
 import { SplashScreen } from './components/SplashScreen';
 
 /**
- * Splash de arranque: no bloquea auth (useAuth sin loading).
- * `bootReady` marca el primer frame tras montar providers; el splash sale en ~450ms + fade.
+ * Splash de arranque: secuencia ~3.2s (logo 3D + barra + flash) antes de entrar.
+ * `bootReady` marca el primer frame tras montar providers; el splash no sale antes.
  */
 function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
