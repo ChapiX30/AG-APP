@@ -28,6 +28,7 @@ interface NovedadesWidgetProps {
   onCompose?: () => void;
   onHide: () => void;
   user?: { role?: string; puesto?: string } | null;
+  premium?: boolean;
 }
 
 export const NovedadesWidget: React.FC<NovedadesWidgetProps> = ({
@@ -39,6 +40,7 @@ export const NovedadesWidget: React.FC<NovedadesWidgetProps> = ({
   onCompose,
   onHide,
   user,
+  premium = false,
 }) => {
   const { confirm } = useAppDialog();
   const [expanded, setExpanded] = useState(false);
@@ -81,10 +83,17 @@ export const NovedadesWidget: React.FC<NovedadesWidgetProps> = ({
   const hasMore = updates.length > PREVIEW_LIMIT;
 
   return (
-    <div className="rounded-2xl border ag-card flex flex-col overflow-hidden">
-      <div className="p-3 border-b ag-border flex items-center gap-2">
-        <VernierIcon size={16} className="acc-text shrink-0" />
-        <span className="font-semibold text-sm ag-text flex-1">Novedades</span>
+    <div className={premium ? 'ag-prem-widget flex flex-col' : 'rounded-2xl border ag-card flex flex-col overflow-hidden'}>
+      <div className={premium ? 'ag-prem-widget-head' : 'p-3 border-b ag-border flex items-center gap-2'}>
+        {premium ? (
+          <div className="ag-prem-widget-icon">
+            <VernierIcon size={14} className="acc-text shrink-0" />
+          </div>
+        ) : (
+          <VernierIcon size={16} className="acc-text shrink-0" />
+        )}
+        <span className={premium ? 'ag-prem-widget-title' : 'font-semibold text-sm ag-text flex-1'}>Novedades</span>
+        {!premium && <span className="flex-1" />}
         {unreadCount > 0 && (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full acc text-white">
             {unreadCount}

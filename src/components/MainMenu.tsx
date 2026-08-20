@@ -56,7 +56,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { getAuth, updateProfile } from 'firebase/auth';
 import {
   differenceInDays, parseISO, isValid,
-  format, isToday, parse, isWithinInterval, addHours,
+  format, isToday, parse, isWithinInterval, addHours, formatDistanceToNow,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -74,7 +74,8 @@ import {
   eliminarRecordatorioConfirmacionJunta,
   usuarioYaConfirmoJunta,
 } from '../utils/notificacionesRecordatorioJunta';
-
+import { enableWebPushFromUserGesture } from '../hooks/usePushNotifications';
+import { screenFromNotifTipo } from '../utils/notificationMeta';
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 interface Service {
   id: string; cliente: string; titulo?: string; elemento?: string; descripcion?: string;
@@ -92,6 +93,8 @@ interface UserPrefs {
   themeMode: 'dark' | 'light';
   accentColor: string;
   viewMode: 'grid' | 'list';
+  /** classic = diseño actual; premium = launcher corporativo */
+  menuStyle: 'classic' | 'premium';
 }
 
 interface AppNotification {
@@ -102,10 +105,37 @@ interface AppNotification {
   autorNombre?: string; autorUid?: string;
   navigateTo?: string;
   servicioId?: string;
+  tipo?: string;
 }
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
-const DEFAULT_PREFS: UserPrefs = { themeMode: 'dark', accentColor: '#2464a3', viewMode: 'grid' };
+const DEFAULT_PREFS: UserPrefs = {
+  themeMode: 'dark',
+  accentColor: '#2464a3',
+  viewMode: 'grid',
+  menuStyle: 'premium',
+};
+
+const MENU_BLURBS: Record<string, string> = {
+  friday: 'Proyectos y avance',
+  'friday-servicios': 'Órdenes del día',
+  'hoja-servicio': 'Registro en campo',
+  'directorio-empresas': 'Historial de equipos',
+  'permisos-trabajo': 'Permisos TR',
+  'solicitud-vacaciones': 'Solicitudes RH',
+  'control-vacaciones-rh': 'Control de ausencias',
+  'gestion-usuarios': 'Accesos y roles',
+  calendario: 'Agenda del laboratorio',
+  consecutivos: 'Folios y worksheets',
+  formatos: 'Plantillas master',
+  drive: 'Archivos del equipo',
+  empresas: 'Clientes y sedes',
+  'calibration-stats': 'Indicadores clave',
+  normas: 'Hoja de herramienta',
+  'entrada-salida': 'Control de salidas',
+  'programa-calibracion': 'Patrones y vencimientos',
+  'control-prestamos': 'Préstamos activos',
+};
 
 const PRESET_COLORS = [
   { hex: '#2464a3', label: 'Azul' },
@@ -209,6 +239,7 @@ const sanitizePrefs = (raw: Partial<UserPrefs> | null | undefined): Partial<User
   const out: Partial<UserPrefs> = {};
   if (raw.themeMode === 'dark' || raw.themeMode === 'light') out.themeMode = raw.themeMode;
   if (raw.viewMode === 'grid' || raw.viewMode === 'list') out.viewMode = raw.viewMode;
+  if (raw.menuStyle === 'classic' || raw.menuStyle === 'premium') out.menuStyle = raw.menuStyle;
   const accent = normalizeHex(raw.accentColor);
   if (accent) out.accentColor = accent;
   return out;
@@ -320,6 +351,227 @@ const ThemeStyle = () => (
     .ag-menu-card:hover .ag-tile-icon { transform: scale(1.05); }
     .ag-arrow { opacity: 0; transform: translateX(-4px); transition: all 0.22s ease; }
     .ag-menu-card:hover .ag-arrow { opacity: 1; transform: translateX(0); }
+    /* ── Premium launcher ── */
+    .ag-prem-mesh {
+      background:
+        radial-gradient(ellipse 70% 50% at 8% -18%, rgba(var(--acc-rgb)/0.11) 0%, transparent 55%),
+        radial-gradient(ellipse 48% 40% at 100% 0%, rgba(var(--acc-rgb)/0.06) 0%, transparent 48%),
+        radial-gradient(ellipse 40% 30% at 70% 100%, rgba(var(--acc-rgb)/0.04) 0%, transparent 50%),
+        var(--bg);
+    }
+    .ag-prem-section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .ag-prem-tile {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      border-radius: 1.15rem;
+      border: 1px solid var(--border-color);
+      background: linear-gradient(168deg, color-mix(in srgb, var(--surface-hi) 88%, var(--acc) 12%) 0%, var(--surface) 42%, var(--surface) 100%);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.22s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s ease;
+      min-height: 11.25rem;
+    }
+    .ag-prem-tile:hover {
+      border-color: rgba(var(--acc-rgb)/0.5);
+      transform: translateY(-3px);
+      box-shadow: 0 18px 44px -22px rgba(0,0,0,0.62), 0 0 0 1px rgba(var(--acc-rgb)/0.16);
+    }
+    .ag-prem-tile:active { transform: translateY(-1px) scale(0.992); }
+    .ag-prem-tile.is-disabled {
+      opacity: 0.42;
+      filter: grayscale(0.85);
+      cursor: not-allowed;
+    }
+    .ag-prem-tile.is-disabled:hover {
+      transform: none;
+      box-shadow: none;
+      border-color: var(--border-color);
+    }
+    .ag-prem-screen {
+      position: relative;
+      height: 5.75rem;
+      margin: 0.7rem 0.7rem 0;
+      border-radius: 0.9rem;
+      background:
+        linear-gradient(145deg, rgba(var(--acc-rgb)/0.2) 0%, rgba(var(--acc-rgb)/0.05) 40%, transparent 72%),
+        var(--bg);
+      border: 1px solid rgba(var(--acc-rgb)/0.16);
+      overflow: hidden;
+    }
+    .ag-prem-screen::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.05) 48%, transparent 62%);
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+    .ag-prem-tile:hover .ag-prem-screen::after { opacity: 1; }
+    .ag-prem-chrome {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 9px 11px 6px;
+    }
+    .ag-prem-chrome i {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(var(--acc-rgb)/0.38);
+      display: block;
+    }
+    .ag-prem-lines {
+      padding: 2px 11px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .ag-prem-lines span {
+      display: block;
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(var(--acc-rgb)/0.18);
+    }
+    .ag-prem-lines span:nth-child(1) { width: 72%; }
+    .ag-prem-lines span:nth-child(2) { width: 48%; }
+    .ag-prem-lines span:nth-child(3) { width: 58%; opacity: 0.7; }
+    .ag-prem-icon-float {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      width: 2.65rem;
+      height: 2.65rem;
+      border-radius: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--acc);
+      background: rgba(var(--acc-rgb)/0.14);
+      border: 1px solid rgba(var(--acc-rgb)/0.28);
+      box-shadow: 0 8px 20px -12px rgba(var(--acc-rgb)/0.55);
+      transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), background 0.2s ease;
+    }
+    .ag-prem-tile:hover .ag-prem-icon-float {
+      transform: scale(1.06);
+      background: rgba(var(--acc-rgb)/0.22);
+    }
+    .ag-prem-meta {
+      padding: 0.85rem 1rem 1.05rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      flex: 1;
+    }
+    .ag-prem-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.25;
+    }
+    .ag-prem-blurb {
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+    .ag-prem-row {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 1rem;
+      border: 1px solid var(--border-color);
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.18s ease;
+      min-height: 3.75rem;
+    }
+    .ag-prem-row:hover {
+      border-color: rgba(var(--acc-rgb)/0.45);
+      background: color-mix(in srgb, var(--surface) 92%, var(--acc) 8%);
+      transform: translateX(2px);
+    }
+    .ag-prem-row.is-disabled {
+      opacity: 0.42;
+      filter: grayscale(0.85);
+      cursor: not-allowed;
+    }
+    .ag-prem-row.is-disabled:hover {
+      transform: none;
+      background: var(--surface);
+      border-color: var(--border-color);
+    }
+    .ag-prem-thumb {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.75rem;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--acc);
+      background:
+        linear-gradient(145deg, rgba(var(--acc-rgb)/0.22) 0%, rgba(var(--acc-rgb)/0.06) 100%),
+        var(--bg);
+      border: 1px solid rgba(var(--acc-rgb)/0.2);
+    }
+    .ag-prem-hero-name {
+      background: linear-gradient(105deg, var(--text) 0%, var(--text) 42%, var(--acc) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .ag-prem-search {
+      background: color-mix(in srgb, var(--surface) 80%, transparent);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+    }
+    .ag-prem-search:focus {
+      border-color: rgba(var(--acc-rgb)/0.55);
+      box-shadow: 0 0 0 3px rgba(var(--acc-rgb)/0.14);
+    }
+    .ag-prem-widget {
+      border-radius: 1.15rem;
+      border: 1px solid var(--border-color);
+      background: linear-gradient(168deg, color-mix(in srgb, var(--surface-hi) 80%, var(--acc) 8%) 0%, var(--surface) 55%);
+      overflow: hidden;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+    }
+    .ag-prem-widget-head {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      background: linear-gradient(180deg, rgba(var(--acc-rgb)/0.08) 0%, transparent 100%);
+    }
+    .ag-prem-widget-title {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      flex: 1;
+    }
+    .ag-prem-widget-icon {
+      width: 1.85rem;
+      height: 1.85rem;
+      border-radius: 0.65rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--acc);
+      background: rgba(var(--acc-rgb)/0.14);
+      border: 1px solid rgba(var(--acc-rgb)/0.22);
+      flex-shrink: 0;
+    }
     /* Acciones del header */
     .ag-icon-btn { transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease; }
     .ag-icon-btn:hover { transform: translateY(-1px); }
@@ -442,7 +694,7 @@ const useUserPrefs = (uid: string | undefined) => {
         }
 
         // Sin doc remoto: si hay preferencias locales, subirlas (recupera elecciones no guardadas)
-        if (local.accentColor || local.themeMode || local.viewMode) {
+        if (local.accentColor || local.themeMode || local.viewMode || local.menuStyle) {
           try {
             await setDoc(doc(db, 'userPrefs', uid), boot, { merge: true });
           } catch (e) {
@@ -492,9 +744,11 @@ const useUserPrefs = (uid: string | undefined) => {
 };
 
 // ─── PANEL DE NOTIFICACIONES ──────────────────────────────────────────────────
-const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBroadcast, uid, onNavigate }: {
+const NotificationPanel = ({ notifications, onClose, onMarkRead, onMarkAllRead, onDelete, canBroadcast, uid, onNavigate }: {
   notifications: AppNotification[]; onClose: () => void;
-  onMarkRead: (id: string) => void; onDelete: (id: string) => void;
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+  onDelete: (id: string) => void;
   canBroadcast: boolean; uid: string;
   onNavigate?: (screen: string) => void;
 }) => {
@@ -503,12 +757,32 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
   const [body, setBody] = useState('');
   const [type, setType] = useState<AppNotification['type']>('info');
   const [sending, setSending] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+    return Notification.permission;
+  });
 
   const typeConfig = {
     info:    { icon: Info,         color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20',    label: 'Info' },
     warning: { icon: AlertTriangle, color: 'text-amber-400',  bg: 'bg-amber-500/10',  border: 'border-amber-500/20',  label: 'Aviso' },
     success: { icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', label: 'OK' },
     error:   { icon: AlertCircle,  color: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/20',    label: 'Urgente' },
+  };
+
+  const handleEnablePush = async () => {
+    setPushBusy(true);
+    try {
+      const result = await enableWebPushFromUserGesture(uid);
+      setPushPerm(result === 'unsupported' ? 'unsupported' : result === 'granted' ? 'granted' : 'denied');
+      if (result === 'granted') toast.success('Avisos del sistema activados');
+      else if (result === 'denied') toast.error('Permiso denegado en el navegador');
+      else toast.error('Este dispositivo no soporta push web');
+    } catch {
+      toast.error('No se pudo activar push');
+    } finally {
+      setPushBusy(false);
+    }
   };
 
   const handleSend = async () => {
@@ -522,8 +796,6 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
       const autorSnap = await getDoc(doc(db, 'usuarios', uid));
       const autorNombre = autorSnap.exists() ? (autorSnap.data().name || 'Calidad') : 'Calidad';
 
-      // 1. Guardar en Firestore — FCM lo envía Cloud Function `enviarNotificacionCalidad`
-      //    (tipo aviso_global). No usar VITE_FCM_SERVER_KEY en el cliente.
       await addDoc(collection(db, 'notificaciones'), {
         type,
         tipo: 'aviso_global',
@@ -535,46 +807,97 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
         destinatarios: allUids,
         timestamp: serverTimestamp(),
         global: true,
+        fcmSent: false,
+        navigateTo: 'menu',
       });
 
       toast.success('¡Aviso enviado a todos!');
       setTitle(''); setBody(''); setType('info'); setShowCompose(false);
-    } catch (e) { 
+    } catch (e) {
       console.error(e);
-      toast.error('Error al enviar'); 
+      toast.error('Error al enviar');
     }
     setSending(false);
   };
 
   const unread = notifications.filter(n => !n.read).length;
 
+  const relativeTime = (ts: Timestamp | null) => {
+    if (!ts?.toDate) return '';
+    try {
+      return formatDistanceToNow(ts.toDate(), { addSuffix: true, locale: es });
+    } catch {
+      return '';
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.96 }} transition={{ duration: 0.15 }}
-      className="absolute right-0 top-12 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
+      className="absolute right-0 top-12 w-[min(24rem,calc(100vw-1.25rem))] rounded-[1.35rem] shadow-2xl border z-50 overflow-hidden ag-card"
       onClick={e => e.stopPropagation()}
       role="dialog"
       aria-label="Notificaciones"
       style={{ borderColor: 'var(--border-color)' }}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 p-3.5 border-b ag-border">
-        <Bell className="w-4 h-4 acc-text flex-shrink-0" />
-        <span className="font-semibold text-sm ag-text flex-1">Notificaciones</span>
-        {unread > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full acc text-white">{unread}</span>}
-        {canBroadcast && (
-          <button onClick={() => setShowCompose(v => !v)}
-            className={`p-1.5 rounded-lg transition-all ${showCompose ? 'acc text-white' : 'acc-soft acc-text'}`}
-            title="Enviar aviso a todos"
+      <div
+        className="px-4 pt-4 pb-3 border-b ag-border"
+        style={{
+          background: 'linear-gradient(165deg, rgba(var(--acc-rgb)/0.14) 0%, transparent 70%)',
+        }}
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl acc-soft flex items-center justify-center">
+            <Bell className="w-4 h-4 acc-text" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm ag-text leading-tight">Notificaciones</p>
+            <p className="text-[11px] ag-muted mt-0.5">
+              {unread > 0 ? `${unread} sin leer` : 'Al día'}
+            </p>
+          </div>
+          {unread > 0 && (
+            <button
+              type="button"
+              onClick={onMarkAllRead}
+              className="text-[11px] font-semibold acc-text px-2 py-1 rounded-lg acc-soft hover:opacity-90"
+            >
+              Leer todas
+            </button>
+          )}
+          {canBroadcast && (
+            <button onClick={() => setShowCompose(v => !v)}
+              className={`p-1.5 rounded-lg transition-all ${showCompose ? 'acc text-white' : 'acc-soft acc-text'}`}
+              title="Enviar aviso a todos"
+            >
+              <Megaphone size={13} />
+            </button>
+          )}
+          <button onClick={onClose} aria-label="Cerrar notificaciones" className="p-1 ag-muted hover:ag-text transition-colors"><X size={15} /></button>
+        </div>
+
+        {pushPerm === 'default' && (
+          <button
+            type="button"
+            disabled={pushBusy}
+            onClick={handleEnablePush}
+            className="mt-3 w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border ag-border acc-soft acc-text text-left"
           >
-            <Megaphone size={13} />
+            <Bell size={14} className="shrink-0" />
+            <span className="flex-1">
+              {pushBusy ? 'Activando…' : 'Activar avisos en pantalla de bloqueo'}
+            </span>
+            <ChevronRight size={14} className="opacity-60" />
           </button>
         )}
-        <button onClick={onClose} aria-label="Cerrar notificaciones" className="p-1 ag-muted hover:ag-text transition-colors"><X size={15} /></button>
+        {pushPerm === 'denied' && (
+          <p className="mt-3 text-[10px] ag-muted leading-snug px-0.5">
+            Los avisos del sistema están bloqueados. Actívalos en la configuración del navegador para esta web.
+          </p>
+        )}
       </div>
 
-      {/* Compose */}
       <AnimatePresence>
         {showCompose && canBroadcast && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
@@ -584,7 +907,6 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
               <p className="text-[10px] font-bold uppercase tracking-wider acc-text flex items-center gap-1">
                 <Megaphone size={10} /> Enviar aviso a todos los usuarios
               </p>
-              {/* Tipo de notificación */}
               <div className="grid grid-cols-4 gap-1">
                 {(Object.keys(typeConfig) as AppNotification['type'][]).map(t => {
                   const cfg = typeConfig[t];
@@ -612,45 +934,49 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onDelete, canBr
         )}
       </AnimatePresence>
 
-      {/* Lista */}
-      <div className="max-h-72 overflow-y-auto cs">
+      <div className="max-h-[min(24rem,55vh)] overflow-y-auto cs">
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 ag-faint">
-            <Bell className="w-8 h-8 opacity-20 mb-2" />
-            <span className="text-xs ag-muted">Sin notificaciones</span>
+          <div className="flex flex-col items-center justify-center py-12 ag-faint px-6 text-center">
+            <div className="w-14 h-14 rounded-2xl ag-surface-hi flex items-center justify-center mb-3">
+              <Bell className="w-7 h-7 opacity-30" />
+            </div>
+            <span className="text-sm font-medium ag-muted">Bandeja limpia</span>
+            <span className="text-[11px] ag-faint mt-1">Los avisos importantes aparecerán aquí</span>
           </div>
         ) : notifications.map(n => {
           const cfg = typeConfig[n.type] || typeConfig.info;
           const Icon = cfg.icon;
+          const rel = relativeTime(n.timestamp);
           return (
             <div key={n.id} onClick={() => {
                 if (n.navigateTo) onNavigate?.(n.navigateTo);
                 if (!n.read) onMarkRead(n.id);
               }}
-              className={`group flex gap-3 p-3 border-b ag-border cursor-pointer transition-all ${n.read ? 'opacity-50 hover:opacity-80' : 'ag-surface-hi'}`}
+              className={`group flex gap-3 px-3.5 py-3 border-b ag-border cursor-pointer transition-all ${
+                n.read ? 'opacity-55 hover:opacity-85' : 'ag-surface-hi'
+              }`}
             >
-              <div className={`mt-0.5 p-1.5 rounded-lg flex-shrink-0 border ${cfg.bg} ${cfg.border}`}>
-                <Icon className={`w-3 h-3 ${cfg.color}`} />
+              <div className={`mt-0.5 p-2 rounded-xl flex-shrink-0 border ${cfg.bg} ${cfg.border}`}>
+                <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold ag-text truncate">{n.title}</p>
-                <p className="text-[11px] ag-muted mt-0.5 leading-snug line-clamp-2">{n.body}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  {n.timestamp && (
-                    <p className="text-[10px] ag-faint">
-                      {format((n.timestamp as Timestamp).toDate?.() ?? new Date(), 'dd MMM · HH:mm', { locale: es })}
-                    </p>
-                  )}
-                  {n.autorNombre && <p className="text-[10px] ag-faint">· {n.autorNombre}</p>}
+                <div className="flex items-start gap-2">
+                  <p className="text-[13px] font-semibold ag-text leading-snug flex-1">{n.title}</p>
+                  {!n.read && <span className="mt-1 w-2 h-2 rounded-full acc shrink-0" />}
+                </div>
+                <p className="text-[11px] ag-muted mt-1 leading-snug line-clamp-2">{n.body}</p>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {rel && <span className="text-[10px] ag-faint">{rel}</span>}
+                  {n.autorNombre && <span className="text-[10px] ag-faint">· {n.autorNombre}</span>}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                {!n.read && <div className="w-2 h-2 rounded-full acc mt-1" />}
                 {canBroadcast && (
                   <button onClick={e => { e.stopPropagation(); onDelete(n.id); }}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded text-rose-400 hover:bg-rose-500/10 transition-all"
                   ><Trash2 size={11} /></button>
                 )}
+                <ChevronRight className="w-3.5 h-3.5 ag-faint opacity-0 group-hover:opacity-70 transition-opacity" />
               </div>
             </div>
           );
@@ -685,7 +1011,7 @@ const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNove
     <motion.div
       initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.96 }} transition={{ duration: 0.15 }}
-      className="absolute right-0 top-12 w-[min(16rem,calc(100vw-1.5rem))] rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
+      className="absolute right-0 top-12 w-[min(18.5rem,calc(100vw-1.5rem))] rounded-2xl shadow-2xl border z-50 overflow-hidden ag-card"
       style={{ borderColor: 'var(--border-color)' }}
       onClick={e => e.stopPropagation()}
       role="dialog"
@@ -699,7 +1025,34 @@ const ThemeSelector = ({ prefs, setPrefs, onClose, novedadesWidgetHidden, onNove
         <button onClick={onClose} aria-label="Cerrar personalización" className="ag-muted p-1 rounded-lg hover:ag-surface-hi transition-colors"><X size={14} /></button>
       </div>
 
-      <div className="p-3.5 space-y-4">
+      <div className="p-3.5 space-y-4 max-h-[min(70vh,32rem)] overflow-y-auto cs">
+        {/* Estilo del menú */}
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2">Estilo del menú</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {([
+              { id: 'premium' as const, label: 'Premium' },
+              { id: 'classic' as const, label: 'Clásico' },
+            ]).map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setPrefs({ menuStyle: id })}
+                className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  (prefs.menuStyle || 'premium') === id ? 'acc text-white border-transparent' : 'ag-surface-hi ag-border ag-muted hover:opacity-80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] ag-faint mt-1.5 leading-snug">
+            {(prefs.menuStyle || 'premium') === 'premium'
+              ? 'Launcher corporativo con previews. Puedes volver a Clásico cuando quieras.'
+              : 'El diseño anterior, con categorías en cajas e iconos de color.'}
+          </p>
+        </div>
+
         {/* Modo */}
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2">Modo</p>
@@ -917,7 +1270,7 @@ const personalCountLabel = (count: number, visibility: PersonalVisibility) => {
   return `${count} técnicos`;
 };
 
-const TechnicianStatusWidget = ({ visibility }: { visibility: PersonalVisibility }) => {
+const TechnicianStatusWidget = ({ visibility, premium }: { visibility: PersonalVisibility; premium?: boolean }) => {
   const [people, setPeople] = useState<PresenceRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -986,18 +1339,22 @@ const TechnicianStatusWidget = ({ visibility }: { visibility: PersonalVisibility
     };
   }, [visibility]);
 
-  if (loading) return <div className="h-40 rounded-2xl border ag-border animate-pulse ag-surface" />;
+  if (loading) return <div className={`h-40 rounded-2xl border ag-border animate-pulse ag-surface ${premium ? 'ag-prem-widget' : ''}`} />;
   return (
-    <div className="rounded-2xl border ag-card overflow-hidden">
-      <div className="p-3 border-b ag-border flex items-center gap-2">
-        <Users className="w-4 h-4 acc-text" />
-        <span className="font-semibold text-sm ag-text">Personal</span>
-        <span className="text-[10px] ml-auto ag-faint">{personalCountLabel(people.length, visibility)}</span>
+    <div className={premium ? 'ag-prem-widget' : 'rounded-2xl border ag-card overflow-hidden'}>
+      <div className={premium ? 'ag-prem-widget-head' : 'p-3 border-b ag-border flex items-center gap-2'}>
+        {premium ? (
+          <div className="ag-prem-widget-icon"><Users className="w-3.5 h-3.5" /></div>
+        ) : (
+          <Users className="w-4 h-4 acc-text" />
+        )}
+        <span className={premium ? 'ag-prem-widget-title' : 'font-semibold text-sm ag-text'}>Personal</span>
+        <span className="text-[10px] ml-auto ag-faint tabular-nums">{personalCountLabel(people.length, visibility)}</span>
       </div>
       <div className="p-2 space-y-1.5 max-h-52 overflow-y-auto cs">
         {people.length === 0 ? <p className="text-xs text-center py-4 ag-faint">Sin personal</p>
           : people.map(t => (
-            <div key={t.id} className="flex items-center gap-2.5 p-2.5 rounded-xl border ag-border">
+            <div key={t.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl border ag-border ${premium ? 'bg-[var(--bg)]/40' : ''}`}>
               <div className="relative flex-shrink-0">
                 <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center ag-surface-hi">
                   {t.photoUrl ? <img src={t.photoUrl} className="w-full h-full object-cover" /> : <User className="w-4 h-4 ag-muted" />}
@@ -1016,12 +1373,16 @@ const TechnicianStatusWidget = ({ visibility }: { visibility: PersonalVisibility
   );
 };
 
-const ServicesWidget = ({ services, navigateTo, loading }: { services: Service[]; navigateTo: any; loading: boolean }) => (
-  <div className="rounded-2xl border ag-card flex flex-col overflow-hidden h-full">
-    <div className="p-3 border-b ag-border flex items-center gap-2">
-      <Briefcase className="w-4 h-4 acc-text" />
-      <span className="font-semibold text-sm ag-text">Mis Asignaciones</span>
-      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ag-badge">{services.length}</span>
+const ServicesWidget = ({ services, navigateTo, loading, premium }: { services: Service[]; navigateTo: any; loading: boolean; premium?: boolean }) => (
+  <div className={`${premium ? 'ag-prem-widget' : 'rounded-2xl border ag-card overflow-hidden'} flex flex-col h-full`}>
+    <div className={premium ? 'ag-prem-widget-head' : 'p-3 border-b ag-border flex items-center gap-2'}>
+      {premium ? (
+        <div className="ag-prem-widget-icon"><Briefcase className="w-3.5 h-3.5" /></div>
+      ) : (
+        <Briefcase className="w-4 h-4 acc-text" />
+      )}
+      <span className={premium ? 'ag-prem-widget-title' : 'font-semibold text-sm ag-text'}>Mis Asignaciones</span>
+      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ag-badge tabular-nums">{services.length}</span>
     </div>
     <div className="flex-1 overflow-y-auto p-2 space-y-1.5 cs">
       {loading ? [1,2].map(i => <div key={i} className="h-16 rounded-xl animate-pulse ag-surface-hi" />)
@@ -1449,21 +1810,37 @@ const getGreeting = () => {
 };
 
 const WelcomeHero = ({
-  firstName, roleLabel, formattedDate, searchTerm, onSearchChange,
+  firstName, roleLabel, formattedDate, searchTerm, onSearchChange, premium,
 }: {
   firstName: string; roleLabel: string;
   formattedDate: string; searchTerm: string; onSearchChange: (v: string) => void;
+  premium?: boolean;
 }) => (
-  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+  <div className={`flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 ${premium ? 'mb-8' : 'mb-6'}`}>
     <div className="min-w-0">
-      <h2 className="text-2xl sm:text-[1.75rem] font-bold ag-text tracking-tight leading-tight">
-        {getGreeting()}, <span className="acc-text">{firstName}</span>
-      </h2>
-      <p className="text-xs sm:text-sm ag-muted mt-1 flex items-center gap-1.5 flex-wrap">
-        <span>{formattedDate}</span>
-        <span className="ag-faint">•</span>
-        <span className="inline-flex items-center gap-1"><User className="w-3 h-3" />{roleLabel}</span>
-      </p>
+      {premium ? (
+        <>
+          <p className="text-[11px] font-medium tracking-[0.18em] uppercase ag-muted mb-2.5">
+            {formattedDate}
+            <span className="mx-2 opacity-40">·</span>
+            {roleLabel}
+          </p>
+          <h2 className="text-[1.85rem] sm:text-[2.15rem] font-semibold ag-text tracking-tight leading-[1.1]">
+            {getGreeting()}, <span className="ag-prem-hero-name">{firstName}</span>
+          </h2>
+        </>
+      ) : (
+        <>
+          <h2 className="text-2xl sm:text-[1.75rem] font-bold ag-text tracking-tight leading-tight">
+            {getGreeting()}, <span className="acc-text">{firstName}</span>
+          </h2>
+          <p className="text-xs sm:text-sm ag-muted mt-1 flex items-center gap-1.5 flex-wrap">
+            <span>{formattedDate}</span>
+            <span className="ag-faint">•</span>
+            <span className="inline-flex items-center gap-1"><User className="w-3 h-3" />{roleLabel}</span>
+          </p>
+        </>
+      )}
     </div>
     <div className="relative w-full sm:w-72 lg:w-80 shrink-0">
       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ag-faint pointer-events-none" aria-hidden />
@@ -1472,7 +1849,7 @@ const WelcomeHero = ({
         onChange={e => onSearchChange(e.target.value)}
         placeholder="Buscar módulo..."
         aria-label="Buscar módulo"
-        className="w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border ag-input"
+        className={`w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border ag-input ${premium ? 'ag-prem-search rounded-2xl py-3' : ''}`}
       />
       {searchTerm && (
         <button
@@ -1534,23 +1911,57 @@ const activateMenuItem = (
 };
 
 const MenuGridCard = ({
-  item, index, isDisabled, onNavigate, hideCategory, badgeCount, disabledBadge = 'Bloqueado', disabledReason,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number; disabledBadge?: string; disabledReason?: string }) => {
+  item, index, isDisabled, onNavigate, hideCategory, badgeCount, disabledBadge = 'Bloqueado', disabledReason, premium,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; hideCategory?: boolean; badgeCount?: number; disabledBadge?: string; disabledReason?: string; premium?: boolean }) => {
   const rgb = getCategoryRgb(item.category);
+  const blurb = MENU_BLURBS[item.id] || item.category;
+  const sharedHandlers = {
+    role: 'button' as const,
+    tabIndex: isDisabled ? -1 : 0,
+    'aria-disabled': isDisabled,
+    'aria-label': isDisabled ? `${item.title} (${disabledReason || 'no disponible'})` : item.title,
+    title: isDisabled ? (disabledReason || undefined) : undefined,
+    onClick: () => !isDisabled && onNavigate(item.id),
+    onMouseEnter: () => !isDisabled && prefetchMenuScreen(item.id),
+    onFocus: () => !isDisabled && prefetchMenuScreen(item.id),
+    onKeyDown: (e: React.KeyboardEvent) => activateMenuItem(e, isDisabled, () => onNavigate(item.id)),
+  };
+
+  if (premium) {
+    return (
+      <div
+        {...sharedHandlers}
+        className={`ag-prem-tile ${isDisabled ? 'is-disabled' : ''}`}
+      >
+        {isDisabled && (
+          <span className="absolute top-3 right-3 z-20 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">{disabledBadge}</span>
+        )}
+        {!isDisabled && badgeCount != null && badgeCount > 0 && (
+          <span className="absolute top-3 right-3 z-20 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white shadow-sm">
+            {badgeCount > 99 ? '99+' : badgeCount}
+          </span>
+        )}
+        <div className="ag-prem-screen" aria-hidden>
+          <div className="ag-prem-chrome"><i /><i /><i /></div>
+          <div className="ag-prem-lines"><span /><span /><span /></div>
+          <div className="ag-prem-icon-float">
+            <item.icon className="w-[1.15rem] h-[1.15rem]" />
+          </div>
+        </div>
+        <div className="ag-prem-meta">
+          <h3 className="ag-prem-title">{item.title}</h3>
+          <p className="ag-prem-blurb">{hideCategory ? blurb : `${item.category} · ${blurb}`}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       key={item.id}
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.02 }}
       whileTap={isDisabled ? {} : { scale: 0.97 }}
-      role="button"
-      tabIndex={isDisabled ? -1 : 0}
-      aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (${disabledReason || 'no disponible'})` : item.title}
-      title={isDisabled ? (disabledReason || undefined) : undefined}
-      onClick={() => !isDisabled && onNavigate(item.id)}
-      onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
+      {...sharedHandlers}
       className={`group relative rounded-[1.35rem] border p-4 sm:p-5 min-h-[8rem] sm:min-h-[8.5rem] cursor-pointer card-interact ag-card ag-menu-card overflow-hidden
         ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
       `}
@@ -1598,22 +2009,50 @@ const MenuGridCard = ({
 };
 
 const MenuListRow = ({
-  item, index, isDisabled, onNavigate, badgeCount, disabledBadge = 'Bloqueado', disabledReason,
-}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number; disabledBadge?: string; disabledReason?: string }) => {
+  item, index, isDisabled, onNavigate, badgeCount, disabledBadge = 'Bloqueado', disabledReason, premium,
+}: { item: MenuItem; index: number; isDisabled: boolean; onNavigate: (id: string) => void; badgeCount?: number; disabledBadge?: string; disabledReason?: string; premium?: boolean }) => {
   const rgb = getCategoryRgb(item.category);
+  const blurb = MENU_BLURBS[item.id] || item.category;
+  const sharedHandlers = {
+    role: 'button' as const,
+    tabIndex: isDisabled ? -1 : 0,
+    'aria-disabled': isDisabled,
+    'aria-label': isDisabled ? `${item.title} (${disabledReason || 'no disponible'})` : item.title,
+    title: isDisabled ? (disabledReason || undefined) : undefined,
+    onClick: () => !isDisabled && onNavigate(item.id),
+    onMouseEnter: () => !isDisabled && prefetchMenuScreen(item.id),
+    onFocus: () => !isDisabled && prefetchMenuScreen(item.id),
+    onKeyDown: (e: React.KeyboardEvent) => activateMenuItem(e, isDisabled, () => onNavigate(item.id)),
+  };
+
+  if (premium) {
+    return (
+      <div {...sharedHandlers} className={`ag-prem-row ${isDisabled ? 'is-disabled' : ''}`}>
+        <div className="ag-prem-thumb" aria-hidden>
+          <item.icon className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold ag-text tracking-tight truncate">{item.title}</p>
+          <p className="text-[11px] ag-muted truncate mt-0.5">{blurb}</p>
+        </div>
+        {isDisabled && (
+          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ag-badge">{disabledBadge}</span>
+        )}
+        {!isDisabled && badgeCount != null && badgeCount > 0 && (
+          <span className="min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-amber-500 text-white">
+            {badgeCount > 99 ? '99+' : badgeCount}
+          </span>
+        )}
+        {!isDisabled && <ChevronRight className="w-4 h-4 ag-faint shrink-0 opacity-50" />}
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.012 }}
       whileTap={isDisabled ? {} : { scale: 0.99 }}
-      role="button"
-      tabIndex={isDisabled ? -1 : 0}
-      aria-disabled={isDisabled}
-      aria-label={isDisabled ? `${item.title} (${disabledReason || 'no disponible'})` : item.title}
-      title={isDisabled ? (disabledReason || undefined) : undefined}
-      onClick={() => !isDisabled && onNavigate(item.id)}
-      onMouseEnter={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onFocus={() => !isDisabled && prefetchMenuScreen(item.id)}
-      onKeyDown={e => activateMenuItem(e, isDisabled, () => onNavigate(item.id))}
+      {...sharedHandlers}
       className={`group flex items-center gap-3.5 px-3.5 py-3 sm:py-3.5 rounded-2xl border cursor-pointer card-interact ag-card ag-menu-card min-h-[3.5rem]
         ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}
       `}
@@ -1675,6 +2114,7 @@ export const MainMenu: React.FC = () => {
   const { prefs, setPrefs, loading: loadingPrefs } = useUserPrefs(uid);
   const viewMode = prefs.viewMode;
   const setViewMode = (v: 'grid' | 'list') => setPrefs({ viewMode: v });
+  const isPremiumMenu = prefs.menuStyle !== 'classic';
 
   useEffect(() => {
     if (uid) setNovedadesWidgetHiddenState(isNovedadesWidgetHidden(uid));
@@ -1786,7 +2226,8 @@ export const MainMenu: React.FC = () => {
         return { id: d.id, type: data.type || 'info', title: data.title || 'Notificación', body: data.body || '',
           read: (data.readBy || []).includes(uid), timestamp: data.timestamp || null,
           autorNombre: data.autorNombre || '', autorUid: data.autorUid || '',
-          navigateTo: data.navigateTo || (data.tipo === 'recordatorio_confirmacion_junta' ? 'calendario' : undefined),
+          tipo: data.tipo || '',
+          navigateTo: data.navigateTo || screenFromNotifTipo(data.tipo) || (data.tipo === 'recordatorio_confirmacion_junta' ? 'calendario' : undefined),
           servicioId: data.servicioId || '' } as AppNotification;
       })),
       err => console.error('Notificaciones:', err)
@@ -1831,6 +2272,15 @@ export const MainMenu: React.FC = () => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     try { await updateDoc(doc(db, 'notificaciones', id), { readBy: arrayUnion(uid) }); } catch {}
   }, [uid]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    const unread = notifications.filter(n => !n.read);
+    if (unread.length === 0) return;
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    await Promise.all(
+      unread.map(n => updateDoc(doc(db, 'notificaciones', n.id), { readBy: arrayUnion(uid) }).catch(() => {})),
+    );
+  }, [notifications, uid]);
 
   const handleDeleteNotif = useCallback(async (id: string) => {
     try { await deleteDoc(doc(db, 'notificaciones', id)); toast.success('Eliminada'); }
@@ -2046,23 +2496,24 @@ export const MainMenu: React.FC = () => {
       onSelect={setSelectedNovedad}
       onCompose={() => setShowComposeNovedad(true)}
       onHide={() => handleNovedadesWidgetHiddenChange(true)}
+      premium={isPremiumMenu}
     />
   ) : null;
 
   const personalWidgetDesktop =
     showPersonalWidget && personalVisibility ? (
-      <TechnicianStatusWidget visibility={personalVisibility} />
+      <TechnicianStatusWidget visibility={personalVisibility} premium={isPremiumMenu} />
     ) : null;
   const personalWidgetMobile =
     showPersonalWidget && personalVisibility ? (
-      <TechnicianStatusWidget visibility={personalVisibility} />
+      <TechnicianStatusWidget visibility={personalVisibility} premium={isPremiumMenu} />
     ) : null;
 
   const widgetsDesktop = (
     <div className="flex flex-col gap-4 min-h-64">
       {novedadesWidget}
       {personalWidgetDesktop}
-      <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
+      <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} premium={isPremiumMenu} />
     </div>
   );
 
@@ -2070,7 +2521,7 @@ export const MainMenu: React.FC = () => {
     <>
       <Toaster position="top-center" toastOptions={{ duration: 2800, style: { borderRadius: 12, fontSize: 13, fontWeight: 600 } }} />
       <ThemeStyle />
-      <div className="min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-mesh ag-text transition-colors relative" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div className={`min-h-full flex-shrink-0 flex flex-col font-sans ag-bg ag-text transition-colors relative ${isPremiumMenu ? 'ag-prem-mesh' : 'ag-mesh'}`} style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
         {/* HEADER */}
         <header className="sticky top-0 z-40 border-b ag-header shadow-sm" style={{ backdropFilter: 'blur(20px)' }}>
@@ -2109,8 +2560,8 @@ export const MainMenu: React.FC = () => {
                 <AnimatePresence>
                   {showNotif && (
                     <NotificationPanel notifications={notifications} onClose={() => setShowNotif(false)}
-                      onMarkRead={handleMarkRead} onDelete={handleDeleteNotif} canBroadcast={canBroadcast} uid={uid}
-                      onNavigate={screen => { if (screen === 'calendario') navigateTo('calendario'); setShowNotif(false); }} />
+                      onMarkRead={handleMarkRead} onMarkAllRead={handleMarkAllRead} onDelete={handleDeleteNotif} canBroadcast={canBroadcast} uid={uid}
+                      onNavigate={screen => { navigateTo(screen as Parameters<typeof navigateTo>[0]); setShowNotif(false); }} />
                   )}
                 </AnimatePresence>
               </div>
@@ -2241,7 +2692,7 @@ export const MainMenu: React.FC = () => {
 
             {/* Widgets — carrusel móvil / tablet */}
             <div className="lg:hidden order-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider ag-muted mb-2.5 px-0.5">Resumen rápido</p>
+              <p className={isPremiumMenu ? 'ag-prem-section-label mb-2.5 px-0.5' : 'text-[10px] font-bold uppercase tracking-wider ag-muted mb-2.5 px-0.5'}>Resumen rápido</p>
               <div className="flex gap-3 overflow-x-auto ag-widgets-scroll snap-x snap-mandatory pb-1 -mx-4 px-4">
                 {novedadesWidget && (
                   <div className="snap-start shrink-0 w-[min(88vw,20rem)]">{novedadesWidget}</div>
@@ -2250,7 +2701,7 @@ export const MainMenu: React.FC = () => {
                   <div className="snap-start shrink-0 w-[min(88vw,20rem)]">{personalWidgetMobile}</div>
                 )}
                 <div className="snap-start shrink-0 w-[min(88vw,20rem)] min-h-[16rem]">
-                  <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} />
+                  <ServicesWidget services={assignedServices} navigateTo={navigateTo} loading={loadingServices} premium={isPremiumMenu} />
                 </div>
               </div>
             </div>
@@ -2262,14 +2713,15 @@ export const MainMenu: React.FC = () => {
                 formattedDate={formattedDate}
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
+                premium={isPremiumMenu}
               />
 
               {!isSearching && (
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold ag-text flex items-center gap-2">
-                    <LayoutGrid className="w-4 h-4 acc-text" /> Tus módulos
+                <div className={`flex items-center justify-between ${isPremiumMenu ? 'mb-5' : 'mb-4'}`}>
+                  <h3 className={`ag-text flex items-center gap-2 ${isPremiumMenu ? 'text-[11px] font-semibold tracking-[0.18em] uppercase ag-muted' : 'text-sm font-semibold'}`}>
+                    {isPremiumMenu ? 'Módulos' : (<><LayoutGrid className="w-4 h-4 acc-text" /> Tus módulos</>)}
                   </h3>
-                  <span className="text-xs ag-faint font-medium">{filteredMenu.length} disponibles</span>
+                  <span className="text-xs ag-faint font-medium tabular-nums">{filteredMenu.length} disponibles</span>
                 </div>
               )}
 
@@ -2280,7 +2732,7 @@ export const MainMenu: React.FC = () => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="flex flex-col items-center justify-center py-16 gap-4 rounded-2xl border ag-border ag-card ag-menu-card"
+                    className={`flex flex-col items-center justify-center py-16 gap-4 rounded-2xl border ag-border ag-card ${isPremiumMenu ? '' : 'ag-menu-card'}`}
                   >
                     <div className="p-4 rounded-2xl ag-surface-hi">
                       <Search className="w-10 h-10 ag-faint opacity-40" aria-hidden />
@@ -2297,19 +2749,26 @@ export const MainMenu: React.FC = () => {
                     )}
                   </motion.div>
                 ) : viewMode === 'grid' ? (
-                  <motion.div key="grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className={isSearching ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4' : 'space-y-5'}
+                  <motion.div key="grid" initial={isPremiumMenu ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className={isSearching ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4' : isPremiumMenu ? 'space-y-8' : 'space-y-5'}
                   >
                     {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => {
                       const rgb = getCategoryRgb(category);
                       return (
-                        <div key={category || 'search'} className={isSearching ? 'contents' : 'ag-section'}>
+                        <div key={category || 'search'} className={isSearching ? 'contents' : isPremiumMenu ? '' : 'ag-section'}>
                           {!isSearching && (
-                            <div className="flex items-center gap-2.5 mb-4">
-                              <span className="w-1.5 h-5 rounded-full" style={{ background: `rgb(${rgb})`, boxShadow: `0 0 12px rgba(${rgb}/0.5)` }} />
-                              <h3 className="text-[13px] font-bold uppercase tracking-wider ag-text">{category}</h3>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}>{items.length}</span>
-                            </div>
+                            isPremiumMenu ? (
+                              <div className="flex items-baseline justify-between mb-3.5 px-0.5">
+                                <h3 className="ag-prem-section-label">{category}</h3>
+                                <span className="text-[11px] ag-faint tabular-nums">{items.length}</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2.5 mb-4">
+                                <span className="w-1.5 h-5 rounded-full" style={{ background: `rgb(${rgb})`, boxShadow: `0 0 12px rgba(${rgb}/0.5)` }} />
+                                <h3 className="text-[13px] font-bold uppercase tracking-wider ag-text">{category}</h3>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}>{items.length}</span>
+                              </div>
+                            )
                           )}
                           <div className={isSearching ? 'contents' : 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4'}>
                             {items.map((item, i) => {
@@ -2324,6 +2783,7 @@ export const MainMenu: React.FC = () => {
                                 disabledBadge={disabledState.badge}
                                 disabledReason={disabledState.reason}
                                 onNavigate={navigateTo}
+                                premium={isPremiumMenu}
                                 badgeCount={
                                   item.id === 'calendario' && canSeePatronAlerts
                                     ? patronAlertCount
@@ -2340,17 +2800,24 @@ export const MainMenu: React.FC = () => {
                     })}
                   </motion.div>
                 ) : (
-                  <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                  <motion.div key="list" initial={isPremiumMenu ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={isPremiumMenu ? 'space-y-6' : 'space-y-4'}>
                     {(isSearching ? [{ category: '', items: filteredMenu }] : menuGroups).map(({ category, items }) => {
                       const rgb = getCategoryRgb(category);
                       return (
                         <div key={category || 'all'}>
                           {!isSearching && (
-                            <div className="flex items-center gap-2.5 mb-2.5 px-1">
-                              <span className="w-1.5 h-4 rounded-full" style={{ background: `rgb(${rgb})`, boxShadow: `0 0 12px rgba(${rgb}/0.5)` }} />
-                              <h3 className="text-[11px] font-bold uppercase tracking-wider ag-text">{category}</h3>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}>{items.length}</span>
-                            </div>
+                            isPremiumMenu ? (
+                              <div className="flex items-baseline justify-between mb-2.5 px-0.5">
+                                <h3 className="ag-prem-section-label">{category}</h3>
+                                <span className="text-[11px] ag-faint tabular-nums">{items.length}</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2.5 mb-2.5 px-1">
+                                <span className="w-1.5 h-4 rounded-full" style={{ background: `rgb(${rgb})`, boxShadow: `0 0 12px rgba(${rgb}/0.5)` }} />
+                                <h3 className="text-[11px] font-bold uppercase tracking-wider ag-text">{category}</h3>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: `rgb(${rgb})`, background: `rgba(${rgb}/0.12)` }}>{items.length}</span>
+                              </div>
+                            )
                           )}
                           <div className="space-y-2">
                             {items.map((item, i) => {
@@ -2364,6 +2831,7 @@ export const MainMenu: React.FC = () => {
                                 disabledBadge={disabledState.badge}
                                 disabledReason={disabledState.reason}
                                 onNavigate={navigateTo}
+                                premium={isPremiumMenu}
                                 badgeCount={
                                   item.id === 'calendario' && canSeePatronAlerts
                                     ? patronAlertCount
@@ -2385,7 +2853,7 @@ export const MainMenu: React.FC = () => {
 
             {/* Widgets — sidebar desktop */}
             <div className="hidden lg:flex lg:w-80 flex-col gap-4 lg:order-2 lg:sticky lg:top-[4.5rem] lg:self-start">
-              <p className="text-[10px] font-bold uppercase tracking-wider ag-muted px-0.5">Resumen</p>
+              <p className={isPremiumMenu ? 'ag-prem-section-label px-0.5' : 'text-[10px] font-bold uppercase tracking-wider ag-muted px-0.5'}>Resumen</p>
               {widgetsDesktop}
             </div>
           </div>

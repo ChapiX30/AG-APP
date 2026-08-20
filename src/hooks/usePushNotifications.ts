@@ -2,54 +2,114 @@ import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { getFcmToken, subscribeForegroundMessage } from '../utils/firebase';
 import { registerFcmToken } from '../utils/fcmTokenStorage';
-import { parseFcmDisplayPayload } from '../utils/pushNotificationDisplay';
+import {
+  buildNotificationOptions,
+  parseFcmDisplayPayload,
+} from '../utils/pushNotificationDisplay';
+import { screenFromPushUrl } from '../utils/notificationMeta';
+import { showInAppPushToast } from '../components/PushInAppToast';
 import { useNativePushNotifications } from './useNativePushNotifications';
+import { useNavigation } from './useNavigation';
 
 const VAPID_KEY =
   'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
 
 /** Web Push (PWA / navegador). Solo corre fuera del APK. */
 function useWebPushNotifications(uid: string, email: string) {
+  const { navigateTo } = useNavigation();
+
   useEffect(() => {
     if (!uid) return;
     if (Capacitor.isNativePlatform()) return;
 
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    let unsubscribeForeground: (() => void) | undefined;
+    let cancelled = false;
+
+    const onSwMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'AG_PUSH_NAV') return;
+      const screen =
+        (typeof event.data.screen === 'string' && event.data.screen) ||
+        screenFromPushUrl(event.data.url);
+      if (screen) navigateTo(screen as Parameters<typeof navigateTo>[0]);
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', onSwMessage);
     }
 
-    let unsubscribeForeground: (() => void) | undefined;
-
     (async () => {
-      const token = await getFcmToken(VAPID_KEY);
-      if (token) {
-        try {
-          await registerFcmToken(uid, email || null, token, 'web');
-        } catch (e) {
-          console.warn('No se pudo guardar token FCM web:', e);
+      // Moderno: no forzar el prompt al cargar. Solo registrar token si ya hay permiso.
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'granted') {
+        const token = await getFcmToken(VAPID_KEY);
+        if (cancelled) return;
+        if (token) {
+          try {
+            await registerFcmToken(uid, email || null, token, 'web');
+          } catch (e) {
+            console.warn('No se pudo guardar token FCM web:', e);
+          }
         }
       }
 
       unsubscribeForeground = await subscribeForegroundMessage((payload) => {
+        if (cancelled) return;
+        const parsed = parseFcmDisplayPayload(payload);
+        const open = () => {
+          if (parsed.screen) navigateTo(parsed.screen as Parameters<typeof navigateTo>[0]);
+        };
+
+        // App visible → toast in-app premium (no popup nativo redundante).
+        if (document.visibilityState === 'visible') {
+          showInAppPushToast(parsed.title, parsed.body, open);
+          return;
+        }
+
+        // Pestaña abierta pero en segundo plano → notificación del sistema.
         if (Notification.permission !== 'granted') return;
-        if (document.visibilityState === 'hidden') return;
-        const { title, body, tag } = parseFcmDisplayPayload(payload);
-        new Notification(title, {
-          body,
-          icon: '/bell.png',
-          tag,
-        });
+        const opts = buildNotificationOptions(parsed);
+        const n = new Notification(parsed.title, opts as NotificationOptions);
+        n.onclick = () => {
+          window.focus();
+          open();
+          n.close();
+        };
       });
     })();
 
     return () => {
+      cancelled = true;
       unsubscribeForeground?.();
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', onSwMessage);
+      }
     };
-  }, [uid, email]);
+  }, [uid, email, navigateTo]);
 }
 
 /** Registra push: web en navegador, FCM nativo en APK Android. */
 export function usePushNotifications(uid: string, email: string) {
   useWebPushNotifications(uid, email);
   useNativePushNotifications(uid, email);
+}
+
+/** Activa permisos + token desde un gesto del usuario (panel de notificaciones). */
+export async function enableWebPushFromUserGesture(
+  uid: string,
+  email?: string | null,
+): Promise<'granted' | 'denied' | 'unsupported'> {
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+  if (Capacitor.isNativePlatform()) return 'unsupported';
+
+  let perm = Notification.permission;
+  if (perm === 'default') {
+    perm = await Notification.requestPermission();
+  }
+  if (perm !== 'granted') return 'denied';
+
+  const token = await getFcmToken(VAPID_KEY);
+  if (token && uid) {
+    await registerFcmToken(uid, email || null, token, 'web');
+  }
+  return 'granted';
 }

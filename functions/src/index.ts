@@ -542,6 +542,8 @@ export const enviarNotificacionCalidad = functions.firestore
             'vacacion_progreso',
             'vacacion_aprobada',
             'aviso_global',
+            'recordatorio_confirmacion_junta',
+            'confirmacion_asistencia',
         ]);
         if (!nuevaNotificacion || !tipo || !tiposPush.has(tipo)) {
             return null;
@@ -550,6 +552,27 @@ export const enviarNotificacionCalidad = functions.firestore
         if (nuevaNotificacion.fcmSent === true) {
             return null;
         }
+
+        const tipoMeta: Record<string, { url: string; screen: string; urgency: string; actionOpen: string; label: string }> = {
+            asignacion_calidad: { url: '/calendario', screen: 'calendario', urgency: 'high', actionOpen: 'Ver servicio', label: 'Asignación' },
+            revision_calidad: { url: '/drive', screen: 'drive', urgency: 'high', actionOpen: 'Abrir Drive', label: 'Revisión' },
+            prestamo_patron_tecnico: { url: '/control-prestamos', screen: 'control-prestamos', urgency: 'normal', actionOpen: 'Ver préstamo', label: 'Préstamo' },
+            prestamo_patron_calidad: { url: '/control-prestamos', screen: 'control-prestamos', urgency: 'normal', actionOpen: 'Ver préstamo', label: 'Préstamo' },
+            vacacion_pendiente: { url: '/solicitud-vacaciones', screen: 'solicitud-vacaciones', urgency: 'high', actionOpen: 'Revisar', label: 'Vacaciones' },
+            vacacion_rechazada: { url: '/solicitud-vacaciones', screen: 'solicitud-vacaciones', urgency: 'high', actionOpen: 'Ver detalle', label: 'Vacaciones' },
+            vacacion_progreso: { url: '/solicitud-vacaciones', screen: 'solicitud-vacaciones', urgency: 'normal', actionOpen: 'Ver estado', label: 'Vacaciones' },
+            vacacion_aprobada: { url: '/solicitud-vacaciones', screen: 'solicitud-vacaciones', urgency: 'normal', actionOpen: 'Abrir', label: 'Vacaciones' },
+            aviso_global: { url: '/', screen: 'menu', urgency: 'normal', actionOpen: 'Abrir app', label: 'Aviso general' },
+            recordatorio_confirmacion_junta: { url: '/calendario', screen: 'calendario', urgency: 'high', actionOpen: 'Confirmar', label: 'Junta' },
+            confirmacion_asistencia: { url: '/calendario', screen: 'calendario', urgency: 'high', actionOpen: 'Ver junta', label: 'Junta' },
+        };
+        const meta = tipoMeta[tipo] || {
+            url: '/',
+            screen: 'menu',
+            urgency: 'normal',
+            actionOpen: 'Abrir',
+            label: 'Aviso',
+        };
 
         const collectTokensForUser = async (usuarioId: string): Promise<string[]> => {
             const userDoc = await db.collection('usuarios').doc(usuarioId).get();
@@ -589,44 +612,47 @@ export const enviarNotificacionCalidad = functions.firestore
             const tokensArray = [...tokenSet];
             if (tokensArray.length === 0) {
                 console.log(
-                    `Notificaci�n ${context.params.notificacionId}: sin tokens FCM para destinatarios.`
+                    `Notificación ${context.params.notificacionId}: sin tokens FCM para destinatarios.`
                 );
                 return null;
             }
 
             const servicioId = nuevaNotificacion.servicioId || nuevaNotificacion.worksheetDocId || '';
-            const servicioTag = servicioId || context.params.notificacionId;
+            const servicioTag = String(nuevaNotificacion.tag || servicioId || context.params.notificacionId);
             const title = String(
                 nuevaNotificacion.title || nuevaNotificacion.titulo || 'Aviso AG'
             );
             const body = String(nuevaNotificacion.body || nuevaNotificacion.mensaje || '');
-            const url =
-                tipo === 'revision_calidad'
-                    ? '/drive'
-                    : tipo === 'aviso_global'
-                      ? '/'
-                      : tipo === 'vacacion_pendiente' ||
-                          tipo === 'vacacion_rechazada' ||
-                          tipo === 'vacacion_progreso' ||
-                          tipo === 'vacacion_aprobada'
-                        ? '/solicitud-vacaciones'
-                        : '/calendario';
+            const url = String(nuevaNotificacion.navigateToUrl || meta.url);
+            const screen = String(nuevaNotificacion.navigateTo || meta.screen);
+            const urgency = meta.urgency;
+            const actionOpen = meta.actionOpen;
+
+            const dataPayload: Record<string, string> = {
+                title,
+                body,
+                url,
+                screen,
+                servicioId: servicioId || '',
+                tipo,
+                tag: servicioTag,
+                urgency,
+                actionOpen,
+                label: meta.label,
+            };
 
             const payload = {
-                data: {
-                    title,
-                    body,
-                    url,
-                    servicioId: servicioId || '',
-                    tipo,
-                    tag: servicioTag,
-                },
+                data: dataPayload,
                 android: {
                     priority: 'high' as const,
                     notification: {
                         title,
                         body,
                         tag: servicioTag,
+                        channelId: urgency === 'high' ? 'ag_alerts_high' : 'ag_alerts',
+                        color: '#2464a3',
+                        defaultSound: true,
+                        notificationCount: 1,
                     },
                 },
                 apns: {
@@ -634,17 +660,19 @@ export const enviarNotificacionCalidad = functions.firestore
                         aps: {
                             alert: { title, body },
                             'thread-id': servicioTag,
+                            'interruption-level': urgency === 'high' ? 'time-sensitive' : 'active',
+                            sound: 'default',
                         },
                     },
                 },
                 webpush: {
-                    headers: { Urgency: 'high' },
-                    data: {
-                        title,
-                        body,
-                        url,
-                        servicioId: servicioId || '',
-                        tipo,
+                    headers: {
+                        Urgency: urgency === 'high' ? 'high' : urgency === 'low' ? 'low' : 'normal',
+                        TTL: '86400',
+                    },
+                    data: dataPayload,
+                    fcmOptions: {
+                        link: url,
                     },
                 },
                 tokens: tokensArray,
@@ -652,20 +680,52 @@ export const enviarNotificacionCalidad = functions.firestore
 
             const response = await admin.messaging().sendEachForMulticast(payload);
             console.log(
-                `Push ${tipo} ${context.params.notificacionId}. �xitos: ${response.successCount}, Fallos: ${response.failureCount}`
+                `Push ${tipo} ${context.params.notificacionId}. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`
             );
+
+            // Limpia tokens inválidos para no degradar entregas futuras
+            const invalidCodes = new Set([
+                'messaging/invalid-registration-token',
+                'messaging/registration-token-not-registered',
+            ]);
+            const staleTokens: string[] = [];
+            response.responses.forEach((r, i) => {
+                if (!r.success && r.error && invalidCodes.has(r.error.code)) {
+                    staleTokens.push(tokensArray[i]);
+                }
+            });
+            if (staleTokens.length > 0) {
+                for (const uid of recipientIds) {
+                    const ref = db.collection('usuarios').doc(uid);
+                    const snap = await ref.get();
+                    if (!snap.exists) continue;
+                    const u = snap.data() || {};
+                    const map = { ...(u.fcmTokens || {}) };
+                    let changed = false;
+                    for (const t of staleTokens) {
+                        if (map[t]) {
+                            map[t] = false;
+                            changed = true;
+                        }
+                    }
+                    if (changed) {
+                        await ref.set({ fcmTokens: map }, { merge: true });
+                    }
+                }
+            }
 
             await change.after.ref.set(
                 {
                     fcmSent: true,
                     fcmSentAt: admin.firestore.FieldValue.serverTimestamp(),
+                    navigateTo: screen,
                 },
                 { merge: true }
             );
 
             return null;
         } catch (error) {
-            console.error('Error cr�tico al enviar Push Notification Multicast:', error);
+            console.error('Error crítico al enviar Push Notification Multicast:', error);
             return null;
         }
     });
