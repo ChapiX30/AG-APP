@@ -1107,7 +1107,10 @@ const NormasScreen = () => {
             </div>
           )}
 
-          <div className="p-5 sm:p-6 overflow-x-auto">
+          <div className="p-5 sm:p-6 overflow-x-auto overscroll-x-contain">
+            <p className="md:hidden mb-3 text-[11px] text-slate-500">
+              Desliza la tabla hacia los lados para ver todos los campos.
+            </p>
             <table className="w-full min-w-[800px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200">

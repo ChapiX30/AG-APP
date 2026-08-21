@@ -1,7 +1,7 @@
 /**
  * Gestión de Servicios — pulido visual (ago 2026).
  */
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback, startTransition, memo } from 'react';
 import { 
   ArrowLeft, Plus, Calendar, Search, Eye, Edit3, Trash2, X, 
   CheckCircle2, RotateCcw, Play, AlertCircle, Clock,
@@ -13,7 +13,7 @@ import {
 
 import { 
   doc, collection, updateDoc, addDoc, deleteDoc, onSnapshot, query, 
-  orderBy, serverTimestamp, getDocs, getDoc, arrayUnion, where
+  orderBy, serverTimestamp, getDocs, getDoc, arrayUnion, where, limit
 } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, storage } from '../utils/firebase';
@@ -366,7 +366,7 @@ const FileThumbnail = ({ file, onView, onRemove }: { file: string | File, onView
 // SERVICE CARD
 // ==========================================
 
-const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban', canEdit, currentUserIds, onOpenCelesticaCue }: any) => {
+const ServiceCard = memo(function ServiceCard({ service, users, onClick, onQuickAction, variant = 'kanban', canEdit, currentUserIds, onOpenCelesticaCue }: any) {
   const tipoConfig = CONSTANTS.tipos.find(t => t.value === service.tipo);
   const TipoIcon = tipoConfig?.icon || Settings;
   const statusConfig = CONSTANTS.estados.find(e => e.value === service.estado) || CONSTANTS.estados[0];
@@ -498,7 +498,7 @@ const ServiceCard = ({ service, users, onClick, onQuickAction, variant = 'kanban
       {showMenu && <div className="fixed inset-0 z-0" onClick={(e) => { e.stopPropagation(); setShowMenu(false); }} />}
     </div>
   );
-};
+});
 
 // ==========================================
 // SERVICE DETAIL MODAL (CON CHAT/BITÁCORA)
@@ -1304,6 +1304,7 @@ const FridayServiciosScreen: React.FC = () => {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [usuariosLoading, setUsuariosLoading] = useState(true);
   const [clientes, setClientes] = useState<any[]>([]);
+  const [clientesLoaded, setClientesLoaded] = useState(false);
   const [localTeamColor, setLocalTeamColor] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
   const [loading, setLoading] = useState(true);
@@ -1313,26 +1314,18 @@ const FridayServiciosScreen: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const selectedFallbackRef = useRef<Service | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentPreview | null>(null);
   const previewBlobRef = useRef<string | null>(null);
   const [authUser, setAuthUser] = useState<any>(null);
+  const hasServiciosOnceRef = useRef(false);
 
   useEffect(() => {
       const auth = getAuth();
       const unsubAuth = onAuthStateChanged(auth, (user) => setAuthUser(user));
       return () => unsubAuth();
   }, []);
-
-  // Sincronizar el servicio seleccionado con los cambios en tiempo real de Firebase
-  useEffect(() => {
-    if (selectedService && isDetailOpen) {
-      const servicioActualizado = servicios.find(s => s.id === selectedService.id);
-      if (servicioActualizado && JSON.stringify(servicioActualizado) !== JSON.stringify(selectedService)) {
-        setSelectedService(servicioActualizado);
-      }
-    }
-  }, [servicios, isDetailOpen]);
 
   const currentUserData = useMemo(() => {
       if (!authUser || usuarios.length === 0) return null;
@@ -1386,17 +1379,26 @@ const FridayServiciosScreen: React.FC = () => {
         setUsuariosLoading(false);
       }
     );
+    return () => unsubUsers();
+  }, []);
+
+  // Clientes solo cuando se abre el formulario (no bloquean el tablero)
+  useEffect(() => {
+    if (!isFormOpen || clientesLoaded) return;
+    let cancelled = false;
     (async () => {
       try {
         const clientsSnap = await getDocs(collection(db, 'clientes'));
+        if (cancelled) return;
         setClientes(clientsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setClientesLoaded(true);
       } catch (error) {
         console.error(error);
         toast.error('Error cargando clientes');
       }
     })();
-    return () => unsubUsers();
-  }, []);
+    return () => { cancelled = true; };
+  }, [isFormOpen, clientesLoaded]);
 
   const effectiveTeamColor =
     localTeamColor || getUserTeamColor(currentUserData ?? undefined);
@@ -1423,24 +1425,35 @@ const FridayServiciosScreen: React.FC = () => {
     navigateTo(screen);
   }, [navigateTo]);
 
-  const { cargaByUserId, loading: cargaLoading } = useCargaTecnicos(Boolean(authUser), usuarios, servicios);
+  // Carga de técnicos (Drive) solo al editar/crear — evita 3k lecturas al entrar al tablero
+  const { cargaByUserId, loading: cargaLoading } = useCargaTecnicos(
+    Boolean(authUser) && isFormOpen,
+    usuarios,
+    servicios,
+  );
 
   useEffect(() => {
     if (!authUser) return;
 
+    // Técnicos: solo los asignados. Calidad: recientes (limit) para pintar rápido.
+    const ADMIN_SERVICIOS_LIMIT = 250;
     const serviciosQuery = canEdit
-      ? query(collection(db, 'servicios'), orderBy('fechaCreacion', 'desc'))
+      ? query(collection(db, 'servicios'), orderBy('fechaCreacion', 'desc'), limit(ADMIN_SERVICIOS_LIMIT))
       : currentUserId
         ? query(collection(db, 'servicios'), where('personas', 'array-contains', currentUserId))
         : null;
 
     if (!serviciosQuery) {
+      // Esperando resolver canEdit / currentUserId (usuarios aún cargando)
+      if (!currentUserId && !canEdit) return;
       setServicios([]);
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    // Solo skeleton en la primera carga; al cambiar de query no vaciar la UI
+    if (!hasServiciosOnceRef.current) setLoading(true);
+
     const unsub = onSnapshot(
       serviciosQuery,
       (snap) => {
@@ -1452,6 +1465,7 @@ const FridayServiciosScreen: React.FC = () => {
           const tb = (b as any).fechaCreacion?.toMillis?.() ?? (b as any).fechaCreacion?.seconds ?? 0;
           return tb - ta;
         });
+        hasServiciosOnceRef.current = true;
         setServicios(docs);
         setLoading(false);
       },
@@ -1465,17 +1479,28 @@ const FridayServiciosScreen: React.FC = () => {
     return () => unsub();
   }, [authUser, canEdit, currentUserId]);
 
+  const selectedService = useMemo(() => {
+    if (!selectedServiceId) return null;
+    return servicios.find(s => s.id === selectedServiceId) || selectedFallbackRef.current;
+  }, [servicios, selectedServiceId]);
+
+  const openServiceDetail = useCallback((service: Service) => {
+    selectedFallbackRef.current = service;
+    setSelectedServiceId(service.id);
+    // Liberar el click (INP): pintar primero, montar el modal después
+    requestAnimationFrame(() => {
+      startTransition(() => setIsDetailOpen(true));
+    });
+  }, []);
+
   useEffect(() => {
     const openId = localStorage.getItem('open_servicio_id');
     if (!openId || loading) return;
 
     localStorage.removeItem('open_servicio_id');
     const service = servicios.find(s => s.id === openId);
-    if (service) {
-      setSelectedService(service);
-      setIsDetailOpen(true);
-    }
-  }, [loading, servicios]);
+    if (service) openServiceDetail(service);
+  }, [loading, servicios, openServiceDetail]);
 
   useEffect(() => {
     if (!currentUserId || servicios.length === 0) return;
@@ -1499,6 +1524,17 @@ const FridayServiciosScreen: React.FC = () => {
       : true;
     return matchSearch && matchStatus && matchMyTasks;
   }), [servicios, filterText, filterStatus, showOnlyMyTasks, currentUserId, canEdit]);
+
+  const kanbanByStatus = useMemo(() => {
+    const map: Record<string, Service[]> = {};
+    for (const col of CONSTANTS.estados) map[col.value] = [];
+    for (const s of filteredServices) {
+      const key = s.estado || 'programado';
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
+    }
+    return map;
+  }, [filteredServices]);
 
   const stats = useMemo(() => ({
     total: servicios.length,
@@ -1669,7 +1705,7 @@ const FridayServiciosScreen: React.FC = () => {
               </div>
               {canEdit && (
                 <button
-                  onClick={() => { setSelectedService(null); setIsFormOpen(true); }}
+                  onClick={() => { setSelectedServiceId(null); selectedFallbackRef.current = null; setIsFormOpen(true); }}
                   className="text-white px-4 py-2 rounded-xl font-semibold shadow-sm flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap text-sm hover:opacity-90"
                   style={{ backgroundColor: AG_BRAND_BLUE }}
                 >
@@ -1738,7 +1774,7 @@ const FridayServiciosScreen: React.FC = () => {
               {viewMode === 'kanban' && !isMobile && (
                 <div className="flex gap-6 h-full overflow-x-auto pb-6 items-start">
                   {CONSTANTS.estados.map(col => {
-                    const items = filteredServices.filter(s => s.estado === col.value);
+                    const items = kanbanByStatus[col.value] || [];
                     return (
                       <div key={col.value} className="min-w-[320px] w-[320px] flex flex-col max-h-full">
                         <div className="flex items-center justify-between mb-3 px-1">
@@ -1758,7 +1794,7 @@ const FridayServiciosScreen: React.FC = () => {
                               canEdit={canEdit}
                               currentUserIds={currentUserIds}
                               onOpenCelesticaCue={openCelesticaCue}
-                              onClick={() => { setSelectedService(service); setIsDetailOpen(true); }}
+                              onClick={() => openServiceDetail(service)}
                               onQuickAction={handleQuickStatus}
                             />
                           ))}
@@ -1785,7 +1821,7 @@ const FridayServiciosScreen: React.FC = () => {
                       canEdit={canEdit}
                       currentUserIds={currentUserIds}
                       onOpenCelesticaCue={openCelesticaCue}
-                      onClick={() => { setSelectedService(service); setIsDetailOpen(true); }}
+                      onClick={() => openServiceDetail(service)}
                       onQuickAction={handleQuickStatus}
                     />
                   )) : (
@@ -1801,32 +1837,41 @@ const FridayServiciosScreen: React.FC = () => {
           )}
         </div>
 
-        {/* MODALS */}
-        <ServiceDetailModal
-          isOpen={isDetailOpen}
-          onClose={() => setIsDetailOpen(false)}
-          service={selectedService}
-          usuarios={usuarios}
-          canEdit={canEdit}
-          currentUser={currentUserData}
-          onDelete={handleDelete}
-          onEdit={(s: any) => { setIsDetailOpen(false); setSelectedService(s); setIsFormOpen(true); }}
-          onViewFile={handleViewFile}
-          currentUserIds={currentUserIds}
-          onOpenCelesticaCue={openCelesticaCue}
-        />
+        {/* MODALS — montar solo cuando están abiertos (mejor INP) */}
+        {isDetailOpen && selectedService && (
+          <ServiceDetailModal
+            isOpen
+            onClose={() => setIsDetailOpen(false)}
+            service={selectedService}
+            usuarios={usuarios}
+            canEdit={canEdit}
+            currentUser={currentUserData}
+            onDelete={handleDelete}
+            onEdit={(s: any) => {
+              setIsDetailOpen(false);
+              selectedFallbackRef.current = s;
+              setSelectedServiceId(s.id);
+              setIsFormOpen(true);
+            }}
+            onViewFile={handleViewFile}
+            currentUserIds={currentUserIds}
+            onOpenCelesticaCue={openCelesticaCue}
+          />
+        )}
 
-        <ServiceFormModal
-          isOpen={isFormOpen}
-          onClose={() => setIsFormOpen(false)}
-          initialData={selectedService || INITIAL_FORM_STATE}
-          onSubmit={handleSaveService}
-          loading={processing}
-          clientes={clientes}
-          usuarios={usuarios}
-          cargaByUserId={cargaByUserId}
-          cargaLoading={cargaLoading}
-        />
+        {isFormOpen && (
+          <ServiceFormModal
+            isOpen
+            onClose={() => { setIsFormOpen(false); setSelectedServiceId(null); selectedFallbackRef.current = null; }}
+            initialData={selectedService || INITIAL_FORM_STATE}
+            onSubmit={handleSaveService}
+            loading={processing}
+            clientes={clientes}
+            usuarios={usuarios}
+            cargaByUserId={cargaByUserId}
+            cargaLoading={cargaLoading}
+          />
+        )}
 
         {previewAttachment && (
           <AttachmentPreviewModal attachment={previewAttachment} onClose={handleClosePreview} />
@@ -1847,7 +1892,7 @@ const FridayServiciosScreen: React.FC = () => {
 
         {canEdit && (
           <button
-            onClick={() => { setSelectedService(null); setIsFormOpen(true); }}
+            onClick={() => { setSelectedServiceId(null); selectedFallbackRef.current = null; setIsFormOpen(true); }}
             className="lg:hidden fixed bottom-6 right-6 w-14 h-14 text-white rounded-full shadow-2xl flex items-center justify-center z-40 active:scale-90 transition-transform"
             style={{ backgroundColor: AG_BRAND_BLUE }}
           >

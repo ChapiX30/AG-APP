@@ -306,6 +306,35 @@ MASTERS = [
         "serie": "B12",
         "id": "F9",
     },
+
+    {
+        "file": "Formato Tiempo.xlsm",
+        "calc": "Calculos",
+        "portada": "Portada",
+        "extra_lock_sheets": ["Resultados", "CMC", "SESGO o BIAS", "Histograma", "Calculo", "Hoja2"],
+        "cert": ["G9", "H9", "I9"],
+        "unlock": [
+            "G9", "H9", "I9",
+            "D16", "D17", "D18",
+            "I16", "N15", "N17",
+            "I19", "N19", "I20", "N20",
+            "M28", "M29",
+            "F19",
+            "E23", "I22", "I23", "I24", "E25",
+            "M22", "M23", "M24", "M25", "P22", "P23",
+            "D49", "D50", "D51", "D53",
+            "C62:E67", "G62:H67", "K62:K67",
+            "Q10",  # Aprobó (Calibró P10 viene del historial)
+            "M6",
+        ],
+        "layout": "tiempo",
+        "instrumento": "D15",
+        "marca": "D16",
+        "modelo": "D17",
+        "serie": "D18",
+        "id": "I15",
+        "calibro": "P10",
+    },
 ]
 
 
@@ -385,6 +414,8 @@ def unlock_range(ws, addr: str) -> None:
 def idx_formula(hist: str, col: str, cert_row: str = "4") -> str:
     if cert_row == "2":
         key = 'TRIM($D$2)&"-"&TEXT($E$2,"0000")&"-"&TEXT($F$2,"00")'
+    elif cert_row == "g9":
+        key = 'TRIM($G$9)&"-"&TEXT($H$9,"0000")&"-"&TEXT($I$9,"00")'
     else:
         key = 'TRIM($D$4)&"-"&TEXT($E$4,"0000")&"-"&TEXT($F$4,"00")'
     m = f"MATCH({key},{hist}!$B:$B,0)"
@@ -405,11 +436,26 @@ def ensure_historial_formulas(calc, cfg: dict) -> None:
         print("    sin hoja", hist, "- no se reescriben fórmulas historial")
         return
 
-    cert_row = "2" if cfg.get("layout") == "torque" else "4"
+    if cfg.get("layout") == "torque":
+        cert_row = "2"
+    elif cfg.get("layout") == "tiempo":
+        cert_row = "g9"
+    else:
+        cert_row = "4"
 
     # Cliente / domicilio / contacto / correo / tel
     if cfg.get("layout") == "torque":
         mapping = []
+    elif cfg.get("layout") == "tiempo":
+        # Certificado en G9-H9-I9; cliente en D10/D11/D12/H10/H11
+        mapping = [
+            ("D10", "C"),
+            ("D11", "N"),
+            ("D12", "O"),
+            ("H10", "P"),
+            ("H11", "Q"),
+        ]
+        # Las fórmulas de Tiempo usan G9/H9/I9 (no D4); se reescriben abajo.
     elif cfg.get("layout") == "vernier":
         # Vernier: etiquetas en A6/A7/A9 y D6/D7 (no B5/E5 como Indicador)
         mapping = [
@@ -453,11 +499,12 @@ def ensure_historial_formulas(calc, cfg: dict) -> None:
             continue
         try:
             blank = '"No encontrado"' if col in ("D", "E") else '""'
-            key = (
-                'TRIM($D$2)&"-"&TEXT($E$2,"0000")&"-"&TEXT($F$2,"00")'
-                if cert_row == "2"
-                else 'TRIM($D$4)&"-"&TEXT($E$4,"0000")&"-"&TEXT($F$4,"00")'
-            )
+            if cert_row == "2":
+                key = 'TRIM($D$2)&"-"&TEXT($E$2,"0000")&"-"&TEXT($F$2,"00")'
+            elif cert_row == "g9":
+                key = 'TRIM($G$9)&"-"&TEXT($H$9,"0000")&"-"&TEXT($I$9,"00")'
+            else:
+                key = 'TRIM($D$4)&"-"&TEXT($E$4,"0000")&"-"&TEXT($F$4,"00")'
             m = f"MATCH({key},{hist}!$B:$B,0)"
             calc.Range(addr).Formula = (
                 f'=IFERROR(IF(OR(INDEX({hist}!${col}:${col},{m})="",'
@@ -471,10 +518,30 @@ def ensure_historial_formulas(calc, cfg: dict) -> None:
     # Fechas
     if cfg.get("layout") == "torque":
         return
-    key = 'TRIM($D$4)&"-"&TEXT($E$4,"0000")&"-"&TEXT($F$4,"00")'
+    if cert_row == "g9":
+        key = 'TRIM($G$9)&"-"&TEXT($H$9,"0000")&"-"&TEXT($I$9,"00")'
+    else:
+        key = 'TRIM($D$4)&"-"&TEXT($E$4,"0000")&"-"&TEXT($F$4,"00")'
     m = f"MATCH({key},{hist}!$B:$B,0)"
     try:
-        if cfg.get("layout") == "vernier":
+        if cfg.get("layout") == "tiempo":
+            # Tiempo: M9 recepción, M10 calibración, M11 sugerida, M12 elaboración
+            calc.Range("M9").Formula = (
+                "=IFERROR("
+                f'IF(INDEX({hist}!$M:$M,{m})="",'
+                f'IF(UPPER(LEFT(INDEX({hist}!$K:$K,{m}),1))="S","Servicio en Sitio",""),'
+                f"VALUE(INDEX({hist}!$M:$M,{m}))),"
+                f'IF(IFERROR(UPPER(LEFT(INDEX({hist}!$K:$K,{m}),1)),"")="S","Servicio en Sitio",""))'
+            )
+            calc.Range("M10").Formula = f'=IFERROR(VALUE(INDEX({hist}!$I:$I,{m})),"")'
+            calc.Range("M11").Formula = (
+                f'=IFERROR(EDATE($M$10,IF(INDEX({hist}!$L:$L,{m})="6 meses",6,'
+                f'IF(INDEX({hist}!$L:$L,{m})="3 meses",3,'
+                f'IF(INDEX({hist}!$L:$L,{m})="24 meses",24,12)))),"")'
+            )
+            calc.Range("M12").Formula = "=TODAY()"
+            date_cells = ("M9", "M10", "M11", "M12")
+        elif cfg.get("layout") == "vernier":
             # Vernier: I4 recepción, I6 calibración, I7 sugerida, I9 elaboración
             calc.Range("I4").Formula = (
                 "=IFERROR("
@@ -530,6 +597,8 @@ def ensure_historial_formulas(calc, cfg: dict) -> None:
             calibro = "M13"
         elif cfg.get("layout") == "torque":
             calibro = None
+        elif cfg.get("layout") == "tiempo":
+            calibro = "P10"
         else:
             calibro = "M8"
     if calibro:

@@ -907,12 +907,12 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onMarkAllRead, 
               <p className="text-[10px] font-bold uppercase tracking-wider acc-text flex items-center gap-1">
                 <Megaphone size={10} /> Enviar aviso a todos los usuarios
               </p>
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {(Object.keys(typeConfig) as AppNotification['type'][]).map(t => {
                   const cfg = typeConfig[t];
                   return (
                     <button key={t} onClick={() => setType(t)}
-                      className={`text-[10px] py-1.5 rounded-lg border font-semibold transition-all ${
+                      className={`text-[10px] py-2.5 min-h-10 rounded-lg border font-semibold transition-all ${
                         type === t ? `${cfg.bg} ${cfg.border} ${cfg.color}` : 'ag-surface ag-border ag-faint'
                       }`}
                     >{cfg.label}</button>

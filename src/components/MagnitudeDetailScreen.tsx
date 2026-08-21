@@ -125,15 +125,17 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
     const prefijo = getPrefijo(selectedMagnitude);
 
+    // Mantenimiento en paralelo al listado: no bloquea el botón Generar.
+    // Primero auditar (devuelve huérfanos a huecos), luego reconciliar (respeta cooldown).
     void (async () => {
       try {
-        const reconciliado = await reconciliarContadorHuecos(selectedMagnitude, anio, true);
+        await auditarHuerfanos(selectedMagnitude, anio, GRACE_RECLAMAR_HUERFANOS_MIN);
+        const reconciliado = await reconciliarContadorHuecos(selectedMagnitude, anio, false);
         if (reconciliado && reconciliado.huecosEliminados > 0) {
           console.info(
             `[Consecutivos] ${prefijo}: ${reconciliado.huecosEliminados} huecos falsos eliminados, valor ${reconciliado.valorAnterior}→${reconciliado.valorNuevo}`
           );
         }
-        await auditarHuerfanos(selectedMagnitude, anio, GRACE_RECLAMAR_HUERFANOS_MIN);
 
         const contadorSnap = await getDoc(doc(db, "contadores", prefijo));
         if (contadorSnap.exists() && String(contadorSnap.data().anio) === anio) {

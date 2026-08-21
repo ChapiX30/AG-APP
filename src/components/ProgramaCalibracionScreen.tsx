@@ -1004,9 +1004,9 @@ export const ProgramaCalibracionScreen: React.FC = () => {
       
       {/* HEADER */}
       <header className="bg-gradient-to-r from-[#2464A3] via-[#2a70b4] to-[#1d5082] border-b border-[#1a5085]/40 sticky top-0 z-20 shadow-[0_4px_24px_rgba(29,80,130,0.35)]">
-        <div className="max-w-7xl mx-auto px-4 h-[4.25rem] flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigateTo('menu')} className="p-2 hover:bg-white/15 rounded-full text-white/90 transition-all hover:shadow-md" aria-label="Volver al menú">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-auto min-h-[4.25rem] py-2.5 sm:py-0 sm:h-[4.25rem] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <button onClick={() => navigateTo('menu')} className="p-2.5 sm:p-2 hover:bg-white/15 rounded-full text-white/90 transition-all hover:shadow-md min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 flex items-center justify-center shrink-0" aria-label="Volver al menú">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="hidden sm:flex items-center justify-center w-11 h-11 rounded-xl bg-white/95 shadow-lg ring-1 ring-white/30 p-1.5">
@@ -1017,13 +1017,13 @@ export const ProgramaCalibracionScreen: React.FC = () => {
                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
               />
             </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/75">Equipos y Servicios AG</p>
-              <h1 className="text-xl font-extrabold text-white tracking-tight">Programa de Calibración</h1>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/75 truncate">Equipos y Servicios AG</p>
+              <h1 className="text-base sm:text-xl font-extrabold text-white tracking-tight truncate">Programa de Calibración</h1>
               <p className="text-xs text-white/80 hidden sm:block">Patrones, vencimientos y mantenimiento</p>
             </div>
           </div>
-          <div className="sm:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-white/90 shadow-md p-1">
+          <div className="sm:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-white/90 shadow-md p-1 shrink-0">
             <img src={labLogo} alt="Logo AG" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           </div>
         </div>
@@ -1270,7 +1270,7 @@ const SidePanel = ({
                                 )}
                                 <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Especificaciones</h3>
-                                    <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4 sm:gap-x-8 text-sm">
                                         <InfoRow label="Marca" val={selectedItem.marca} />
                                         <InfoRow label="Modelo" val={selectedItem.modelo} />
                                         <InfoRow label="Serie" val={selectedItem.serie} />
@@ -1290,7 +1290,7 @@ const SidePanel = ({
                         {/* TAB 2: CALIBRACIONES */}
                         {panelTab === 'calib' && (
                             <div className="space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <DateCard 
                                         label="Última Calibración" 
                                         date={selectedItem.fechaUltimaCalibracion} 

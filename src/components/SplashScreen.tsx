@@ -133,32 +133,32 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            className="relative z-10 flex w-[90%] max-w-md flex-col items-center gap-8 px-4"
+            className="relative z-10 flex w-[90%] max-w-md flex-col items-center gap-5 px-4 sm:gap-8"
           >
             {/* logo 3D suave */}
             <div style={{ perspective: 900 }} className="flex items-center justify-center">
               <motion.img
                 src={labLogo}
                 alt={BRAND_NAME}
-                className="h-auto w-[132px] select-none will-change-transform sm:w-[148px]"
+                className="h-auto w-[100px] select-none will-change-transform sm:w-[148px]"
                 draggable={false}
                 style={{ transformStyle: "preserve-3d" }}
                 animate={{
-                  rotateY: [-14, 14, -14],
-                  rotateX: [3, -2, 3],
-                  y: [0, -5, 0],
+                  rotateY: [-10, 10, -10],
+                  rotateX: [2, -2, 2],
+                  y: [0, -4, 0],
                   filter: [
-                    "drop-shadow(-12px 16px 22px rgba(0,0,0,0.45)) drop-shadow(0 0 16px rgba(36,100,163,0.25))",
-                    "drop-shadow(12px 16px 22px rgba(0,0,0,0.45)) drop-shadow(0 0 22px rgba(36,100,163,0.35))",
-                    "drop-shadow(-12px 16px 22px rgba(0,0,0,0.45)) drop-shadow(0 0 16px rgba(36,100,163,0.25))",
+                    "drop-shadow(0 12px 18px rgba(0,0,0,0.45))",
+                    "drop-shadow(0 14px 22px rgba(0,0,0,0.5))",
+                    "drop-shadow(0 12px 18px rgba(0,0,0,0.45))",
                   ],
                 }}
                 transition={{ duration: 7.5, repeat: Infinity, ease: "easeInOut" }}
               />
             </div>
 
-            <div className="space-y-2 text-center">
-              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+            <div className="space-y-1.5 text-center sm:space-y-2">
+              <h1 className="text-lg font-bold tracking-tight sm:text-2xl">
                 <span
                   className="bg-clip-text text-transparent"
                   style={{
@@ -168,7 +168,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   {BRAND_NAME}
                 </span>
               </h1>
-              <p className="text-sm font-medium tracking-wide text-slate-400">
+              <p className="text-xs font-medium tracking-wide text-slate-400 sm:text-sm">
                 {SUBTITLE}
               </p>
             </div>

@@ -71,14 +71,14 @@ export const OperationalScreenHeader: React.FC<OperationalScreenHeaderProps> = (
       <div
         className={clsx(
           maxWidthClass[maxWidth],
-          'mx-auto px-3 sm:px-5 flex items-center gap-3',
-          compact ? 'py-2.5' : 'py-4',
+          'mx-auto px-3 sm:px-5 flex flex-wrap items-center gap-x-3 gap-y-2',
+          compact ? 'py-2.5' : 'py-3 sm:py-4',
         )}
       >
         <button
           type="button"
           onClick={handleBack}
-          className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shrink-0"
+          className="p-2.5 sm:p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shrink-0 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 flex items-center justify-center"
           aria-label={backLabel}
           title={backLabel}
         >
@@ -87,22 +87,26 @@ export const OperationalScreenHeader: React.FC<OperationalScreenHeaderProps> = (
         <img
           src={labLogo}
           alt="Equipos y Servicios AG"
-          className={clsx('w-auto object-contain shrink-0', compact ? 'h-8' : 'h-10')}
+          className={clsx('w-auto object-contain shrink-0', compact ? 'h-8' : 'h-9 sm:h-10')}
           draggable={false}
         />
         <div className="flex-1 min-w-0 border-l border-slate-200 pl-3 sm:pl-4">
           <h1 className={clsx(
-            'font-semibold text-slate-900 tracking-tight flex items-center gap-2',
-            compact ? 'text-base sm:text-lg' : 'text-lg sm:text-xl',
+            'font-semibold text-slate-900 tracking-tight flex items-center gap-2 min-w-0',
+            compact ? 'text-base sm:text-lg' : 'text-base sm:text-xl',
           )}>
-            {titleIcon}
-            {title}
+            {titleIcon ? <span className="shrink-0">{titleIcon}</span> : null}
+            <span className="truncate">{title}</span>
           </h1>
           {subtitle ? (
             <p className={clsx('text-slate-500 truncate', compact ? 'hidden sm:block text-xs' : 'text-xs sm:text-sm')}>{subtitle}</p>
           ) : null}
         </div>
-        {actions ? <div className="shrink-0 flex items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          <div className="flex w-full items-center justify-end gap-2 sm:ml-auto sm:w-auto shrink-0 order-last sm:order-none">
+            {actions}
+          </div>
+        ) : null}
         {badge ? <div className="hidden sm:flex shrink-0">{badge}</div> : null}
       </div>
     </div>

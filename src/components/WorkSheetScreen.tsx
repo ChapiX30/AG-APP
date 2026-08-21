@@ -1619,7 +1619,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 <FlowSection icon={<MapPin className="w-4 h-4" />} title="Ubicación" accentClass="text-orange-500">
                 <div>
                   <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-3"><span>Lugar de Calibración*</span></label>
-                  <div className={`grid grid-cols-3 gap-4 text-gray-700 p-1 rounded-lg ${validationErrors.lugarCalibracion ? 'bg-red-50 border border-red-200' : ''}`}>
+                  <div className={`grid grid-cols-2 gap-3 sm:gap-4 text-gray-700 p-1 rounded-lg ${validationErrors.lugarCalibracion ? 'bg-red-50 border border-red-200' : ''}`}>
                     {["Sitio", "Laboratorio"].map((opt) => (
                       <button key={opt} onClick={() => { 
                           dispatch({ type: 'SET_FIELD', field: 'lugarCalibracion', payload: opt });
@@ -1628,7 +1628,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                             void applyFechaEntradaFromFriday({ lugar: "Laboratorio" });
                           }
                       }}
-                        className={`py-3 px-4 rounded-lg border-2 font-medium transition-all ${state.lugarCalibracion === opt ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>{opt}</button>
+                        className={`min-h-11 py-3 px-4 rounded-lg border-2 font-medium transition-all ${state.lugarCalibracion === opt ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>{opt}</button>
                     ))}
                   </div>
                 </div>
@@ -1815,12 +1815,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                         <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg mb-4">
                           {(["DC", "AC", "Otros"] as const).map((tipo) => (
                             <button key={tipo} onClick={() => setTipoElectrica(tipo)}
-                              className={`py-1.5 text-sm font-medium rounded-md transition-all ${tipoElectrica === tipo ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"}`}>
+                              className={`min-h-10 py-2 text-sm font-medium rounded-md transition-all ${tipoElectrica === tipo ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"}`}>
                               {tipo}
                             </button>
                           ))}
                         </div>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                           {unidadesPorMagnitud.Electrica[tipoElectrica].map((u: string) => {
                             let checkValue = u;
                             if (["V", "mV", "kV", "A", "mA", "µA"].includes(u)) {
@@ -1829,7 +1829,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                             }
                             const isChecked = state.unidad.includes(checkValue);
                             return (
-                              <label key={u} className={`flex items-center space-x-2 p-2 rounded border cursor-pointer transition-all ${isChecked ? "bg-blue-50 border-blue-200" : "border-transparent hover:bg-gray-50"}`}>
+                              <label key={u} className={`flex items-center space-x-2 min-h-11 p-2.5 rounded border cursor-pointer transition-all ${isChecked ? "bg-blue-50 border-blue-200" : "border-transparent hover:bg-gray-50"}`}>
                                 <input type="checkbox" checked={isChecked} onChange={() => handleToggleElectrica(u)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
                                 <span className={`text-sm ${isChecked ? "font-bold text-blue-800" : "text-gray-700"}`}>{u}</span>
                               </label>
@@ -2146,7 +2146,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                         </h3>
                     </div>
                 
-                    <div className="grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    <div className="hidden sm:grid grid-cols-12 gap-6 mb-2 px-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
                         <div className="col-span-2 flex items-center">Unidad / Canal</div>
                         <div className="col-span-5 pl-1">Medición Patrón</div>
                         <div className="col-span-5 pl-1">Medición Instrumento</div>
@@ -2154,8 +2154,8 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 
                     <div className="space-y-4">
                     {electricalSections.map((s) => (
-                        <div key={s.key} className="grid grid-cols-12 gap-6 items-start">
-                            <div className="col-span-2 pt-2">
+                        <div key={s.key} className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-6 items-start">
+                            <div className="sm:col-span-2 sm:pt-2">
                                 <div className={`text-sm font-bold py-3 px-2 rounded-lg flex flex-col items-center justify-center text-center break-words shadow-sm border ${
                                   s.numCanales > 1
                                     ? "text-amber-900 bg-amber-50 border-amber-200"
@@ -2170,18 +2170,20 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                                 </div>
                             </div>
                 
-                            <div className="col-span-5">
+                            <div className="sm:col-span-5">
+                                <label className="sm:hidden mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-gray-500">Medición Patrón</label>
                                 <textarea 
                                   placeholder="Ej: 10.00&#10;10.01&#10;10.02" 
                                   value={electricalValues[s.key]?.patron || ""}
                                   onChange={(e) => handleLocalElectricChange(s.key, 'patron', e.target.value)}
                                   onBlur={syncElectricalToGlobalState}
                                   rows={6} 
-                                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[160px] shadow-sm font-mono font-semibold leading-relaxed text-gray-900 bg-white" 
+                                  className="w-full p-3 border border-gray-300 rounded-lg text-base sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y min-h-[140px] sm:min-h-[160px] shadow-sm font-mono font-semibold leading-relaxed text-gray-900 bg-white" 
                                 />
                             </div>
                 
-                            <div className="col-span-5">
+                            <div className="sm:col-span-5">
+                                <label className="sm:hidden mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-gray-500">Medición Instrumento</label>
                                 <textarea 
                                   placeholder="Ej: 9.99&#10;10.00&#10;10.01"
                                   value={electricalValues[s.key]?.instrumento || ""}
@@ -2278,12 +2280,12 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
 
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 py-4 flex justify-end gap-3">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 py-3 sm:py-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => goBack()}
-            className="px-5 py-3 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2"
+            className="w-full sm:w-auto min-h-11 px-5 py-3 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
             disabled={isSaving}
           >
             <X className="w-4 h-4" /><span>Cancelar</span>
@@ -2292,7 +2294,7 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
             type="button"
             onClick={handleSave}
             disabled={isSaving || (state.idBlocked && !state.permitirExcepcion)}
-            className={`px-6 py-3 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg ${
+            className={`w-full sm:w-auto min-h-11 px-6 py-3 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg ${
               isSaving || (state.idBlocked && !state.permitirExcepcion)
                 ? "bg-slate-400 cursor-not-allowed"
                 : flowAccent === "trazable"

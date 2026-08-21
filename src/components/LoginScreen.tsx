@@ -336,48 +336,69 @@ const BrandMark: React.FC<{ size?: "lg" | "sm" }> = ({ size = "lg" }) => {
   };
 
   return (
-    <div className={`relative flex flex-col items-center ${large ? "gap-8" : "gap-4"}`}>
+    <div
+      className={`relative flex flex-col items-center ${
+        large ? "gap-8" : "gap-2.5"
+      }`}
+    >
       <div
         ref={wrapRef}
         className={`relative flex items-center justify-center ${
-          large ? "h-[19rem] w-[19rem]" : "h-32 w-32"
+          large ? "h-[19rem] w-[19rem]" : "h-[5.5rem] w-[5.5rem] sm:h-28 sm:w-28"
         }`}
         style={{ perspective: large ? 1100 : 720 }}
-        onMouseMove={onMove}
-        onMouseLeave={onLeave}
+        onMouseMove={large ? onMove : undefined}
+        onMouseLeave={large ? onLeave : undefined}
       >
-        {/* capa hover: suma un toque extra al pasar el mouse */}
         <motion.div
           className="relative z-10"
-          style={{
-            rotateX: hoverRx,
-            rotateY: hoverRy,
-            transformStyle: "preserve-3d",
-          }}
+          style={
+            large
+              ? {
+                  rotateX: hoverRx,
+                  rotateY: hoverRy,
+                  transformStyle: "preserve-3d",
+                }
+              : undefined
+          }
         >
-          {/* el LOGO mismo: giro 3D suave tipo vitrina */}
           <motion.img
             src={labLogo}
             alt="Equipos y Servicios AG"
-            className={`${large ? "h-[15rem]" : "h-28"} w-auto object-contain select-none will-change-transform`}
+            className={`${
+              large ? "h-[15rem]" : "h-[4.25rem] sm:h-24"
+            } w-auto object-contain select-none will-change-transform`}
             draggable={false}
             style={{
               transformStyle: "preserve-3d",
               transformOrigin: "50% 50%",
               backfaceVisibility: "hidden",
             }}
-            animate={{
-              rotateY: [-18, 18, -18],
-              rotateX: [4, -3, 4],
-              y: [0, large ? -6 : -3, 0],
-              filter: [
-                "drop-shadow(-14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 18px rgba(36,100,163,0.2))",
-                "drop-shadow(14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 22px rgba(36,100,163,0.28))",
-                "drop-shadow(-14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 18px rgba(36,100,163,0.2))",
-              ],
-            }}
+            animate={
+              large
+                ? {
+                    rotateY: [-18, 18, -18],
+                    rotateX: [4, -3, 4],
+                    y: [0, -6, 0],
+                    filter: [
+                      "drop-shadow(-14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 18px rgba(36,100,163,0.2))",
+                      "drop-shadow(14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 22px rgba(36,100,163,0.28))",
+                      "drop-shadow(-14px 18px 26px rgba(0,0,0,0.42)) drop-shadow(0 0 18px rgba(36,100,163,0.2))",
+                    ],
+                  }
+                : {
+                    // móvil: 3D más suave y chico, sin saturar
+                    rotateY: [-8, 8, -8],
+                    y: [0, -2, 0],
+                    filter: [
+                      "drop-shadow(0 10px 16px rgba(0,0,0,0.4))",
+                      "drop-shadow(0 12px 20px rgba(0,0,0,0.45))",
+                      "drop-shadow(0 10px 16px rgba(0,0,0,0.4))",
+                    ],
+                  }
+            }
             transition={{
-              duration: 8.5,
+              duration: large ? 8.5 : 7,
               repeat: Infinity,
               ease: "easeInOut",
             }}
@@ -385,17 +406,23 @@ const BrandMark: React.FC<{ size?: "lg" | "sm" }> = ({ size = "lg" }) => {
         </motion.div>
       </div>
 
-      <div className="text-center space-y-2">
+      <div className={`text-center ${large ? "space-y-2" : "space-y-1"}`}>
         <h1
           className={`font-display font-bold tracking-tight text-[#f2f6fb] ${
-            large ? "text-3xl xl:text-4xl" : "text-lg"
+            large
+              ? "text-3xl xl:text-4xl"
+              : "text-[1.05rem] leading-snug sm:text-lg"
           }`}
           style={{ textShadow: "0 2px 28px rgba(0,0,0,0.55)" }}
         >
           Equipos y Servicios AG
         </h1>
         <p
-          className="font-instrument text-[11px] tracking-[0.22em] uppercase text-[#8bb5d9]"
+          className={`font-instrument uppercase text-[#8bb5d9] ${
+            large
+              ? "text-[11px] tracking-[0.22em]"
+              : "text-[9px] tracking-[0.18em] sm:text-[11px] sm:tracking-[0.22em]"
+          }`}
           style={{ textShadow: "0 1px 12px rgba(0,0,0,0.45)" }}
         >
           Gestión metrológica
@@ -428,13 +455,13 @@ const LabPhotoBackdrop: React.FC<{
           <img
             src={src}
             alt=""
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover object-[center_35%] lg:object-center"
             style={{
               transform: reducedMotion
-                ? "scale(1.04)"
+                ? "scale(1.03)"
                 : active
-                  ? "scale(1.12) translateX(0)"
-                  : "scale(1.06)",
+                  ? "scale(1.08)"
+                  : "scale(1.03)",
               transition: reducedMotion
                 ? "none"
                 : `transform ${BG_ROTATE_MS + 400}ms linear`,
@@ -446,9 +473,9 @@ const LabPhotoBackdrop: React.FC<{
       );
     })}
 
-    {/* veladura: izquierda más abierta para que se vea el lab */}
+    {/* Desktop: gradiente lateral */}
     <div
-      className="absolute inset-0 z-[3]"
+      className="absolute inset-0 z-[3] hidden lg:block"
       style={{
         background: `
           linear-gradient(105deg,
@@ -460,26 +487,27 @@ const LabPhotoBackdrop: React.FC<{
         `,
       }}
     />
+    {/* Móvil: foto arriba más visible, abajo oscuro para el form */}
     <div
-      className="absolute inset-0 z-[3]"
+      className="absolute inset-0 z-[3] lg:hidden"
       style={{
         background: `
-          radial-gradient(ellipse 70% 55% at 28% 42%, rgba(36,100,163,0.18), transparent 60%),
-          radial-gradient(ellipse 45% 40% at 78% 70%, rgba(36,100,163,0.1), transparent 55%),
-          linear-gradient(180deg, rgba(5,8,14,0.28) 0%, transparent 30%, transparent 70%, rgba(5,8,14,0.5) 100%)
+          linear-gradient(180deg,
+            rgba(5,8,14,0.45) 0%,
+            rgba(5,8,14,0.55) 28%,
+            rgba(5,8,14,0.82) 58%,
+            rgba(5,8,14,0.94) 100%
+          )
         `,
       }}
     />
     <div
-      className="absolute inset-0 z-[3] opacity-[0.04]"
+      className="absolute inset-0 z-[3]"
       style={{
-        backgroundImage: `
-          linear-gradient(rgba(90,147,201,0.9) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(90,147,201,0.9) 1px, transparent 1px)
+        background: `
+          radial-gradient(ellipse 70% 55% at 50% 20%, rgba(36,100,163,0.2), transparent 55%),
+          radial-gradient(ellipse 45% 40% at 78% 70%, rgba(36,100,163,0.08), transparent 55%)
         `,
-        backgroundSize: "72px 72px",
-        maskImage: "radial-gradient(ellipse 65% 55% at 35% 40%, #000 15%, transparent 72%)",
-        WebkitMaskImage: "radial-gradient(ellipse 65% 55% at 35% 40%, #000 15%, transparent 72%)",
       }}
     />
   </div>
@@ -487,9 +515,9 @@ const LabPhotoBackdrop: React.FC<{
 
 /* ─── estilos de input tipo consola ─── */
 const fieldWrap =
-  "group relative rounded-2xl border border-white/[0.12] bg-[#0a1220]/82 backdrop-blur-md transition-all duration-300 focus-within:border-[#2464A3]/60 focus-within:bg-[#0d1830]/90 focus-within:shadow-[0_0_0_3px_rgba(36,100,163,0.14)]";
+  "group relative rounded-2xl border border-white/[0.12] bg-[#0a1220]/88 backdrop-blur-md transition-all duration-300 focus-within:border-[#2464A3]/60 focus-within:bg-[#0d1830]/92 focus-within:shadow-[0_0_0_3px_rgba(36,100,163,0.14)]";
 const fieldInput =
-  "peer w-full bg-transparent pl-11 pr-11 pt-6 pb-2.5 text-[15px] text-[#e8eef4] placeholder-transparent outline-none disabled:opacity-50 font-login";
+  "peer w-full bg-transparent pl-11 pr-11 pt-6 pb-2.5 text-base sm:text-[15px] text-[#e8eef4] placeholder-transparent outline-none disabled:opacity-50 font-login";
 const fieldLabel =
   "absolute left-11 top-3.5 text-sm text-[#6b7c90] pointer-events-none transition-all duration-200 peer-focus:top-1.5 peer-focus:text-[10px] peer-focus:tracking-[0.14em] peer-focus:uppercase peer-focus:text-[#5a93c9] peer-focus:font-instrument peer-[:not(:placeholder-shown)]:top-1.5 peer-[:not(:placeholder-shown)]:text-[10px] peer-[:not(:placeholder-shown)]:tracking-[0.14em] peer-[:not(:placeholder-shown)]:uppercase peer-[:not(:placeholder-shown)]:font-instrument peer-[:not(:placeholder-shown)]:text-[#8fa3b8]";
 
@@ -689,7 +717,7 @@ export const LoginScreen: React.FC = () => {
       <LabPhotoBackdrop index={bgIndex} reducedMotion={reducedMotion} />
 
       {/* ════════════════════════════════
-          PANEL IZQUIERDO — Marca
+          PANEL IZQUIERDO — Marca (solo desktop)
       ════════════════════════════════ */}
       <div className="relative hidden lg:flex w-[56%] flex-col items-center justify-center overflow-hidden px-12 xl:px-16 py-10">
         <motion.div
@@ -708,48 +736,50 @@ export const LoginScreen: React.FC = () => {
       </div>
 
       {/* ════════════════════════════════
-          PANEL DERECHO — Consola de acceso
+          PANEL DERECHO / MÓVIL — Consola de acceso
       ════════════════════════════════ */}
-      <div className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10 sm:px-10 lg:px-14 xl:px-16">
+      <div
+        className="relative flex flex-1 flex-col overflow-y-auto overscroll-contain px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-10 lg:items-center lg:justify-center lg:px-14 lg:py-10 xl:px-16"
+      >
+        {/* overlay solo desktop en el panel derecho */}
         <div
-          className="pointer-events-none absolute inset-0"
+          className="pointer-events-none absolute inset-0 hidden lg:block"
           style={{
             background:
               "linear-gradient(180deg, rgba(5,8,14,0.42) 0%, rgba(8,14,24,0.62) 45%, rgba(5,8,14,0.78) 100%)",
           }}
         />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-90"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 55% at 70% 40%, rgba(36,100,163,0.16), transparent 62%)",
-          }}
-        />
+
+        {/* móvil: marca arriba, fuera de la card para que no se amontone */}
+        <motion.div
+          className="relative z-10 mb-5 mt-2 flex flex-shrink-0 justify-center lg:hidden"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55 }}
+        >
+          <BrandMark size="sm" />
+        </motion.div>
 
         <motion.div
-          className="relative z-10 w-full max-w-[400px] rounded-[1.75rem] border border-white/[0.08] bg-[#071018]/55 px-5 py-7 shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:px-7"
-          initial={{ opacity: 0, x: 28 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 mx-auto w-full max-w-[400px] flex-1 rounded-[1.35rem] border border-white/[0.1] bg-[#071018]/72 px-4 py-5 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl sm:flex-none sm:rounded-[1.75rem] sm:px-7 sm:py-7 lg:bg-[#071018]/55"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="mb-8 lg:hidden">
-            <BrandMark size="sm" />
-          </div>
-
-          <div className="mb-8">
-            <div className="mb-5 flex items-center gap-3">
+          <div className="mb-5 sm:mb-8">
+            <div className="mb-3 flex items-center gap-3 sm:mb-5">
               <span className="font-instrument text-[10px] tracking-[0.28em] uppercase text-[#5a93c9]">
                 Acceso
               </span>
               <span className="h-px flex-1 bg-gradient-to-r from-[#2464A3]/50 to-transparent" />
             </div>
 
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3 sm:gap-4">
               <div className="min-w-0 flex-1">
                 <AnimatePresence mode="wait">
                   <motion.h2
                     key={user ? user.name : "guest"}
-                    className="font-display text-[1.85rem] sm:text-[2.1rem] font-bold tracking-tight text-[#f2f6fb] leading-tight"
+                    className="font-display text-[1.55rem] sm:text-[2.1rem] font-bold tracking-tight text-[#f2f6fb] leading-tight"
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
@@ -767,13 +797,13 @@ export const LoginScreen: React.FC = () => {
                     )}
                   </motion.h2>
                 </AnimatePresence>
-                <p className="mt-2 text-sm text-[#b0c0d0] font-light">
+                <p className="mt-1.5 text-[13px] sm:mt-2 sm:text-sm text-[#b0c0d0] font-light leading-snug">
                   {user
                     ? "Confirma tu contraseña para entrar al sistema."
                     : "Ingresa con tu correo institucional."}
                 </p>
                 {user?.puesto || user?.role ? (
-                  <p className="mt-2 font-instrument text-[10px] tracking-[0.14em] uppercase text-[#5a93c9]/90">
+                  <p className="mt-1.5 font-instrument text-[10px] tracking-[0.14em] uppercase text-[#5a93c9]/90">
                     {[user.puesto, user.role].filter(Boolean).join(" · ")}
                   </p>
                 ) : null}
@@ -798,10 +828,10 @@ export const LoginScreen: React.FC = () => {
                       <img
                         src={user.photoUrl}
                         alt=""
-                        className="relative h-12 w-12 rounded-full object-cover border-2 border-[#070b12]"
+                        className="relative h-11 w-11 sm:h-12 sm:w-12 rounded-full object-cover border-2 border-[#070b12]"
                       />
                     ) : (
-                      <div className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#070b12] bg-[#2464A3] text-sm font-semibold">
+                      <div className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full border-2 border-[#070b12] bg-[#2464A3] text-sm font-semibold">
                         {user.initial}
                       </div>
                     )}
@@ -811,8 +841,7 @@ export const LoginScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* formulario — sin card glass */}
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-3.5 sm:space-y-4">
             <div className={fieldWrap}>
               <Mail className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#5a6678] transition-colors group-focus-within:text-[#5a93c9]" />
               <input
@@ -824,6 +853,7 @@ export const LoginScreen: React.FC = () => {
                 placeholder=" "
                 autoComplete="email"
                 required
+                inputMode="email"
                 className={fieldInput}
               />
               <label htmlFor="login-email" className={fieldLabel}>
@@ -839,7 +869,7 @@ export const LoginScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowReset(true)}
-                  className="font-instrument text-[10px] tracking-[0.08em] text-[#5a93c9] transition-colors hover:text-[#8bb5d9]"
+                  className="min-h-[44px] sm:min-h-0 font-instrument text-[10px] tracking-[0.08em] text-[#5a93c9] transition-colors hover:text-[#8bb5d9] px-1"
                 >
                   ¿Olvidaste tu contraseña?
                 </button>
@@ -863,14 +893,15 @@ export const LoginScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPass((p) => !p)}
-                  className="absolute right-3.5 top-1/2 z-10 -translate-y-1/2 text-[#5a6678] transition-colors hover:text-[#e8eef4]"
+                  className="absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-[#5a6678] transition-colors hover:text-[#e8eef4]"
+                  aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <label className="flex cursor-pointer select-none items-center gap-2.5 px-1">
+            <label className="flex min-h-[44px] cursor-pointer select-none items-center gap-2.5 px-1">
               <input
                 type="checkbox"
                 checked={rememberMe}
@@ -911,13 +942,12 @@ export const LoginScreen: React.FC = () => {
               disabled={!email || !password || loading || !authReady}
               whileTap={{ scale: 0.985 }}
               whileHover={{ scale: 1.01 }}
-              className="group relative mt-2 flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl py-[15px] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="group relative mt-1 flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl py-[15px] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:mt-2"
               style={{
                 background: `linear-gradient(105deg, ${ACC} 0%, #1a4f85 55%, #2a6aab 100%)`,
                 boxShadow: `0 12px 40px rgba(36,100,163,0.35), inset 0 1px 0 rgba(255,255,255,0.12)`,
               }}
             >
-              {/* borde brass sutil */}
               <span
                 className="pointer-events-none absolute inset-0 rounded-2xl"
                 style={{
@@ -937,7 +967,7 @@ export const LoginScreen: React.FC = () => {
               )}
             </motion.button>
 
-            <p className="pt-3 text-center text-[11px] leading-relaxed text-[#5a6678]">
+            <p className="pt-2 text-center text-[11px] leading-relaxed text-[#5a6678] sm:pt-3">
               Acceso solo para personal autorizado.
               <br />
               Solicita el alta a tu administrador si aún no tienes cuenta.

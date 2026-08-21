@@ -920,8 +920,8 @@ const EmpresasScreen = () => {
               </div>
               <div className="h-6 w-px bg-gray-200 mx-2 hidden md:block"></div>
               {canEdit ? (
-                <button onClick={() => openModal()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl flex items-center transition-all shadow-md hover:shadow-lg active:scale-95 text-sm font-medium">
-                  <Plus className="h-5 w-5 mr-1.5" /> Nueva Empresa
+                <button onClick={() => openModal()} className="bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2.5 sm:py-2 rounded-xl flex items-center justify-center transition-all shadow-md hover:shadow-lg active:scale-95 text-sm font-medium min-h-11 shrink-0">
+                  <Plus className="h-5 w-5 sm:mr-1.5" /> <span className="hidden sm:inline">Nueva Empresa</span>
                 </button>
               ) : (
                 <span className="text-xs text-gray-500 bg-gray-100 px-3 py-2 rounded-xl border border-gray-200">

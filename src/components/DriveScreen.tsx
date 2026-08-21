@@ -803,7 +803,7 @@ const FileListRow = React.memo(({ file, selected, onSelect, onContextMenu, onDou
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onStar?.(file); }}
-          className={clsx("ml-auto p-1 rounded transition-all flex-shrink-0", file.starred ? "text-amber-500" : "text-slate-200 hover:text-amber-400 opacity-0 group-hover:opacity-100")}
+          className={clsx("ml-auto p-2 rounded transition-all flex-shrink-0 min-h-9 min-w-9 flex items-center justify-center", file.starred ? "text-amber-500" : "text-slate-400 md:text-slate-200 hover:text-amber-400 opacity-100 md:opacity-0 md:group-hover:opacity-100")}
         >
           <Star size={13} className={file.starred ? "fill-amber-500" : ""} />
         </button>
@@ -3302,7 +3302,10 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
               </div>
             )}
             {isSyncing && <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#2464A3] animate-pulse"><RefreshCw size={11} className="animate-spin" /> Sincronizando...</div>}
-            <button onClick={() => fileInputRef.current?.click()} className="hidden md:flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95">{isUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}Subir</button>
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 p-2.5 md:px-3.5 md:py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95 min-h-10 min-w-10" title="Subir archivos">
+              {isUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}
+              <span className="hidden md:inline">Subir</span>
+            </button>
             <input ref={fileInputRef} type="file" multiple hidden onChange={handleUploadInput} />
             <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-0.5">
               <button onClick={() => setView('list')} className={clsx("p-1.5 rounded-lg transition-all", view === 'list' ? "bg-white text-[#2464A3] shadow-sm" : "text-slate-400 hover:text-slate-700")}><Rows3 size={15} /></button>

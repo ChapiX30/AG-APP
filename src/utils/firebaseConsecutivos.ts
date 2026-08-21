@@ -68,18 +68,16 @@ export async function hojaTrabajoExiste(consecutivo: string): Promise<boolean> {
     const variantes = variantesCertificado(consecutivo);
     if (variantes.length === 0) return false;
 
-    for (const variant of variantes) {
-        const snap = await getDocs(
-            query(collection(db, "hojasDeTrabajo"), where("certificado", "==", variant), limit(1))
-        );
-        if (!snap.empty) return true;
-
-        const snapFolio = await getDocs(
-            query(collection(db, "hojasDeTrabajo"), where("folio", "==", variant), limit(1))
-        );
-        if (!snapFolio.empty) return true;
-    }
-    return false;
+    // Consultas en paralelo (antes eran secuenciales y sumaban latencia al generar).
+    const snaps = await Promise.all(
+        variantes.flatMap((variant) => [
+            getDocs(
+                query(collection(db, "hojasDeTrabajo"), where("certificado", "==", variant), limit(1))
+            ),
+            getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", variant), limit(1))),
+        ])
+    );
+    return snaps.some((snap) => !snap.empty);
 }
 
 function timestampMillis(value: unknown): number {
@@ -377,22 +375,35 @@ async function generarConsecutivoUnaVez(
     return { cert: consecutivoFinal, docId: historialId };
 }
 
+/**
+ * Auditoría/reconciliación pesada fuera del clic de generar (no bloquea calibración).
+ * Corre al abrir la magnitud y en background tras asignar.
+ */
+function scheduleConsecutivoMaintenance(magnitud: string, anio: string): void {
+    void (async () => {
+        try {
+            await auditarHuerfanos(magnitud, anio, GRACE_RECLAMAR_HUERFANOS_MIN);
+            // Sin force: respeta cooldown de 30 min (el escaneo de hojas es lo más caro).
+            await reconciliarContadorHuecos(magnitud, anio, false);
+        } catch (e) {
+            console.warn("[Consecutivos] background maintenance:", e);
+        }
+    })();
+}
+
 export async function generarConsecutivo(
     magnitud: string,
     anio: string,
     usuario: string
 ): Promise<string> {
-    // Reclama huérfanos sin hoja (p. ej. cancelaron sin «Deshacer») antes de subir el contador.
-    try {
-        await auditarHuerfanos(magnitud, anio, GRACE_RECLAMAR_HUERFANOS_MIN);
-        await reconciliarContadorHuecos(magnitud, anio, true);
-    } catch (e) {
-        console.warn("[Consecutivos] pre-generate reclaim:", e);
-    }
-
+    // Ruta rápida: solo asigna. La limpieza de huérfanos/huecos no espera aquí
+    // (ya corre al abrir la magnitud + background tras generar).
     for (let intento = 0; intento < MAX_GEN_RETRIES; intento++) {
         const { cert } = await generarConsecutivoUnaVez(magnitud, anio, usuario);
-        if (!(await hojaTrabajoExiste(cert))) return cert;
+        if (!(await hojaTrabajoExiste(cert))) {
+            scheduleConsecutivoMaintenance(magnitud, anio);
+            return cert;
+        }
 
         console.warn(`[Consecutivos] ${cert} ya tiene hoja; confirmando y reasignando`);
         await confirmarWorksheet(cert, magnitud);
