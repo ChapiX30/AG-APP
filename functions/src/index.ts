@@ -644,6 +644,8 @@ export const enviarNotificacionCalidad = functions.firestore
                         title,
                         body,
                         tag: servicioTag,
+                        icon: 'ic_stat_ag',
+                        color: '#2464A3',
                     },
                 },
                 apns: {

@@ -31,5 +31,13 @@
 
         <service android:name="com.epson.lwprint.sdk.LWPrintService" android:exported="false" />
 
+        <!-- Icono de aviso: silueta blanca (Android no muestra logos a color en la barra). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_ag" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color" />
+
     </application>
 </manifest>
