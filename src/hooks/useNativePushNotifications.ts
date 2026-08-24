@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { useNavigation } from './useNavigation';
 import { registerFcmToken } from '../utils/fcmTokenStorage';
-import { screenFromPushUrl, screenFromNotifTipo } from '../utils/notificationMeta';
+import { screenFromPushUrl } from '../utils/pushNavigation';
 
 /** Push FCM nativo en Android (APK). No afecta el flujo web. */
 export function useNativePushNotifications(uid: string, email: string) {
@@ -26,27 +26,6 @@ export function useNativePushNotifications(uid: string, email: string) {
         return;
       }
 
-      try {
-        await PushNotifications.createChannel({
-          id: 'ag_alerts',
-          name: 'Avisos AG',
-          description: 'Notificaciones operativas del laboratorio',
-          importance: 4,
-          visibility: 1,
-          vibration: true,
-        });
-        await PushNotifications.createChannel({
-          id: 'ag_alerts_high',
-          name: 'Avisos urgentes AG',
-          description: 'Asignaciones, revisiones y alertas prioritarias',
-          importance: 5,
-          visibility: 1,
-          vibration: true,
-        });
-      } catch (e) {
-        console.warn('No se pudieron crear canales Android:', e);
-      }
-
       listeners.push(
         await PushNotifications.addListener('registration', async (token) => {
           if (!active) return;
@@ -64,15 +43,12 @@ export function useNativePushNotifications(uid: string, email: string) {
         })
       );
 
-      // En segundo plano Android muestra el push del sistema solo.
-      // Al tocar la notificación, abrimos la pantalla correspondiente.
       listeners.push(
         await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-          const data = (action.notification.data || {}) as Record<string, unknown>;
-          const screen =
-            (typeof data.screen === 'string' && data.screen) ||
-            screenFromPushUrl(typeof data.url === 'string' ? data.url : undefined) ||
-            screenFromNotifTipo(typeof data.tipo === 'string' ? data.tipo : undefined);
+          const data = action.notification.data || {};
+          const screen = screenFromPushUrl(
+            typeof data.url === 'string' ? data.url : undefined
+          );
           if (screen) navigateTo(screen);
         })
       );
