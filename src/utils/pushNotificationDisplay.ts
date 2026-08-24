@@ -41,16 +41,19 @@ export function parseFcmDisplayPayload(payload: {
   };
 }
 
+/** Tras esto el toast de Windows se oculta solo (sigue en el centro de actividades). */
+const AUTO_CLOSE_MS = 8_000;
+
 export function buildNotificationOptions(parsed: ReturnType<typeof parseFcmDisplayPayload>) {
   const high = parsed.urgency === 'high';
   return {
     body: parsed.body,
-    icon: '/pwa-192.png',
-    badge: '/pwa-192.png',
+    icon: '/notification-icon.png',
+    badge: '/notification-icon.png',
     // Tag único: si se reusa, Windows a menudo no vuelve a mostrar el toast.
     tag: `${parsed.tag || 'ag-aviso'}-${Date.now()}`,
     renotify: true,
-    requireInteraction: high,
+    requireInteraction: false,
     vibrate: high ? [180, 80, 180] : [160, 70, 160],
     timestamp: Date.now(),
     data: {
@@ -76,8 +79,16 @@ export async function showOsPushNotification(
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
 
+  const closeLater = (reg: ServiceWorkerRegistration, tag?: string) => {
+    if (!tag) return;
+    window.setTimeout(() => {
+      void reg.getNotifications({ tag }).then((list) => list.forEach((n) => n.close()));
+    }, AUTO_CLOSE_MS);
+  };
+
   const trySw = async (reg: ServiceWorkerRegistration) => {
     await reg.showNotification(title, options as NotificationOptions);
+    closeLater(reg, options.tag);
   };
 
   try {
@@ -101,7 +112,8 @@ export async function showOsPushNotification(
 
   try {
     const { actions: _a, vibrate: _v, ...rest } = options;
-    new Notification(title, rest as NotificationOptions);
+    const n = new Notification(title, rest as NotificationOptions);
+    window.setTimeout(() => n.close(), AUTO_CLOSE_MS);
   } catch (e) {
     console.warn('[push] Notification fallback:', e);
   }

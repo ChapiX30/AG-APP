@@ -60,7 +60,7 @@ export default defineConfig({
                     },
                 ],
             },
-            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png'],
+            includeAssets: ['lab_logo.png', 'pwa-192.png', 'pwa-512.png', 'notification-icon.png'],
             workbox: {
                 cleanupOutdatedCaches: true,
                 clientsClaim: true,

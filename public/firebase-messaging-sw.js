@@ -45,15 +45,28 @@ function parseFcmPayload(payload) {
   return { title, body, servicioId, tag, tipo, urgency, url, screen, actionOpen, data };
 }
 
+const AUTO_CLOSE_MS = 8000;
+
+function scheduleAutoClose(tag) {
+  if (!tag) return;
+  setTimeout(function () {
+    self.registration.getNotifications({ tag: tag }).then(function (list) {
+      list.forEach(function (n) {
+        n.close();
+      });
+    });
+  }, AUTO_CLOSE_MS);
+}
+
 function buildOptions(parsed) {
   const high = parsed.urgency === 'high';
   return {
     body: parsed.body,
-    icon: '/pwa-192.png',
-    badge: '/pwa-192.png',
+    icon: '/notification-icon.png',
+    badge: '/notification-icon.png',
     tag: parsed.tag,
     renotify: true,
-    requireInteraction: high,
+    requireInteraction: false,
     vibrate: high ? [180, 80, 180] : [160, 70, 160],
     timestamp: Date.now(),
     data: {
@@ -74,7 +87,10 @@ function buildOptions(parsed) {
 
 messaging.onBackgroundMessage(function (payload) {
   const parsed = parseFcmPayload(payload);
-  return self.registration.showNotification(parsed.title, buildOptions(parsed));
+  const options = buildOptions(parsed);
+  return self.registration.showNotification(parsed.title, options).then(function () {
+    scheduleAutoClose(options.tag);
+  });
 });
 
 async function focusOrOpen(url, screen) {

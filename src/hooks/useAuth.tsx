@@ -178,7 +178,7 @@ export const loadUserProfile = async (
 let authPersistencePromise: Promise<void> | null = null;
 
 /** Sin actividad → cerrar sesión (web y app). */
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 20 * 60 * 1000;
 const IDLE_CHECK_MS = 15_000;
 const ACTIVITY_STORAGE_KEY = "ag_last_activity_at";
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
@@ -320,7 +320,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  /* Vigilancia de inactividad: 5 min sin uso → logout */
+  /* Vigilancia de inactividad: 20 min sin uso → logout */
   useEffect(() => {
     if (!user) return;
 
