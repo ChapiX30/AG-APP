@@ -79,20 +79,23 @@ export async function registerMessagingSW() {
  */
 export async function getFcmToken(vapidKey: string) {
     try {
-        // 1) Asegura que el SW esté registrado
-        await registerMessagingSW();
+        // Ligar el token al SW de FCM (no al de la PWA), si no el push no llega en segundo plano.
+        const swReg = await registerMessagingSW();
 
-        // 2) Comprueba soporte y obtiene instancia de messaging
         const messaging = await messagingPromise;
         if (!messaging) return null;
 
-        // 3) IMPORTANTE: el navegador debe tener permiso de Notificación
         if ("Notification" in window && Notification.permission === "default") {
             try { await Notification.requestPermission(); } catch { }
         }
+        if ("Notification" in window && Notification.permission !== "granted") {
+            return null;
+        }
 
-        // 4) Obtén el token
-        const token = await getToken(messaging, { vapidKey });
+        const token = await getToken(
+            messaging,
+            swReg ? { vapidKey, serviceWorkerRegistration: swReg } : { vapidKey }
+        );
         return token || null;
     } catch (e) {
         console.warn("No se pudo obtener token FCM:", e);

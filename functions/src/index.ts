@@ -616,9 +616,24 @@ export const enviarNotificacionCalidad = functions.firestore
                 title,
                 body,
                 url,
+                screen:
+                    tipo === 'revision_calidad'
+                        ? 'drive'
+                        : tipo === 'aviso_global'
+                          ? 'menu'
+                          : tipo === 'vacacion_pendiente' ||
+                              tipo === 'vacacion_rechazada' ||
+                              tipo === 'vacacion_progreso' ||
+                              tipo === 'vacacion_aprobada'
+                            ? 'solicitud-vacaciones'
+                            : tipo === 'prestamo_patron_tecnico' || tipo === 'prestamo_patron_calidad'
+                              ? 'control-prestamos'
+                              : 'calendario',
                 servicioId: servicioId || '',
                 tipo,
                 tag: servicioTag,
+                urgency: 'high',
+                actionOpen: tipo === 'revision_calidad' ? 'Abrir Drive' : 'Abrir',
             };
 
             const payload = {
