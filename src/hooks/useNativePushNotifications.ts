@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { useNavigation } from './useNavigation';
 import { registerFcmToken } from '../utils/fcmTokenStorage';
@@ -32,6 +33,11 @@ export function useNativePushNotifications(uid: string, email: string) {
       if (perm.receive !== 'granted') {
         console.warn('Push Android: permiso de notificaciones denegado.');
         return;
+      }
+
+      const localPerm = await LocalNotifications.checkPermissions();
+      if (localPerm.display !== 'granted') {
+        await LocalNotifications.requestPermissions();
       }
 
       // Canales modernos (Android 8+)
@@ -73,8 +79,38 @@ export function useNativePushNotifications(uid: string, email: string) {
         })
       );
 
-      // En primer plano Android no pinta toast en la app: el aviso queda en la bandeja
-      // del sistema al estar en segundo plano (como antes). El tap se maneja abajo.
+      listeners.push(
+        await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+          if (!active) return;
+          const data = (notification.data || {}) as Record<string, unknown>;
+          const title = notification.title || String(data.title || 'Aviso AG');
+          const body = notification.body || String(data.body || '');
+          const channelId =
+            String(data.urgency || '') === 'high' ? 'ag_alerts_high' : 'ag_alerts';
+          const extra = { ...data, screen: resolveScreen(data) };
+          const id = Math.abs(Date.now() % 2147483647);
+          void LocalNotifications.schedule({
+            notifications: [
+              {
+                id,
+                title,
+                body,
+                channelId,
+                extra,
+                autoCancel: true,
+              },
+            ],
+          }).catch((e) => console.warn('Local notification Android:', e));
+        })
+      );
+
+      listeners.push(
+        await LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+          const extra = (action.notification.extra || {}) as Record<string, unknown>;
+          const screen = resolveScreen(extra);
+          if (screen) navigateTo(screen);
+        })
+      );
 
       listeners.push(
         await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {

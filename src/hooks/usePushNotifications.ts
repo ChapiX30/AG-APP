@@ -5,6 +5,7 @@ import { registerFcmToken } from '../utils/fcmTokenStorage';
 import {
   buildNotificationOptions,
   parseFcmDisplayPayload,
+  showSystemPushNotification,
 } from '../utils/pushNotificationDisplay';
 import { screenFromPushUrl } from '../utils/notificationMeta';
 import { useNativePushNotifications } from './useNativePushNotifications';
@@ -54,15 +55,7 @@ function useWebPushNotifications(uid: string, email: string) {
       unsubscribeForeground = await subscribeForegroundMessage((payload) => {
         if (cancelled) return;
         const parsed = parseFcmDisplayPayload(payload);
-        // Siempre notificación del sistema (PC / tablet / PWA). No toast dentro de la app.
-        if (Notification.permission !== 'granted') return;
-        const opts = buildNotificationOptions(parsed);
-        const n = new Notification(parsed.title, opts as NotificationOptions);
-        n.onclick = () => {
-          window.focus();
-          if (parsed.screen) navigateTo(parsed.screen as Parameters<typeof navigateTo>[0]);
-          n.close();
-        };
+        void showSystemPushNotification(parsed.title, buildNotificationOptions(parsed));
       });
     })();
 

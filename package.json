@@ -20,6 +20,7 @@
     "@capacitor/cli": "^7.4.3",
     "@capacitor/core": "^7.4.3",
     "@capacitor/filesystem": "^7.1.6",
+    "@capacitor/local-notifications": "^7.0.7",
     "@capacitor/push-notifications": "^7.0.7",
     "@capacitor/share": "^7.0.3",
     "@embedpdf/react-pdf-viewer": "^2.15.0",
