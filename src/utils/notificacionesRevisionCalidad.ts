@@ -1,9 +1,8 @@
 import {
+  addDoc,
   collection,
-  doc,
   getDocs,
   serverTimestamp,
-  setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { isHiddenTestAccount } from "./hiddenUsers";
@@ -48,36 +47,32 @@ export async function notificarCalidadRevisionPendiente(
   const title = "Trabajo por revisar";
   const body = `${tecnicoNombre} marcó como realizado: ID ${equipmentId || "—"} — ${cliente || "Sin cliente"} (${fecha || "sin fecha"})`;
 
-  const docId = `revision_${worksheetDocId || metaId || equipmentId}`;
-
-  await setDoc(
-    doc(db, "notificaciones", docId),
-    {
-      type: "info",
+  // Documento nuevo cada vez: si reutilizábamos revision_*, fcmSent:true bloqueaba el push.
+  await addDoc(collection(db, "notificaciones"), {
+    type: "info",
+    title,
+    body,
+    autorNombre: tecnicoNombre,
+    readBy: [],
+    destinatarios,
+    timestamp: serverTimestamp(),
+    global: false,
+    tipo: "revision_calidad",
+    fcmSent: false,
+    worksheetDocId,
+    equipmentId,
+    cliente,
+    fecha,
+    metaId: metaId || null,
+    tag: `revision-${worksheetDocId || metaId || equipmentId}-${Date.now()}`,
+    fcmData: {
       title,
       body,
-      autorNombre: tecnicoNombre,
-      readBy: [],
-      destinatarios,
-      timestamp: serverTimestamp(),
-      global: false,
-      tipo: "revision_calidad",
-      fcmSent: false,
-      worksheetDocId,
-      equipmentId,
-      cliente,
-      fecha,
-      metaId: metaId || null,
-      fcmData: {
-        title,
-        body,
-        type: "info",
-        equipmentId: equipmentId || "",
-        cliente: cliente || "",
-        fecha: fecha || "",
-        url: "/drive",
-      },
+      type: "info",
+      equipmentId: equipmentId || "",
+      cliente: cliente || "",
+      fecha: fecha || "",
+      url: "/drive",
     },
-    { merge: true }
-  );
+  });
 }

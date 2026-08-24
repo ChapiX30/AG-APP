@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { useNavigation } from './useNavigation';
 import { registerFcmToken } from '../utils/fcmTokenStorage';
@@ -17,14 +16,6 @@ export function useNativePushNotifications(uid: string, email: string) {
     let active = true;
     const listeners: { remove: () => Promise<void> }[] = [];
 
-    const resolveScreen = (data: Record<string, unknown>) => {
-      const screen =
-        (typeof data.screen === 'string' && data.screen) ||
-        screenFromPushUrl(typeof data.url === 'string' ? data.url : undefined) ||
-        screenFromNotifTipo(typeof data.tipo === 'string' ? data.tipo : undefined);
-      return screen || null;
-    };
-
     const setup = async () => {
       let perm = await PushNotifications.checkPermissions();
       if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
@@ -35,12 +26,6 @@ export function useNativePushNotifications(uid: string, email: string) {
         return;
       }
 
-      const localPerm = await LocalNotifications.checkPermissions();
-      if (localPerm.display !== 'granted') {
-        await LocalNotifications.requestPermissions();
-      }
-
-      // Canales modernos (Android 8+)
       try {
         await PushNotifications.createChannel({
           id: 'ag_alerts',
@@ -79,43 +64,15 @@ export function useNativePushNotifications(uid: string, email: string) {
         })
       );
 
-      listeners.push(
-        await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-          if (!active) return;
-          const data = (notification.data || {}) as Record<string, unknown>;
-          const title = notification.title || String(data.title || 'Aviso AG');
-          const body = notification.body || String(data.body || '');
-          const channelId =
-            String(data.urgency || '') === 'high' ? 'ag_alerts_high' : 'ag_alerts';
-          const extra = { ...data, screen: resolveScreen(data) };
-          const id = Math.abs(Date.now() % 2147483647);
-          void LocalNotifications.schedule({
-            notifications: [
-              {
-                id,
-                title,
-                body,
-                channelId,
-                extra,
-                autoCancel: true,
-              },
-            ],
-          }).catch((e) => console.warn('Local notification Android:', e));
-        })
-      );
-
-      listeners.push(
-        await LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
-          const extra = (action.notification.extra || {}) as Record<string, unknown>;
-          const screen = resolveScreen(extra);
-          if (screen) navigateTo(screen);
-        })
-      );
-
+      // En segundo plano Android muestra el push del sistema solo.
+      // Al tocar la notificación, abrimos la pantalla correspondiente.
       listeners.push(
         await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
           const data = (action.notification.data || {}) as Record<string, unknown>;
-          const screen = resolveScreen(data);
+          const screen =
+            (typeof data.screen === 'string' && data.screen) ||
+            screenFromPushUrl(typeof data.url === 'string' ? data.url : undefined) ||
+            screenFromNotifTipo(typeof data.tipo === 'string' ? data.tipo : undefined);
           if (screen) navigateTo(screen);
         })
       );

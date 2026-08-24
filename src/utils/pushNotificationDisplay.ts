@@ -40,7 +40,7 @@ export function parseFcmDisplayPayload(payload: {
   };
 }
 
-/** Opciones modernas para Notification / showNotification. */
+/** Opciones para el Service Worker (segundo plano). */
 export function buildNotificationOptions(parsed: ReturnType<typeof parseFcmDisplayPayload>) {
   const requireInteraction = parsed.urgency === 'high';
   const vibrate =
@@ -72,33 +72,4 @@ export function buildNotificationOptions(parsed: ReturnType<typeof parseFcmDispl
       { action: 'dismiss', title: 'Descartar' },
     ],
   };
-}
-
-/**
- * Push del sistema (bandeja de Windows / Chrome), no toast dentro de la app.
- * Hay que usar el Service Worker: `new Notification({ actions })` lanza y no se ve nada.
- */
-export async function showSystemPushNotification(
-  title: string,
-  options: ReturnType<typeof buildNotificationOptions>,
-): Promise<void> {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
-
-  try {
-    if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
-      await reg.showNotification(title, options as NotificationOptions);
-      return;
-    }
-  } catch (e) {
-    console.warn('showNotification (SW):', e);
-  }
-
-  try {
-    const { actions: _actions, ...rest } = options;
-    new Notification(title, rest as NotificationOptions);
-  } catch (e) {
-    console.warn('Notification constructor:', e);
-  }
 }

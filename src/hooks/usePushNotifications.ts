@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { getFcmToken, subscribeForegroundMessage } from '../utils/firebase';
+import { getFcmToken, registerMessagingSW, subscribeForegroundMessage } from '../utils/firebase';
 import { registerFcmToken } from '../utils/fcmTokenStorage';
 import {
   buildNotificationOptions,
   parseFcmDisplayPayload,
-  showSystemPushNotification,
 } from '../utils/pushNotificationDisplay';
 import { screenFromPushUrl } from '../utils/notificationMeta';
 import { useNativePushNotifications } from './useNativePushNotifications';
@@ -13,6 +12,53 @@ import { useNavigation } from './useNavigation';
 
 const VAPID_KEY =
   'BAsbdOJE0Jq34IyL3eINDo5TyqWz2904Iy0DyHEE3Zyrc0HONx-klR1lhMCM6ald28nPab9xgu5EoEM9092rsxE';
+
+/**
+ * Muestra el mismo toast de Windows que en segundo plano:
+ * logo AG + título + cuerpo + "Abrir Drive" / "Descartar".
+ * Debe ir por Service Worker (actions no funcionan en new Notification).
+ */
+async function showOsPushLikeBackground(
+  title: string,
+  options: ReturnType<typeof buildNotificationOptions>,
+) {
+  if (Notification.permission !== 'granted') return;
+
+  const opts = {
+    ...options,
+    // Tag único para que Windows vuelva a mostrar el toast aunque el título se repita
+    tag: `${options.tag || 'ag-aviso'}-${Date.now()}`,
+    renotify: true,
+  };
+
+  try {
+    const fcmReg = await registerMessagingSW();
+    if (fcmReg) {
+      await fcmReg.showNotification(title, opts as NotificationOptions);
+      return;
+    }
+  } catch (e) {
+    console.warn('showNotification FCM SW:', e);
+  }
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const ready = await navigator.serviceWorker.ready;
+      await ready.showNotification(title, opts as NotificationOptions);
+      return;
+    }
+  } catch (e) {
+    console.warn('showNotification ready SW:', e);
+  }
+
+  // Último recurso (sin botones)
+  try {
+    const { actions: _a, vibrate: _v, ...rest } = opts;
+    new Notification(title, rest as NotificationOptions);
+  } catch (e) {
+    console.warn('Notification fallback:', e);
+  }
+}
 
 /** Web Push (PWA / navegador). Solo corre fuera del APK. */
 function useWebPushNotifications(uid: string, email: string) {
@@ -37,25 +83,27 @@ function useWebPushNotifications(uid: string, email: string) {
       navigator.serviceWorker.addEventListener('message', onSwMessage);
     }
 
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
     (async () => {
-      // Moderno: no forzar el prompt al cargar. Solo registrar token si ya hay permiso.
-      if (!('Notification' in window)) return;
-      if (Notification.permission === 'granted') {
-        const token = await getFcmToken(VAPID_KEY);
-        if (cancelled) return;
-        if (token) {
-          try {
-            await registerFcmToken(uid, email || null, token, 'web');
-          } catch (e) {
-            console.warn('No se pudo guardar token FCM web:', e);
-          }
+      const token = await getFcmToken(VAPID_KEY);
+      if (cancelled) return;
+      if (token) {
+        try {
+          await registerFcmToken(uid, email || null, token, 'web');
+        } catch (e) {
+          console.warn('No se pudo guardar token FCM web:', e);
         }
       }
 
       unsubscribeForeground = await subscribeForegroundMessage((payload) => {
         if (cancelled) return;
+        // Pestaña oculta: el SW (onBackgroundMessage) pinta el mismo toast.
+        if (document.visibilityState === 'hidden') return;
         const parsed = parseFcmDisplayPayload(payload);
-        void showSystemPushNotification(parsed.title, buildNotificationOptions(parsed));
+        void showOsPushLikeBackground(parsed.title, buildNotificationOptions(parsed));
       });
     })();
 
