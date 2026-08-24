@@ -775,7 +775,7 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onMarkAllRead, 
     try {
       const result = await enableWebPushFromUserGesture(uid);
       setPushPerm(result === 'unsupported' ? 'unsupported' : result === 'granted' ? 'granted' : 'denied');
-      if (result === 'granted') toast.success('Avisos del sistema activados');
+      if (result === 'granted') toast.success('Avisos reconectados en este dispositivo');
       else if (result === 'denied') toast.error('Permiso denegado en el navegador');
       else toast.error('Este dispositivo no soporta push web');
     } catch {
@@ -887,6 +887,20 @@ const NotificationPanel = ({ notifications, onClose, onMarkRead, onMarkAllRead, 
             <Bell size={14} className="shrink-0" />
             <span className="flex-1">
               {pushBusy ? 'Activando…' : 'Activar avisos en pantalla de bloqueo'}
+            </span>
+            <ChevronRight size={14} className="opacity-60" />
+          </button>
+        )}
+        {pushPerm === 'granted' && (
+          <button
+            type="button"
+            disabled={pushBusy}
+            onClick={handleEnablePush}
+            className="mt-3 w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border ag-border ag-surface text-left"
+          >
+            <Bell size={14} className="shrink-0 acc-text" />
+            <span className="flex-1">
+              {pushBusy ? 'Reconectando…' : 'Reconectar avisos en este PC'}
             </span>
             <ChevronRight size={14} className="opacity-60" />
           </button>
