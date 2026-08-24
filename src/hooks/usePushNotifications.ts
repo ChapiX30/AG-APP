@@ -72,23 +72,21 @@ function useWebPushNotifications(uid: string, email: string) {
         // 1) Toast de Windows (bandeja), aunque la app esté abierta.
         void showOsPushNotification(parsed.title, buildNotificationOptions(parsed));
 
-        // 2) Respaldo visible en la app (toast simple, no tarjeta "NUEVO AVISO").
-        toast(
-          (t) => (
-            <button
-              type="button"
-              className="text-left text-sm font-medium"
-              onClick={() => {
-                toast.dismiss(t.id);
-                if (parsed.screen) navigateTo(parsed.screen as Parameters<typeof navigateTo>[0]);
-              }}
-            >
-              <span className="block font-semibold">{parsed.title}</span>
-              {parsed.body ? <span className="block opacity-80 mt-0.5 line-clamp-2">{parsed.body}</span> : null}
-            </button>
-          ),
-          { duration: 6000, position: 'top-center' },
-        );
+        // 2) Respaldo visible en la app (toast simple, sin JSX: este archivo es .ts).
+        const label = parsed.body
+          ? `${parsed.title}\n${parsed.body}`
+          : parsed.title;
+        toast(label, {
+          duration: 6000,
+          position: 'top-center',
+          style: {
+            maxWidth: '22rem',
+            whiteSpace: 'pre-wrap',
+            fontSize: '13px',
+            fontWeight: 600,
+            borderRadius: 12,
+          },
+        });
       });
     })();
 
