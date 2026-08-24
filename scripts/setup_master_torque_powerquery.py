@@ -89,10 +89,10 @@ M_HISTORIAL = f'''let
     NormalizarNombre = (valor as any) as text =>
         let
             Texto = Text.Upper(Text.Trim(if valor = null then "" else Text.From(valor))),
-            SinParentesis = if Text.Contains(Texto, "(") then Text.BeforeDelimiter(Texto, "(") else Texto,
+            ConEtiqueta = Text.Replace(Text.Replace(Texto, "(", " "), ")", " "),
             SinAcentos = List.Accumulate(
                 {{{{"Á", "A"}}, {{"É", "E"}}, {{"Í", "I"}}, {{"Ó", "O"}}, {{"Ú", "U"}}, {{"Ü", "U"}}, {{"Ñ", "N"}}}},
-                SinParentesis,
+                ConEtiqueta,
                 (estado, par) => Text.Replace(estado, par{{0}}, par{{1}})
             ),
             Permitidos = Text.Select(SinAcentos, {{"A".."Z", "0".."9", " "}}),

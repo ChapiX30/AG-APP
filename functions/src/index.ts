@@ -204,7 +204,8 @@ const normalizeClienteNombreExcel = (raw: unknown): string => {
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .toUpperCase()
-        .replace(/\([^)]*\)/g, " ")
+        // Conservar (YENSY) / (OSCAR): son clientes distintos, no el mismo Panasonic
+        .replace(/[()]/g, " ")
         .replace(/[^A-Z0-9]+/g, " ")
         .replace(/\b(S A DE C V|SA DE CV|S DE RL DE CV|S DE R L DE C V|SAPI DE CV|SA|CV)\b/g, " ")
         .replace(/\s+/g, " ")
@@ -247,11 +248,6 @@ const enrichHistorialConClientes = (
         if (byExact.has(key)) return byExact.get(key);
         const norm = normalizeClienteNombreExcel(clienteNombre);
         if (norm && byNorm.has(norm)) return byNorm.get(norm);
-        if (norm) {
-            for (const [cand, row] of byNorm) {
-                if (cand.startsWith(norm) || norm.startsWith(cand)) return row;
-            }
-        }
         return undefined;
     };
 

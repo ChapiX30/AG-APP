@@ -7,7 +7,6 @@ import {
   parseFcmDisplayPayload,
 } from '../utils/pushNotificationDisplay';
 import { screenFromPushUrl } from '../utils/notificationMeta';
-import { showInAppPushToast } from '../components/PushInAppToast';
 import { useNativePushNotifications } from './useNativePushNotifications';
 import { useNavigation } from './useNavigation';
 
@@ -55,23 +54,13 @@ function useWebPushNotifications(uid: string, email: string) {
       unsubscribeForeground = await subscribeForegroundMessage((payload) => {
         if (cancelled) return;
         const parsed = parseFcmDisplayPayload(payload);
-        const open = () => {
-          if (parsed.screen) navigateTo(parsed.screen as Parameters<typeof navigateTo>[0]);
-        };
-
-        // App visible → toast in-app premium (no popup nativo redundante).
-        if (document.visibilityState === 'visible') {
-          showInAppPushToast(parsed.title, parsed.body, open);
-          return;
-        }
-
-        // Pestaña abierta pero en segundo plano → notificación del sistema.
+        // Siempre notificación del sistema (PC / tablet / PWA). No toast dentro de la app.
         if (Notification.permission !== 'granted') return;
         const opts = buildNotificationOptions(parsed);
         const n = new Notification(parsed.title, opts as NotificationOptions);
         n.onclick = () => {
           window.focus();
-          open();
+          if (parsed.screen) navigateTo(parsed.screen as Parameters<typeof navigateTo>[0]);
           n.close();
         };
       });

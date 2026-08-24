@@ -4,7 +4,6 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { useNavigation } from './useNavigation';
 import { registerFcmToken } from '../utils/fcmTokenStorage';
 import { screenFromPushUrl, screenFromNotifTipo } from '../utils/notificationMeta';
-import { showInAppPushToast } from '../components/PushInAppToast';
 
 /** Push FCM nativo en Android (APK). No afecta el flujo web. */
 export function useNativePushNotifications(uid: string, email: string) {
@@ -74,18 +73,8 @@ export function useNativePushNotifications(uid: string, email: string) {
         })
       );
 
-      listeners.push(
-        await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-          if (!active) return;
-          const data = (notification.data || {}) as Record<string, unknown>;
-          const title = notification.title || String(data.title || 'Aviso AG');
-          const body = notification.body || String(data.body || '');
-          const screen = resolveScreen(data);
-          showInAppPushToast(title, body, () => {
-            if (screen) navigateTo(screen);
-          });
-        })
-      );
+      // En primer plano Android no pinta toast en la app: el aviso queda en la bandeja
+      // del sistema al estar en segundo plano (como antes). El tap se maneja abajo.
 
       listeners.push(
         await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {

@@ -393,6 +393,7 @@ Public Function ActualizarHistorialDesdeApp(Optional ByVal mostrarResultado As B
     Dim ultimaFila As Long
     Dim agregados As Long
     Dim revisados As Long
+    Dim actualizados As Long
     Dim cert As String
     Dim filaNueva As Long
     Dim urls(0 To {len(urls) - 1}) As String
@@ -402,6 +403,7 @@ Public Function ActualizarHistorialDesdeApp(Optional ByVal mostrarResultado As B
     Dim columna As Long
     Dim esEncabezado As Boolean
     Dim maxCampo As Long
+    Dim filaExistente As Long
 
     On Error GoTo Fallo
     Application.StatusBar = "Buscando certificados nuevos (solo faltantes)..."
@@ -461,7 +463,19 @@ Public Function ActualizarHistorialDesdeApp(Optional ByVal mostrarResultado As B
             If Right$(cert, 3) <> ("-" & anioActual) Then GoTo SiguienteLinea
 
             revisados = revisados + 1
-            If existentes.Exists(UCase$(cert)) Then GoTo SiguienteLinea
+            If existentes.Exists(UCase$(cert)) Then
+                filaExistente = existentes(UCase$(cert))
+                maxCampo = UBound(campos)
+                If maxCampo > MAX_COL Then maxCampo = MAX_COL
+                If maxCampo >= 2 Then wsHist.Cells(filaExistente, 3).Value2 = campos(2)
+                If maxCampo >= 13 Then
+                    For columna = 13 To maxCampo
+                        wsHist.Cells(filaExistente, columna + 1).Value2 = campos(columna)
+                    Next columna
+                    actualizados = actualizados + 1
+                End If
+                GoTo SiguienteLinea
+            End If
 
             filaNueva = ultimaFila + 1
             maxCampo = UBound(campos)
@@ -492,8 +506,8 @@ SiguienteLinea:
         MsgBox "Sincronización lista." & vbCrLf & vbCrLf & _
             "Certificados nuevos agregados: " & agregados & vbCrLf & _
             "Revisados del año " & anioActual & ": " & revisados & vbCrLf & _
-            "Ya tenías: " & (existentes.Count - agregados) & vbCrLf & vbCrLf & _
-            "Los que ya estaban NO se volvieron a cargar.", _
+            "Ya tenías: " & (existentes.Count - agregados) & vbCrLf & _
+            "Datos de cliente actualizados: " & actualizados, _
             vbInformation, "Actualización AG"
     End If
     GoTo Salida

@@ -121,7 +121,8 @@ def fetch_json(url: str) -> dict:
 def norm_cliente(name: str) -> str:
     s = str(name or "").strip().upper()
     s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
-    s = re.sub(r"\([^)]*\)", " ", s)
+    # Conservar (YENSY) / (OSCAR); no mezclar contactos de Panasonic
+    s = re.sub(r"[()]", " ", s)
     s = re.sub(r"[^A-Z0-9]+", " ", s)
     s = re.sub(
         r"\b(S A DE C V|SA DE CV|S DE RL DE CV|S DE R L DE C V|SAPI DE CV|SA|CV)\b",
@@ -160,32 +161,24 @@ def enrich_historial(historial: list[dict], clientes: list[dict]):
         nk = norm_cliente(nombre)
         if nk and nk in by_norm:
             return by_norm[nk]
-        if nk:
-            for cand_k, cand in by_norm.items():
-                if cand_k.startswith(nk) or nk.startswith(cand_k):
-                    return cand
         return None
 
     matched = 0
     out = []
     for row in historial:
         r = dict(row)
-        already = any(str(r.get(k) or "").strip() for k in ("domicilio", "contacto", "correo", "telefono"))
-        if not already:
-            hit = lookup(str(r.get("cliente") or ""))
-            if hit:
-                r.update({
-                    "domicilio": hit["Domicilio"],
-                    "contacto": hit["Contacto"],
-                    "correo": hit["Correo"],
-                    "telefono": hit["Telefono"],
-                })
-                matched += 1
-            else:
-                for k in ("domicilio", "contacto", "correo", "telefono"):
-                    r.setdefault(k, "")
-        else:
+        hit = lookup(str(r.get("cliente") or ""))
+        if hit:
+            r.update({
+                "domicilio": hit["Domicilio"],
+                "contacto": hit["Contacto"],
+                "correo": hit["Correo"],
+                "telefono": hit["Telefono"],
+            })
             matched += 1
+        else:
+            for k in ("domicilio", "contacto", "correo", "telefono"):
+                r.setdefault(k, "")
         if r.get("cliente"):
             r["cliente"] = str(r["cliente"]).strip()
         out.append(r)
@@ -206,16 +199,35 @@ def parse_fecha(raw):
     return None
 
 
+def unprotect_sheet(ws) -> None:
+    for pwd in ("AG-Calidad-2026", ""):
+        try:
+            if pwd:
+                ws.Unprotect(Password=pwd)
+            else:
+                ws.Unprotect()
+            return
+        except Exception:
+            continue
+
+
 def ensure_sheet(wb, name: str):
     try:
-        return wb.Worksheets(name)
+        ws = wb.Worksheets(name)
     except Exception:
         ws = wb.Worksheets.Add(After=wb.Worksheets(wb.Worksheets.Count))
         ws.Name = name[:31]
         return ws
+    unprotect_sheet(ws)
+    try:
+        ws.Visible = -1
+    except Exception:
+        pass
+    return ws
 
 
 def clear_sheet(ws) -> None:
+    unprotect_sheet(ws)
     ws.Cells.ClearContents()
 
 
@@ -438,6 +450,11 @@ def main() -> int:
             pat_ws = ensure_sheet(wb, PAT_SHEET)
             write_table(pat_ws, PATRON_HEADERS, patrones_rows(patrones, cert_fb))
             print(f"  BD_Patrones {len(patrones)} (fallback cert {len(cert_fb)})")
+            for hidden in (hist_ws, cli_ws, pat_ws):
+                try:
+                    hidden.Visible = 2
+                except Exception:
+                    pass
 
         if not args.solo_sync:
             wire_toma_datos(wb.Worksheets("Toma Datos"))

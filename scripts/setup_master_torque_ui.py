@@ -143,8 +143,18 @@ End Sub
 Sub RecalcularCertificado()
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
-    ThisWorkbook.RefreshAll
+    Call AG_AutoSync.ActualizarHistorialDesdeApp(False)
+    On Error Resume Next
+    Dim i As Long
+    For i = 1 To ThisWorkbook.Connections.Count
+        Dim nm As String
+        nm = UCase$(CStr(ThisWorkbook.Connections.Item(i).Name))
+        If InStr(1, nm, "CLIENTE") > 0 Or InStr(1, nm, "PATRON") > 0 Then
+            ThisWorkbook.Connections.Item(i).Refresh
+        End If
+    Next i
     Application.CalculateUntilAsyncQueriesDone
+    On Error GoTo ErrorHandler
     ThisWorkbook.Worksheets("Toma Datos").Calculate
     ThisWorkbook.Worksheets("Patrones").Calculate
     ThisWorkbook.Worksheets("Portada").Calculate
@@ -262,6 +272,7 @@ def main() -> int:
             ("Unidades", "ConfigurarListaUnidades", 82, rgb(124, 58, 237)),
             ("Actualizar", "RecalcularCertificado", 88, rgb(217, 119, 6)),
             ("Ir a Portada", "IrAPortada", 88, rgb(71, 85, 105)),
+            ("Generar PDF", "GenerarCertificadoPDF", 92, rgb(185, 28, 28)),
         )
         left = 405
         top = 3
@@ -282,7 +293,7 @@ def main() -> int:
         else:
             workbook.SaveAs(str(TARGET.resolve()), FileFormat=XL_OPEN_XML_WORKBOOK_MACRO_ENABLED)
         print(f"Master con macros: {TARGET}")
-        print("Botones creados: Guardar, Formato fecha, Unidades, Actualizar, Ir a Portada")
+        print("Botones creados: Guardar, Formato fecha, Unidades, Actualizar, Ir a Portada, Generar PDF")
 
         # Verificación antes de cerrar.
         if not bool(workbook.HasVBProject):
@@ -297,8 +308,8 @@ def main() -> int:
             for index in range(1, ws.Shapes.Count + 1)
             if str(ws.Shapes(index).Name).startswith("btn_")
         }
-        if len(found) != 5:
-            raise RuntimeError(f"Se esperaban 5 botones y se encontraron {len(found)}.")
+        if len(found) != 6:
+            raise RuntimeError(f"Se esperaban 6 botones y se encontraron {len(found)}.")
 
         workbook.Close(SaveChanges=True)
         workbook = None
