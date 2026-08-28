@@ -7,9 +7,13 @@ import {
   StandardFonts,
 } from 'pdf-lib';
 import { saveAs } from 'file-saver';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import labLogo from '../assets/lab_logo.png';
+import { storage } from './firebase';
+import { writeDriveFileMetadata } from './driveFileMetadata';
 import {
   planSalidaPdfPages,
+  hojaSalidaStoragePath,
 } from './entradaSalidaPdfLogic';
 
 export type SalidaPdfItem = {
@@ -324,11 +328,31 @@ function drawCut(page: PDFPage, fontBold: PDFFont) {
   });
 }
 
+export async function uploadHojaSalidaToDrive(opts: {
+  blob: Blob;
+  folio: string;
+  uploadedBy: string;
+  workDate?: string;
+}): Promise<{ storagePath: string; pdfURL: string }> {
+  const storagePath = hojaSalidaStoragePath(opts.folio);
+  const storageRef = ref(storage, storagePath);
+  const uploadResult = await uploadBytes(storageRef, opts.blob);
+  const pdfURL = await getDownloadURL(uploadResult.ref);
+  try {
+    await writeDriveFileMetadata(storagePath, uploadResult, opts.uploadedBy || 'Sistema', {
+      workDate: opts.workDate,
+    });
+  } catch (metaErr) {
+    console.error('[HojaSalida] Error al registrar metadata en Drive:', metaErr);
+  }
+  return { storagePath, pdfURL };
+}
+
 export async function generateEntradaSalidaPdf(opts: {
   items: SalidaPdfItem[];
   folio: string;
   esParcial?: boolean;
-}): Promise<void> {
+}): Promise<{ blob: Blob }> {
   const { items, folio, esParcial = false } = opts;
   const cliente = items[0]?.cliente || 'Sin cliente';
   const oc = items[0]?.ordenCompra || '';
@@ -399,5 +423,7 @@ export async function generateEntradaSalidaPdf(opts: {
   }
 
   const pdfBytes = await pdfDoc.save();
-  saveAs(new Blob([pdfBytes], { type: 'application/pdf' }), `Salida_${folio}.pdf`);
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  saveAs(blob, `Salida_${folio}.pdf`);
+  return { blob };
 }

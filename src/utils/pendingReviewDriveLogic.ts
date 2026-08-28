@@ -16,7 +16,7 @@ export const isWorksheetRealizado = (value: unknown): boolean =>
 /** @deprecated Prefer isWorksheetUploadedToDrive / isWorksheetRealizado */
 export const isWorksheetCargadoDrive = isWorksheetUploadedToDrive;
 
-/** Hojas de servicio (HSDG) no pasan por revisión de calidad en Drive. */
+/** Hojas de servicio (HSDG) y hojas de salida no pasan por revisión de calidad en Drive. */
 export const isServiceSheetDrivePath = (
   fullPath: string,
   fileName?: string
@@ -28,8 +28,9 @@ export const isServiceSheetDrivePath = (
   const name = String(fileName || "")
     .trim()
     .toUpperCase();
-  if (path.includes("hojas de servicio")) return true;
+  if (path.includes("hojas de servicio") || path.includes("hojas de salida")) return true;
   if (name.startsWith("HSDG-") || name.startsWith("HSDG.")) return true;
+  if (name.startsWith("HSE-") || name.startsWith("HSE.")) return true;
   return false;
 };
 

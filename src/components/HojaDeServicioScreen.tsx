@@ -18,8 +18,8 @@ import {
   splitEquipoIds,
 } from "../utils/hojaServicioMatch";
 import { getAuth } from 'firebase/auth';
-import { finalizeServicioFromHoja, registerServicioInicioFromWorksheet } from '../utils/servicioAutomation';
-import { encolarCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
+import { finalizeServicioFromHoja, isCelesticaClienteNombre, registerServicioInicioFromWorksheet } from '../utils/servicioAutomation';
+import { encolarCorreoHojaServicio, resolveCorreoHojaServicio } from '../utils/notificacionesHojaServicio';
 import { watchAlertaCorreo } from '../utils/alertaCorreoWatcher';
 import { useAuth } from '../hooks/useAuth';
 import { useAppDialog } from '../hooks/useAppDialog';
@@ -60,6 +60,7 @@ type Empresa = {
   contacto?: string;
   telefono?: string;
   correo?: string;
+  email?: string;
 };
 
 type EquipoUnificado = {
@@ -634,10 +635,13 @@ export default function HojaDeServicioScreen() {
       return;
     }
 
+    const correoDestino = resolveCorreoHojaServicio(campos.empresa, campos.correo);
+    const camposGuardar = { ...campos, correo: correoDestino };
+
     setSavingService(true);
     try {
       const pdfBlob = await generarPDFFormal({
-        campos,
+        campos: camposGuardar,
         firmaTecnico,
         firmaCliente,
         equiposCalibrados,
@@ -662,7 +666,7 @@ export default function HojaDeServicioScreen() {
         console.error("[HojaDeServicio] Error al registrar metadata en Drive:", metaErr);
       }
 
-      await saveServiceData(campos, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
+      await saveServiceData(camposGuardar, firmaTecnico, firmaCliente, equiposCalibrados, downloadURL, storagePath);
 
       try {
         const finalizedAt = new Date();
@@ -787,14 +791,14 @@ export default function HojaDeServicioScreen() {
       }));
       const totalEq = gruposCorreo.reduce((n, g) => n + g.equipos.length, 0);
 
-      if (campos.correo?.trim()) {
+      if (correoDestino) {
         try {
           const alertId = await encolarCorreoHojaServicio({
-            folio: campos.folio,
-            empresa: campos.empresa,
-            fecha: campos.fecha,
-            correoCliente: campos.correo,
-            contacto: campos.contacto,
+            folio: camposGuardar.folio,
+            empresa: camposGuardar.empresa,
+            fecha: camposGuardar.fecha,
+            correoCliente: correoDestino,
+            contacto: camposGuardar.contacto,
             tecnicoResponsable: campos.tecnicoResponsable,
             calidadServicio: campos.calidadServicio,
             comentarios: campos.comentarios,
@@ -807,7 +811,7 @@ export default function HojaDeServicioScreen() {
           });
           watchAlertaCorreo('alertasHojaServicio', alertId, {
             loadingMessage: 'Enviando hoja de servicio por correo...',
-            successMessage: `Correo enviado a ${campos.correo}`,
+            successMessage: `Correo enviado a ${correoDestino}`,
           });
         } catch (mailErr) {
           console.error(mailErr);
@@ -911,7 +915,7 @@ export default function HojaDeServicioScreen() {
         direccion: data.direccion || '',
         contacto: data.contacto || '',
         telefono: data.telefono || '',
-        correo: data.correo || '',
+        correo: resolveCorreoHojaServicio(data.nombre || '', data.correo || data.email || ''),
       }));
     };
     loadDatosEmpresa();
@@ -1521,6 +1525,9 @@ export default function HojaDeServicioScreen() {
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs font-medium text-[#2464A3]"><Mail size={14} /> Correo</label>
                   <input type="email" value={campos.correo} onChange={(e) => setCampos({ ...campos, correo: e.target.value })} className={inputCls} placeholder="contacto@empresa.com" />
+                  {isCelesticaClienteNombre(campos.empresa) && (
+                    <p className="text-[11px] text-[#8B8D8C]">En Celestica el PDF se envía a calibracion_mon_std-cls@celestica.com</p>
+                  )}
                 </div>
               </div>
             </div>

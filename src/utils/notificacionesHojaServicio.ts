@@ -1,5 +1,16 @@
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { isCelesticaClienteNombre } from './servicioAutomation';
+
+/** Destino fijo de la hoja de servicio para cualquier planta Celestica. */
+export const CORREO_HOJA_SERVICIO_CELESTICA = 'calibracion_mon_std-cls@celestica.com';
+
+export function resolveCorreoHojaServicio(empresa: string, correoCliente?: string): string {
+  if (isCelesticaClienteNombre(empresa)) {
+    return CORREO_HOJA_SERVICIO_CELESTICA;
+  }
+  return (correoCliente || '').trim();
+}
 
 export interface GrupoEquipoCorreo {
   tecnico: string;
@@ -26,7 +37,7 @@ export interface EnviarHojaServicioCorreoParams {
 export async function encolarCorreoHojaServicio(
   params: EnviarHojaServicioCorreoParams
 ): Promise<string> {
-  const email = params.correoCliente?.trim().toLowerCase();
+  const email = resolveCorreoHojaServicio(params.empresa, params.correoCliente).toLowerCase();
   if (!email) {
     throw new Error('Indica el correo del cliente en la sección de datos.');
   }

@@ -2490,7 +2490,7 @@ export default function DriveScreen({ onBack }: { onBack?: () => void }) {
       value &&
       isServiceSheetDrivePath(file.fullPath, file.rawName || file.name)
     ) {
-      showToast("Las hojas de servicio (HSDG) no usan el flujo Por Revisar.", "info");
+      showToast("Las hojas de servicio y de salida no usan el flujo Por Revisar.", "info");
       return;
     }
     const name = currentUserData?.name || user?.displayName || "Usuario";

@@ -72,6 +72,17 @@ assert.equal(
   ),
   false
 );
+
+const HSE_PATH = "worksheets/Hojas de Salida/HSE-0042.pdf";
+assert.equal(isServiceSheetDrivePath(HSE_PATH, "HSE-0042.pdf"), true);
+assert.equal(
+  qualifiesForPendingReviewList(
+    { completed: true, reviewed: false },
+    HSE_PATH,
+    "HSE-0042.pdf"
+  ),
+  false
+);
 assert.equal(
   qualifiesForPendingReviewList(
     { completed: true, reviewed: false },

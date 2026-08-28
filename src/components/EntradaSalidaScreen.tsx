@@ -13,7 +13,8 @@ import {
   Hash, ArrowRightLeft, FileSignature, Building2, Package, ShieldCheck
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
-import { generateEntradaSalidaPdf } from '../utils/entradaSalidaPdf';
+import { generateEntradaSalidaPdf, uploadHojaSalidaToDrive } from '../utils/entradaSalidaPdf';
+import { useAuth } from '../hooks/useAuth';
 
 interface ItemEquipo {
   id: string;
@@ -108,6 +109,7 @@ const CampoEquipo: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, 
 export const EntradaSalidaScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { confirm, alert: showAlert } = useAppDialog();
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -301,11 +303,26 @@ export const EntradaSalidaScreen: React.FC = () => {
 
     setProcessing(true);
     try {
-      await generateEntradaSalidaPdf({
+      const { blob } = await generateEntradaSalidaPdf({
         items: salidaCliente,
         folio: customFolio,
         esParcial: !esCompleta,
       });
+
+      let driveOk = true;
+      try {
+        const today = new Date();
+        const workDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        await uploadHojaSalidaToDrive({
+          blob,
+          folio: customFolio,
+          uploadedBy: user?.name || 'Sistema',
+          workDate,
+        });
+      } catch (driveErr) {
+        console.error('[HojaSalida] No se pudo guardar en Drive:', driveErr);
+        driveOk = false;
+      }
 
       const obsSalida = esCompleta
         ? 'Salida completa'
@@ -335,7 +352,11 @@ export const EntradaSalidaScreen: React.FC = () => {
       }
 
       await batch.commit();
-      await showAlert({ title: 'Aviso', message: esCompleta ? 'Salida completa registrada.' : `Salida parcial registrada (${salidaCliente.length} equipos).` });
+      const okMsg = esCompleta ? 'Salida completa registrada.' : `Salida parcial registrada (${salidaCliente.length} equipos).`;
+      const driveMsg = driveOk
+        ? '\n\nEl PDF se guardó en Drive → Hojas de Salida.'
+        : '\n\nEl PDF se descargó, pero no se pudo guardar en Drive.';
+      await showAlert({ title: 'Aviso', message: okMsg + driveMsg });
       volverAClientes();
       fetchNextFolio();
     } catch (error) {

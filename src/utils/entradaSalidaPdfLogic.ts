@@ -1,5 +1,12 @@
 export const ROWS_SPLIT = 6;
 export const ROWS_FULL = 22;
+export const HOJAS_SALIDA_DRIVE_FOLDER = "worksheets/Hojas de Salida";
+
+export function hojaSalidaStoragePath(folio: string): string {
+  const base = String(folio || "HSE").trim().replace(/[\\/]+/g, "-") || "HSE";
+  const fileName = /\.pdf$/i.test(base) ? base : `${base}.pdf`;
+  return `${HOJAS_SALIDA_DRIVE_FOLDER}/${fileName}`;
+}
 
 export function isMexicoMROClient(cliente?: string): boolean {
   if (!cliente) return false;

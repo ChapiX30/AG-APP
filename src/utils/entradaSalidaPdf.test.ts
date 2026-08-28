@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   isMexicoMROClient,
   planSalidaPdfPages,
+  hojaSalidaStoragePath,
   ROWS_FULL,
   ROWS_SPLIT,
 } from "./entradaSalidaPdfLogic.ts";
@@ -31,5 +32,18 @@ assert.equal(otherMany.printedPages, 2);
 const otherFew = planSalidaPdfPages("RUHRPUMPEN SA DE CV", 3);
 assert.equal(otherFew.contentPages, 1);
 assert.equal(otherFew.printedPages, 1);
+
+assert.equal(
+  hojaSalidaStoragePath("HSE-0042"),
+  "worksheets/Hojas de Salida/HSE-0042.pdf"
+);
+assert.equal(
+  hojaSalidaStoragePath("HSE-0042.pdf"),
+  "worksheets/Hojas de Salida/HSE-0042.pdf"
+);
+assert.equal(
+  hojaSalidaStoragePath("HSE/0042"),
+  "worksheets/Hojas de Salida/HSE-0042.pdf"
+);
 
 console.log("entradaSalidaPdf tests ok");
