@@ -3,17 +3,17 @@ import { useNavigation } from '../hooks/useNavigation';
 import { useAppDialog } from '../hooks/useAppDialog';
 import { db } from '../utils/firebase';
 import {
-  collection, query, orderBy, limit, getDocs, doc,
-  getDoc, writeBatch, runTransaction
+  collection, query, orderBy, limit, doc,
+  getDoc, writeBatch, runTransaction, onSnapshot,
+  type QueryDocumentSnapshot, type DocumentData,
 } from 'firebase/firestore';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { saveAs } from 'file-saver';
 import {
   ArrowLeft, Search, Printer, Loader2,
-  CheckCircle2, AlertTriangle,
-  Hash, ArrowRightLeft, FileSignature, Building2, Package
+  CheckCircle2, AlertTriangle, ChevronRight,
+  Hash, ArrowRightLeft, FileSignature, Building2, Package, ShieldCheck
 } from 'lucide-react';
 import labLogo from '../assets/lab_logo.png';
+import { generateEntradaSalidaPdf } from '../utils/entradaSalidaPdf';
 
 interface ItemEquipo {
   id: string;
@@ -65,6 +65,39 @@ function evaluarComparacion(
   return { estado: 'parcial', pendientes, salidaCount, puedeConfirmar: true };
 }
 
+function mapHojasToItem(d: QueryDocumentSnapshot<DocumentData>): ItemEquipo | null {
+  const data = d.data();
+  const rawTipo =
+    data.tipoServicio || data.TipoServicio || data.servicio ||
+    data.tipo || data.lugar || data.ubicacion ||
+    data.laboratorio || data.lugarCalibracion || 'Laboratorio';
+
+  const tipoStr = String(rawTipo).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const esSitio =
+    tipoStr.includes('sitio') || tipoStr.includes('planta') ||
+    tipoStr.includes('site') || tipoStr.includes('externo') ||
+    tipoStr.includes('fuera');
+
+  if (esSitio || data.entregado === true) return null;
+
+  return {
+    id: d.id,
+    descripcion: data.equipo || data.nombre || data.instrumento || data.descripcion || 'Sin nombre',
+    marca: data.marca || 'S/M',
+    modelo: data.modelo || 'S/M',
+    serie: data.serie || data.Serie || data.noSerie || data.serial || 'S/N',
+    idInterno: data.ID || data.id || data.Id || data.idInterno || data.identificacion || 'S/ID',
+    certificado: data.certificado || data.folioCertificado || 'Pendiente',
+    cliente: (data.cliente || data.empresa || 'Sin cliente').trim(),
+    ordenCompra: data.ordenCompra || data.oc || '',
+  };
+}
+
+function etiquetaEquipos(n: number, sufijo = ''): string {
+  const base = n === 1 ? '1 equipo' : `${n} equipos`;
+  return sufijo ? `${base} ${sufijo}` : base;
+}
+
 const CampoEquipo: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valor }) => (
   <div>
     <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{etiqueta}</p>
@@ -76,7 +109,8 @@ export const EntradaSalidaScreen: React.FC = () => {
   const { navigateTo } = useNavigation();
   const { confirm, alert: showAlert } = useAppDialog();
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [items, setItems] = useState<ItemEquipo[]>([]);
   const [search, setSearch] = useState('');
   const [clienteActivo, setClienteActivo] = useState<string | null>(null);
@@ -85,52 +119,35 @@ export const EntradaSalidaScreen: React.FC = () => {
   const [nextFolioDB, setNextFolioDB] = useState(0);
 
   useEffect(() => {
-    fetchItems();
+    const q = query(collection(db, 'hojasDeTrabajo'), orderBy('fecha', 'desc'), limit(300));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const lista: ItemEquipo[] = [];
+        snap.forEach((d) => {
+          const item = mapHojasToItem(d);
+          if (item) lista.push(item);
+        });
+        setItems(lista);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error cargando equipos:', error);
+        setLoading(false);
+      }
+    );
     fetchNextFolio();
+    return () => unsub();
   }, []);
 
-  const fetchItems = async () => {
-    setLoading(true);
-    try {
-      const q = query(collection(db, 'hojasDeTrabajo'), orderBy('fecha', 'desc'), limit(300));
-      const snap = await getDocs(q);
-      const lista: ItemEquipo[] = [];
-
-      snap.forEach((d) => {
-        const data = d.data();
-        const rawTipo =
-          data.tipoServicio || data.TipoServicio || data.servicio ||
-          data.tipo || data.lugar || data.ubicacion ||
-          data.laboratorio || data.lugarCalibracion || 'Laboratorio';
-
-        const tipoStr = String(rawTipo).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const esSitio =
-          tipoStr.includes('sitio') || tipoStr.includes('planta') ||
-          tipoStr.includes('site') || tipoStr.includes('externo') ||
-          tipoStr.includes('fuera');
-
-        if (!esSitio && data.entregado !== true) {
-          lista.push({
-            id: d.id,
-            descripcion: data.equipo || data.nombre || data.instrumento || data.descripcion || 'Sin nombre',
-            marca: data.marca || 'S/M',
-            modelo: data.modelo || 'S/M',
-            serie: data.serie || data.Serie || data.noSerie || data.serial || 'S/N',
-            idInterno: data.ID || data.id || data.Id || data.idInterno || data.identificacion || 'S/ID',
-            certificado: data.certificado || data.folioCertificado || 'Pendiente',
-            cliente: (data.cliente || data.empresa || 'Sin cliente').trim(),
-            ordenCompra: data.ordenCompra || data.oc || '',
-          });
-        }
-      });
-
-      setItems(lista);
-    } catch (error) {
-      console.error('Error cargando equipos:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    setSalidaIds((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(items.map((item) => item.id));
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
 
   const fetchNextFolio = async () => {
     try {
@@ -145,11 +162,15 @@ export const EntradaSalidaScreen: React.FC = () => {
   };
 
   const clientesDisponibles = useMemo(() => {
-    const filtrados = items.filter((item) =>
-      item.cliente.toLowerCase().includes(search.toLowerCase()) ||
-      item.descripcion.toLowerCase().includes(search.toLowerCase()) ||
-      item.serie.toLowerCase().includes(search.toLowerCase())
-    );
+    const needle = search.trim().toLowerCase();
+    const filtrados = needle
+      ? items.filter((item) =>
+          item.cliente.toLowerCase().includes(needle) ||
+          item.descripcion.toLowerCase().includes(needle) ||
+          item.serie.toLowerCase().includes(needle) ||
+          item.idInterno.toLowerCase().includes(needle)
+        )
+      : items;
     const grupos: Record<string, ItemEquipo[]> = {};
     filtrados.forEach((item) => {
       if (!grupos[item.cliente]) grupos[item.cliente] = [];
@@ -157,6 +178,15 @@ export const EntradaSalidaScreen: React.FC = () => {
     });
     return grupos;
   }, [items, search]);
+
+  const clientesOrdenados = useMemo(
+    () =>
+      Object.entries(clientesDisponibles).sort((a, b) => {
+        if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+        return a[0].localeCompare(b[0], 'es');
+      }),
+    [clientesDisponibles]
+  );
 
   const entradaCliente = useMemo(() => {
     if (!clienteActivo) return [];
@@ -269,9 +299,13 @@ export const EntradaSalidaScreen: React.FC = () => {
     });
     if (!confirmacion) return;
 
-    setLoading(true);
+    setProcessing(true);
     try {
-      await generatePDFDoc(salidaCliente, customFolio, !esCompleta);
+      await generateEntradaSalidaPdf({
+        items: salidaCliente,
+        folio: customFolio,
+        esParcial: !esCompleta,
+      });
 
       const obsSalida = esCompleta
         ? 'Salida completa'
@@ -303,148 +337,13 @@ export const EntradaSalidaScreen: React.FC = () => {
       await batch.commit();
       await showAlert({ title: 'Aviso', message: esCompleta ? 'Salida completa registrada.' : `Salida parcial registrada (${salidaCliente.length} equipos).` });
       volverAClientes();
-      fetchItems();
       fetchNextFolio();
     } catch (error) {
       console.error(error);
       await showAlert({ title: 'Error', message: 'Error al registrar salida.', variant: 'danger' });
     } finally {
-      setLoading(false);
+      setProcessing(false);
     }
-  };
-
-  const generatePDFDoc = async (itemsToPrint: ItemEquipo[], folio: string, esParcial = false) => {
-    const primerCliente = itemsToPrint[0].cliente;
-    const oc = itemsToPrint[0].ordenCompra;
-    const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    let logoImg = null;
-    try {
-      const logoBytes = await fetch(labLogo).then((res) => res.arrayBuffer());
-      logoImg = await pdfDoc.embedPng(logoBytes);
-    } catch (e) {
-      console.warn('No se pudo cargar el logo para PDF', e);
-    }
-
-    const ITEMS_PER_PAGE = 15;
-    const totalPages = Math.ceil(itemsToPrint.length / ITEMS_PER_PAGE);
-
-    for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
-      const page = pdfDoc.addPage([612, 792]);
-      const { width, height } = page.getSize();
-      const margin = 30;
-      const start = pageIndex * ITEMS_PER_PAGE;
-      const end = start + ITEMS_PER_PAGE;
-      const itemsDeEstaPagina = itemsToPrint.slice(start, end);
-
-      const drawBlock = (startY: number) => {
-        let y = startY;
-        if (logoImg) {
-          const maxLogoW = 95;
-          const maxLogoH = 28;
-          const scale = Math.min(
-            maxLogoW / logoImg.width,
-            maxLogoH / logoImg.height,
-            1
-          );
-          const w = logoImg.width * scale;
-          const h = logoImg.height * scale;
-          page.drawImage(logoImg, { x: margin, y: y - h, width: w, height: h });
-        }
-        const emp = 'EQUIPOS Y SERVICIOS ESPECIALIZADOS AG, S.A. DE C.V.';
-        const wEmp = fontBold.widthOfTextAtSize(emp, 9);
-        page.drawText(emp, { x: (width - wEmp) / 2, y: y - 8, size: 9, font: fontBold });
-
-        y -= 35;
-        const tit = 'HOJA DE ENTRADA Y SALIDA DE EQUIPOS';
-        const wTit = fontBold.widthOfTextAtSize(tit, 10);
-        page.drawText(tit, { x: (width - wTit) / 2, y, size: 10, font: fontBold, color: rgb(0, 0, 0.6) });
-
-        page.drawText('AG-CAL-F28-00', { x: margin, y: y - 8, size: 7, font });
-        page.drawText(`Pág. ${pageIndex + 1}/${totalPages}`, { x: width - margin - 50, y: y - 8, size: 7, font: fontBold });
-
-        y -= 20;
-        page.drawLine({ start: { x: margin, y: y + 8 }, end: { x: width - margin, y: y + 8 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-        const today = new Date().toLocaleDateString('es-MX');
-
-        page.drawText('CLIENTE:', { x: margin, y, size: 7, font: fontBold });
-        page.drawText(primerCliente.substring(0, 55), { x: margin + 45, y, size: 7, font });
-
-        page.drawText('FECHA:', { x: width - margin - 110, y, size: 7, font: fontBold });
-        page.drawText(today, { x: width - margin - 75, y, size: 7, font });
-
-        y -= 14;
-        page.drawText('OC:', { x: margin, y, size: 7, font: fontBold });
-        page.drawText(oc || 'N/A', { x: margin + 45, y, size: 7, font });
-
-        page.drawText('FOLIO:', { x: width - margin - 110, y, size: 7, font: fontBold });
-        page.drawText(folio, { x: width - margin - 75, y, size: 7, font: fontBold, color: rgb(0.8, 0, 0) });
-
-        if (esParcial) {
-          y -= 12;
-          page.drawText('SALIDA PARCIAL', { x: margin, y, size: 7, font: fontBold, color: rgb(0.75, 0.45, 0) });
-        }
-
-        y -= 18;
-        const tTop = y;
-        const rowH = 13.5;
-        const cols = { no: margin, desc: margin + 30, marca: margin + 190, mod: margin + 270, ser: margin + 350, id: margin + 430, cert: margin + 500 };
-
-        page.drawRectangle({ x: margin, y: y - 8, width: width - margin * 2, height: 14, color: rgb(0.92, 0.92, 0.92), borderColor: rgb(0, 0, 0), borderWidth: 0.5 });
-        const dh = (t: string, x: number) => page.drawText(t, { x: x + 2, y: y - 5, size: 6, font: fontBold });
-        dh('NO.', cols.no);
-        dh('DESCRIPCIÓN', cols.desc);
-        dh('MARCA', cols.marca);
-        dh('MODELO', cols.mod);
-        dh('SERIE', cols.ser);
-        dh('ID', cols.id);
-        dh('CERTIFICADO', cols.cert);
-
-        y -= 8;
-        for (let i = 0; i < ITEMS_PER_PAGE; i++) {
-          y -= rowH;
-          const it = itemsDeEstaPagina[i];
-          page.drawRectangle({ x: margin, y, width: width - margin * 2, height: rowH, borderColor: rgb(0, 0, 0), borderWidth: 0.5 });
-          [cols.desc, cols.marca, cols.mod, cols.ser, cols.id, cols.cert].forEach((vx) =>
-            page.drawLine({ start: { x: vx, y }, end: { x: vx, y: y + rowH }, thickness: 0.5, color: rgb(0, 0, 0) })
-          );
-
-          const ty = y + 4;
-          const ts = 7;
-          const consecutivo = pageIndex * ITEMS_PER_PAGE + i + 1;
-          page.drawText(consecutivo.toString().padStart(2, '0'), { x: cols.no + 5, y: ty, size: ts, font });
-
-          if (it) {
-            const tr = (s: string, l: number) => (s ? (s.length > l ? s.substring(0, l) : s) : '-');
-            page.drawText(tr(it.descripcion, 35), { x: cols.desc + 2, y: ty, size: ts, font });
-            page.drawText(tr(it.marca, 14), { x: cols.marca + 2, y: ty, size: ts, font });
-            page.drawText(tr(it.modelo, 14), { x: cols.mod + 2, y: ty, size: ts, font });
-            page.drawText(tr(it.serie, 14), { x: cols.ser + 2, y: ty, size: ts, font });
-            page.drawText(tr(it.idInterno, 12), { x: cols.id + 2, y: ty, size: ts, font });
-            page.drawText(tr(it.certificado, 15), { x: cols.cert + 2, y: ty, size: ts, font });
-          }
-        }
-        [cols.desc, cols.marca, cols.mod, cols.ser, cols.id, cols.cert].forEach((vx) =>
-          page.drawLine({ start: { x: vx, y: tTop - 8 }, end: { x: vx, y: tTop + 6 }, thickness: 0.5, color: rgb(0, 0, 0) })
-        );
-
-        y -= 35;
-        page.drawText('ENTREGO:', { x: margin + 60, y, size: 7, font: fontBold });
-        page.drawLine({ start: { x: margin + 40, y: y - 15 }, end: { x: margin + 200, y: y - 15 }, thickness: 0.5 });
-        page.drawText('RECIBIO:', { x: width - margin - 150, y, size: 7, font: fontBold });
-        page.drawLine({ start: { x: width - margin - 200, y: y - 15 }, end: { x: width - margin - 40, y: y - 15 }, thickness: 0.5 });
-      };
-
-      drawBlock(height - 20);
-      const mid = height / 2;
-      page.drawLine({ start: { x: 10, y: mid }, end: { x: width - 10, y: mid }, thickness: 1, color: rgb(0.6, 0.6, 0.6), dashArray: [4, 4] });
-      drawBlock(mid - 20);
-    }
-
-    const pdfBytes = await pdfDoc.save();
-    saveAs(new Blob([pdfBytes], { type: 'application/pdf' }), `Salida_${folio}.pdf`);
   };
 
   const renderTarjetaEquipo = (item: ItemEquipo, lado: 'entrada' | 'salida') => {
@@ -509,15 +408,19 @@ export const EntradaSalidaScreen: React.FC = () => {
     );
   };
 
-  const totalEquiposPendientes = useMemo(
-    () => items.length,
+  const totalEquiposPendientes = items.length;
+
+  const totalClientes = useMemo(
+    () => new Set(items.map((item) => item.cliente)).size,
     [items]
   );
 
-  const totalClientes = useMemo(
-    () => Object.keys(clientesDisponibles).length,
-    [clientesDisponibles]
+  const totalListos = useMemo(
+    () => items.filter(tieneCertificado).length,
+    [items]
   );
+
+  const totalSinCert = totalEquiposPendientes - totalListos;
 
   const bannerComparacion = () => {
     if (!clienteActivo) return null;
@@ -557,33 +460,43 @@ export const EntradaSalidaScreen: React.FC = () => {
   };
 
   const etiquetaBotonSalida = () => {
-    if (loading) return 'Procesando...';
+    if (processing) return 'Procesando...';
     if (!comparacion.puedeConfirmar) return 'Selecciona equipos en SALIDA';
     if (comparacion.estado === 'completa') return `Confirmar salida completa (${salidaCliente.length})`;
     return `Confirmar salida parcial (${salidaCliente.length})`;
   };
 
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-100 pb-28">
-      <header className="sticky top-0 z-20 shadow-md">
-        <div className="bg-[#2464A3] text-white">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+    <div className="min-h-full flex-shrink-0 flex flex-col bg-slate-50 pb-28">
+      <header className="sticky top-0 z-20 shadow-lg">
+        <div className="relative overflow-hidden bg-gradient-to-r from-[#1d4f82] via-[#2464A3] to-[#2b78c4] text-white">
+          <div className="absolute -top-20 -right-10 h-44 w-44 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+          <div className="relative max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => (clienteActivo ? volverAClientes() : navigateTo('menu'))}
-                className="rounded-full p-2.5 bg-white/15 hover:bg-white/25 transition-colors shrink-0"
+                className="rounded-xl p-2.5 bg-white/15 hover:bg-white/25 active:scale-95 transition-all shrink-0"
                 aria-label={clienteActivo ? 'Cambiar cliente' : 'Volver al menú'}
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <img src={labLogo} alt="Logo" className="h-8 w-auto object-contain bg-white/90 rounded px-1.5 py-0.5 hidden sm:block" />
+              <img src={labLogo} alt="Logo" className="h-9 w-auto object-contain bg-white rounded-lg px-1.5 py-0.5 hidden sm:block shadow-sm" />
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Logística</p>
-                <h1 className="text-lg sm:text-xl font-bold truncate">Entrada y Salida</h1>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Logística</p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-400/20 border border-emerald-200/30 text-emerald-50">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-200" />
+                    </span>
+                    En vivo
+                  </span>
+                </div>
+                <h1 className="text-lg sm:text-xl font-bold truncate leading-tight">Entrada y Salida</h1>
               </div>
             </div>
             {clienteActivo && (
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg border border-white/20 shrink-0">
+              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-xl border border-white/20 shrink-0">
                 <FileSignature className="w-4 h-4 text-white/70" />
                 <input
                   type="text"
@@ -598,77 +511,130 @@ export const EntradaSalidaScreen: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4 space-y-4">
+      <main className="max-w-6xl mx-auto w-full p-4 space-y-4">
         {!clienteActivo ? (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center ring-1 ring-blue-100">
                   <Building2 className="w-5 h-5 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Clientes</p>
-                  <p className="text-xl font-black text-slate-900">{totalClientes}</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Clientes</p>
+                  <p className="text-2xl font-black text-slate-900 leading-none">{totalClientes}</p>
                 </div>
               </div>
-              <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center ring-1 ring-amber-100">
                   <Package className="w-5 h-5 text-amber-600" />
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Equipos pendientes</p>
-                  <p className="text-xl font-black text-slate-900">{totalEquiposPendientes}</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Pendientes</p>
+                  <p className="text-2xl font-black text-slate-900 leading-none">{totalEquiposPendientes}</p>
+                  <p className="text-[11px] font-semibold text-slate-400 mt-0.5 truncate">en laboratorio</p>
+                </div>
+              </div>
+              <div className="col-span-2 lg:col-span-1 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center ring-1 ring-emerald-100">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Listos para salir</p>
+                  <p className="text-2xl font-black text-slate-900 leading-none">{totalListos}</p>
+                  {totalSinCert > 0 && (
+                    <p className="text-[11px] font-semibold text-rose-500 mt-0.5 truncate">
+                      {etiquetaEquipos(totalSinCert)} sin certificado
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-blue-500 transition-colors pointer-events-none" />
               <input
-                type="text"
-                placeholder="Buscar cliente o equipo..."
-                className="w-full pl-12 pr-4 py-4 text-lg border-2 border-slate-200 rounded-2xl outline-none focus:border-blue-500 bg-white font-medium"
+                type="search"
+                placeholder="Buscar cliente, equipo, serie o ID..."
+                className="w-full pl-11 pr-4 py-3 text-sm border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white shadow-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
 
             {loading ? (
-              <div className="flex flex-col items-center py-20 text-slate-500">
-                <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
-                <p className="text-lg font-semibold">Cargando equipos...</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-28 bg-white rounded-2xl border border-slate-200 animate-pulse" />
+                ))}
               </div>
-            ) : Object.keys(clientesDisponibles).length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-slate-300">
-                <p className="text-xl font-bold text-slate-800">Sin equipos pendientes</p>
-                <p className="text-slate-500 mt-2">No hay equipos de laboratorio listos para salida.</p>
+            ) : clientesOrdenados.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200">
+                <div className="inline-flex items-center justify-center w-14 h-14 bg-slate-100 rounded-2xl mb-4">
+                  {search.trim() ? <Search className="w-7 h-7 text-slate-300" /> : <Package className="w-7 h-7 text-slate-300" />}
+                </div>
+                <p className="text-lg font-bold text-slate-800">
+                  {search.trim() ? 'Sin coincidencias' : 'Sin equipos pendientes'}
+                </p>
+                <p className="text-slate-500 text-sm mt-1">
+                  {search.trim()
+                    ? 'Prueba con otro cliente, serie o descripción.'
+                    : 'No hay equipos de laboratorio listos para salida.'}
+                </p>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {Object.entries(clientesDisponibles).map(([cliente, lista]) => (
-                  <button
-                    key={cliente}
-                    onClick={() => abrirCliente(cliente)}
-                    className="text-left bg-white rounded-2xl border-2 border-slate-200 p-5 hover:border-blue-400 hover:shadow-md transition-all active:scale-[0.99]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100">
-                        <Building2 className="w-6 h-6 text-blue-600" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                {clientesOrdenados.map(([cliente, lista]) => {
+                  const listos = lista.filter(tieneCertificado).length;
+                  const sinCert = lista.length - listos;
+                  const preview = lista.slice(0, 2);
+                  return (
+                    <button
+                      key={cliente}
+                      type="button"
+                      onClick={() => abrirCliente(cliente)}
+                      className="group text-left bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-blue-300 active:scale-[0.99] transition-all duration-200 overflow-hidden border-l-[5px] border-l-blue-500 p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center ring-1 ring-blue-100 shrink-0">
+                          <Building2 className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-base font-bold text-slate-900 truncate leading-snug" title={cliente}>
+                            {cliente}
+                          </h3>
+                          <p className="text-sm font-semibold text-slate-500 mt-0.5">
+                            {etiquetaEquipos(lista.length, 'en entrada')}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            {listos > 0 && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                {listos} listos
+                              </span>
+                            )}
+                            {sinCert > 0 && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full">
+                                {sinCert} sin cert
+                              </span>
+                            )}
+                          </div>
+                          {preview.length > 0 && (
+                            <p className="mt-2 text-xs text-slate-400 truncate">
+                              {preview.map((item) => item.descripcion).join(' · ')}
+                              {lista.length > 2 ? ` · +${lista.length - 2}` : ''}
+                            </p>
+                          )}
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-lg font-black text-slate-900 truncate">{cliente}</h3>
-                        <p className="text-sm font-semibold text-slate-500">{lista.length} equipos en entrada</p>
-                      </div>
-                      <ArrowRightLeft className="w-6 h-6 text-blue-500 shrink-0" />
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </>
         ) : (
           <>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase text-slate-400">Cliente</p>
@@ -707,7 +673,7 @@ export const EntradaSalidaScreen: React.FC = () => {
                 <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>
-                    {sinCertificadoCliente.length} equipo(s) sin certificado: no se pueden seleccionar para salida.
+                    {sinCertificadoCliente.length} {sinCertificadoCliente.length === 1 ? 'equipo' : 'equipos'} sin certificado: no se pueden seleccionar para salida.
                   </span>
                 </div>
               )}
@@ -767,7 +733,7 @@ export const EntradaSalidaScreen: React.FC = () => {
           <div className="max-w-6xl mx-auto">
             <button
               onClick={handleConfirmarSalida}
-              disabled={!comparacion.puedeConfirmar || !customFolio || loading}
+              disabled={!comparacion.puedeConfirmar || !customFolio || processing}
               className={`w-full py-4 rounded-xl font-black text-base flex items-center justify-center gap-3 transition-all ${
                 comparacion.puedeConfirmar && customFolio
                   ? comparacion.estado === 'completa'
@@ -776,7 +742,7 @@ export const EntradaSalidaScreen: React.FC = () => {
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              {loading ? (
+              {processing ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <Printer className="w-5 h-5" />

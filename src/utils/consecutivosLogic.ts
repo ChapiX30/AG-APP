@@ -57,3 +57,66 @@ export function pickLowestHueco(huecos: unknown): number | null {
   const list = normalizeHuecos(huecos).sort((a, b) => a - b);
   return list.length > 0 ? list[0] : null;
 }
+
+export function normalizeEquipmentId(id: string): string {
+  return String(id || "").replace(/\s+/g, "").toUpperCase();
+}
+
+export function certEnUsoError(cert: string, existingId: string, incomingId: string): string {
+  return `CERT_EN_USO: El certificado ${cert} ya pertenece a ${existingId}. No se puede asignar a ${incomingId}.`;
+}
+
+/** Folio ya tomado por otro equipo (omite exceptDocId, p. ej. la hoja que se está editando). */
+export function certificadoConflictEquipmentId(
+  occupants: Array<{ docId?: string; equipmentId?: string }>,
+  incomingId: string,
+  exceptDocId?: string | null
+): string | null {
+  const incoming = normalizeEquipmentId(incomingId);
+  for (const row of occupants) {
+    if (exceptDocId && row.docId === exceptDocId) continue;
+    const existing = normalizeEquipmentId(row.equipmentId || "");
+    if (existing && incoming && existing !== incoming) return existing;
+  }
+  return null;
+}
+
+/** Consecutivo ya ligado a una hoja o a un ID de equipo: no reciclar. */
+export function consecutivoDocEstaTomado(
+  data: { worksheetConfirmado?: unknown; equipoId?: unknown } | null | undefined
+): boolean {
+  if (!data) return false;
+  if (data.worksheetConfirmado === true) return true;
+  return Boolean(normalizeEquipmentId(String(data.equipoId || "")));
+}
+
+export type ContadorConsecutivoState = {
+  huecos: number[];
+  valor: number;
+};
+
+/** Elige el siguiente número libre, saltando ocupados (huecos primero). */
+export function pickNextConsecutivoNumero(
+  state: ContadorConsecutivoState,
+  ocupados: Set<number>,
+  maxSkips = 12
+): { numero: number; esReciclado: boolean; nextState: ContadorConsecutivoState } | null {
+  let huecos = [...state.huecos].filter((n) => n > 0).sort((a, b) => a - b);
+  let valor = Number(state.valor) || 0;
+  for (let i = 0; i < maxSkips; i++) {
+    const esReciclado = huecos.length > 0;
+    const numero = esReciclado ? huecos[0] : valor + 1;
+    if (!ocupados.has(numero)) {
+      return {
+        numero,
+        esReciclado,
+        nextState: esReciclado
+          ? { huecos: huecos.slice(1), valor }
+          : { huecos, valor: numero },
+      };
+    }
+    if (esReciclado) huecos = huecos.slice(1);
+    else valor = numero;
+  }
+  return null;
+}

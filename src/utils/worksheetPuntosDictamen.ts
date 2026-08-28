@@ -43,6 +43,13 @@ export interface DictamenGlobal {
 
 const K_COVERAGE = 2;
 
+/** Acepta 1, 0.01, .01, 0,01 y 1e-2. El `-` de "0-100" no es signo. */
+const NUMERIC_TOKEN_RE = /(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:[eE][+-]?\d+)?/g;
+
+export function extractNumericTokens(raw: string): string[] {
+  return String(raw || "").match(NUMERIC_TOKEN_RE) ?? [];
+}
+
 export function parseNumericToken(raw: string): number | null {
   const t = String(raw || "").trim();
   if (!t) return null;
@@ -71,8 +78,8 @@ export function parseNumericToken(raw: string): number | null {
 
 /** Extrae el valor de escala (el número más grande) de textos tipo "0-100 psi" o "100". */
 export function parseAlcanceValue(raw: string): number | null {
-  const matches = String(raw || "").match(/-?\d+(?:[.,]\d+)?/g);
-  if (!matches?.length) return null;
+  const matches = extractNumericTokens(raw);
+  if (!matches.length) return null;
   let max: number | null = null;
   for (const m of matches) {
     const n = parseNumericToken(m);
@@ -83,7 +90,8 @@ export function parseAlcanceValue(raw: string): number | null {
 }
 
 export function parseResolucionValue(raw: string): number | null {
-  const n = parseNumericToken(String(raw || "").match(/-?\d+(?:[.,]\d+)?/)?.[0] || "");
+  const token = extractNumericTokens(raw)[0] || "";
+  const n = parseNumericToken(token);
   return n != null && n > 0 ? n : null;
 }
 

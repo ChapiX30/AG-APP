@@ -12,6 +12,8 @@ import {
   confirmarWorksheet,
   resolveMagnitudesConsecutivo,
   normalizeCertificado,
+  assertCertificadoLibreParaEquipo,
+  reclamarFolioParaEquipo,
 } from "./firebaseConsecutivos";
 import { canSaveDirectlyToFirebase } from "./firebaseConnectivity";
 import {
@@ -54,6 +56,10 @@ async function processOneOfflineItem(
     .toUpperCase();
 
   let docRefId = item.finalDocId;
+  if (cert) {
+    await assertCertificadoLibreParaEquipo(cert, incomingId, docRefId);
+    await reclamarFolioParaEquipo(cert, incomingId);
+  }
   if (!docRefId && cert) {
     try {
       const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", cert));
@@ -63,17 +69,11 @@ async function processOneOfflineItem(
         const existingId = String(d.data().id || "")
           .trim()
           .toUpperCase();
-        if (existingId && incomingId && existingId !== incomingId) {
-          throw new Error(
-            `CERT_EN_USO: El certificado ${cert} ya pertenece a ${existingId}. No se puede asignar a ${incomingId}.`
-          );
+        if (!existingId || existingId === incomingId) {
+          docRefId = d.id;
         }
-        docRefId = d.id;
       }
     } catch (lookupErr) {
-      if (lookupErr instanceof Error && lookupErr.message.startsWith("CERT_EN_USO:")) {
-        throw lookupErr;
-      }
       console.warn("[SaveProcessor] lookup certificado:", lookupErr);
     }
   }

@@ -335,6 +335,28 @@ MASTERS = [
         "id": "I15",
         "calibro": "P10",
     },
+    {
+        "file": "Formato Angle meter.xlsm",
+        "calc": "Calculos",
+        "portada": "Portada",
+        "extra_lock_sheets": ["Resultados", "Patrones", "CMC"],
+        "cert": ["D4", "E4", "F4"],
+        "unlock": [
+            "D4", "E4", "F4",
+            "B10", "B11", "B12",
+            "F10", "J9", "J10", "J11", "G15",
+            "F13", "J13", "F14", "J14",
+            "O8",
+            # lecturas: valor deseado + X1-X3 + EMP
+            "C19:F32", "I19:I32",
+        ],
+        "layout": "indicador",
+        "instrumento": "B9",
+        "marca": "B10",
+        "modelo": "B11",
+        "serie": "B12",
+        "id": "F9",
+    },
 ]
 
 

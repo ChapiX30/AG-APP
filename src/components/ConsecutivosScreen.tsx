@@ -66,7 +66,7 @@ export const ConsecutivosScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50/40 text-slate-900 font-sans">
+    <div className="min-h-full w-full flex-shrink-0 flex flex-col bg-slate-50 text-slate-900 font-sans [color-scheme:light]">
       <FlowScreenHeader
         accent={accent}
         iconVariant="brand"

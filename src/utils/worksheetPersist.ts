@@ -2,8 +2,8 @@
  * Persistencia de hojas de trabajo (online, cola offline, reintentos).
  */
 
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { collection, addDoc, query, getDocs, where, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, query, getDocs, where, doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, storage } from "./firebase";
 import { writeDriveFileMetadata } from "./driveFileMetadata";
 import {
@@ -20,6 +20,15 @@ import {
 import { canSaveDirectlyToFirebase } from "./firebaseConnectivity";
 import { addToOfflineQueue, isRetriableNetworkError } from "./worksheetOfflineQueue";
 import { tryConfirmarWorksheet } from "./worksheetSaveProcessor";
+import {
+  loadCertificadoOccupants,
+  reclamarFolioParaEquipo,
+} from "./firebaseConsecutivos";
+import {
+  certificadoConflictEquipmentId,
+  certEnUsoError,
+  normalizeEquipmentId,
+} from "./consecutivosLogic";
 import type { BackgroundSaveJob, WorksheetState } from "../types/worksheet";
 
 const sanitizeWorksheetText = (str: string) =>
@@ -61,6 +70,8 @@ interface PreparedSavePayload {
   finalDocId: string | null;
   fotoEquipoBase64: string | undefined;
   lugarNormalizado: string;
+  previousEquipmentId: string;
+  previousPdfUrl: string;
 }
 
 async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSavePayload> {
@@ -81,6 +92,15 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
   let finalDocId: string | null = worksheetId || null;
   let existingData: Record<string, unknown> | null = null;
   const firebaseOk = navigator.onLine ? await canSaveDirectlyToFirebase() : false;
+
+  if (finalDocId && firebaseOk && !existingData) {
+    try {
+      const existingSnap = await getDoc(doc(db, "hojasDeTrabajo", finalDocId));
+      if (existingSnap.exists()) existingData = existingSnap.data();
+    } catch (e) {
+      if (!isRetriableNetworkError(e)) throw e;
+    }
+  }
 
   if (!finalDocId && firebaseOk) {
     try {
@@ -117,37 +137,42 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
     }
   }
 
-  // Reintento / cola offline: reutilizar doc del mismo certificado SOLO si es el mismo equipo.
-  // Si el certificado ya pertenece a otro ID, no pisar (causa empalmes tipo AGEL-0687 → EP vs MS).
-  if (!finalDocId && firebaseOk && state.certificado?.trim()) {
-    try {
-      const qCert = query(
-        collection(db, "hojasDeTrabajo"),
-        where("certificado", "==", state.certificado.trim())
+  if (firebaseOk && state.certificado?.trim()) {
+    const occupants = await loadCertificadoOccupants(state.certificado);
+    const conflict = certificadoConflictEquipmentId(
+      occupants,
+      String(state.id || ""),
+      finalDocId
+    );
+    if (conflict) {
+      throw new Error(
+        certEnUsoError(
+          String(state.certificado).trim(),
+          conflict,
+          normalizeEquipmentId(String(state.id || ""))
+        )
       );
-      const certDocs = await getDocs(qCert);
-      if (!certDocs.empty) {
-        const d = certDocs.docs[0];
-        const existingId = String(d.data().id || "")
-          .trim()
-          .toUpperCase();
-        const incomingId = String(state.id || "")
-          .trim()
-          .toUpperCase();
-        if (!existingId || existingId === incomingId) {
-          finalDocId = d.id;
-          existingData = d.data();
-        } else {
-          throw new Error(
-            `CERT_EN_USO: El certificado ${state.certificado.trim()} ya pertenece a ${existingId}. No se puede asignar a ${incomingId || "este equipo"}.`
-          );
+    }
+    if (!finalDocId) {
+      const incoming = normalizeEquipmentId(String(state.id || ""));
+      const same = occupants.find((o) => {
+        const eq = normalizeEquipmentId(o.equipmentId);
+        return !eq || eq === incoming;
+      });
+      if (same) {
+        finalDocId = same.docId;
+        try {
+          const snap = await getDoc(doc(db, "hojasDeTrabajo", same.docId));
+          if (snap.exists()) existingData = snap.data();
+        } catch {
+          /* el assert ya validó el folio */
         }
       }
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith("CERT_EN_USO:")) throw e;
-      if (!isRetriableNetworkError(e)) throw e;
     }
   }
+
+  const previousEquipmentId = String(existingData?.id || "").trim();
+  const previousPdfUrl = String(existingData?.pdfURL || "").trim();
 
   const sanitizedState: WorksheetState = {
     ...state,
@@ -222,7 +247,57 @@ async function prepareSavePayload(job: BackgroundSaveJob): Promise<PreparedSaveP
     finalDocId,
     fotoEquipoBase64,
     lugarNormalizado,
+    previousEquipmentId,
+    previousPdfUrl,
   };
+}
+
+function pathFromDownloadUrl(url: string): string | null {
+  try {
+    const match = url.match(/\/o\/(.+?)(\?|$)/);
+    if (!match) return null;
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+async function deleteStaleWorksheetPdf(opts: {
+  technicianFolder: string;
+  cert: string;
+  previousId: string;
+  newId: string;
+  previousPdfUrl: string;
+  newPath: string;
+}): Promise<void> {
+  const oldPaths = new Set<string>();
+  if (
+    opts.previousId &&
+    normalizeEquipmentId(opts.previousId) !== normalizeEquipmentId(opts.newId)
+  ) {
+    oldPaths.add(
+      buildWorksheetPdfStoragePath(opts.technicianFolder, opts.cert, opts.previousId)
+    );
+  }
+  if (opts.previousPdfUrl) {
+    const fromUrl = pathFromDownloadUrl(opts.previousPdfUrl);
+    if (fromUrl) oldPaths.add(fromUrl);
+  }
+  oldPaths.delete(opts.newPath);
+  await Promise.all(
+    [...oldPaths].map(async (oldPath) => {
+      try {
+        await deleteObject(ref(storage, oldPath));
+      } catch {
+        /* ya no está */
+      }
+      try {
+        await deleteDoc(doc(db, "fileMetadata", oldPath.replace(/\//g, "_")));
+      } catch {
+        /* ya no está */
+      }
+    })
+  );
 }
 
 function writeOfflineQueueItem(
@@ -264,8 +339,17 @@ export async function persistWorksheetToOfflineQueue(
 
 export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void> {
   const payload = await prepareSavePayload(job);
-  const { state, fullData, blob, nombreArchivo, finalDocId, fotoEquipoBase64, lugarNormalizado } =
-    payload;
+  const {
+    state,
+    fullData,
+    blob,
+    nombreArchivo,
+    finalDocId,
+    fotoEquipoBase64,
+    lugarNormalizado,
+    previousEquipmentId,
+    previousPdfUrl,
+  } = payload;
 
   const firebaseOk = navigator.onLine ? await canSaveDirectlyToFirebase() : false;
   if (!firebaseOk) {
@@ -275,6 +359,7 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
   let docRefId = finalDocId;
 
   try {
+    await reclamarFolioParaEquipo(String(state.certificado || ""), String(state.id || ""));
     if (docRefId) {
       await updateDoc(doc(db, "hojasDeTrabajo", docRefId), fullData);
     } else {
@@ -282,6 +367,7 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
       docRefId = newDoc.id;
     }
   } catch (e) {
+    if (e instanceof Error && e.message.startsWith("CERT_EN_USO:")) throw e;
     if (isRetriableNetworkError(e)) {
       enqueueOfflineFromPayload(job, { ...payload, finalDocId: docRefId });
     }
@@ -324,6 +410,15 @@ export async function persistWorksheetJob(job: BackgroundSaveJob): Promise<void>
       }
     }
     updates.cargado_drive = driveMetaOk ? "Si" : "Pendiente";
+
+    await deleteStaleWorksheetPdf({
+      technicianFolder: getTechnicianFolderName(job.user),
+      cert: String(state.certificado || ""),
+      previousId: previousEquipmentId,
+      newId: String(state.id || ""),
+      previousPdfUrl,
+      newPath: nombreArchivo,
+    });
 
     if (docRefId) {
       await updateDoc(doc(db, "hojasDeTrabajo", docRefId), updates);

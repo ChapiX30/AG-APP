@@ -12,9 +12,9 @@ import {
   CheckCircle2,
   Activity,
   Trash2,
-  ShieldCheck,
   Link2,
   Award,
+  ChevronDown,
 } from 'lucide-react';
 import { getMagnitudImageSrc } from '../utils/magnitudAssets';
 import {
@@ -24,6 +24,9 @@ import {
   normalizeHuecos,
   parseConsecutivo,
   consecutivoDocId,
+  certificadosConHoja,
+  variantesCertificado,
+  normalizeEquipmentId,
   GRACE_RECLAMAR_HUERFANOS_MIN,
 } from '../utils/firebaseConsecutivos';
 import { deleteWorksheetStorageForHoja } from '../utils/worksheetStorageCleanup';
@@ -95,6 +98,45 @@ function formatConsecutivoDisplay(raw: string): string {
   return raw;
 }
 
+function certKey(c: string): string {
+  return String(c || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function formatFecha(fecha: any): string {
+  if (fecha?.toDate) return fecha.toDate().toLocaleDateString();
+  return 'N/A';
+}
+
+/** true = hoja en el sistema, false = solo se generó el folio, null = aún no se pudo verificar */
+function folioEstaGuardado(
+  cons: { worksheetConfirmado?: unknown; equipoId?: unknown; consecutivo?: string } | null,
+  hojas: Set<string> | null
+): boolean | null {
+  if (!cons) return null;
+  if (cons.worksheetConfirmado === true) return true;
+  if (normalizeEquipmentId(String(cons.equipoId || ''))) return true;
+  if (!hojas) return null;
+  return variantesCertificado(String(cons.consecutivo || '')).some((v) => hojas.has(certKey(v)));
+}
+
+const GuardadoBadge: React.FC<{ estado: boolean | null; compact?: boolean }> = ({ estado, compact }) => {
+  if (estado === true) {
+    return (
+      <span className={`font-bold uppercase tracking-wider rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 ${compact ? 'text-[10px] px-2 py-0.5' : 'text-xs px-3 py-1'}`}>
+        Guardada
+      </span>
+    );
+  }
+  if (estado === false) {
+    return (
+      <span className={`font-bold uppercase tracking-wider rounded-full bg-amber-50 text-amber-800 border border-amber-200 ${compact ? 'text-[10px] px-2 py-0.5' : 'text-xs px-3 py-1'}`}>
+        Sin hoja
+      </span>
+    );
+  }
+  return null;
+};
+
 export const MagnitudeDetailScreen: React.FC = () => {
   const { selectedMagnitude, goBack, navigateTo } = useNavigation();
   const [generando, setGenerando] = useState(false);
@@ -107,6 +149,8 @@ export const MagnitudeDetailScreen: React.FC = () => {
   const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [huecosPendientes, setHuecosPendientes] = useState<number | null>(null);
+  const [historialAbierto, setHistorialAbierto] = useState(false);
+  const [hojasGuardadas, setHojasGuardadas] = useState<Set<string> | null>(null);
 
   const accent = accentFromMagnitude(selectedMagnitude);
   const theme = flowAccents[accent];
@@ -120,6 +164,9 @@ export const MagnitudeDetailScreen: React.FC = () => {
   useEffect(() => {
     if (!selectedMagnitude) return;
     setLoading(true);
+    setConsecutivos([]);
+    setHojasGuardadas(null);
+    setHistorialAbierto(false);
 
     const anio = new Date().getFullYear().toString().slice(-2);
 
@@ -150,12 +197,12 @@ export const MagnitudeDetailScreen: React.FC = () => {
       collection(db, "consecutivos"),
       where("magnitud", "==", selectedMagnitude),
       orderBy("fecha", "desc"),
-      limit(15)
+      limit(20)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const cons: any[] = [];
-      snapshot.forEach(doc => cons.push(doc.data()));
+      snapshot.forEach((d) => cons.push({ id: d.id, ...d.data() }));
       setConsecutivos(cons);
       setLoading(false);
     }, (error) => {
@@ -165,6 +212,25 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
     return () => unsubscribe();
   }, [selectedMagnitude]);
+
+  useEffect(() => {
+    const certs = consecutivos.map((c) => String(c.consecutivo || '')).filter(Boolean);
+    if (certs.length === 0) {
+      setHojasGuardadas(new Set());
+      return;
+    }
+    let cancelled = false;
+    void certificadosConHoja(certs)
+      .then((set) => {
+        if (!cancelled) setHojasGuardadas(set);
+      })
+      .catch((e) => {
+        console.warn('[MagnitudeDetail] certificadosConHoja:', e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [consecutivos]);
 
   const handleGenerarConsecutivo = async () => {
     setGenerando(true);
@@ -256,11 +322,13 @@ export const MagnitudeDetailScreen: React.FC = () => {
 
   const currentYearShort = new Date().getFullYear().toString().slice(-2);
   const isCurrentYear = (record: any) => record?.consecutivo?.endsWith(currentYearShort);
-  const actual = isCurrentYear(consecutivos[0]) ? consecutivos[0] : null;
-  const anterior = isCurrentYear(consecutivos[1]) ? consecutivos[1] : null;
+  const historialAnio = consecutivos.filter(isCurrentYear);
+  const actual = historialAnio[0] || null;
+  const actualGuardado = folioEstaGuardado(actual, hojasGuardadas);
+  const sinHojaCount = historialAnio.filter((c) => folioEstaGuardado(c, hojasGuardadas) === false).length;
 
   return (
-    <div className="min-h-full flex-shrink-0 flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50/30 text-slate-900 font-sans">
+    <div className="min-h-full w-full flex-shrink-0 flex flex-col bg-slate-50 text-slate-900 font-sans [color-scheme:light]">
       <FlowScreenHeader
         accent={accent}
         iconVariant="brand"
@@ -293,19 +361,13 @@ export const MagnitudeDetailScreen: React.FC = () => {
             icon={<Activity className="w-5 h-5" />}
             headerRight={
               actual ? (
-                <span className={`text-xs font-bold px-3 py-1 rounded-full ${theme.soft} ${theme.highlight} border ${theme.softBorder}`}>
-                  En uso
-                </span>
+                <GuardadoBadge estado={actualGuardado} />
               ) : (
                 <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-500">Sin registro</span>
               )
             }
             bodyClassName="relative"
           >
-            <div className="absolute top-4 right-6 opacity-[0.07] pointer-events-none hidden sm:block">
-              <img src={imageSrc} alt="" className="w-36 h-36 object-contain" />
-            </div>
-
             {actual ? (
               <div className="relative z-10 flex flex-col items-center text-center py-4">
                 <span className="text-xs text-slate-400 font-bold uppercase tracking-[0.2em] mb-4">
@@ -320,7 +382,7 @@ export const MagnitudeDetailScreen: React.FC = () => {
                     <Calendar className="w-4 h-4 text-slate-400 mb-2" />
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Fecha</span>
                     <span className="text-sm font-semibold text-slate-800 mt-1">
-                      {actual.fecha?.toDate ? actual.fecha.toDate().toLocaleDateString() : 'N/A'}
+                      {formatFecha(actual.fecha)}
                     </span>
                   </div>
                   <div className={`flex flex-col items-center p-4 rounded-2xl border ${theme.softBorder} ${theme.soft}`}>
@@ -352,56 +414,86 @@ export const MagnitudeDetailScreen: React.FC = () => {
                 type="button"
                 onClick={handleGenerarConsecutivo}
                 disabled={loading || generando}
-                className={`w-full flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-white transition-all shadow-lg active:scale-[0.99] disabled:opacity-50 bg-gradient-to-r ${theme.button} ${theme.buttonShadow}`}
+                className={`group relative w-full overflow-hidden flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-white transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-lg bg-gradient-to-r ${theme.button} ${theme.buttonShadow}`}
               >
-                {loading || generando ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Plus className="w-5 h-5" />
+                {!(loading || generando) && (
+                  <span className="pointer-events-none absolute inset-y-0 left-0 mag-generate-shine" aria-hidden />
                 )}
-                <span>Generar Nuevo Consecutivo</span>
+                {loading || generando ? (
+                  <div className="relative w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Plus className="relative w-5 h-5 transition-transform duration-200 group-hover:scale-110 group-hover:rotate-90" />
+                )}
+                <span className="relative">
+                  {loading || generando ? 'Generando…' : 'Generar Nuevo Consecutivo'}
+                </span>
               </button>
             </div>
           </FlowCard>
-
-          {anterior && (
-            <FlowCard
-              accent={accent}
-              title="Historial Reciente"
-              icon={<History className="w-5 h-5" />}
-              bodyClassName="p-6"
-            >
-              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 shrink-0">
-                    <Hash className="w-4 h-4 text-slate-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-mono font-bold text-slate-800 truncate">
-                      {formatConsecutivoDisplay(anterior.consecutivo)}
-                    </p>
-                    <p className="text-xs text-slate-500 truncate">{anterior.usuario}</p>
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold text-slate-400 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shrink-0">
-                  ANTERIOR
-                </span>
-              </div>
-            </FlowCard>
-          )}
         </div>
 
         <div className="lg:col-span-4 space-y-6">
-          <FlowCard accent={accent} bodyClassName="p-6 flex flex-col items-center text-center">
-            <div className="w-28 h-28 mb-4 relative">
-              <div className={`absolute inset-0 bg-gradient-to-tr ${isTrazable ? 'from-amber-100 to-orange-50' : 'from-blue-100 to-indigo-50'} rounded-full blur-xl opacity-70`} />
-              <img src={imageSrc} alt={selectedMagnitude} className="w-full h-full object-contain relative z-10 drop-shadow-md" />
-            </div>
-            <h3 className="font-bold text-slate-800 text-lg">{selectedMagnitude}</h3>
-            <p className="text-sm text-slate-500 mt-1">
-              {isTrazable ? 'Trazabilidad verificada' : 'Acreditación vigente'}
-            </p>
-          </FlowCard>
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-lg ring-1 ring-slate-100 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setHistorialAbierto((v) => !v)}
+              className="w-full px-5 py-4 flex items-center gap-3 text-left hover:bg-slate-50/80 transition-colors"
+            >
+              <div className={`p-2.5 rounded-xl ${theme.soft} ${theme.highlight} shrink-0`}>
+                <History className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-900">Historial</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {historialAnio.length === 0
+                    ? 'Sin folios este año'
+                    : historialAbierto
+                      ? 'Ocultar registros'
+                      : `${historialAnio.length} folio${historialAnio.length === 1 ? '' : 's'} este año`}
+                </p>
+              </div>
+              {sinHojaCount > 0 && !historialAbierto && (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                  {sinHojaCount} sin hoja
+                </span>
+              )}
+              <ChevronDown
+                className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${historialAbierto ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {historialAbierto && (
+              <div className="border-t border-slate-100 max-h-80 overflow-y-auto">
+                {historialAnio.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-slate-400">No hay consecutivos este año.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {historialAnio.map((cons, index) => {
+                      const guardado = folioEstaGuardado(cons, hojasGuardadas);
+                      return (
+                        <li key={cons.id || cons.consecutivo} className="px-5 py-3 flex items-center gap-3">
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 shrink-0">
+                            <Hash className="w-3.5 h-3.5 text-slate-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-mono font-bold text-sm text-slate-800 truncate">
+                              {formatConsecutivoDisplay(cons.consecutivo)}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {cons.usuario}
+                              {cons.fecha ? ` · ${formatFecha(cons.fecha)}` : ''}
+                              {index === 0 ? ' · Actual' : ''}
+                            </p>
+                          </div>
+                          <GuardadoBadge estado={guardado} compact />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="bg-white rounded-2xl border border-red-100 shadow-lg ring-1 ring-red-50 overflow-hidden">
             <div className="px-5 py-4 bg-gradient-to-r from-red-50 to-white border-b border-red-100">
@@ -515,6 +607,22 @@ export const MagnitudeDetailScreen: React.FC = () => {
           </div>
         </div>
       )}
+      <style>{`
+        @keyframes mag-generate-shine {
+          0%, 55% { transform: translateX(-140%) skewX(-18deg); opacity: 0; }
+          62% { opacity: 1; }
+          78% { transform: translateX(320%) skewX(-18deg); opacity: 0; }
+          100% { transform: translateX(320%) skewX(-18deg); opacity: 0; }
+        }
+        .mag-generate-shine {
+          width: 42%;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.32), transparent);
+          animation: mag-generate-shine 3.6s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .mag-generate-shine { animation: none; display: none; }
+        }
+      `}</style>
     </div>
   );
 };

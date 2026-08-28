@@ -69,7 +69,12 @@ import {
   pickClienteFromAsignacionHoy,
 } from "../utils/servicioAutomation";
 import { canonicalizeClienteNombre } from "../utils/hojaServicioMatch";
-import { tocarConsecutivoActivo } from "../utils/firebaseConsecutivos";
+import { tocarConsecutivoActivo, assertCertificadoLibreParaEquipo } from "../utils/firebaseConsecutivos";
+import {
+  countNumericLines,
+  envRangeStatus,
+  puntosMedicionAviso,
+} from "../utils/worksheetWarnings";
 
 // ====================================================================
 // LabelPrinterButton y helpers de etiqueta: ver ./LabelPrinterButton
@@ -728,7 +733,6 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   const [tapeSize, setTapeSize] = useState<"24mm" | "12mm">("24mm");
   
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [metrologyWarning, setMetrologyWarning] = useState<string | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
   const [pendingUploads, setPendingUploads] = useState<number>(0);
@@ -923,24 +927,10 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
     [state.magnitud, state.unidad, state.canalesPorUnidad]
   );
 
-  useEffect(() => {
-      if(!state.magnitud || (!state.tempAmbiente && !state.humedadRelativa)) {
-          setMetrologyWarning(null);
-          return;
-      }
-      const limits = { tMin: 18, tMax: 26, hMin: 30, hMax: 70 }; 
-      const temp = Number(state.tempAmbiente);
-      const hr = Number(state.humedadRelativa);
-      let warning = "";
-
-      if (state.tempAmbiente && (temp < limits.tMin || temp > limits.tMax)) {
-          warning += `Temp fuera de rango (${limits.tMin}-${limits.tMax}°C). `;
-      }
-      if (state.humedadRelativa && (hr < limits.hMin || hr > limits.hMax)) {
-          warning += `HR% fuera de rango (${limits.hMin}-${limits.hMax}%). `;
-      }
-      if (warning) { setMetrologyWarning(warning.trim()); } else { setMetrologyWarning(null); }
-  }, [state.tempAmbiente, state.humedadRelativa, state.magnitud]);
+  const envRange = useMemo(
+    () => envRangeStatus(state.magnitud, state.tempAmbiente, state.humedadRelativa),
+    [state.magnitud, state.tempAmbiente, state.humedadRelativa],
+  );
 
   const flushDraftNow = useCallback(() => {
     if (worksheetId) return;
@@ -1353,38 +1343,33 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
       }
     }
 
-    let advertenciaNorma = "";
+    let avisoPuntos = "";
 
     if (state.magnitud === "Masa") {
-      const lineasLinealidad = state.linealidad.split("\n").filter((l) => /\d/.test(l));
-      if (lineasLinealidad.length < 3) {
-        advertenciaNorma = `Para MASA (Linealidad), se recomiendan mínimo 3 puntos. Detectados: ${lineasLinealidad.length}.`;
-      }
+      const n = countNumericLines(state.linealidad);
+      if (n < 3) avisoPuntos = puntosMedicionAviso({ magnitud: "Masa", count: n });
     } else if (state.magnitud === "Electrica") {
       for (const s of listElectricalSections(
         state.unidad,
         normalizeCanalesPorUnidad(state.unidad, state.canalesPorUnidad)
       )) {
-        const vals = electricalValues[s.key];
-        const lineas = (vals?.patron || "").split("\n").filter((l) => /\d/.test(l));
-        if (lineas.length < 3) {
-          advertenciaNorma = `Para ELÉCTRICA (${s.label}), se recomiendan mínimo 3 puntos de medición.`;
+        const n = countNumericLines(electricalValues[s.key]?.patron || "");
+        if (n < 3) {
+          avisoPuntos = puntosMedicionAviso({ magnitud: "Electrica", count: n, contexto: s.label });
           break;
         }
       }
     } else {
-      const lineas = state.medicionPatron.split("\n").filter((l) => /\d/.test(l));
-      if (lineas.length < 3) {
-        advertenciaNorma = `Para ${state.magnitud}, la norma sugiere cubrir el alcance (mínimo 3 puntos). Solo detecté ${lineas.length}.`;
-      }
+      const n = countNumericLines(state.medicionPatron);
+      if (n < 3) avisoPuntos = puntosMedicionAviso({ magnitud: state.magnitud, count: n });
     }
 
-    if (advertenciaNorma) {
+    if (avisoPuntos) {
       if (!(await confirm({
-        title: 'Advertencia de norma (ISO 17025)',
-        message: `${advertenciaNorma}\n\n¿Deseas guardar de todos modos?`,
+        title: 'Puntos de medición',
+        message: avisoPuntos,
         variant: 'warning',
-        confirmLabel: 'Guardar de todos modos',
+        confirmLabel: 'Guardar',
       }))) {
         return;
       }
@@ -1474,10 +1459,16 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
           }
         }
 
-        if (!worksheetId) {
-          const qCert = query(collection(db, "hojasDeTrabajo"), where("certificado", "==", state.certificado));
-          if (!(await getDocs(qCert)).empty) {
-            setToast({ message: "El número de certificado ya existe.", type: "error" });
+        const cert = String(state.certificado || "").trim();
+        if (cert) {
+          try {
+            await assertCertificadoLibreParaEquipo(cert, String(state.id || ""), worksheetId || null);
+          } catch (conflict) {
+            const msg =
+              conflict instanceof Error && conflict.message.startsWith("CERT_EN_USO:")
+                ? conflict.message.replace(/^CERT_EN_USO:\s*/, "")
+                : "El número de certificado ya pertenece a otro equipo. Genera un consecutivo nuevo.";
+            setToast({ message: msg, type: "error" });
             return;
           }
         }
@@ -1540,7 +1531,15 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
   }, [state.lugarCalibracion, state.fechaRecepcion, state.fecha]);
 
   // Modificado inputClass para mayor legibilidad
-  const inputClass = (fieldName: string) => `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner ${validationErrors[fieldName] ? "border-red-500 bg-red-50 focus:ring-red-500" : "border-gray-200 bg-white"}`;
+  const inputClass = (fieldName: string, opts?: { warn?: boolean }) => {
+    const isError = Boolean(validationErrors[fieldName]);
+    const tone = isError
+      ? "border-red-500 bg-red-50 focus:ring-red-500"
+      : opts?.warn
+        ? "border-amber-400 bg-white focus:ring-amber-400"
+        : "border-gray-200 bg-white";
+    return `w-full p-4 border rounded-lg transition-all focus:ring-2 focus:ring-blue-500 text-gray-900 font-semibold shadow-inner ${tone}`;
+  };
 
   const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2228,22 +2227,25 @@ export const WorkSheetScreen: React.FC<{ worksheetId?: string }> = ({ worksheetI
                 
                 {/* --- SECCIÓN TEMPERATURA / HR --- */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
-                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <div className={`p-5 rounded-xl border shadow-sm transition-colors ${envRange.tempOut ? "bg-amber-50/70 border-amber-300 ring-1 ring-amber-200/70" : "bg-slate-50 border-slate-200"}`}>
                     <label className="flex items-center space-x-2 text-sm font-bold text-slate-800 mb-3"><NotebookPen className="w-4 h-4 text-sky-400" /><span>Temp. Ambiente (°C)</span></label>
-                    <input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente')} />
+                    <input type="number" value={state.tempAmbiente} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'tempAmbiente', payload: e.target.value })} className={inputClass('tempAmbiente', { warn: envRange.tempOut })} />
                   </div>
-                  <div className="bg-indigo-50/40 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                  <div className={`p-5 rounded-xl border shadow-sm transition-colors ${envRange.hrOut ? "bg-amber-50/70 border-amber-300 ring-1 ring-amber-200/70" : "bg-indigo-50/40 border-indigo-100"}`}>
                     <label className="flex items-center space-x-2 text-sm font-bold text-indigo-900 mb-3"><NotebookPen className="w-4 h-4 text-pink-400" /><span>HR%</span></label>
-                    <input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa')} />
+                    <input type="number" value={state.humedadRelativa} onChange={(e) => dispatch({ type: 'SET_FIELD', field: 'humedadRelativa', payload: e.target.value })} className={inputClass('humedadRelativa', { warn: envRange.hrOut })} />
                   </div>
-                  
-                  {metrologyWarning && (
-                    <div className="lg:col-span-2 mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-                        <AlertOctagon className="w-5 h-5 shrink-0 mt-0.5 text-yellow-600"/>
-                        <div>
-                            <p className="font-bold text-sm">Condiciones Ambientales Fuera de Norma</p>
-                            <p className="text-xs mt-1">{metrologyWarning}</p>
-                        </div>
+
+                  {(envRange.tempOut || envRange.hrOut) && (
+                    <div className="lg:col-span-2 flex items-center gap-3 rounded-xl border border-amber-200/90 bg-gradient-to-r from-amber-50 to-white px-3.5 py-2.5 animate-in fade-in slide-in-from-top-1">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <p className="text-sm text-slate-700 leading-snug min-w-0">
+                        <span className="font-semibold text-slate-900">Fuera de rango</span>
+                        <span className="text-slate-500"> · </span>
+                        <span className="tabular-nums text-slate-600">{envRange.summary}</span>
+                      </p>
                     </div>
                   )}
                 </div>

@@ -14,6 +14,7 @@ import {
     arrayUnion,
     increment,
     limit,
+    type DocumentSnapshot,
 } from "firebase/firestore";
 import { getPrefijo, getMagnitudFromPrefijo } from "./prefijos";
 import { extractMagnitudFromConsecutivo } from "./magnitudWorksheet";
@@ -26,6 +27,10 @@ export {
     normalizeCertificado,
     variantesCertificado,
     pickLowestHueco,
+    certificadoConflictEquipmentId,
+    certEnUsoError,
+    consecutivoDocEstaTomado,
+    normalizeEquipmentId,
 } from "./consecutivosLogic";
 import {
     consecutivoDocId,
@@ -34,6 +39,11 @@ import {
     formatConsecutivo,
     normalizeCertificado,
     variantesCertificado,
+    certificadoConflictEquipmentId,
+    certEnUsoError,
+    consecutivoDocEstaTomado,
+    normalizeEquipmentId,
+    pickNextConsecutivoNumero,
 } from "./consecutivosLogic";
 
 const RECONCILE_COOLDOWN_MS = 30 * 60 * 1000;
@@ -77,7 +87,109 @@ export async function hojaTrabajoExiste(consecutivo: string): Promise<boolean> {
             getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", variant), limit(1))),
         ])
     );
-    return snaps.some((snap) => !snap.empty);
+    if (snaps.some((snap) => !snap.empty)) return true;
+    return folioPdfExisteEnDrive(consecutivo);
+}
+
+/** PDF en Drive con este folio (evita reemitir si quedó un archivo huérfano). */
+async function folioPdfExisteEnDrive(consecutivo: string): Promise<boolean> {
+    const cert = normalizeCertificado(consecutivo);
+    if (!cert) return false;
+    try {
+        const snap = await getDocs(
+            query(
+                collection(db, "fileMetadata"),
+                where("name", ">=", `${cert}_`),
+                where("name", "<", `${cert}_\uf8ff`),
+                limit(1)
+            )
+        );
+        return !snap.empty;
+    } catch (e) {
+        console.warn("[Consecutivos] folioPdfExisteEnDrive:", e);
+        return false;
+    }
+}
+
+export async function loadCertificadoOccupants(
+    certificado: string
+): Promise<Array<{ docId: string; equipmentId: string }>> {
+    const variantes = variantesCertificado(certificado);
+    if (variantes.length === 0) return [];
+    const snaps = await Promise.all(
+        variantes.flatMap((variant) => [
+            getDocs(query(collection(db, "hojasDeTrabajo"), where("certificado", "==", variant))),
+            getDocs(query(collection(db, "hojasDeTrabajo"), where("folio", "==", variant))),
+        ])
+    );
+    const seen = new Map<string, { docId: string; equipmentId: string }>();
+    for (const snap of snaps) {
+        for (const d of snap.docs) {
+            seen.set(d.id, {
+                docId: d.id,
+                equipmentId: String(d.data().id || ""),
+            });
+        }
+    }
+    return [...seen.values()];
+}
+
+export async function assertCertificadoLibreParaEquipo(
+    certificado: string,
+    incomingId: string,
+    exceptDocId?: string | null
+): Promise<void> {
+    const cert = normalizeCertificado(certificado);
+    if (!cert) return;
+    const occupants = await loadCertificadoOccupants(cert);
+    const conflict = certificadoConflictEquipmentId(occupants, incomingId, exceptDocId);
+    if (conflict) {
+        throw new Error(certEnUsoError(cert, conflict, normalizeEquipmentId(incomingId)));
+    }
+}
+
+/** Reserva atómica del folio a un ID de equipo (evita carreras al guardar). */
+export async function reclamarFolioParaEquipo(
+    certificado: string,
+    equipmentId: string
+): Promise<void> {
+    const cert = normalizeCertificado(certificado);
+    const incoming = normalizeEquipmentId(equipmentId);
+    const parsed = parseConsecutivo(cert);
+    if (!cert || !incoming || !parsed) return;
+
+    const canonicalRef = doc(
+        db,
+        "consecutivos",
+        consecutivoDocId(parsed.prefijo, parsed.numero, parsed.anio)
+    );
+    const now = Timestamp.now();
+
+    await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(canonicalRef);
+        if (!snap.exists()) {
+            transaction.set(canonicalRef, {
+                consecutivo: cert,
+                prefijo: parsed.prefijo,
+                magnitud: getMagnitudFromPrefijo(parsed.prefijo) || "",
+                equipoId: incoming,
+                worksheetConfirmado: true,
+                fecha: now,
+                fechaCreacion: now,
+                lastActivo: now,
+            });
+            return;
+        }
+        const claimed = normalizeEquipmentId(String(snap.data().equipoId || ""));
+        if (claimed && claimed !== incoming) {
+            throw new Error(certEnUsoError(cert, claimed, incoming));
+        }
+        transaction.update(canonicalRef, {
+            equipoId: incoming,
+            worksheetConfirmado: true,
+            lastActivo: now,
+        });
+    });
 }
 
 function timestampMillis(value: unknown): number {
@@ -143,7 +255,8 @@ async function purgeDuplicateConsecutivoDocs(cert: string, keepId: string): Prom
     );
 }
 
-async function certificadosConHoja(certs: string[]): Promise<Set<string>> {
+/** Certificados (normalizados) que ya tienen hoja en `hojasDeTrabajo`. */
+export async function certificadosConHoja(certs: string[]): Promise<Set<string>> {
     const existentes = new Set<string>();
     const unicos = [...new Set(certs.flatMap((c) => variantesCertificado(c)))];
     for (let i = 0; i < unicos.length; i += 30) {
@@ -320,52 +433,92 @@ async function generarConsecutivoUnaVez(
 
     await runTransaction(db, async (transaction) => {
         const contadorDoc = await transaction.get(contadorRef);
-        let nuevo = 1;
-        let esReciclado = false;
+        let huecos: number[] = [];
+        let valor = 0;
+        let anioRegistrado = anio;
+        const counterExists = contadorDoc.exists();
 
-        if (!contadorDoc.exists()) {
-            transaction.set(contadorRef, { valor: 1, anio: anio, huecos: [] });
-        } else {
-            const data = contadorDoc.data();
-            let huecos = normalizeHuecos(data.huecos);
-            const anioRegistrado = data.anio || "25";
-
-            if (anioRegistrado === anio && huecos.length > 0) {
-                huecos.sort((a, b) => a - b);
-                nuevo = huecos[0];
-                esReciclado = true;
-                transaction.update(contadorRef, { huecos: huecos.slice(1) });
-            } else {
-                const ultimoValor = data.valor || 0;
-
-                if (anioRegistrado !== anio) {
-                    nuevo = 1;
-                    transaction.update(contadorRef, { valor: 1, anio: anio, huecos: [] });
-                } else {
-                    nuevo = ultimoValor + 1;
-                    transaction.update(contadorRef, { valor: nuevo, anio: anio });
-                }
+        if (counterExists) {
+            const data = contadorDoc.data()!;
+            anioRegistrado = String(data.anio || anio);
+            if (anioRegistrado === anio) {
+                huecos = normalizeHuecos(data.huecos);
+                valor = Number(data.valor) || 0;
             }
         }
 
-        const consecutivoStr = formatConsecutivo(prefijo, nuevo, anio);
-        consecutivoFinal = consecutivoStr;
-        historialId = consecutivoDocId(prefijo, nuevo, anio);
-        const now = Timestamp.now();
+        const probe: number[] = [];
+        const seenProbe = new Set<number>();
+        {
+            let h = [...huecos].sort((a, b) => a - b);
+            let v = valor;
+            while (probe.length < 8) {
+                const n = h.length > 0 ? h.shift()! : ++v;
+                if (n <= 0 || seenProbe.has(n)) continue;
+                seenProbe.add(n);
+                probe.push(n);
+            }
+        }
 
-        // ID canónico: un solo doc por folio (evita duplicados en el historial).
+        const ocupados = new Set<number>();
+        const histByNumero = new Map<number, DocumentSnapshot>();
+        for (const n of probe) {
+            const histRef = doc(db, "consecutivos", consecutivoDocId(prefijo, n, anio));
+            const histSnap = await transaction.get(histRef);
+            histByNumero.set(n, histSnap);
+            if (consecutivoDocEstaTomado(histSnap.data())) ocupados.add(n);
+        }
+
+        const picked = pickNextConsecutivoNumero({ huecos, valor }, ocupados, 8);
+        if (!picked || !probe.includes(picked.numero)) {
+            throw new Error("CONSECUTIVO_OCUPADO");
+        }
+
+        const now = Timestamp.now();
+        const consecutivoStr = formatConsecutivo(prefijo, picked.numero, anio);
+        consecutivoFinal = consecutivoStr;
+        historialId = consecutivoDocId(prefijo, picked.numero, anio);
         const historialRef = doc(db, "consecutivos", historialId);
-        transaction.set(historialRef, {
-            consecutivo: consecutivoStr,
-            usuario,
-            magnitud,
-            prefijo,
-            fecha: now,
-            fechaCreacion: now,
-            lastActivo: now,
-            esReciclado,
-            worksheetConfirmado: false,
-        });
+        const chosenSnap = histByNumero.get(picked.numero);
+
+        const counterPayload = {
+            valor: picked.nextState.valor,
+            anio: anio,
+            huecos: picked.nextState.huecos,
+        };
+        if (!counterExists || anioRegistrado !== anio) {
+            transaction.set(contadorRef, counterPayload);
+        } else {
+            transaction.update(contadorRef, counterPayload);
+        }
+
+        if (chosenSnap?.exists()) {
+            if (consecutivoDocEstaTomado(chosenSnap.data())) {
+                throw new Error("CONSECUTIVO_OCUPADO");
+            }
+            transaction.update(historialRef, {
+                consecutivo: consecutivoStr,
+                usuario,
+                magnitud,
+                prefijo,
+                fecha: now,
+                lastActivo: now,
+                esReciclado: picked.esReciclado,
+                worksheetConfirmado: false,
+            });
+        } else {
+            transaction.set(historialRef, {
+                consecutivo: consecutivoStr,
+                usuario,
+                magnitud,
+                prefijo,
+                fecha: now,
+                fechaCreacion: now,
+                lastActivo: now,
+                esReciclado: picked.esReciclado,
+                worksheetConfirmado: false,
+            });
+        }
     });
 
     if (consecutivoFinal && historialId) {
@@ -399,15 +552,24 @@ export async function generarConsecutivo(
     // Ruta rápida: solo asigna. La limpieza de huérfanos/huecos no espera aquí
     // (ya corre al abrir la magnitud + background tras generar).
     for (let intento = 0; intento < MAX_GEN_RETRIES; intento++) {
-        const { cert } = await generarConsecutivoUnaVez(magnitud, anio, usuario);
-        if (!(await hojaTrabajoExiste(cert))) {
-            scheduleConsecutivoMaintenance(magnitud, anio);
-            return cert;
-        }
+        try {
+            const { cert } = await generarConsecutivoUnaVez(magnitud, anio, usuario);
+            if (!(await hojaTrabajoExiste(cert))) {
+                scheduleConsecutivoMaintenance(magnitud, anio);
+                return cert;
+            }
 
-        console.warn(`[Consecutivos] ${cert} ya tiene hoja; confirmando y reasignando`);
-        await confirmarWorksheet(cert, magnitud);
-        await reconciliarContadorHuecos(magnitud, anio, true);
+            console.warn(`[Consecutivos] ${cert} ya tiene hoja; confirmando y reasignando`);
+            await confirmarWorksheet(cert, magnitud);
+            await reconciliarContadorHuecos(magnitud, anio, true);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg.includes("CONSECUTIVO_OCUPADO") && intento < MAX_GEN_RETRIES - 1) {
+                await reconciliarContadorHuecos(magnitud, anio, true);
+                continue;
+            }
+            throw e;
+        }
     }
 
     throw new Error("No se pudo asignar un consecutivo disponible. Intenta de nuevo.");
@@ -519,6 +681,13 @@ export async function auditarHuerfanos(
         const consecutivoStr: string = data.consecutivo;
         const parsed = parseConsecutivo(consecutivoStr);
         if (!parsed) continue;
+
+        if (consecutivoDocEstaTomado(data as { worksheetConfirmado?: unknown; equipoId?: unknown })) {
+            if (data.worksheetConfirmado !== true) {
+                await confirmarWorksheet(consecutivoStr, magnitud);
+            }
+            continue;
+        }
 
         const { numero, anio: anioDelDoc } = parsed;
 

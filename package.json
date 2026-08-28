@@ -10,7 +10,7 @@
     "generate-pwa-icons": "node scripts/generate-pwa-icons.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types src/utils/pendingReviewDrive.test.ts && node --experimental-strip-types src/utils/consecutivosLogic.test.ts"
+    "test": "node --experimental-strip-types src/utils/pendingReviewDrive.test.ts && node --experimental-strip-types src/utils/consecutivosLogic.test.ts && node --experimental-strip-types src/utils/worksheetWarnings.test.ts && node --experimental-strip-types src/utils/worksheetPuntosDictamen.test.ts && node --experimental-strip-types src/utils/entradaSalidaPdf.test.ts"
   },
   "resolutions": {
     "pdfjs-dist": "2.14.305"
